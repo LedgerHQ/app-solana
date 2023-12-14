@@ -3,21 +3,9 @@
 #include "io_utils.h"
 #include "utils.h"
 #include "sol/parser.h"
-#include "sol/printer.h"
-#include "sol/print_config.h"
-#include "sol/message.h"
 #include "sol/transaction_summary.h"
 #include "apdu.h"
 
-#include "handle_sign_message.h"
-
-// Display offchain message screen
-UX_STEP_NOCB(ux_sign_msg_text_step,
-             bnnn_paging,
-             {
-                 .title = "Message",
-                 .text = (const char *) G_command.message + OFFCHAIN_MESSAGE_HEADER_LENGTH,
-             });
 
 // Display dynamic transaction item screen
 UX_STEP_NOCB_INIT(ux_summary_step,
@@ -36,6 +24,21 @@ UX_STEP_NOCB_INIT(ux_summary_step,
                       .title = G_transaction_summary_title,
                       .text = G_transaction_summary_text,
                   });
+
+UX_STEP_NOCB_INIT(ux_summary_step_extended,
+                  bnnn_paging,
+                  {
+                      size_t step_index = G_ux.flow_stack[stack_slot].index;
+                      if (transaction_summary_display_item(step_index, DisplayFlagNone)) {
+                          THROW(ApduReplySolanaSummaryUpdateFailed);
+                      }
+                      G_ux.externalText = G_transaction_summary_extended_text;
+                  },
+                  {
+                      .title = G_transaction_summary_title,
+                      //Text is set into the global buffer G_ux in transaction summary
+                  });
+
 
 // Approve and sign screen
 UX_STEP_CB(ux_approve_step,
@@ -60,6 +63,7 @@ UX_STEP_CB(ux_reject_step,
      + 1                               /* reject */        \
      + 1                               /* FLOW_END_STEP */ \
     )
+
 /*
 OFFCHAIN UX Steps:
 - Sign Message
@@ -83,6 +87,13 @@ if ascii:
     )
 static ux_flow_step_t const *flow_steps[MAX(MAX_FLOW_STEPS_ONCHAIN, MAX_FLOW_STEPS_OFFCHAIN)];
 
+void start_ui_common_end(size_t* num_flow_steps ){
+    flow_steps[(*num_flow_steps)++] = &ux_reject_step;
+    flow_steps[(*num_flow_steps)++] = FLOW_END_STEP;
+
+    ux_flow_init(0, flow_steps, NULL);
+}
+
 void start_sign_tx_ui(size_t num_summary_steps) {
     MEMCLEAR(flow_steps);
     size_t num_flow_steps = 0;
@@ -91,26 +102,23 @@ void start_sign_tx_ui(size_t num_summary_steps) {
     }
 
     flow_steps[num_flow_steps++] = &ux_approve_step;
-    flow_steps[num_flow_steps++] = &ux_reject_step;
-    flow_steps[num_flow_steps++] = FLOW_END_STEP;
-
-    ux_flow_init(0, flow_steps, NULL);
+    start_ui_common_end(&num_flow_steps);
 }
 
-void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
+
+void start_sign_offchain_message_ui(size_t num_summary_steps, const enum SummaryItemKind* summary_step_kinds) {
     MEMCLEAR(flow_steps);
     size_t num_flow_steps = 0;
     for (size_t i = 0; i < num_summary_steps; i++) {
-        flow_steps[num_flow_steps++] = &ux_summary_step;
+        if(summary_step_kinds[i] == SummaryItemExtendedString){
+            flow_steps[num_flow_steps++] = &ux_summary_step_extended;
+        }else{
+            flow_steps[num_flow_steps++] = &ux_summary_step;
+        }
     }
-    if (is_ascii) {
-        flow_steps[num_flow_steps++] = &ux_sign_msg_text_step;
-    }
-    flow_steps[num_flow_steps++] = &ux_approve_step;
-    flow_steps[num_flow_steps++] = &ux_reject_step;
-    flow_steps[num_flow_steps++] = FLOW_END_STEP;
 
-    ux_flow_init(0, flow_steps, NULL);
+    flow_steps[num_flow_steps++] = &ux_approve_step;
+    start_ui_common_end(&num_flow_steps);
 }
 
 #endif

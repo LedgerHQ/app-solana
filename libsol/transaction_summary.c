@@ -15,6 +15,7 @@ struct SummaryItem {
         const char *string;
         SizedString sized_string;
         TokenAmount token_amount;
+        const OffchainMessageApplicationDomain* application_domain;
     };
 };
 
@@ -79,6 +80,14 @@ void summary_item_set_timestamp(SummaryItem *item, const char *title, int64_t va
     item->i64 = value;
 }
 
+void summary_item_set_offchain_message_application_domain(SummaryItem* item,
+                                                          const char* title,
+                                                          const OffchainMessageApplicationDomain* value) {
+    item->kind = SummaryItemOffchainMessageApplicationDomain;
+    item->title = title;
+    item->application_domain = value;
+}
+
 typedef struct TransactionSummary {
     SummaryItem primary;
     SummaryItem fee_payer;
@@ -91,6 +100,9 @@ static TransactionSummary G_transaction_summary;
 
 char G_transaction_summary_title[TITLE_SIZE];
 char G_transaction_summary_text[TEXT_BUFFER_LENGTH];
+
+char* G_transaction_summary_extended_text;
+
 
 void transaction_summary_reset() {
     explicit_bzero(&G_transaction_summary, sizeof(TransactionSummary));
@@ -137,6 +149,20 @@ SummaryItem *transaction_summary_general_item() {
         }
     }
     return NULL;
+}
+
+/*
+ * Returns number of used general items
+ */
+uint8_t transaction_summary_general_item_count() {
+    uint8_t count = 0;
+    for (size_t i = 0; i < NUM_GENERAL_ITEMS; i++) {
+        SummaryItem* item = &G_transaction_summary.general[i];
+        if (is_summary_item_used(item)) {
+        count++;
+        }
+    }
+    return count;
 }
 
 #define FEE_PAYER_TITLE "Fee payer"
@@ -188,6 +214,9 @@ static int transaction_summary_update_display_for_item(const SummaryItem *item,
                                   G_transaction_summary_text,
                                   TEXT_BUFFER_LENGTH));
             break;
+        case SummaryItemExtendedString:
+            set_extended_string(item->string);
+            break;
         case SummaryItemString:
             print_string(item->string, G_transaction_summary_text, TEXT_BUFFER_LENGTH);
             break;
@@ -196,6 +225,12 @@ static int transaction_summary_update_display_for_item(const SummaryItem *item,
             break;
         case SummaryItemTimestamp:
             BAIL_IF(print_timestamp(item->i64, G_transaction_summary_text, TEXT_BUFFER_LENGTH));
+            break;
+        case SummaryItemOffchainMessageApplicationDomain:
+            BAIL_IF(encode_base58(item->application_domain,
+                                  OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH,
+                                  G_transaction_summary_text,
+                                  TEXT_BUFFER_LENGTH));
             break;
     }
     print_string(item->title, G_transaction_summary_title, TITLE_SIZE);

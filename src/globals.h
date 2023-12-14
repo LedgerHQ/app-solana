@@ -31,10 +31,24 @@
 #define MAX_DERIVATION_PATH_BUFFER_LENGTH (1 + MAX_BIP32_PATH_LENGTH * 4)
 #define TOTAL_SIGN_MESSAGE_BUFFER_LENGTH  (PACKET_DATA_SIZE + MAX_DERIVATION_PATH_BUFFER_LENGTH)
 
+#define MAX_OFFCHAIN_MESSAGE_LENGTH PACKET_DATA_SIZE
+
+// 1232 + 32 + 1 + 1 + 32 + 1 + 16
+// Assuming that only one signer is present and that message is in ASCII format
+#define OFFCHAIN_MESSAGE_HEADER_LENGTH 85
+
+// Application buffer - no content reference value
+#define OFFCHAIN_EMPTY_APPLICATION_DOMAIN 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+
 #define MAX_MESSAGE_LENGTH ROUND_TO_NEXT(TOTAL_SIGN_MESSAGE_BUFFER_LENGTH, USB_SEGMENT_SIZE)
 
-#define MAX_OFFCHAIN_MESSAGE_LENGTH    (MAX_MESSAGE_LENGTH - 1 > 1212 ? 1212 : MAX_MESSAGE_LENGTH - 1)
-#define OFFCHAIN_MESSAGE_HEADER_LENGTH 20
+// credit: https://stackoverflow.com/questions/807244/c-compiler-asserts-how-to-implement
+#define CASSERT(predicate, file) _impl_CASSERT_LINE(predicate,__LINE__,file)
+#define _impl_PASTE(a,b) a##b
+#define _impl_CASSERT_LINE(predicate, line, file) \
+    typedef char _impl_PASTE(assertion_failed_##file##_,line)[2*!!(predicate)-1];
 
 typedef enum InstructionCode {
     // DEPRECATED - Use non "16" suffixed variants below
