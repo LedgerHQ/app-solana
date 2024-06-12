@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-docker_tag=73c9e07
+docker_tag=latest
 docker_image_base=ledger-app-builder
 docker_image="${docker_image_base}:${docker_tag}"
 
@@ -19,7 +19,7 @@ fi
 target_sdk="${maybe_target_sdk:-"$last_target_sdk"}"
 
 if [[ -z "$target_sdk" ]]; then
-  echo 'cannot resolve target sdk. please pass `s`, `x` or `sp` as the first argument' 1>&2
+  echo 'cannot resolve target sdk. please pass `s`, `x`, `sp` or `stax` as the first argument' 1>&2
   exit 1
 elif [[ -z "$last_target_sdk" ]]; then
   write_last_target_sdk_mnemonic "$here" "$target_sdk"

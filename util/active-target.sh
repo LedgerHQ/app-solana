@@ -3,6 +3,7 @@
 declare -r nanos_sdk=NANOS_SDK
 declare -r nanox_sdk=NANOX_SDK
 declare -r nanosp_sdk=NANOSP_SDK
+declare -r stax_sdk=STAX_SDK
 
 sdk_mnemonic_to_bolos_variable() {
   local -r sdk_mnemonic="${1:?}"
@@ -16,6 +17,9 @@ sdk_mnemonic_to_bolos_variable() {
       ;;
     sp)
       bolos_sdk_var="$nanosp_sdk"
+      ;;
+    stax)
+      bolos_sdk_var="$stax_sdk"
       ;;
     *)
       echo "unimplemented sdk mnemonic: \`$sdk\`" 1>&2
@@ -39,7 +43,7 @@ normalize_mnemonic() {
   local -r l_target_sdk_mnemonic="$(tr '[:upper:]' '[:lower:]' <<<"$target_sdk_mnemonic")"
   local normalized_target_sdk_mnemonic=
   case "$l_target_sdk_mnemonic" in
-    s|x|sp)
+    s|x|sp|stax)
       normalized_target_sdk_mnemonic="$l_target_sdk_mnemonic"
       ;;
     "")
