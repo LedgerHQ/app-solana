@@ -503,6 +503,9 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo* info,
                                   info->body.decimals);
 
     item = transaction_summary_general_item();
+    summary_item_set_pubkey(item, "Mint", info->mint_account);
+
+    item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "From", info->src_account);
 
     item = transaction_summary_general_item();
@@ -527,6 +530,9 @@ static int print_spl_token_approve_info(const SplTokenApproveInfo* info,
                                   info->body.amount,
                                   symbol,
                                   info->body.decimals);
+
+    item = transaction_summary_general_item();
+    summary_item_set_pubkey(item, "Mint", info->mint_account);
 
     item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "From", info->token_account);
@@ -591,10 +597,8 @@ static int print_spl_token_mint_to_info(const SplTokenMintToInfo* info,
                                   symbol,
                                   info->body.decimals);
 
-    if (print_config->expert_mode) {
-        item = transaction_summary_general_item();
-        summary_item_set_pubkey(item, "From", info->mint_account);
-    }
+    item = transaction_summary_general_item();
+    summary_item_set_pubkey(item, "Mint", info->mint_account);
 
     item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "To", info->token_account);
@@ -617,6 +621,9 @@ static int print_spl_token_burn_info(const SplTokenBurnInfo* info,
                                   info->body.amount,
                                   symbol,
                                   info->body.decimals);
+
+    item = transaction_summary_general_item();
+    summary_item_set_pubkey(item, "Mint", info->mint_account);
 
     item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "From", info->token_account);
