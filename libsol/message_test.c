@@ -1,7 +1,8 @@
 #include "common_byte_strings.h"
-#include "message.c"
 #include "sol/parser.h"
+#include "sol/print_config.h"
 #include "sol/transaction_summary.h"
+#include "message.c"
 #include "util.h"
 #include <assert.h>
 #include <stdio.h>
@@ -146,6 +147,102 @@ static void process_message_body_and_sanity_check(const uint8_t* message, size_t
         assert(transaction_summary_display_item(i, DisplayFlagNone) == 0);
     }
 }
+
+/**
+ * Transfer 6 lamports with compute budget limit instruction
+ */
+void test_process_message_body_transfer_with_compute_budget_limit(){
+
+
+    uint8_t message[] = {
+    2, 0, 2,
+    5, 21, 114, 229, 47, 44, 94, 126, 102, 188, 25, 172, 108, 211, 11, 109, 105, 110, 167, 153, 207, 230, 215, 132, 84, 42, 183, 216, 183, 254, 49, 91, 92, 151, 92, 21, 68, 212, 0, 50, 152, 29, 184, 10, 237, 93, 26, 195, 28, 41, 242, 83, 160, 179, 163, 125, 22, 218, 2, 189, 250, 180, 15, 129, 237, 121, 159, 134, 35, 112, 111, 25, 35, 23, 57, 215, 23, 85, 213, 131, 83, 179, 66, 3, 70, 50, 124, 61, 59, 195, 97, 48, 196, 191, 215, 90, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    3, 6, 70, 111, 229, 33, 23, 50, 255, 236, 173, 186, 114, 195, 155, 231, 188, 140, 229, 187, 197, 247, 18, 107, 44, 67, 155, 58, 64, 0, 0, 0, 218, 136, 223, 51, 158, 165, 31, 125, 51, 95, 141, 189, 233, 28, 179, 134, 163, 220, 32, 253, 196, 249, 160, 163, 50, 179, 54, 211, 231, 31, 42, 94, 2,
+    //compute budget - unit limit
+    4, 0, 5, 2,
+    205, 171, 0, 0, // New compute budget limit
+    //system - transfer
+    3, 2, 1, 2, 12, 2, 0, 0, 0,
+    6, // Transfer 6 lamports
+    0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_sanity_check(message, sizeof(message), 5);
+}
+
+/**
+ * Transfer 6 lamports with compute budget limit and unit price instructions
+ */
+void test_process_message_body_transfer_with_compute_budget_limit_and_unit_price(){
+
+    uint8_t message[] = {
+        2, 0, 2,
+        5, 21, 114, 229, 47, 44, 94, 126, 102, 188, 25, 172, 108, 211, 11, 109, 105, 110, 167, 153, 207, 230, 215, 132, 84, 42, 183, 216, 183, 254, 49, 91, 92, 151, 92, 21, 68, 212, 0, 50, 152, 29, 184, 10, 237, 93, 26, 195, 28, 41, 242, 83, 160, 179, 163, 125, 22, 218, 2, 189, 250, 180, 15, 129, 237, 121, 159, 134, 35, 112, 111, 25, 35, 23, 57, 215, 23, 85, 213, 131, 83, 179, 66, 3, 70, 50, 124, 61, 59, 195, 97, 48, 196, 191, 215, 90, 77, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        3, 6, 70, 111, 229, 33, 23, 50, 255, 236, 173, 186, 114, 195, 155, 231, 188, 140, 229, 187, 197, 247, 18, 107, 44, 67, 155, 58, 64, 0, 0, 0, 218, 136, 223, 51, 158, 165, 31, 125, 51, 95, 141, 189, 233, 28, 179, 134, 163, 220, 32, 253, 196, 249, 160, 163, 50, 179, 54, 211, 231, 31, 42, 94, 3,
+        //compute budget - unit limit
+        4, 0, 5, 2,
+        205, 171, 0, 0, // New compute budget limit
+        4, 0, 9, 3,
+        16, 0, 0, 0, 0, 0, 0, 0, // Unit price 16 lamports
+        //system - transfer
+        3, 2, 1, 2, 12, 2, 0, 0, 0,
+        6, // Transfer 6 lamports
+        0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_sanity_check(message, sizeof(message), 6);
+
+}
+
+/*
+ * Transfer 5 lamports with additional request units instruction
+ * Should fail - RequestUnits is deprecated and not supported
+ */
+void test_process_message_body_transfer_with_request_units(){
+
+    uint8_t message[] = {
+        2, 0, 2,
+        5, 21, 114, 229, 47, 44, 94, 126, 102, 188, 25, 172, 108, 211, 11, 109, 105, 110, 167, 153, 207, 230, 215, 132, 84, 42, 183, 216, 183, 254, 49, 91, 92, 151, 92, 21, 68, 212, 0, 50, 152, 29, 184, 10, 237, 93, 26, 195, 28, 41, 242, 83, 160, 179, 163, 125, 22, 218, 2, 189, 250, 180, 15, 129, 237, 190, 59, 47, 250, 178, 1, 186, 135, 5, 102, 210, 129, 210, 83, 78, 169, 121, 6, 224, 25, 147, 92, 26, 51, 146, 176, 173, 69, 99, 246, 206, 134, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        3, 6, 70, 111, 229, 33, 23, 50, 255, 236, 173, 186, 114, 195, 155, 231, 188, 140, 229, 187, 197, 247, 18, 107, 44, 67, 155, 58, 64, 0, 0, 0, 250, 188, 80, 35, 70, 214, 185, 174, 0, 85, 72, 57, 132, 27, 182, 217, 110, 155, 200, 108, 152, 84, 26, 168, 236, 225, 222, 143, 69, 140, 60, 201, 2,
+        //compute budget - unit limit
+        4, 0, 9, 0,
+        2, 0, 0, 0, // Units (lamports) = 2
+        1, 0, 0, 0, // Additional fee = 1,
+        //system - transfer
+        3, 2, 1, 2, 12, 2, 0, 0, 0,
+        5, // Transfer 5 lamports
+        0, 0, 0, 0, 0, 0, 0
+    };
+
+    PrintConfig print_config;
+    Parser parser = { message, sizeof(message) };
+    assert(parse_message_header(&parser, &print_config.header) == 0);
+
+    transaction_summary_reset();
+    assert(process_message_body(parser.buffer, parser.buffer_length, &print_config) == 1);
+
+}
+
+void test_process_message_body_transfer_with_heap_frame(){
+
+    uint8_t message[] = {
+    2, 0, 2,
+    5, 21, 114, 229, 47, 44, 94, 126, 102, 188, 25, 172, 108, 211, 11, 109, 105, 110, 167, 153, 207, 230, 215, 132, 84, 42, 183, 216, 183, 254, 49, 91, 92, 151, 92, 21, 68, 212, 0, 50, 152, 29, 184, 10, 237, 93, 26, 195, 28, 41, 242, 83, 160, 179, 163, 125, 22, 218, 2, 189, 250, 180, 15, 129, 237, 85, 241, 243, 183, 151, 207, 142, 210, 108, 198, 224, 74, 55, 239, 133, 160, 214, 5, 194, 146, 151, 245, 221, 22, 236, 240, 44, 213, 111, 1, 175, 209, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    3, 6, 70, 111, 229, 33, 23, 50, 255, 236, 173, 186, 114, 195, 155, 231, 188, 140, 229, 187, 197, 247, 18, 107, 44, 67, 155, 58, 64, 0, 0, 0, 8, 142, 237, 31, 151, 51, 227, 223, 112, 195, 240, 42, 185, 66, 83, 129, 10, 87, 175, 124, 84, 108, 23, 194, 79, 130, 56, 226, 197, 55, 25, 151, 2,
+    //compute budget - unit limit
+    4, 0, 5, 1,
+    204, 214, 90, 29,  // Bytes 0x1D 0x5A 0xD6 0xCC
+    //system - transfer
+    3, 2, 1, 2, 12, 2, 0, 0, 0,
+    7, // Transfer 7 lamports
+    0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_sanity_check(message, sizeof(message), 4);
+
+}
+
+
 
 void test_process_message_body_nonced_stake_create_with_seed() {
     uint8_t message[] = {
@@ -1931,6 +2028,10 @@ int main() {
     test_process_message_body_stake_split_with_seed_v1_1();
     test_process_message_body_stake_split_with_seed_v1_2();
     test_process_message_body_stake_merge();
+    test_process_message_body_transfer_with_compute_budget_limit();
+    test_process_message_body_transfer_with_compute_budget_limit_and_unit_price();
+    test_process_message_body_transfer_with_request_units();
+    test_process_message_body_transfer_with_heap_frame();
 
     printf("passed\n");
     return 0;

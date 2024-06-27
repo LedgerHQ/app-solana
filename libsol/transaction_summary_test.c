@@ -1,4 +1,5 @@
 #include "common_byte_strings.h"
+#include "sol/transaction_summary.h"
 #include "transaction_summary.c"
 #include <assert.h>
 #include <stdio.h>
