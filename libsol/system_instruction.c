@@ -273,6 +273,21 @@ static int print_system_transfer_info(const SystemTransferInfo* info,
     return 0;
 }
 
+int print_system_prefund_for_split(const SystemInfo* info, const PrintConfig* print_config) {
+    if (print_config->expert_mode) {
+        const SystemTransferInfo* transfer_info = &info->transfer;
+        SummaryItem* item;
+
+        item = transaction_summary_general_item();
+        summary_item_set_amount(item, "Prefund", transfer_info->lamports);
+
+        item = transaction_summary_general_item();
+        summary_item_set_pubkey(item, "Prefunder", transfer_info->from);
+    }
+
+    return 0;
+}
+
 static int print_system_advance_nonce_account(const SystemAdvanceNonceInfo* info,
                                               const PrintConfig* print_config) {
     SummaryItem* item;

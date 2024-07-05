@@ -459,7 +459,7 @@ static int print_stake_set_lockup_info(const StakeSetLockupInfo* info,
     return 0;
 }
 
-static int print_stake_split_info(const StakeSplitInfo* info, const PrintConfig* print_config) {
+int print_stake_split_info(const StakeSplitInfo* info, const PrintConfig* print_config) {
     BAIL_IF(print_stake_split_info1(info, print_config));
     return print_stake_split_info2(info, print_config);
 }

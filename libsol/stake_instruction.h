@@ -118,6 +118,7 @@ int print_stake_info(const StakeInfo* info, const PrintConfig* print_config);
 int print_stake_initialize_info(const char* primary_title,
                                 const StakeInitializeInfo* info,
                                 const PrintConfig* print_config);
+int print_stake_split_info(const StakeSplitInfo* info, const PrintConfig* print_config);
 
 int print_stake_split_info1(const StakeSplitInfo* info, const PrintConfig* print_config);
 

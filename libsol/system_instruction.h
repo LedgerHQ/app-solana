@@ -111,6 +111,7 @@ int print_system_create_account_with_seed_info(const char* primary_title,
 int print_system_initialize_nonce_info(const char* primary_title,
                                        const SystemInitializeNonceInfo* info,
                                        const PrintConfig* print_config);
+int print_system_prefund_for_split(const SystemInfo* info, const PrintConfig* print_config);
 int print_system_allocate_with_seed_info(const char* primary_title,
                                          const SystemAllocateWithSeedInfo* info,
                                          const PrintConfig* print_config);

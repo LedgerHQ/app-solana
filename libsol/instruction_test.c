@@ -1,12 +1,42 @@
 #include "common_byte_strings.h"
 #include "instruction.h"
 #include "sol/parser.h"
+#include "spl_memo_instruction.h"
+#include "compute_budget_instruction.h"
 #include "stake_instruction.h"
 #include "system_instruction.h"
 #include "util.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+
+void test_instruction_program_id_compute_budget() {
+    Pubkey program_id;
+    memcpy(&program_id, &compute_budget_program_id, PUBKEY_SIZE);
+    Instruction instruction = {0, NULL, 0, NULL, 0};
+    {
+        MessageHeader header = {false, 0, {0, 0, 0, 1}, &program_id, NULL, 1};
+        assert(instruction_program_id(&instruction, &header) == ProgramIdComputeBudget);
+    }
+    {
+        MessageHeader header = {true, 0, {0, 0, 0, 1}, &program_id, NULL, 1};
+        assert(instruction_program_id(&instruction, &header) == ProgramIdComputeBudget);
+    }
+}
+
+void test_instruction_program_id_spl_memo() {
+    Pubkey program_id;
+    memcpy(&program_id, &spl_memo_program_id, PUBKEY_SIZE);
+    Instruction instruction = {0, NULL, 0, NULL, 0};
+    {
+        MessageHeader header = {false, 0, {0, 0, 0, 1}, &program_id, NULL, 1};
+        assert(instruction_program_id(&instruction, &header) == ProgramIdSplMemo);
+    }
+    {
+        MessageHeader header = {true, 0, {0, 0, 0, 1}, &program_id, NULL, 1};
+        assert(instruction_program_id(&instruction, &header) == ProgramIdSplMemo);
+    }
+}
 
 void test_instruction_program_id_system() {
     Pubkey program_id;
@@ -108,6 +138,44 @@ void test_static_brief_initializer_macros() {
     InstructionBrief stake_test = STAKE_IX_BRIEF(StakeDelegate);
     InstructionBrief stake_expect = {ProgramIdStake, .stake = StakeDelegate};
     assert(memcmp(&stake_test, &stake_expect, sizeof(InstructionBrief)) == 0);
+}
+
+void test_instruction_info_matches_brief_constants() {
+    {
+        InstructionInfo info = {.kind = ProgramIdSerumAssertOwner};
+        InstructionBrief brief_pass = {.program_id = ProgramIdSerumAssertOwner};
+        assert(instruction_info_matches_brief(&info, &brief_pass));
+    }
+
+    {
+        InstructionInfo info = {.kind = ProgramIdSplAssociatedTokenAccount};
+        InstructionBrief brief_pass = {.program_id = ProgramIdSplAssociatedTokenAccount};
+        assert(instruction_info_matches_brief(&info, &brief_pass));
+    }
+
+    {
+        InstructionInfo info = {.kind = ProgramIdSplMemo};
+        InstructionBrief brief_pass = {.program_id = ProgramIdSplMemo};
+        assert(instruction_info_matches_brief(&info, &brief_pass));
+    }
+}
+
+void test_instruction_compute_budget_matches_brief() {
+    InstructionInfo info = {.kind = ProgramIdComputeBudget,
+                            .compute_budget = {.kind = ComputeBudgetChangeUnitLimit,
+                                               .change_unit_price = {.units = 0xAABBCCDD}}};
+
+    {
+        InstructionBrief brief_pass = {.program_id = ProgramIdComputeBudget,
+                                       .compute_budget = ComputeBudgetChangeUnitLimit};
+        assert(instruction_info_matches_brief(&info, &brief_pass));
+    }
+
+    {
+        InstructionBrief brief_fail = {.program_id = ProgramIdComputeBudget,
+                                       .compute_budget = ComputeBudgetRequestHeapFrame};
+        assert(!instruction_info_matches_brief(&info, &brief_fail));
+    }
 }
 
 void test_instruction_info_matches_brief() {
@@ -218,6 +286,10 @@ int main() {
     test_instruction_info_matches_brief();
     test_instruction_infos_match_briefs();
     test_instruction_accounts_iterator_next();
+    test_instruction_program_id_spl_memo();
+    test_instruction_program_id_compute_budget();
+    test_instruction_info_matches_brief_constants();
+    test_instruction_compute_budget_matches_brief();
 
     printf("passed\n");
     return 0;

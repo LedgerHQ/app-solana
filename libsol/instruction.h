@@ -6,6 +6,7 @@
 #include "stake_instruction.h"
 #include "system_instruction.h"
 #include "vote_instruction.h"
+#include "compute_budget_instruction.h"
 #include <stdbool.h>
 
 enum ProgramId {
@@ -17,6 +18,7 @@ enum ProgramId {
     ProgramIdSplAssociatedTokenAccount,
     ProgramIdSplMemo,
     ProgramIdSerumAssertOwner,
+    ProgramIdComputeBudget
 };
 
 typedef struct InstructionInfo {
@@ -27,6 +29,7 @@ typedef struct InstructionInfo {
         StakeInfo stake;
         SystemInfo system;
         VoteInfo vote;
+        ComputeBudgetInfo compute_budget;
     };
 } InstructionInfo;
 
@@ -41,6 +44,7 @@ typedef struct InstructionBrief {
         enum SystemInstructionKind system;
         enum StakeInstructionKind stake;
         enum VoteInstructionKind vote;
+        enum ComputeBudgetInstructionKind compute_budget;
     };
 } InstructionBrief;
 
