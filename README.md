@@ -15,22 +15,14 @@ Current Features:
 ### For building the app
 * [Install Docker](https://docs.docker.com/get-docker/)
 * For Linux hosts, install the Ledger Nano [udev rules](https://github.com/LedgerHQ/udev-rules)
-#### Build the [Ledger App Builder](https://developers.ledger.com/docs/nano-app/build/) Docker image
-1. Clone the git repository
+#### Get the [Ledger App Builder](https://developers.ledger.com/docs/nano-app/build/) Docker image
+1. Pull the docker image
+```bash
+docker pull ghcr.io/ledgerhq/ledger-app-builder/ledger-app-builder
 ```
-git clone https://github.com/LedgerHQ/ledger-app-builder.git
-```
-2. Change directories
-```
-cd ledger-app-builder
-```
-3. Checkout the target commit
-```
-git checkout 73c9e07
-```
-4. Build the image
-```
-docker build -t ledger-app-builder:73c9e07 .
+2. Tag the docker image
+```bash
+docker image tag ghcr.io/ledgerhq/ledger-app-builder/ledger-app-builder ledger-app-builder
 ```
   * If permissions errors are encountered, ensure that your user is in the `docker`
 group and that the session has been restarted
@@ -93,6 +85,7 @@ from clean and clean must be run _before_ switching
 |s|Nano S|
 |x|Nano X|
 |sp|Nano S+|
+|stax|Stax|
 
 ```bash
 ./docker-make <TARGET_SDK>
