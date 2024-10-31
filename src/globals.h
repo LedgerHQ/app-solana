@@ -49,7 +49,8 @@ typedef enum InstructionCode {
     InsGetAppConfiguration = 0x04,
     InsGetPubkey = 0x05,
     InsSignMessage = 0x06,
-    InsSignOffchainMessage = 0x07
+    InsSignOffchainMessage = 0x07,
+    InsTrustedNameGetChallenge = 0x20,
 } InstructionCode;
 
 extern volatile bool G_called_from_swap;
