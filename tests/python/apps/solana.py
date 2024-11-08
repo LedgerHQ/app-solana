@@ -1,9 +1,13 @@
-from typing import List, Generator
+from typing import List, Generator, Optional
 from enum import IntEnum
 from contextlib import contextmanager
 
 from ragger.backend.interface import BackendInterface, RAPDU
+from ragger.firmware import Firmware
+from ragger.error import ExceptionRAPDU
 
+from .solana_tlv import FieldTag, format_tlv
+from .solana_keychain import Key, sign_data
 
 class INS(IntEnum):
     # DEPRECATED - Use non "16" suffixed variants below
@@ -15,6 +19,8 @@ class INS(IntEnum):
     INS_GET_PUBKEY = 0x05
     INS_SIGN_MESSAGE = 0x06
     INS_SIGN_OFFCHAIN_MESSAGE = 0x07
+    INS_GET_CHALLENGE = 0x20
+    INS_TRUSTED_INFO = 0x21
 
 
 CLA = 0xE0
@@ -69,13 +75,101 @@ def _extend_and_serialize_multiple_derivations_paths(derivations_paths: List[byt
         serialized += derivations_path
     return serialized
 
+class StatusWord(IntEnum):
+    OK = 0x9000
+    ERROR_NO_INFO = 0x6a00
+    INVALID_DATA = 0x6a80
+    INSUFFICIENT_MEMORY = 0x6a84
+    INVALID_INS = 0x6d00
+    INVALID_P1_P2 = 0x6b00
+    CONDITION_NOT_SATISFIED = 0x6985
+    REF_DATA_NOT_FOUND = 0x6a88
+    EXCEPTION_OVERFLOW = 0x6807
+    NOT_IMPLEMENTED = 0x911c
+
+class PKIClient:
+    _CLA: int = 0xB0
+    _INS: int = 0x06
+
+    def __init__(self, client: BackendInterface) -> None:
+        self._client = client
+
+    def send_certificate(self, payload: bytes) -> RAPDU:
+        try:
+            response = self.send_raw(payload)
+            assert response.status == StatusWord.OK
+        except ExceptionRAPDU as err:
+            if err.status == StatusWord.NOT_IMPLEMENTED:
+                print("Ledger-PKI APDU not yet implemented. Legacy path will be used")
+
+    def send_raw(self, payload: bytes) -> RAPDU:
+        header = bytearray()
+        header.append(self._CLA)
+        header.append(self._INS)
+        header.append(0x04) # PubKeyUsage = 0x04
+        header.append(0x00)
+        header.append(len(payload))
+        return self._client.exchange_raw(header + payload)
+
 
 class SolanaClient:
     client: BackendInterface
 
     def __init__(self, client: BackendInterface):
         self._client = client
+        self._pki_client: Optional[PKIClient] = None
+        if self._client.firmware != Firmware.NANOS:
+            # LedgerPKI not supported on Nanos
+            self._pki_client = PKIClient(self._client)
 
+    def provide_trusted_name(self,
+                             source_contract: bytes,
+                             trusted_name: bytes,
+                             address: bytes,
+                             chain_id: int,
+                             challenge: Optional[int] = None):
+        
+        payload = format_tlv(FieldTag.TAG_STRUCTURE_TYPE, 3)
+        payload += format_tlv(FieldTag.TAG_VERSION, 2)
+        payload += format_tlv(FieldTag.TAG_TRUSTED_NAME_TYPE, 0x06)
+        payload += format_tlv(FieldTag.TAG_TRUSTED_NAME_SOURCE, 0x06)
+        payload += format_tlv(FieldTag.TAG_TRUSTED_NAME, trusted_name)
+        payload += format_tlv(FieldTag.TAG_CHAIN_ID, chain_id)
+        payload += format_tlv(FieldTag.TAG_ADDRESS, address)
+        payload += format_tlv(FieldTag.TAG_TRUSTED_NAME_SOURCE_CONTRACT, source_contract)
+        if challenge is not None:
+            payload += format_tlv(FieldTag.TAG_CHALLENGE, challenge)
+        payload += format_tlv(FieldTag.TAG_SIGNER_KEY_ID, 0)  # test key
+        payload += format_tlv(FieldTag.TAG_SIGNER_ALGO, 1)  # secp256k1
+        payload += format_tlv(FieldTag.TAG_DER_SIGNATURE,
+                              sign_data(Key.TRUSTED_NAME, payload))
+               
+        # send PKI certificate
+        if self._pki_client is None:
+            print(f"Ledger-PKI Not supported on '{self._client.firmware.name}'")
+        else:
+            # pylint: disable=line-too-long
+            if self._client.firmware == Firmware.NANOSP:
+                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F65340101350103154630440220328886305590C895D119105849A87835BF531B26E646B815E0E8A5528DF480950220155747BAF14A26870B09622330F24DD120EB1AE1662C4A734E73C20395892F48"  # noqa: E501
+            elif self._client.firmware == Firmware.NANOX:
+                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F6534010135010215463044022034B002268EA97826A44E2704514CB0F8B70353DE4D465F50116A5CB3131E3C1E02202387F059A6F701361A960DB61D5749F25EE390C505A09DD4CBD868A1C4042A1C"  # noqa: E501
+            elif self._client.firmware == Firmware.STAX:
+                cert_apdu = "01010102010111040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F65340101350104154730450221009DCD14004A1C6F8A6A56F91FD253865F255E83FD316CB3E6B9AF585B12FBD78A02206DFA969336E82C93C1F2EF863CFAC19F88ECE1F38C900791FFFD46B9C9E02279"  # noqa: E501
+            elif self._client.firmware == Firmware.FLEX:
+                cert_apdu = "01010102010111040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F6534010135010515473045022100A35942AD66FEBD1899C52BB3EE3A5CB3802C4C2BE6C6521EB590D32ADC152E380220210F7BAB9A62501134D513CFD127A72BA1EB0D9F956E3EC7E553BF460F505810"  # noqa: E501
+            # pylint: enable=line-too-long
+
+            self._pki_client.send_certificate(bytes.fromhex(cert_apdu))   
+        
+        # send TLV trusted info
+        res: RAPDU = self._client.exchange(CLA, INS.INS_TRUSTED_INFO, P1_NON_CONFIRM, P2_NONE, payload)
+        assert res.status == StatusWord.OK
+
+    def get_challenge(self) -> bytes:
+        challenge: RAPDU = self._client.exchange(CLA, INS.INS_GET_CHALLENGE,P1_NON_CONFIRM, P2_NONE)
+        
+        assert challenge.status == StatusWord.OK                                         
+        return challenge.data
 
     def get_public_key(self, derivation_path: bytes) -> bytes:
         public_key: RAPDU = self._client.exchange(CLA, INS.INS_GET_PUBKEY,

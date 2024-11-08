@@ -61,7 +61,7 @@ VARIANT_PARAM = COIN
 VARIANT_VALUES = solana
 
 # Enabling DEBUG flag will enable PRINTF and disable optimizations
-#DEBUG = 1
+DEBUG = 1
 
 ########################################
 #     Application custom permissions   #
@@ -104,6 +104,12 @@ ifneq ($(WITH_LIBSOL),0)
     CFLAGS       += -Ilibsol/include
     DEFINES      += HAVE_SNPRINTF_FORMAT_U
     DEFINES      += NDEBUG
+endif
+
+# Trusted Name 
+TRUSTED_NAME_TEST_KEY ?= 0
+ifneq ($(TRUSTED_NAME_TEST_KEY),0)
+  DEFINES += HAVE_TRUSTED_NAME_TEST_KEY
 endif
 
 include $(BOLOS_SDK)/Makefile.standard_app

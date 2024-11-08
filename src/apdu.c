@@ -1,5 +1,6 @@
 #include "apdu.h"
 #include "utils.h"
+#include "handle_provide_trusted_info.h"
 
 /**
  * Deserialize APDU into ApduCommand structure.
@@ -65,7 +66,9 @@ int apdu_handle_message(const uint8_t* apdu_message,
         case InsGetAppConfiguration:
         case InsGetPubkey:
         case InsSignMessage:
-        case InsSignOffchainMessage: {
+        case InsSignOffchainMessage:
+        case InsTrustedInfoGetChallenge:
+        case InsTrustedInfoProvideInfo: {
             // must at least hold a full modern header
             if (apdu_message_len < OFFSET_CDATA) {
                 return ApduReplySolanaInvalidMessageSize;
@@ -99,7 +102,8 @@ int apdu_handle_message(const uint8_t* apdu_message,
     const bool first_data_chunk = !(header.p2 & P2_EXTEND);
 
     if (header.instruction == InsDeprecatedGetAppConfiguration ||
-        header.instruction == InsGetAppConfiguration) {
+        header.instruction == InsGetAppConfiguration || 
+        header.instruction == InsTrustedInfoGetChallenge) {
         // return early if no data is expected for the command
         explicit_bzero(apdu_command, sizeof(ApduCommand));
         apdu_command->state = ApduStatePayloadComplete;
@@ -122,12 +126,13 @@ int apdu_handle_message(const uint8_t* apdu_message,
         } else {
             explicit_bzero(apdu_command, sizeof(ApduCommand));
         }
-    } else {
+    }
+    else {
         explicit_bzero(apdu_command, sizeof(ApduCommand));
     }
 
-    // read derivation path
-    if (first_data_chunk) {
+    if ((first_data_chunk) && (header.instruction != InsTrustedInfoProvideInfo)) {
+        // read derivation path 
         if (!header.deprecated_host && header.instruction != InsGetPubkey) {
             if (!header.data_length) {
                 return ApduReplySolanaInvalidMessageSize;
@@ -143,9 +148,9 @@ int apdu_handle_message(const uint8_t* apdu_message,
             apdu_command->num_derivation_paths = 1;
         }
         const int ret = read_derivation_path(header.data,
-                                             header.data_length,
-                                             apdu_command->derivation_path,
-                                             &apdu_command->derivation_path_length);
+                                            header.data_length,
+                                            apdu_command->derivation_path,
+                                            &apdu_command->derivation_path_length);
         if (ret) {
             return ret;
         }
@@ -170,17 +175,23 @@ int apdu_handle_message(const uint8_t* apdu_message,
         if (header.data_length != data_len) {
             return ApduReplySolanaInvalidMessageSize;
         }
-    }
-
+    } 
     if (header.data) {
-        if (apdu_command->message_length + header.data_length > MAX_MESSAGE_LENGTH) {
-            return ApduReplySolanaInvalidMessageSize;
+        /*if (header.instruction == InsTrustedInfoProvideInfo) {
+            const int ret = handle_provide_trusted_info(first_data_chunk, header.data, header.data_length);
+            if (ret != 0)
+                return ApduReplySolanaInvalidTrustedInfo;   
         }
+        else*/ {
+            if (apdu_command->message_length + header.data_length > MAX_MESSAGE_LENGTH) {
+                return ApduReplySolanaInvalidMessageSize;
+            }
 
-        memcpy(apdu_command->message + apdu_command->message_length,
-               header.data,
-               header.data_length);
-        apdu_command->message_length += header.data_length;
+            memcpy(apdu_command->message + apdu_command->message_length,
+                header.data,
+                header.data_length);
+            apdu_command->message_length += header.data_length;
+        }
     } else if (header.instruction != InsDeprecatedGetPubkey && header.instruction != InsGetPubkey) {
         return ApduReplySolanaInvalidMessageSize;
     }

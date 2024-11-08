@@ -484,6 +484,8 @@ static int print_spl_token_initialize_multisig_info(const char* primary_title,
     return 0;
 }
 
+extern Pubkey g_trusted_token_account_owner_pubkey;
+
 int print_spl_token_transfer_info(const SplTokenTransferInfo* info,
                                   const PrintConfig* print_config,
                                   bool primary) {
@@ -501,6 +503,9 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo* info,
                                   info->body.amount,
                                   symbol,
                                   info->body.decimals);
+
+    item = transaction_summary_general_item();
+    summary_item_set_pubkey(item, "To", &g_trusted_token_account_owner_pubkey);
 
     item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "Token address", info->mint_account);

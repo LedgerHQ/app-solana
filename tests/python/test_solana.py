@@ -202,3 +202,26 @@ class TestOffchainMessageSigning:
         rapdu: RAPDU = sol.get_async_response()
         assert rapdu.status == ErrorType.USER_CANCEL
 
+# Values used across Trusted Name test
+CHAIN_ID = 101
+ADDRESS = bytes.fromhex("606501b302e1801892f80a2979f585f8855d0f2034790a2455f744fac503d7b5")
+TRUSTED_NAME = bytes.fromhex("276497ba0bb8659172b72edd8c66e18f561764d9c86a610a3a7e0f79c0baf9db")
+SOURCE_CONTRACT = bytes.fromhex("c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61")
+
+class TestTrustedName:
+
+    def test_solana_trusted_name(self, backend, scenario_navigator):
+        sol = SolanaClient(backend)
+
+        challenge = sol.get_challenge()
+
+        sol.provide_trusted_name(SOURCE_CONTRACT,
+                                 TRUSTED_NAME,
+                                 ADDRESS,
+                                 CHAIN_ID,
+                                 challenge=challenge)
+
+
+
+
+                

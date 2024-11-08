@@ -20,6 +20,7 @@
 #include "handle_sign_message.h"
 #include "handle_sign_offchain_message.h"
 #include "handle_get_challenge.h"
+#include "handle_provide_trusted_info.h"
 #include "apdu.h"
 #include "ui_api.h"
 
@@ -88,9 +89,13 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
             handle_sign_offchain_message(flags, tx);
             break;
 
-        case InsTrustedNameGetChallenge:
+        case InsTrustedInfoGetChallenge:
             handle_get_challenge(tx);
             break;
+            
+        case InsTrustedInfoProvideInfo:
+           handle_provide_trusted_info(); 
+           THROW(ApduReplySuccess);
 
         default:
             THROW(ApduReplyUnimplementedInstruction);
