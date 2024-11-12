@@ -10,9 +10,7 @@
 
 #include "sol/printer.h"
 
-#ifdef HAVE_LEDGER_PKI
 #include "os_pki.h"
-#endif
 
 #include "ledger_pki.h"
 
@@ -153,41 +151,7 @@ static s_tlv_payload g_tlv_payload = {0};
 static s_trusted_name_info g_trusted_name_info = {0};
 
 Pubkey g_trusted_token_account_owner_pubkey = {0};
-
-/**
- * Checks if a trusted name matches the given parameters
- *
- * Does not care about the trusted name source for now.
- * Always wipes the content of \ref g_trusted_name_info
- *
- * @param[in] types_count number of given trusted name types
- * @param[in] types given trusted name types
- * @param[in] chain_id given chain ID
- * @param[in] addr given address
- * @return whether there is or not
- */
-bool has_trusted_name(uint8_t types_count,
-                      const uint64_t *chain_id,
-                      const uint8_t *addr) {
-    bool ret = false;
-
-    (void) types_count;
-    (void) addr;
-
-    if (g_trusted_name_info.rcv_flags != 0) {
-        switch (g_trusted_name_info.struct_version) {
-            case 2:
-                if (*chain_id == g_trusted_name_info.chain_id) {
-                    ret = true;
-                }
-                break;
-            default:
-                ret = false;
-        }
-        explicit_bzero(&g_trusted_name_info, sizeof(g_trusted_name_info));
-    }
-    return ret;
-}
+bool g_trusted_token_account_owner_pubkey_set = false;
 
 /**
  * Get uint from tlv data
@@ -526,7 +490,7 @@ static bool verify_signature(const s_sig_ctx *sig_ctx) {
     uint8_t hash[INT256_LENGTH];
     cx_err_t error = CX_INTERNAL_ERROR;
 
-#ifdef HAVE_TRUSTED_NAME_TEST_KEY
+#ifdef HAVE_TRUSTED_NAME_TEST
     e_key_id valid_key_id = KEY_ID_TEST;
 #else
     e_key_id valid_key_id = KEY_ID_PROD;
@@ -544,11 +508,7 @@ static bool verify_signature(const s_sig_ctx *sig_ctx) {
     CX_CHECK(check_signature_with_pubkey("Trusted Name",
                                          hash,
                                          sizeof(hash),
-                                         TRUSTED_NAME_PUB_KEY,
-                                         sizeof(TRUSTED_NAME_PUB_KEY),
-#ifdef HAVE_LEDGER_PKI
                                          CERTIFICATE_PUBLIC_KEY_USAGE_TRUSTED_NAME,
-#endif
                                          (uint8_t *) (sig_ctx->input_sig),
                                          sig_ctx->input_sig_size));
 
@@ -854,13 +814,17 @@ void handle_provide_trusted_info(void) {
     // everything has been received
     if (g_tlv_payload.size == g_tlv_payload.expected_size) {
         g_trusted_name_info.owner = g_trusted_token_account_owner_pubkey.data;
+        g_trusted_token_account_owner_pubkey_set = true;
         if (!parse_tlv(&g_tlv_payload, &g_trusted_name_info, &sig_ctx) ||
             !verify_signature(&sig_ctx)) {
             free_payload(&g_tlv_payload);
             roll_challenge();  // prevent brute-force guesses
             g_trusted_name_info.rcv_flags = 0;
+            memset(g_trusted_token_account_owner_pubkey.data, 0, sizeof(g_trusted_token_account_owner_pubkey.data));
+            g_trusted_token_account_owner_pubkey_set = false;
             THROW(ApduReplySolanaInvalidTrustedInfo);
         }
+#ifdef DEBUG
         {   
             char token_account[45];
             char owner[45];
@@ -870,6 +834,7 @@ void handle_provide_trusted_info(void) {
 
             PRINTF("Token account : %s owned by %s\n", token_account,owner);
         }
+#endif // DEBUG
         free_payload(&g_tlv_payload);
         roll_challenge();  // prevent replays
         THROW(ApduReplySuccess);

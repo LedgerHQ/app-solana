@@ -106,10 +106,12 @@ ifneq ($(WITH_LIBSOL),0)
     DEFINES      += NDEBUG
 endif
 
-# Trusted Name 
-TRUSTED_NAME_TEST_KEY ?= 0
-ifneq ($(TRUSTED_NAME_TEST_KEY),0)
-  DEFINES += HAVE_TRUSTED_NAME_TEST_KEY
+#######################################
+# Trusted Name Test Mode              #
+#######################################
+TRUSTED_NAME_TEST ?= 0
+ifneq ($(TRUSTED_NAME_TEST),0)
+  DEFINES += HAVE_TRUSTED_NAME_TEST
 endif
 
 include $(BOLOS_SDK)/Makefile.standard_app

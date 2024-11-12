@@ -177,21 +177,14 @@ int apdu_handle_message(const uint8_t* apdu_message,
         }
     } 
     if (header.data) {
-        /*if (header.instruction == InsTrustedInfoProvideInfo) {
-            const int ret = handle_provide_trusted_info(first_data_chunk, header.data, header.data_length);
-            if (ret != 0)
-                return ApduReplySolanaInvalidTrustedInfo;   
+        if (apdu_command->message_length + header.data_length > MAX_MESSAGE_LENGTH) {
+            return ApduReplySolanaInvalidMessageSize;
         }
-        else*/ {
-            if (apdu_command->message_length + header.data_length > MAX_MESSAGE_LENGTH) {
-                return ApduReplySolanaInvalidMessageSize;
-            }
-
-            memcpy(apdu_command->message + apdu_command->message_length,
-                header.data,
-                header.data_length);
-            apdu_command->message_length += header.data_length;
-        }
+        
+        memcpy(apdu_command->message + apdu_command->message_length,
+            header.data,
+            header.data_length);
+        apdu_command->message_length += header.data_length;
     } else if (header.instruction != InsDeprecatedGetPubkey && header.instruction != InsGetPubkey) {
         return ApduReplySolanaInvalidMessageSize;
     }

@@ -10,8 +10,11 @@ static uint32_t challenge;
  * Generate a new challenge from the Random Number Generator
  */
 void roll_challenge(void) {
-    challenge = cx_rng_u32();
+#ifdef HAVE_TRUSTED_NAME_TEST
     challenge = 0xdeadbeef;
+#else
+    challenge = cx_rng_u32();
+#endif
 }
 
 /**

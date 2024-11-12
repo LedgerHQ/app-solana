@@ -204,9 +204,12 @@ class TestOffchainMessageSigning:
 
 # Values used across Trusted Name test
 CHAIN_ID = 101
+# Token account address owner "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE"
 ADDRESS = bytes.fromhex("606501b302e1801892f80a2979f585f8855d0f2034790a2455f744fac503d7b5")
-TRUSTED_NAME = bytes.fromhex("276497ba0bb8659172b72edd8c66e18f561764d9c86a610a3a7e0f79c0baf9db")
-SOURCE_CONTRACT = bytes.fromhex("c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61")
+# Token account address "EQ96zptNAWwM23m5v2ByChCMTFu6zUmJgRtUrQV1uYNM"
+TRUSTED_NAME = bytes.fromhex("c71573813ea96479a79e579af14646413602b9b3dcbdc51cbf8e064b5685ed12")
+# SPL token address (JUP Token = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN")
+SOURCE_CONTRACT = bytes.fromhex("0479d9c7cc1035de7211f99eb48c09d70b2bdf5bdf9e2e56b8a1fbb5a2ea3327")
 
 class TestTrustedName:
 
@@ -220,6 +223,18 @@ class TestTrustedName:
                                  ADDRESS,
                                  CHAIN_ID,
                                  challenge=challenge)
+        
+        from_public_key = sol.get_public_key(SOL_PACKED_DERIVATION_PATH)
+
+        # Create message
+        message: bytes = bytes.fromhex("0100030621a36fe74e1234c35e62bfd700fd247b92c4d4e0e538401ac51f5c4ae97657a7276497ba0bb8659172b72edd8c66e18f561764d9c86a610a3a7e0f79c0baf9dbc71573813ea96479a79e579af14646413602b9b3dcbdc51cbf8e064b5685ed120479d9c7cc1035de7211f99eb48c09d70b2bdf5bdf9e2e56b8a1fbb5a2ea332706ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a938b19525b109c0e2517df8786389e33365afe2dc6bfabeb65458fd24a1ab5b13000000000000000000000000000000000000000000000000000000000000000001040501030205000a0c020000000000000006")
+        
+        with sol.send_async_sign_message(SOL_PACKED_DERIVATION_PATH, message):
+            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH)
+
+        signature: bytes = sol.get_async_response().data
+        verify_signature(from_public_key, message, signature)
+        
 
 
 
