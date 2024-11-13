@@ -1,6 +1,7 @@
 #include "apdu.h"
 #include "ledger_pki.h"
-#include "cx.h"
+#include "cx.h" 
+#ifdef HAVE_LEDGER_PKI
 #include "os_pki.h"
 
 #define KEY_USAGE_STR(x)                                                               \
@@ -56,3 +57,21 @@ int check_signature_with_pubkey(const char *tag,
 end:
     return error;
 }
+
+#else  // HAVE_LEDGER_PKI
+int check_signature_with_pubkey(const char *tag,
+                                uint8_t *buffer,
+                                const uint8_t bufLen,
+                                const uint8_t keyUsageExp,
+                                uint8_t *signature,
+                                const uint8_t sigLen) {
+    UNUSED(tag);
+    UNUSED(buffer);
+    UNUSED(bufLen);
+    UNUSED(keyUsageExp);
+    UNUSED(signature);
+    UNUSED(sigLen);
+    PRINTF("Error: Ledger PKI not available\n");
+    return CX_INTERNAL_ERROR;
+}
+#endif  // HAVE_LEDGER_PKI

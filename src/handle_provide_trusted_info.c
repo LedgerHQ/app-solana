@@ -10,9 +10,15 @@
 
 #include "sol/printer.h"
 
+#ifdef HAVE_LEDGER_PKI
 #include "os_pki.h"
+#endif
 
 #include "ledger_pki.h"
+
+#define MAX_ADDRESS_LENGTH 32
+#define TYPE_ADDRESS 0x06
+#define TYPE_DYN_RESOLVER 0x06
 
 #define STRUCT_TYPE_TRUSTED_NAME 0x03
 #define ALGO_SECP256K1           1
@@ -504,7 +510,7 @@ static bool verify_signature(const s_sig_ctx *sig_ctx) {
 
     CX_CHECK(
         cx_hash_no_throw((cx_hash_t *) &sig_ctx->hash_ctx, CX_LAST, NULL, 0, hash, INT256_LENGTH));
-
+#ifdef HAVE_LEDGER_PKI
     CX_CHECK(check_signature_with_pubkey("Trusted Name",
                                          hash,
                                          sizeof(hash),
@@ -513,6 +519,10 @@ static bool verify_signature(const s_sig_ctx *sig_ctx) {
                                          sig_ctx->input_sig_size));
 
     ret_code = true;
+#else // HAVE_LEDGER_PKI
+    PRINTF("Error: Ledger PKI not available\n");
+    ret_code = false;
+#endif
 end:
     return ret_code;
 }
