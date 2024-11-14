@@ -14,7 +14,6 @@
 
 #include "ledger_pki.h"
 
-#define MAX_ADDRESS_LENGTH 32
 #define TYPE_ADDRESS 0x06
 #define TYPE_DYN_RESOLVER 0x06
 
@@ -126,9 +125,9 @@ typedef struct {
     uint32_t rcv_flags;
     bool valid;
     uint8_t struct_version;
-    uint8_t token_account[MAX_ADDRESS_LENGTH];
+    uint8_t token_account[MAX_ADDRESS_LENGTH + 1];
     uint8_t* owner;
-    uint8_t spl_token[MAX_ADDRESS_LENGTH];
+    uint8_t spl_token[MAX_ADDRESS_LENGTH + 1];
     uint64_t chain_id;
     uint8_t name_type;
     uint8_t name_source;
@@ -154,7 +153,7 @@ typedef struct {
 static s_tlv_payload g_tlv_payload = {0};
 static s_trusted_name_info g_trusted_name_info = {0};
 
-Pubkey g_trusted_token_account_owner_pubkey = {0};
+uint8_t g_trusted_token_account_owner_pubkey[MAX_ADDRESS_LENGTH + 1] = {0};
 bool g_trusted_token_account_owner_pubkey_set = false;
 
 /**
@@ -390,7 +389,7 @@ static bool handle_address(const s_tlv_data *data,
         return false;
     }
     memcpy(trusted_name_info->owner, data->value, data->length);
-    //trusted_name_info->owner[data->length] = '\0';
+    trusted_name_info->owner[data->length] = '\0';
     return true;
 }
 
@@ -508,7 +507,7 @@ static bool verify_signature(const s_sig_ctx *sig_ctx) {
 
     CX_CHECK(
         cx_hash_no_throw((cx_hash_t *) &sig_ctx->hash_ctx, CX_LAST, NULL, 0, hash, INT256_LENGTH));
-        
+
     CX_CHECK(check_signature_with_pubkey("Trusted Name",
                                          hash,
                                          sizeof(hash),
@@ -817,28 +816,20 @@ void handle_provide_trusted_info(void) {
 
     // everything has been received
     if (g_tlv_payload.size == g_tlv_payload.expected_size) {
-        g_trusted_name_info.owner = g_trusted_token_account_owner_pubkey.data;
+        g_trusted_name_info.owner = g_trusted_token_account_owner_pubkey;
         g_trusted_token_account_owner_pubkey_set = true;
         if (!parse_tlv(&g_tlv_payload, &g_trusted_name_info, &sig_ctx) ||
             !verify_signature(&sig_ctx)) {
             free_payload(&g_tlv_payload);
             roll_challenge();  // prevent brute-force guesses
             g_trusted_name_info.rcv_flags = 0;
-            memset(g_trusted_token_account_owner_pubkey.data, 0, sizeof(g_trusted_token_account_owner_pubkey.data));
+            memset(g_trusted_token_account_owner_pubkey, 0, sizeof(g_trusted_token_account_owner_pubkey));
             g_trusted_token_account_owner_pubkey_set = false;
             THROW(ApduReplySolanaInvalidTrustedInfo);
         }
-#ifdef DEBUG
-        {   
-            char token_account[45];
-            char owner[45];
-
-            encode_base58(g_trusted_name_info.owner, 32, owner, sizeof(owner));
-            encode_base58(g_trusted_name_info.token_account, 32, token_account, sizeof(token_account));
-
-            PRINTF("Token account : %s owned by %s\n", token_account,owner);
-        }
-#endif // DEBUG
+        
+        PRINTF("Token account : %s owned by %s\n", g_trusted_name_info.token_account, g_trusted_token_account_owner_pubkey);
+        
         free_payload(&g_tlv_payload);
         roll_challenge();  // prevent replays
         THROW(ApduReplySuccess);

@@ -204,12 +204,12 @@ class TestOffchainMessageSigning:
 
 # Values used across Trusted Name test
 CHAIN_ID = 101
-# Token account address owner "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE"
-ADDRESS = bytes.fromhex("606501b302e1801892f80a2979f585f8855d0f2034790a2455f744fac503d7b5")
-# Token account address "EQ96zptNAWwM23m5v2ByChCMTFu6zUmJgRtUrQV1uYNM"
-TRUSTED_NAME = bytes.fromhex("c71573813ea96479a79e579af14646413602b9b3dcbdc51cbf8e064b5685ed12")
-# SPL token address (JUP Token = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN")
-SOURCE_CONTRACT = bytes.fromhex("0479d9c7cc1035de7211f99eb48c09d70b2bdf5bdf9e2e56b8a1fbb5a2ea3327")
+# Token account address owner
+ADDRESS = "7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE"
+# Token account address
+TRUSTED_NAME = "EQ96zptNAWwM23m5v2ByChCMTFu6zUmJgRtUrQV1uYNM"
+# SPL token address (JUP Token)
+SOURCE_CONTRACT = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
 
 class TestTrustedName:
 
@@ -218,9 +218,9 @@ class TestTrustedName:
 
         challenge = sol.get_challenge()
 
-        sol.provide_trusted_name(SOURCE_CONTRACT,
-                                 TRUSTED_NAME,
-                                 ADDRESS,
+        sol.provide_trusted_name(bytes(SOURCE_CONTRACT, 'utf-8'),
+                                 bytes(TRUSTED_NAME, 'utf-8'),  
+                                 bytes(ADDRESS, 'utf-8'),
                                  CHAIN_ID,
                                  challenge=challenge)
         
