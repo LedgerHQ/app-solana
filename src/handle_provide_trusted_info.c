@@ -48,7 +48,7 @@ typedef enum {
 /*
 trusted_name_descriptor =   tlv(TAG_STRUCTURE_TYPE, u8(TYPE_TRUSTED_NAME))  3 bytes +
                         &   tlv(TAG_VERSION, u8(0x02))                      3 bytes + 
-                        &   tlv(TAG_TRUSTED_NAME_TYPE, 0x04)                3 bytes +
+                        &   tlv(TAG_TRUSTED_NAME_TYPE, 0x06)                3 bytes +
                         &   tlv(TAG_TRUSTED_NAME_SOURCE, 0x06)              3 bytes +
                         &   tlv(TAG_TRUSTED_NAME, trusted_name)             2 + 44 bytes +    
                         &   tlv(TAG_CHAIN_ID, chain_id)                     2 + 8 bytes +

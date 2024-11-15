@@ -36,8 +36,8 @@ APPNAME = "Solana"
 
 # Application version
 APPVERSION_M = 1
-APPVERSION_N = 5
-APPVERSION_P = 5
+APPVERSION_N = 6
+APPVERSION_P = 0
 APPVERSION = "$(APPVERSION_M).$(APPVERSION_N).$(APPVERSION_P)"
 
 # Application source files
