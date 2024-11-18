@@ -92,10 +92,10 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
         case InsTrustedInfoGetChallenge:
             handle_get_challenge(tx);
             break;
-            
+
         case InsTrustedInfoProvideInfo:
-           handle_provide_trusted_info(); 
-           THROW(ApduReplySuccess);
+            handle_provide_trusted_info();
+            THROW(ApduReplySuccess);
 
         default:
             THROW(ApduReplyUnimplementedInstruction);

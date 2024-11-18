@@ -1,6 +1,6 @@
 #include "apdu.h"
 #include "ledger_pki.h"
-#include "cx.h" 
+#include "cx.h"
 #include "os_pki.h"
 
 #define KEY_USAGE_STR(x)                                                               \
@@ -48,7 +48,10 @@ int check_signature_with_pubkey(const char *tag,
             goto end;
         }
     } else {
-        PRINTF("[%s] ********** Issue when loading PKI certificate, cannot check signature **********\n", tag);
+        PRINTF(
+            "[%s] ********** Issue when loading PKI certificate, cannot check signature "
+            "**********\n",
+            tag);
         error = ApduReplySolanaInvalidTrustedInfo;
         goto end;
     }

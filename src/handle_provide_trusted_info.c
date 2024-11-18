@@ -14,7 +14,7 @@
 
 #include "ledger_pki.h"
 
-#define TYPE_ADDRESS 0x06
+#define TYPE_ADDRESS      0x06
 #define TYPE_DYN_RESOLVER 0x06
 
 #define STRUCT_TYPE_TRUSTED_NAME 0x03
@@ -47,17 +47,17 @@ typedef enum {
 
 /*
 trusted_name_descriptor =   tlv(TAG_STRUCTURE_TYPE, u8(TYPE_TRUSTED_NAME))  3 bytes +
-                        &   tlv(TAG_VERSION, u8(0x02))                      3 bytes + 
+                        &   tlv(TAG_VERSION, u8(0x02))                      3 bytes +
                         &   tlv(TAG_TRUSTED_NAME_TYPE, 0x06)                3 bytes +
                         &   tlv(TAG_TRUSTED_NAME_SOURCE, 0x06)              3 bytes +
-                        &   tlv(TAG_TRUSTED_NAME, trusted_name)             2 + 44 bytes +    
+                        &   tlv(TAG_TRUSTED_NAME, trusted_name)             2 + 44 bytes +
                         &   tlv(TAG_CHAIN_ID, chain_id)                     2 + 8 bytes +
                         &   tlv(TAG_ADDRESS, address)                       2 + 44 bytes +
                         &   tlv(TAG_SOURCE_CONTRACT, source_contract)*      2 + 44 bytes +
                         &   tlv(TAG_CHALLENGE, challenge)                   2 + 4 bytes +
                         &   tlv(TAG_SIGNER_KEY_ID, key_id)                  2 + 2 bytes +
                         &   tlv(TAG_SIGNER_ALGORITHM, signature_algorithm)  2 + 1 byte +
-                        &   tlv(TAG_SIGNATURE, signature(~,~))              2 + 72 bytes => Total = 247 bytes
+                        &   tlv(TAG_SIGNATURE, signature(~,~))              2 + 72 bytes => 247
 
 T  L  V
 01 01 03                                                                TAG_STRUCTURE_TYPE
@@ -65,13 +65,13 @@ T  L  V
 70 01 06                                                                TAG_TRUSTED_NAME_TYPE
 71 01 06                                                                TAG_TRUSTED_NAME_SOURCE
 20 20 276497ba0bb8659172b72edd8c66e18f561764d9c86a610a3a7e0f79c0baf9db  TAG_TRUSTED_NAME
-23 01 65                                                                TAG_CHAIN_ID     
+23 01 65                                                                TAG_CHAIN_ID
 22 20 606501b302e1801892f80a2979f585f8855d0f2034790a2455f744fac503d7b5  TAG_ADDRESS
 73 20 c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61  TAG_SOURCE_CONTRACT
 12 04 deadbeef                                                          TAG_CHALLENGE
 13 01 03                                                                TAG_SIGNER_KEY_ID
-14 01 01                                                                TAG_SIGNER_ALGORITHM    
-15 47 3045022100ac06a740744dac01b4b848ca2730c507e2a7a93f92952a0c9757bb12d8e6de490220262a529c8d809b9b2538bce34ecaa03b5c54f602656fd210f01c304a3da0b52e
+14 01 01                                                                TAG_SIGNER_ALGORITHM
+15 47 30..2e
 
 
 01 01 03
@@ -85,7 +85,7 @@ T  L  V
 12 04 DEADBEEF
 13 01 00
 14 01 01
-15 47 3045022100B559CD96CCCDA78CA393CE5D4A300E52177ABCC18F5E674FE9D4088322628ADD02200EAA84D21EE275DEC82F5D747ADAA408816AC03CC133BD722DC26016F7FA92CF
+15 47 30..CF
 
 */
 
@@ -126,7 +126,7 @@ typedef struct {
     bool valid;
     uint8_t struct_version;
     uint8_t token_account[MAX_ADDRESS_LENGTH + 1];
-    uint8_t* owner;
+    uint8_t *owner;
     uint8_t spl_token[MAX_ADDRESS_LENGTH + 1];
     uint64_t chain_id;
     uint8_t name_type;
@@ -311,16 +311,16 @@ static bool handle_signature(const s_tlv_data *data,
  * @return whether it was successful
  */
 static bool handle_source_contract(const s_tlv_data *data,
-                             s_trusted_name_info *trusted_name_info,
-                             s_sig_ctx *sig_ctx) {
+                                   s_trusted_name_info *trusted_name_info,
+                                   s_sig_ctx *sig_ctx) {
     (void) sig_ctx;
     if (data->length > MAX_ADDRESS_LENGTH) {
         PRINTF("SPL Token address too long! (%u)\n", data->length);
         return false;
     }
-    
+
     memcpy(trusted_name_info->spl_token, data->value, data->length);
-    
+
     trusted_name_info->spl_token[data->length] = '\0';
     return true;
 }
@@ -365,9 +365,9 @@ static bool handle_trusted_name(const s_tlv_data *data,
         PRINTF("Token Account address too long! (%u)\n", data->length);
         return false;
     }
-    
+
     memcpy(trusted_name_info->token_account, data->value, data->length);
-    
+
     trusted_name_info->token_account[data->length] = '\0';
     return true;
 }
@@ -408,18 +408,16 @@ static bool handle_chain_id(const s_tlv_data *data,
     bool res = false;
 
     switch (data->length) {
-        case 1:
-            {
-                trusted_name_info->chain_id = data->value[0];
-                res = true;
-                break;
-            }
-        case 2:
-            {   
-                trusted_name_info->chain_id = (data->value[0] << 8) | data->value[1];                
-                res = true;
-                break;
-            }
+        case 1: {
+            trusted_name_info->chain_id = data->value[0];
+            res = true;
+            break;
+        }
+        case 2: {
+            trusted_name_info->chain_id = (data->value[0] << 8) | data->value[1];
+            res = true;
+            break;
+        }
         default:
             PRINTF("Error while parsing chain ID: length = %d\n", data->length);
     }
@@ -563,7 +561,6 @@ static bool handle_tlv_data(s_tlv_handler *handlers,
 static bool verify_struct(const s_trusted_name_info *trusted_name_info) {
     uint32_t required_flags;
 
-
     if (!(RCV_FLAG(STRUCT_VERSION_RCV_BIT) & trusted_name_info->rcv_flags)) {
         PRINTF("Error: no struct version specified!\n");
         return false;
@@ -584,12 +581,14 @@ static bool verify_struct(const s_trusted_name_info *trusted_name_info) {
             switch (trusted_name_info->name_type) {
                 case TYPE_ADDRESS:
                     if (trusted_name_info->name_source != TYPE_DYN_RESOLVER) {
-                        PRINTF("Error: unsupported trusted name source (%u)!\n", trusted_name_info->name_source);
+                        PRINTF("Error: unsupported trusted name source (%u)!\n",
+                               trusted_name_info->name_source);
                         return false;
                     }
                     break;
                 default:
-                    PRINTF("Error: unsupported trusted name type (%u)!\n", trusted_name_info->name_type);
+                    PRINTF("Error: unsupported trusted name type (%u)!\n",
+                           trusted_name_info->name_type);
                     return false;
             }
             break;
@@ -729,7 +728,7 @@ static bool parse_tlv(const s_tlv_payload *payload,
                 }
                 data.value = &payload->buf[offset];
                 if (!handle_tlv_data(handlers,
-                                     (sizeof(handlers)/sizeof(handlers[0])),
+                                     (sizeof(handlers) / sizeof(handlers[0])),
                                      &data,
                                      trusted_name_info,
                                      sig_ctx)) {
@@ -737,11 +736,12 @@ static bool parse_tlv(const s_tlv_payload *payload,
                 }
                 offset += data.length;
                 if (data.tag != SIGNATURE) {  // the signature wasn't computed on itself
-                    CX_ASSERT(cx_hash_no_throw(
-                        (cx_hash_t *) &sig_ctx->hash_ctx, 
-                        0, 
-                        &payload->buf[tag_start_off],
-                        (offset - tag_start_off), NULL, 0));
+                    CX_ASSERT(cx_hash_no_throw((cx_hash_t *) &sig_ctx->hash_ctx,
+                                               0,
+                                               &payload->buf[tag_start_off],
+                                               (offset - tag_start_off),
+                                               NULL,
+                                               0));
                 }
                 step = TLV_TAG;
                 break;
@@ -768,7 +768,6 @@ static void free_payload(s_tlv_payload *payload) {
 }
 
 static bool init_tlv_payload(uint8_t length, s_tlv_payload *payload) {
-
     // check if no payload is already in memory
     if (payload->buf != NULL) {
         free_payload(payload);
@@ -810,7 +809,7 @@ void handle_provide_trusted_info(void) {
     }
     // feed into tlv payload
     memcpy(g_tlv_payload.buf + g_tlv_payload.size, data, data_length);
-    g_tlv_payload.size += data_length; 
+    g_tlv_payload.size += data_length;
 
     PRINTF("Received %d bytes of trusted info\n", g_tlv_payload.size);
 
@@ -823,13 +822,17 @@ void handle_provide_trusted_info(void) {
             free_payload(&g_tlv_payload);
             roll_challenge();  // prevent brute-force guesses
             g_trusted_name_info.rcv_flags = 0;
-            memset(g_trusted_token_account_owner_pubkey, 0, sizeof(g_trusted_token_account_owner_pubkey));
+            memset(g_trusted_token_account_owner_pubkey,
+                   0,
+                   sizeof(g_trusted_token_account_owner_pubkey));
             g_trusted_token_account_owner_pubkey_set = false;
             THROW(ApduReplySolanaInvalidTrustedInfo);
         }
-        
-        PRINTF("Token account : %s owned by %s\n", g_trusted_name_info.token_account, g_trusted_token_account_owner_pubkey);
-        
+
+        PRINTF("Token account : %s owned by %s\n",
+               g_trusted_name_info.token_account,
+               g_trusted_token_account_owner_pubkey);
+
         free_payload(&g_tlv_payload);
         roll_challenge();  // prevent replays
         THROW(ApduReplySuccess);

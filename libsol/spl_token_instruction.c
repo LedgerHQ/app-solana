@@ -507,7 +507,7 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo* info,
 
     if (g_trusted_token_account_owner_pubkey_set) {
         item = transaction_summary_general_item();
-        summary_item_set_string(item, "To", (char *)g_trusted_token_account_owner_pubkey);
+        summary_item_set_string(item, "To", (char*) g_trusted_token_account_owner_pubkey);
     }
 
     item = transaction_summary_general_item();
