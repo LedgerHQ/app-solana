@@ -170,7 +170,7 @@ _This command provides a [Solana Trusted Name TLV descriptor](https://ledgerhq.a
 
 | _CLA_ | _INS_ | _P1_ | _P2_ |   _Lc_   |     _Le_ |
 | ----- | :---: | ---: | ---- | :------: | -------: |
-| E0    |  20   |   00 | 00   | F7 (max) | variable |
+| E0    |  21   |   00 | 00   | F7 (max) | variable |
 
 ##### Input data
 
