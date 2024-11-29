@@ -1,5 +1,6 @@
 #include "apdu.h"
 #include "utils.h"
+#include "handle_provide_trusted_info.h"
 
 /**
  * Deserialize APDU into ApduCommand structure.
@@ -65,7 +66,9 @@ int apdu_handle_message(const uint8_t* apdu_message,
         case InsGetAppConfiguration:
         case InsGetPubkey:
         case InsSignMessage:
-        case InsSignOffchainMessage: {
+        case InsSignOffchainMessage:
+        case InsTrustedInfoGetChallenge:
+        case InsTrustedInfoProvideInfo: {
             // must at least hold a full modern header
             if (apdu_message_len < OFFSET_CDATA) {
                 return ApduReplySolanaInvalidMessageSize;
@@ -99,7 +102,8 @@ int apdu_handle_message(const uint8_t* apdu_message,
     const bool first_data_chunk = !(header.p2 & P2_EXTEND);
 
     if (header.instruction == InsDeprecatedGetAppConfiguration ||
-        header.instruction == InsGetAppConfiguration) {
+        header.instruction == InsGetAppConfiguration ||
+        header.instruction == InsTrustedInfoGetChallenge) {
         // return early if no data is expected for the command
         explicit_bzero(apdu_command, sizeof(ApduCommand));
         apdu_command->state = ApduStatePayloadComplete;
@@ -126,8 +130,8 @@ int apdu_handle_message(const uint8_t* apdu_message,
         explicit_bzero(apdu_command, sizeof(ApduCommand));
     }
 
-    // read derivation path
-    if (first_data_chunk) {
+    if ((first_data_chunk) && (header.instruction != InsTrustedInfoProvideInfo)) {
+        // read derivation path
         if (!header.deprecated_host && header.instruction != InsGetPubkey) {
             if (!header.data_length) {
                 return ApduReplySolanaInvalidMessageSize;
@@ -171,7 +175,6 @@ int apdu_handle_message(const uint8_t* apdu_message,
             return ApduReplySolanaInvalidMessageSize;
         }
     }
-
     if (header.data) {
         if (apdu_command->message_length + header.data_length > MAX_MESSAGE_LENGTH) {
             return ApduReplySolanaInvalidMessageSize;
