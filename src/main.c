@@ -19,6 +19,8 @@
 #include "handle_get_pubkey.h"
 #include "handle_sign_message.h"
 #include "handle_sign_offchain_message.h"
+#include "handle_get_challenge.h"
+#include "handle_provide_trusted_info.h"
 #include "apdu.h"
 #include "ui_api.h"
 
@@ -86,6 +88,14 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
         case InsSignOffchainMessage:
             handle_sign_offchain_message(flags, tx);
             break;
+
+        case InsTrustedInfoGetChallenge:
+            handle_get_challenge(tx);
+            break;
+
+        case InsTrustedInfoProvideInfo:
+            handle_provide_trusted_info();
+            THROW(ApduReplySuccess);
 
         default:
             THROW(ApduReplyUnimplementedInstruction);
@@ -212,6 +222,9 @@ void coin_main(void) {
                 BLE_power(0, NULL);
                 BLE_power(1, NULL);
 #endif  // HAVE_BLE
+
+                // to prevent it from having a fixed value at boot
+                roll_challenge();
 
                 app_main();
             }

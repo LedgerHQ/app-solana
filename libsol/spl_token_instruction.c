@@ -484,6 +484,9 @@ static int print_spl_token_initialize_multisig_info(const char* primary_title,
     return 0;
 }
 
+uint8_t g_trusted_token_account_owner_pubkey[BASE58_PUBKEY_LENGTH];
+bool g_trusted_token_account_owner_pubkey_set;
+
 int print_spl_token_transfer_info(const SplTokenTransferInfo* info,
                                   const PrintConfig* print_config,
                                   bool primary) {
@@ -501,6 +504,11 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo* info,
                                   info->body.amount,
                                   symbol,
                                   info->body.decimals);
+
+    if (g_trusted_token_account_owner_pubkey_set) {
+        item = transaction_summary_general_item();
+        summary_item_set_string(item, "To", (char*) g_trusted_token_account_owner_pubkey);
+    }
 
     item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "Token address", info->mint_account);
