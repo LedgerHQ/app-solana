@@ -1,4 +1,6 @@
-#include "os.h"
+// #include "os.h"
+// #include "globals.h"
+#include "ed25519_helpers.h"
 #include "common_byte_strings.h"
 #include "instruction.h"
 #include "sol/parser.h"
@@ -7,8 +9,6 @@
 #include "spl_token2022_instruction.h"
 #include "token_info.h"
 #include "util.h"
-#include "globals.h"
-#include "ed25519_helpers.h"
 #include "sol/trusted_info.h"
 
 #include "spl_token_instruction.h"
@@ -203,7 +203,8 @@ static int parse_transfer_spl_token_instruction(Parser* parser,
 
     if (!validate_associated_token_address(g_trusted_info.owner_address,
                                            info->mint_account->data,
-                                           info->dest_account->data)) {
+                                           info->dest_account->data,
+                                           is_token2022_instruction(instruction, header))) {
         PRINTF("Failed to validate ATA\n");
         return -1;
     }
@@ -893,6 +894,7 @@ const Pubkey* spl_token_option_pubkey_get(const SplTokenOptionPubkey* option_pub
 }
 
 bool is_token2022_instruction(const Instruction* instruction, const MessageHeader* header) {
+    PRINTF("is_token2022_instruction ?\n");
     const Pubkey* program_id = &header->pubkeys[instruction->program_id_index];
     return memcmp(program_id, &spl_token2022_program_id, PUBKEY_SIZE) == 0;
 }

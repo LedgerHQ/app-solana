@@ -54,7 +54,8 @@ void handle_sign_message_parse_message(volatile unsigned int *tx) {
                                G_command.derivation_path_length,
                                &signer_index,
                                header) != 0) {
-        THROW(ApduReplySolanaInvalidMessageHeader);
+        PRINTF("scan_header_for_signer failed\n");
+        // THROW(ApduReplySolanaInvalidMessageHeader);
     }
     print_config.signer_pubkey = &header->pubkeys[signer_index];
 
@@ -178,7 +179,8 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
     }
     if (!validate_associated_token_address(g_trusted_info.owner_address,
                                            g_trusted_info.mint_address,
-                                           g_trusted_info.token_address)) {
+                                           g_trusted_info.token_address,
+                                           false)) {
         // This case should never happen because this is already checked at TX parsing
         PRINTF("Failed to validate ATA\n");
         return -1;

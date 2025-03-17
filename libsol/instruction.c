@@ -12,22 +12,31 @@
 enum ProgramId instruction_program_id(const Instruction* instruction, const MessageHeader* header) {
     const Pubkey* program_id = &header->pubkeys[instruction->program_id_index];
     if (memcmp(program_id, &system_program_id, PUBKEY_SIZE) == 0) {
+        PRINTF("ProgramIdSystem\n");
         return ProgramIdSystem;
     } else if (memcmp(program_id, &stake_program_id, PUBKEY_SIZE) == 0) {
+        PRINTF("ProgramIdStake\n");
         return ProgramIdStake;
     } else if (memcmp(program_id, &vote_program_id, PUBKEY_SIZE) == 0) {
+        PRINTF("ProgramIdVote\n");
         return ProgramIdVote;
     } else if (memcmp(program_id, &spl_token_program_id, PUBKEY_SIZE) == 0) {
+        PRINTF("ProgramIdSplToken\n");
         return ProgramIdSplToken;
     } else if(memcmp(program_id, &spl_token2022_program_id, PUBKEY_SIZE) == 0) {
+        PRINTF("ProgramIdSplToken 2022\n");
         return ProgramIdSplToken;//Treat the Token2022 exactly the same as the SplToken
     } else if (memcmp(program_id, &spl_associated_token_account_program_id, PUBKEY_SIZE) == 0) {
+        PRINTF("ProgramIdSplAssociatedTokenAccount\n");
         return ProgramIdSplAssociatedTokenAccount;
     } else if (is_serum_assert_owner_program_id(program_id)) {
+        PRINTF("ProgramIdSerumAssertOwner\n");
         return ProgramIdSerumAssertOwner;
     } else if (memcmp(program_id, &spl_memo_program_id, PUBKEY_SIZE) == 0) {
+        PRINTF("ProgramIdSplMemo\n");
         return ProgramIdSplMemo;
     } else if (memcmp(program_id, &compute_budget_program_id, PUBKEY_SIZE) == 0) {
+        PRINTF("ProgramIdComputeBudget\n");
         return ProgramIdComputeBudget;
     }
 
