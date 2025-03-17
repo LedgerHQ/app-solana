@@ -3,6 +3,7 @@
 #include "globals.h"
 #include <string.h>
 #include "apdu.h"
+#include "sol/printer.h"
 
 #ifndef _UTILS_H_
 #define _UTILS_H_

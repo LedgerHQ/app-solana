@@ -8,6 +8,10 @@
 #define TITLE_SIZE           32
 #define BASE58_PUBKEY_LENGTH 45
 #define BASE58_PUBKEY_SHORT  (SUMMARY_LENGTH + 2 + SUMMARY_LENGTH + 1)
+#define SIGNATURE_LENGTH     64
+#define HASH_LENGTH          32
+#define PUBKEY_LENGTH        HASH_LENGTH
+#define PRIVATEKEY_LENGTH    HASH_LENGTH
 
 int print_token_amount(uint64_t amount,
                        const char *asset,

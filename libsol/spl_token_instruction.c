@@ -1,13 +1,12 @@
-#include "os.h"
 #include "common_byte_strings.h"
 #include "instruction.h"
 #include "sol/parser.h"
 #include "sol/transaction_summary.h"
 #include "token_info.h"
 #include "util.h"
-#include "globals.h"
+#include "sol/parser.h"
 #include "ed25519_helpers.h"
-#include "sol/trusted_info.h"
+#include "trusted_info.h"
 
 #include "spl_token_instruction.h"
 
@@ -153,43 +152,9 @@ static int parse_transfer_spl_token_instruction(Parser* parser,
 
     BAIL_IF(parse_spl_token_sign(&it, &info->sign));
 
-    // Here we will check the content of the SPL transaction against the received descriptor
-    if (!g_trusted_info.received) {
-        PRINTF("Descriptor info is required for a SPL transfer\n");
-        return -1;
-    }
-
-    // We have received a destination ATA, we will validate it by comparing it against the
-    // derivation of the owner address + mint address
-    // We must have received the owner address from the descriptor for this
-
-    PRINTF("=== TX INFO ===\n");
-    PRINTF("src_account           = %.*H\n", PUBKEY_LENGTH, info->src_account->data);
-    PRINTF("mint_account          = %.*H\n", PUBKEY_LENGTH, info->mint_account->data);
-    PRINTF("dest_account          = %.*H\n", PUBKEY_LENGTH, info->dest_account->data);
-
-    PRINTF("=== TRUSTED INFO ===\n");
-    PRINTF("encoded_owner_address = %s\n", g_trusted_info.encoded_owner_address);
-    PRINTF("owner_address         = %.*H\n", PUBKEY_LENGTH, g_trusted_info.owner_address);
-    PRINTF("encoded_token_address = %s\n", g_trusted_info.encoded_token_address);
-    PRINTF("token_address         = %.*H\n", PUBKEY_LENGTH, g_trusted_info.token_address);
-    PRINTF("encoded_mint_address  = %s\n", g_trusted_info.encoded_mint_address);
-    PRINTF("mint_address          = %.*H\n", PUBKEY_LENGTH, g_trusted_info.mint_address);
-
-    if (memcmp(g_trusted_info.mint_address, info->mint_account->data, PUBKEY_LENGTH) != 0) {
-        PRINTF("Mint address does not match with mint address in descriptor\n");
-        return -1;
-    }
-
-    if (memcmp(g_trusted_info.token_address, info->dest_account->data, PUBKEY_LENGTH) != 0) {
-        PRINTF("Token address does not match with token address in descriptor\n");
-        return -1;
-    }
-
-    if (!validate_associated_token_address(g_trusted_info.owner_address,
-                                           info->mint_account->data,
-                                           info->dest_account->data)) {
-        PRINTF("Failed to validate ATA\n");
+    if (!check_ata_agaisnt_trusted_info(info->src_account->data,
+                                        info->mint_account->data,
+                                        info->dest_account->data)) {
         return -1;
     }
 
@@ -547,14 +512,13 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo* info,
                                   symbol,
                                   info->body.decimals);
 
-    // Already checked in parsing step but let's be secure
-    if (!g_trusted_info.received) {
-        PRINTF("Descriptor info is required for a SPL transfer\n");
+    char* to_address;
+    if (get_transfer_to_address(&to_address) != 0) {
         return -1;
     }
 
     item = transaction_summary_general_item();
-    summary_item_set_string(item, "To", g_trusted_info.encoded_owner_address);
+    summary_item_set_string(item, "To", to_address);
 
     item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "Token address", info->mint_account);
