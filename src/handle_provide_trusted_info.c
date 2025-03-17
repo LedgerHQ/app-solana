@@ -7,9 +7,9 @@
 #include "utils.h"
 #include "handle_get_challenge.h"
 #include "base58.h"
+#include "trusted_info.h"
 
 #include "sol/printer.h"
-#include "sol/trusted_info.h"
 
 #include "macros.h"
 #include "tlv.h"
