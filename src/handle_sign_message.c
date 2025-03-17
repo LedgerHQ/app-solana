@@ -7,7 +7,7 @@
 #include "sol/print_config.h"
 #include "sol/message.h"
 #include "sol/transaction_summary.h"
-#include "sol/trusted_info.h"
+#include "trusted_info.h"
 #include "ed25519_helpers.h"
 
 #include "handle_sign_message.h"

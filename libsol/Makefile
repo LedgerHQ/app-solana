@@ -11,8 +11,9 @@ all: $(test_oks) $(test_exes) $o/libsol.a
 
 CFLAGS += -Werror -Wall -Wextra -pedantic -Wshadow -Wcast-qual -Wcast-align -Wno-unused-parameter
 CFLAGS += -fPIC
-CFLAGS += -Iinclude
+CFLAGS += -Iinclude -Imock
 CFLAGS += $($(mode)_CFLAGS)
+CFLAGS += -D PRINTF\(...\)=
 
 ifeq ($(COVERAGE),1)
 	CFLAGS += --coverage
@@ -21,7 +22,7 @@ endif
 debug_CFLAGS = -g
 release_CFLAGS = -O2
 
-libsol_source_files = $(filter-out %_test.c,$(wildcard *.c))
+libsol_source_files = $(filter-out %_test.c,$(shell find . -name "*.c"))
 libsol_object_files = $(patsubst %.c,$o/%.o,$(libsol_source_files))
 libsol_depend_files = $(patsubst %.c,$o/%.d,$(libsol_source_files))
 
