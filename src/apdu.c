@@ -14,9 +14,9 @@
  * @return zero on success, ApduReply error code otherwise.
  *
  */
-int apdu_handle_message(const uint8_t* apdu_message,
+int apdu_handle_message(const uint8_t *apdu_message,
                         size_t apdu_message_len,
-                        ApduCommand* apdu_command) {
+                        ApduCommand *apdu_command) {
     if (!apdu_command || !apdu_message) {
         return ApduReplySdkInvalidParameter;
     }

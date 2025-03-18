@@ -7,7 +7,7 @@
 
 const Pubkey vote_program_id = {{PROGRAM_ID_VOTE}};
 
-static int parse_vote_instruction_kind(Parser* parser, enum VoteInstructionKind* kind) {
+static int parse_vote_instruction_kind(Parser *parser, enum VoteInstructionKind *kind) {
     uint32_t maybe_kind;
     BAIL_IF(parse_u32(parser, &maybe_kind));
     switch (maybe_kind) {
@@ -25,7 +25,7 @@ static int parse_vote_instruction_kind(Parser* parser, enum VoteInstructionKind*
     return 1;
 }
 
-static int parse_vote_authorize(Parser* parser, enum VoteAuthorize* authorize) {
+static int parse_vote_authorize(Parser *parser, enum VoteAuthorize *authorize) {
     uint32_t maybe_authorize;
     BAIL_IF(parse_u32(parser, &maybe_authorize));
     switch (maybe_authorize) {
@@ -37,10 +37,10 @@ static int parse_vote_authorize(Parser* parser, enum VoteAuthorize* authorize) {
     return 1;
 }
 
-static int parse_vote_initialize_instruction(Parser* parser,
-                                             const Instruction* instruction,
-                                             const MessageHeader* header,
-                                             VoteInitializeInfo* info) {
+static int parse_vote_initialize_instruction(Parser *parser,
+                                             const Instruction *instruction,
+                                             const MessageHeader *header,
+                                             VoteInitializeInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -60,10 +60,10 @@ static int parse_vote_initialize_instruction(Parser* parser,
     return 0;
 }
 
-static int parse_vote_withdraw_instruction(Parser* parser,
-                                           const Instruction* instruction,
-                                           const MessageHeader* header,
-                                           VoteWithdrawInfo* info) {
+static int parse_vote_withdraw_instruction(Parser *parser,
+                                           const Instruction *instruction,
+                                           const MessageHeader *header,
+                                           VoteWithdrawInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -76,10 +76,10 @@ static int parse_vote_withdraw_instruction(Parser* parser,
     return 0;
 }
 
-static int parse_vote_authorize_instruction(Parser* parser,
-                                            const Instruction* instruction,
-                                            const MessageHeader* header,
-                                            VoteAuthorizeInfo* info) {
+static int parse_vote_authorize_instruction(Parser *parser,
+                                            const Instruction *instruction,
+                                            const MessageHeader *header,
+                                            VoteAuthorizeInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -94,10 +94,10 @@ static int parse_vote_authorize_instruction(Parser* parser,
     return 0;
 }
 
-static int parse_vote_authorize_checked_instruction(Parser* parser,
-                                                    const Instruction* instruction,
-                                                    const MessageHeader* header,
-                                                    VoteAuthorizeInfo* info) {
+static int parse_vote_authorize_checked_instruction(Parser *parser,
+                                                    const Instruction *instruction,
+                                                    const MessageHeader *header,
+                                                    VoteAuthorizeInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -112,10 +112,10 @@ static int parse_vote_authorize_checked_instruction(Parser* parser,
     return 0;
 }
 
-static int parse_vote_update_validator_id_instruction(Parser* parser,
-                                                      const Instruction* instruction,
-                                                      const MessageHeader* header,
-                                                      VoteUpdateValidatorIdInfo* info) {
+static int parse_vote_update_validator_id_instruction(Parser *parser,
+                                                      const Instruction *instruction,
+                                                      const MessageHeader *header,
+                                                      VoteUpdateValidatorIdInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -139,10 +139,10 @@ static int parse_vote_update_validator_id_instruction(Parser* parser,
     return 0;
 }
 
-static int parse_vote_update_commission_instruction(Parser* parser,
-                                                    const Instruction* instruction,
-                                                    const MessageHeader* header,
-                                                    VoteUpdateCommissionInfo* info) {
+static int parse_vote_update_commission_instruction(Parser *parser,
+                                                    const Instruction *instruction,
+                                                    const MessageHeader *header,
+                                                    VoteUpdateCommissionInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -154,9 +154,9 @@ static int parse_vote_update_commission_instruction(Parser* parser,
     return 0;
 }
 
-int parse_vote_instructions(const Instruction* instruction,
-                            const MessageHeader* header,
-                            VoteInfo* info) {
+int parse_vote_instructions(const Instruction *instruction,
+                            const MessageHeader *header,
+                            VoteInfo *info) {
     Parser parser = {instruction->data, instruction->data_length};
 
     BAIL_IF(parse_vote_instruction_kind(&parser, &info->kind));
@@ -194,8 +194,8 @@ int parse_vote_instructions(const Instruction* instruction,
     return 1;
 }
 
-static int print_vote_withdraw_info(const VoteWithdrawInfo* info, const PrintConfig* print_config) {
-    SummaryItem* item;
+static int print_vote_withdraw_info(const VoteWithdrawInfo *info, const PrintConfig *print_config) {
+    SummaryItem *item;
 
     item = transaction_summary_primary_item();
     summary_item_set_amount(item, "Vote withdraw", info->lamports);
@@ -214,10 +214,10 @@ static int print_vote_withdraw_info(const VoteWithdrawInfo* info, const PrintCon
     return 0;
 }
 
-static int print_vote_authorize_info(const VoteAuthorizeInfo* info,
-                                     const PrintConfig* print_config) {
-    const char* new_authority_title = NULL;
-    SummaryItem* item;
+static int print_vote_authorize_info(const VoteAuthorizeInfo *info,
+                                     const PrintConfig *print_config) {
+    const char *new_authority_title = NULL;
+    SummaryItem *item;
 
     item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Set vote auth", info->account);
@@ -242,9 +242,9 @@ static int print_vote_authorize_info(const VoteAuthorizeInfo* info,
     return 0;
 }
 
-static int print_vote_update_validator_id_info(const VoteUpdateValidatorIdInfo* info,
-                                               const PrintConfig* print_config) {
-    SummaryItem* item;
+static int print_vote_update_validator_id_info(const VoteUpdateValidatorIdInfo *info,
+                                               const PrintConfig *print_config) {
+    SummaryItem *item;
 
     item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Update validator", info->account);
@@ -260,9 +260,9 @@ static int print_vote_update_validator_id_info(const VoteUpdateValidatorIdInfo* 
     return 0;
 }
 
-static int print_vote_update_commission_info(const VoteUpdateCommissionInfo* info,
-                                             const PrintConfig* print_config) {
-    SummaryItem* item;
+static int print_vote_update_commission_info(const VoteUpdateCommissionInfo *info,
+                                             const PrintConfig *print_config) {
+    SummaryItem *item;
 
     item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Update commission", info->account);
@@ -278,7 +278,7 @@ static int print_vote_update_commission_info(const VoteUpdateCommissionInfo* inf
     return 0;
 }
 
-int print_vote_info(const VoteInfo* info, const PrintConfig* print_config) {
+int print_vote_info(const VoteInfo *info, const PrintConfig *print_config) {
     switch (info->kind) {
         case VoteInitialize:
             return print_vote_initialize_info("Init vote acct", &info->initialize, print_config);
@@ -299,12 +299,12 @@ int print_vote_info(const VoteInfo* info, const PrintConfig* print_config) {
     return 1;
 }
 
-int print_vote_initialize_info(const char* primary_title,
-                               const VoteInitializeInfo* info,
-                               const PrintConfig* print_config) {
+int print_vote_initialize_info(const char *primary_title,
+                               const VoteInitializeInfo *info,
+                               const PrintConfig *print_config) {
     UNUSED(print_config);
 
-    SummaryItem* item;
+    SummaryItem *item;
     if (primary_title != NULL) {
         item = transaction_summary_primary_item();
         summary_item_set_pubkey(item, primary_title, info->account);

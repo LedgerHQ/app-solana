@@ -6,7 +6,7 @@
 #include "swap_common.h"
 
 /* return 0 on error, 1 otherwise */
-int handle_get_printable_amount(get_printable_amount_parameters_t* params) {
+int handle_get_printable_amount(get_printable_amount_parameters_t *params) {
     PRINTF("Inside Solana handle_get_printable_amount\n");
     MEMCLEAR(params->printable_amount);
 

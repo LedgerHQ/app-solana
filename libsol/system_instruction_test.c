@@ -24,7 +24,7 @@ void test_parse_system_transfer_instructions() {
     assert(parse_instruction(&parser, &instruction) == 0);
     assert(instruction_validate(&instruction, &header) == 0);
 
-    const Pubkey* fee_payer_pubkey = &header.pubkeys[0];
+    const Pubkey *fee_payer_pubkey = &header.pubkeys[0];
     SystemInfo info;
     assert(parse_system_instructions(&instruction, &header, &info) == 0);
     assert(parser.buffer_length == 0);
@@ -51,7 +51,7 @@ void test_parse_system_transfer_instructions_with_payer() {
     assert(parse_instruction(&parser, &instruction) == 0);
     assert(instruction_validate(&instruction, &header) == 0);
 
-    const Pubkey* fee_payer_pubkey = &header.pubkeys[0];
+    const Pubkey *fee_payer_pubkey = &header.pubkeys[0];
     SystemInfo info;
     assert(parse_system_instructions(&instruction, &header, &info) == 0);
 
@@ -190,14 +190,14 @@ void test_system_create_account_with_seed_instruction() {
                                                              &instruction,
                                                              &header,
                                                              &info.create_account_with_seed) == 0);
-    SystemCreateAccountWithSeedInfo* cws_info = &info.create_account_with_seed;
+    SystemCreateAccountWithSeedInfo *cws_info = &info.create_account_with_seed;
     Pubkey from = {{FROM_PUBKEY}};
     assert(memcmp(&from, cws_info->from, PUBKEY_SIZE) == 0);
     Pubkey to = {{TO_PUBKEY}};
     assert(memcmp(&to, cws_info->to, PUBKEY_SIZE) == 0);
     Pubkey base = {{BASE_PUBKEY}};
     assert(memcmp(&base, cws_info->base, PUBKEY_SIZE) == 0);
-    SizedString* seed = &cws_info->seed;
+    SizedString *seed = &cws_info->seed;
     assert(strncmp("seed", seed->string, seed->length) == 0);
     assert(cws_info->lamports == 1);
 

@@ -149,8 +149,8 @@ void test_parse_sized_string() {
 }
 
 void test_parse_pubkey() {
-    const Pubkey* value;
-    const char* expected_string = "11111111111111111111111111111111";
+    const Pubkey *value;
+    const char *expected_string = "11111111111111111111111111111111";
     char value_string[BASE58_PUBKEY_LENGTH];
     uint8_t buffer[] = {/* valid */
                         0x00,
@@ -249,7 +249,7 @@ void test_parse_pubkeys() {
     uint8_t message[PUBKEY_SIZE + 4] = {1, 2, 3, 1, 42};
     Parser parser = {message, sizeof(message)};
     PubkeysHeader header;
-    const Pubkey* pubkeys;
+    const Pubkey *pubkeys;
     assert(parse_pubkeys(&parser, &header, &pubkeys) == 0);
     assert(parser_is_empty(&parser));
     assert(parser.buffer == message + PUBKEY_SIZE + 4);
@@ -260,14 +260,14 @@ void test_parse_pubkeys_too_short() {
     uint8_t message[] = {1, 2, 3, 1};
     Parser parser = {message, sizeof(message)};
     PubkeysHeader header;
-    const Pubkey* pubkeys;
+    const Pubkey *pubkeys;
     assert(parse_pubkeys(&parser, &header, &pubkeys) == 1);
 }
 
 void test_parse_hash() {
     uint8_t message[HASH_SIZE] = {42};
     Parser parser = {message, sizeof(message)};
-    const Hash* hash;
+    const Hash *hash;
     assert(parse_hash(&parser, &hash) == 0);
     assert(parser_is_empty(&parser));
     assert(parser.buffer == message + HASH_SIZE);
@@ -277,14 +277,14 @@ void test_parse_hash() {
 void test_parse_hash_too_short() {
     uint8_t message[31];  // <--- Too short!
     Parser parser = {message, sizeof(message)};
-    const Hash* hash;
+    const Hash *hash;
     assert(parse_hash(&parser, &hash) == 1);
 }
 
 void test_parse_data() {
     uint8_t message[] = {1, 2};
     Parser parser = {message, sizeof(message)};
-    const uint8_t* data;
+    const uint8_t *data;
     size_t data_length;
     assert(parse_data(&parser, &data, &data_length) == 0);
     assert(parser_is_empty(&parser));
@@ -295,7 +295,7 @@ void test_parse_data() {
 void test_parse_data_too_short() {
     uint8_t message[] = {1};  // <--- Too short!
     Parser parser = {message, sizeof(message)};
-    const uint8_t* data;
+    const uint8_t *data;
     size_t data_length;
     assert(parse_data(&parser, &data, &data_length) == 1);
 }
