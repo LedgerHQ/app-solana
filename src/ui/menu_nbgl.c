@@ -29,8 +29,8 @@ static void quit_app_callback(void) {
 }
 
 #define SETTING_INFO_NB 2
-static const char* const info_types[SETTING_INFO_NB] = {"Version", "Developer"};
-static const char* const info_contents[SETTING_INFO_NB] = {APPVERSION, "Ledger"};
+static const char *const info_types[SETTING_INFO_NB] = {"Version", "Developer"};
+static const char *const info_contents[SETTING_INFO_NB] = {APPVERSION, "Ledger"};
 
 static const nbgl_contentInfoList_t infoList = {
     .nbInfos = SETTING_INFO_NB,
@@ -75,7 +75,7 @@ static void settings_controls_callback(int token, uint8_t index, int page) {
             // Write in NVM the opposite of what the current toggle is
             new_setting = (G_switches[BLIND_SIGNING_IDX].initState != ON_STATE);
             G_switches[BLIND_SIGNING_IDX].initState = (nbgl_state_t) new_setting;
-            nvm_write((void*) &N_storage.settings.allow_blind_sign,
+            nvm_write((void *) &N_storage.settings.allow_blind_sign,
                       &new_setting,
                       sizeof(new_setting));
             break;
@@ -83,7 +83,7 @@ static void settings_controls_callback(int token, uint8_t index, int page) {
             // Write in NVM the opposite of what the current toggle is
             new_setting = (G_switches[PUBLIC_KEY_LENGTH_IDX].initState != ON_STATE);
             G_switches[PUBLIC_KEY_LENGTH_IDX].initState = (nbgl_state_t) new_setting;
-            nvm_write((void*) &N_storage.settings.pubkey_display,
+            nvm_write((void *) &N_storage.settings.pubkey_display,
                       &new_setting,
                       sizeof(new_setting));
             break;
@@ -91,7 +91,7 @@ static void settings_controls_callback(int token, uint8_t index, int page) {
             // Write in NVM the opposite of what the current toggle is
             new_setting = (G_switches[DISPLAY_MODE_IDX].initState != ON_STATE);
             G_switches[DISPLAY_MODE_IDX].initState = (nbgl_state_t) new_setting;
-            nvm_write((void*) &N_storage.settings.display_mode, &new_setting, sizeof(new_setting));
+            nvm_write((void *) &N_storage.settings.display_mode, &new_setting, sizeof(new_setting));
             break;
         default:
             PRINTF("Unreachable\n");

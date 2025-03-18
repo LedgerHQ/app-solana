@@ -92,7 +92,7 @@ void test_parse_stake_initialize_instruction() {
     StakeInfo info;
     assert(parse_stake_initialize_instruction(&parser, &instruction, &header, &info.initialize) ==
            0);
-    StakeInitializeInfo* sii = &info.initialize;
+    StakeInitializeInfo *sii = &info.initialize;
     assert(sii->lockup.unix_timestamp == 16);
     assert(sii->lockup.epoch == 1);
     Pubkey new_account = {{ACCOUNT_PUBKEY_BYTES}};

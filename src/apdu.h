@@ -60,7 +60,7 @@ typedef struct ApduHeader {
     uint8_t instruction;
     uint8_t p1;
     uint8_t p2;
-    const uint8_t* data;
+    const uint8_t *data;
     size_t data_length;
     bool deprecated_host;
 } ApduHeader;
@@ -80,6 +80,6 @@ typedef struct ApduCommand {
 
 extern ApduCommand G_command;
 
-int apdu_handle_message(const uint8_t* apdu_message,
+int apdu_handle_message(const uint8_t *apdu_message,
                         size_t apdu_message_len,
-                        ApduCommand* apdu_command);
+                        ApduCommand *apdu_command);

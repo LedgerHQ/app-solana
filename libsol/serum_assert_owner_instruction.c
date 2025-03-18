@@ -5,7 +5,7 @@
 #include "sol/transaction_summary.h"
 #include "util.h"
 
-bool is_serum_assert_owner_program_id(const Pubkey* program_id) {
+bool is_serum_assert_owner_program_id(const Pubkey *program_id) {
     static const Pubkey program_ids[] = {
         {{PROGRAM_ID_SERUM_ASSERT_OWNER_PHANTOM}},
         {{PROGRAM_ID_SERUM_ASSERT_OWNER}},
