@@ -11,13 +11,13 @@ void switch_allow_blind_sign_data(void);
 void switch_pubkey_display_data(void);
 
 //////////////////////////////////////////////////////////////////////
-static const char* settings_submenu_getter(unsigned int idx);
+static const char *settings_submenu_getter(unsigned int idx);
 static void settings_submenu_selector(unsigned int idx);
-static const char* allow_blind_sign_data_getter(unsigned int idx);
+static const char *allow_blind_sign_data_getter(unsigned int idx);
 static void allow_blind_sign_data_selector(unsigned int idx);
-static const char* pubkey_display_data_getter(unsigned int idx);
+static const char *pubkey_display_data_getter(unsigned int idx);
 static void pubkey_display_data_selector(unsigned int idx);
-static const char* display_mode_data_getter(unsigned int idx);
+static const char *display_mode_data_getter(unsigned int idx);
 static void display_mode_data_selector(unsigned int idx);
 
 //////////////////////////////////////////////////////////////////////////////////////
@@ -43,14 +43,14 @@ static unsigned int settings_submenu_option_index(enum SettingsMenuOption settin
     return 0;
 }
 
-const char* const settings_submenu_getter_values[] = {
+const char *const settings_submenu_getter_values[] = {
     "Allow blind sign",
     "Pubkey length",
     "Display mode",
     "Back",
 };
 
-static const char* settings_submenu_getter(unsigned int idx) {
+static const char *settings_submenu_getter(unsigned int idx) {
     if (idx < ARRAYLEN(settings_submenu_getter_values)) {
         return settings_submenu_getter_values[idx];
     }
@@ -91,14 +91,14 @@ static void allow_blind_sign_data_change(enum BlindSign blind_sign) {
         case BlindSignDisabled:
         case BlindSignEnabled:
             value = (uint8_t) blind_sign;
-            nvm_write((void*) &N_storage.settings.allow_blind_sign, &value, sizeof(value));
+            nvm_write((void *) &N_storage.settings.allow_blind_sign, &value, sizeof(value));
             break;
     }
 }
 
-const char* const no_yes_data_getter_values[] = {"No", "Yes", "Back"};
+const char *const no_yes_data_getter_values[] = {"No", "Yes", "Back"};
 
-static const char* allow_blind_sign_data_getter(unsigned int idx) {
+static const char *allow_blind_sign_data_getter(unsigned int idx) {
     if (idx < ARRAYLEN(no_yes_data_getter_values)) {
         return no_yes_data_getter_values[idx];
     }
@@ -129,14 +129,14 @@ static void pubkey_display_data_change(enum PubkeyDisplay pubkey_display) {
         case PubkeyDisplayLong:
         case PubkeyDisplayShort:
             value = (uint8_t) pubkey_display;
-            nvm_write((void*) &N_storage.settings.pubkey_display, &value, sizeof(value));
+            nvm_write((void *) &N_storage.settings.pubkey_display, &value, sizeof(value));
             break;
     }
 }
 
-const char* const pubkey_display_data_getter_values[] = {"Long", "Short", "Back"};
+const char *const pubkey_display_data_getter_values[] = {"Long", "Short", "Back"};
 
-static const char* pubkey_display_data_getter(unsigned int idx) {
+static const char *pubkey_display_data_getter(unsigned int idx) {
     if (idx < ARRAYLEN(pubkey_display_data_getter_values)) {
         return pubkey_display_data_getter_values[idx];
     }
@@ -167,14 +167,14 @@ static void display_mode_data_change(enum DisplayMode display_mode) {
         case DisplayModeUser:
         case DisplayModeExpert:
             value = (uint8_t) display_mode;
-            nvm_write((void*) &N_storage.settings.display_mode, &value, sizeof(value));
+            nvm_write((void *) &N_storage.settings.display_mode, &value, sizeof(value));
             break;
     }
 }
 
-const char* const display_mode_data_getter_values[] = {"User", "Expert", "Back"};
+const char *const display_mode_data_getter_values[] = {"User", "Expert", "Back"};
 
-static const char* display_mode_data_getter(unsigned int idx) {
+static const char *display_mode_data_getter(unsigned int idx) {
     if (idx < ARRAYLEN(display_mode_data_getter_values)) {
         return display_mode_data_getter_values[idx];
     }

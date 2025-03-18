@@ -8,9 +8,9 @@
 const Pubkey spl_associated_token_account_program_id = {{PROGRAM_ID_SPL_ASSOCIATED_TOKEN_ACCOUNT}};
 
 static int parse_create_spl_associated_token_account_instruction(
-    const Instruction* instruction,
-    const MessageHeader* header,
-    SplAssociatedTokenAccountCreateInfo* info) {
+    const Instruction *instruction,
+    const MessageHeader *header,
+    SplAssociatedTokenAccountCreateInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -28,19 +28,19 @@ static int parse_create_spl_associated_token_account_instruction(
     return 0;
 }
 
-int parse_spl_associated_token_account_instructions(const Instruction* instruction,
-                                                    const MessageHeader* header,
-                                                    SplAssociatedTokenAccountInfo* info) {
+int parse_spl_associated_token_account_instructions(const Instruction *instruction,
+                                                    const MessageHeader *header,
+                                                    SplAssociatedTokenAccountInfo *info) {
     return parse_create_spl_associated_token_account_instruction(instruction,
                                                                  header,
                                                                  &info->create);
 }
 
-int print_spl_associated_token_account_create_info(const SplAssociatedTokenAccountCreateInfo* info,
-                                                   const PrintConfig* print_config) {
+int print_spl_associated_token_account_create_info(const SplAssociatedTokenAccountCreateInfo *info,
+                                                   const PrintConfig *print_config) {
     UNUSED(print_config);
 
-    SummaryItem* item = transaction_summary_primary_item();
+    SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create token account", info->address);
 
     item = transaction_summary_general_item();
@@ -60,7 +60,7 @@ int print_spl_associated_token_account_create_info(const SplAssociatedTokenAccou
     return 0;
 }
 
-int print_spl_associated_token_account_info(const SplAssociatedTokenAccountInfo* info,
-                                            const PrintConfig* print_config) {
+int print_spl_associated_token_account_info(const SplAssociatedTokenAccountInfo *info,
+                                            const PrintConfig *print_config) {
     return print_spl_associated_token_account_create_info(&info->create, print_config);
 }
