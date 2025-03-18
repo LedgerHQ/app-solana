@@ -48,14 +48,14 @@ typedef struct ComputeBudgetInfo {
 } ComputeBudgetInfo;
 
 typedef struct ComputeBudgetFeeInfo {
-    ComputeBudgetChangeUnitLimitInfo* change_unit_limit;
-    ComputeBudgetChangeUnitPriceInfo* change_unit_price;
+    ComputeBudgetChangeUnitLimitInfo *change_unit_limit;
+    ComputeBudgetChangeUnitPriceInfo *change_unit_price;
     size_t instructions_count;
     size_t signatures_count;
 } ComputeBudgetFeeInfo;
 
-int parse_compute_budget_instructions(const Instruction* instruction,
-                                      const MessageHeader* header,
-                                      ComputeBudgetInfo* info);
+int parse_compute_budget_instructions(const Instruction *instruction,
+                                      const MessageHeader *header,
+                                      ComputeBudgetInfo *info);
 
-void print_compute_budget(ComputeBudgetFeeInfo* info, const PrintConfig* print_config);
+void print_compute_budget(ComputeBudgetFeeInfo *info, const PrintConfig *print_config);

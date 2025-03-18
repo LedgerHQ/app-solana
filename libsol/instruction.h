@@ -33,8 +33,8 @@ typedef struct InstructionInfo {
     };
 } InstructionInfo;
 
-enum ProgramId instruction_program_id(const Instruction* instruction, const MessageHeader* header);
-int instruction_validate(const Instruction* instruction, const MessageHeader* header);
+enum ProgramId instruction_program_id(const Instruction *instruction, const MessageHeader *header);
+int instruction_validate(const Instruction *instruction, const MessageHeader *header);
 
 typedef struct InstructionBrief {
     enum ProgramId program_id;
@@ -59,23 +59,23 @@ typedef struct InstructionBrief {
 #define VOTE_IX_BRIEF(vote_ix) \
     { ProgramIdVote, .vote = (vote_ix) }
 
-bool instruction_info_matches_brief(const InstructionInfo* info, const InstructionBrief* brief);
-bool instruction_infos_match_briefs(InstructionInfo* const* infos,
-                                    const InstructionBrief* briefs,
+bool instruction_info_matches_brief(const InstructionInfo *info, const InstructionBrief *brief);
+bool instruction_infos_match_briefs(InstructionInfo *const *infos,
+                                    const InstructionBrief *briefs,
                                     size_t len);
 
 typedef struct InstructionAccountsIterator {
-    const Pubkey* message_header_pubkeys;
+    const Pubkey *message_header_pubkeys;
     uint8_t instruction_accounts_length;
-    const uint8_t* instruction_accounts;
+    const uint8_t *instruction_accounts;
     size_t current_instruction_account;
 } InstructionAccountsIterator;
 
-void instruction_accounts_iterator_init(InstructionAccountsIterator* it,
-                                        const MessageHeader* header,
-                                        const Instruction* instruction);
+void instruction_accounts_iterator_init(InstructionAccountsIterator *it,
+                                        const MessageHeader *header,
+                                        const Instruction *instruction);
 
-int instruction_accounts_iterator_next(InstructionAccountsIterator* it,
-                                       const Pubkey** next_account);
+int instruction_accounts_iterator_next(InstructionAccountsIterator *it,
+                                       const Pubkey **next_account);
 
-size_t instruction_accounts_iterator_remaining(const InstructionAccountsIterator* it);
+size_t instruction_accounts_iterator_remaining(const InstructionAccountsIterator *it);

@@ -218,7 +218,7 @@ void test_instruction_infos_match_briefs() {
         SYSTEM_IX_BRIEF(SystemTransfer),
         STAKE_IX_BRIEF(StakeSplit),
     };
-    InstructionInfo* display_infos[] = {&infos[0], &infos[1]};
+    InstructionInfo *display_infos[] = {&infos[0], &infos[1]};
     size_t infos_len = ARRAY_LEN(infos);
     assert(infos_len == ARRAY_LEN(display_infos));
     assert(infos_len == ARRAY_LEN(briefs));
@@ -254,7 +254,7 @@ void test_instruction_accounts_iterator_next() {
     instruction_accounts_iterator_init(&it, &header, &instruction);
     size_t expected_remaining = ARRAY_LEN(instruction_accounts);
     assert(instruction_accounts_iterator_remaining(&it) == expected_remaining--);
-    const Pubkey* pubkey;
+    const Pubkey *pubkey;
 
     Pubkey expected1 = {{BYTES32_BS58_2}};
     assert(instruction_accounts_iterator_next(&it, &pubkey) == 0);

@@ -806,9 +806,9 @@ const TokenInfo TOKEN_REGISTRY[] = {
        0x85, 0xf9, 0x16, 0xeb, 0x0b, 0x1d, 0xfa, 0xb9, 0x58, 0x9e}},
      "MELANIA"}};
 
-const char* get_token_symbol(const Pubkey* mint_address) {
+const char *get_token_symbol(const Pubkey *mint_address) {
     for (size_t i = 0; i < ARRAY_LEN(TOKEN_REGISTRY); i++) {
-        const TokenInfo* info = &TOKEN_REGISTRY[i];
+        const TokenInfo *info = &TOKEN_REGISTRY[i];
 
         if (memcmp(&(info->mint_address), mint_address, PUBKEY_SIZE) == 0) {
             return info->symbol;
