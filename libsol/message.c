@@ -14,10 +14,10 @@
 
 #define MAX_INSTRUCTIONS 4
 
-int process_message_body(const uint8_t* message_body,
+int process_message_body(const uint8_t *message_body,
                          int message_body_length,
-                         const PrintConfig* print_config) {
-    const MessageHeader* header = &print_config->header;
+                         const PrintConfig *print_config) {
+    const MessageHeader *header = &print_config->header;
 
     BAIL_IF(header->instructions_length == 0);
     BAIL_IF(header->instructions_length > MAX_INSTRUCTIONS);
@@ -26,12 +26,12 @@ int process_message_body(const uint8_t* message_body,
     InstructionInfo instruction_info[MAX_INSTRUCTIONS];
     explicit_bzero(instruction_info, sizeof(InstructionInfo) * MAX_INSTRUCTIONS);
 
-    //Track if given transaction contains token2022 extensions that are not fully supported
-    //Needed to display user proper warning
+    // Track if given transaction contains token2022 extensions that are not fully supported
+    // Needed to display user proper warning
     SplTokenExtensionsMetadata token_extensions_metadata = {false};
 
     size_t display_instruction_count = 0;
-    InstructionInfo* display_instruction_info[MAX_INSTRUCTIONS];
+    InstructionInfo *display_instruction_info[MAX_INSTRUCTIONS];
 
     Parser parser = {message_body, message_body_length};
     for (; instruction_count < header->instructions_length; instruction_count++) {
@@ -39,7 +39,7 @@ int process_message_body(const uint8_t* message_body,
         BAIL_IF(parse_instruction(&parser, &instruction));
         BAIL_IF(instruction_validate(&instruction, header));
 
-        InstructionInfo* info = &instruction_info[instruction_count];
+        InstructionInfo *info = &instruction_info[instruction_count];
         bool ignore_instruction_info = false;
 
         enum ProgramId program_id = instruction_program_id(&instruction, header);
@@ -70,7 +70,8 @@ int process_message_body(const uint8_t* message_body,
                                                  &info->spl_token,
                                                  &token_extensions_metadata,
                                                  &ignore_instruction_info) == 0) {
-                    info->spl_token.is_token2022_kind = is_token2022_instruction(&instruction, header);
+                    info->spl_token.is_token2022_kind =
+                        is_token2022_instruction(&instruction, header);
                     if (info->spl_token.is_token2022_kind) {
                         PRINTF("info->spl_token.is_token2022_kind\n");
                     } else {
@@ -110,7 +111,7 @@ int process_message_body(const uint8_t* message_body,
             case ProgramIdUnknown:
                 break;
         }
-        if(ignore_instruction_info){
+        if (ignore_instruction_info) {
             continue;
         }
         switch (info->kind) {

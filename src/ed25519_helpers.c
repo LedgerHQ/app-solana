@@ -67,12 +67,7 @@ static int derivate_ata_candidate(const uint8_t *owner_account,
     } else {
         program_id = program_id_spl_token;
     }
-    if (cx_hash_no_throw((cx_hash_t *) &hash_ctx,
-                         0,
-                         program_id,
-                         PUBKEY_LENGTH,
-                         NULL,
-                         0) != CX_OK) {
+    if (cx_hash_no_throw((cx_hash_t *) &hash_ctx, 0, program_id, PUBKEY_LENGTH, NULL, 0) != CX_OK) {
         PRINTF("ERROR: Failed to hash program ID\n");
         return -1;
     }
@@ -136,7 +131,11 @@ bool validate_associated_token_address(const uint8_t owner_account[PUBKEY_LENGTH
     PRINTF("Trying to validate provided_ata %.*H\n", PUBKEY_LENGTH, provided_ata);
     while (nonce > 0) {
         // Worst case scenario is 255 hash + 255 memcmp. The performance hit is not noticeable.
-        if (derivate_ata_candidate(owner_account, mint_account, nonce, is_token_2022, &derived_ata) != 0) {
+        if (derivate_ata_candidate(owner_account,
+                                   mint_account,
+                                   nonce,
+                                   is_token_2022,
+                                   &derived_ata) != 0) {
             PRINTF("Error derivate_ata_candidate for nonce %d\n", nonce);
             return false;
         }

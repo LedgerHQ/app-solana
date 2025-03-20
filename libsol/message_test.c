@@ -1961,7 +1961,8 @@ void test_process_message_body_spl_associated_token_create_with_transfer_and_ass
 /* clang-format on */
 
 int main() {
-    printf("test_process_message_body_spl_associated_token_create_with_transfer_and_assert_owner\n");
+    printf(
+        "test_process_message_body_spl_associated_token_create_with_transfer_and_assert_owner\n");
     test_process_message_body_spl_associated_token_create_with_transfer_and_assert_owner();
     printf("test_process_message_body_spl_associated_token_create_with_transfer\n");
     test_process_message_body_spl_associated_token_create_with_transfer();

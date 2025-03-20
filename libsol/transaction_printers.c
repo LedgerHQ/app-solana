@@ -197,15 +197,15 @@ const InstructionBrief spl_associated_token_account_create_with_transfer_brief[]
                                    spl_associated_token_account_create_with_transfer_brief, \
                                    infos_length)
 
-static int print_create_stake_account(const PrintConfig* print_config,
-                                      InstructionInfo* const* infos,
+static int print_create_stake_account(const PrintConfig *print_config,
+                                      InstructionInfo *const *infos,
                                       size_t infos_length) {
     UNUSED(infos_length);
 
-    const SystemCreateAccountInfo* ca_info = &infos[0]->system.create_account;
-    const StakeInitializeInfo* si_info = &infos[1]->stake.initialize;
+    const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
+    const StakeInitializeInfo *si_info = &infos[1]->stake.initialize;
 
-    SummaryItem* item = transaction_summary_primary_item();
+    SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create stake acct", ca_info->to);
 
     BAIL_IF(print_system_create_account_info(NULL, ca_info, print_config));
@@ -214,15 +214,15 @@ static int print_create_stake_account(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_create_stake_account_with_seed(const PrintConfig* print_config,
-                                                InstructionInfo* const* infos,
+static int print_create_stake_account_with_seed(const PrintConfig *print_config,
+                                                InstructionInfo *const *infos,
                                                 size_t infos_length) {
     UNUSED(infos_length);
 
-    const SystemCreateAccountWithSeedInfo* cws_info = &infos[0]->system.create_account_with_seed;
-    const StakeInitializeInfo* si_info = &infos[1]->stake.initialize;
+    const SystemCreateAccountWithSeedInfo *cws_info = &infos[0]->system.create_account_with_seed;
+    const StakeInitializeInfo *si_info = &infos[1]->stake.initialize;
 
-    SummaryItem* item = transaction_summary_primary_item();
+    SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create stake acct", cws_info->to);
 
     BAIL_IF(print_system_create_account_with_seed_info(NULL, cws_info, print_config));
@@ -231,16 +231,16 @@ static int print_create_stake_account_with_seed(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_create_stake_account_and_delegate(const PrintConfig* print_config,
-                                                   InstructionInfo* const* infos,
+static int print_create_stake_account_and_delegate(const PrintConfig *print_config,
+                                                   InstructionInfo *const *infos,
                                                    size_t infos_length) {
     UNUSED(infos_length);
 
-    const SystemCreateAccountInfo* ca_info = &infos[0]->system.create_account;
-    const StakeInitializeInfo* si_info = &infos[1]->stake.initialize;
-    const StakeDelegateInfo* sd_info = &infos[2]->stake.delegate_stake;
+    const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
+    const StakeInitializeInfo *si_info = &infos[1]->stake.initialize;
+    const StakeDelegateInfo *sd_info = &infos[2]->stake.delegate_stake;
 
-    SummaryItem* item = transaction_summary_primary_item();
+    SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Delegate from", ca_info->to);
 
     BAIL_IF(print_system_create_account_info(NULL, ca_info, print_config));
@@ -250,16 +250,16 @@ static int print_create_stake_account_and_delegate(const PrintConfig* print_conf
     return 0;
 }
 
-static int print_create_stake_account_with_seed_and_delegate(const PrintConfig* print_config,
-                                                             InstructionInfo* const* infos,
+static int print_create_stake_account_with_seed_and_delegate(const PrintConfig *print_config,
+                                                             InstructionInfo *const *infos,
                                                              size_t infos_length) {
     UNUSED(infos_length);
 
-    const SystemCreateAccountWithSeedInfo* cws_info = &infos[0]->system.create_account_with_seed;
-    const StakeInitializeInfo* si_info = &infos[1]->stake.initialize;
-    const StakeDelegateInfo* sd_info = &infos[2]->stake.delegate_stake;
+    const SystemCreateAccountWithSeedInfo *cws_info = &infos[0]->system.create_account_with_seed;
+    const StakeInitializeInfo *si_info = &infos[1]->stake.initialize;
+    const StakeDelegateInfo *sd_info = &infos[2]->stake.delegate_stake;
 
-    SummaryItem* item = transaction_summary_primary_item();
+    SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Delegate from", cws_info->to);
 
     BAIL_IF(print_system_create_account_with_seed_info(NULL, cws_info, print_config));
@@ -269,32 +269,32 @@ static int print_create_stake_account_with_seed_and_delegate(const PrintConfig* 
     return 0;
 }
 
-static int print_stake_split_with_seed(const PrintConfig* print_config,
-                                       InstructionInfo* const* infos,
+static int print_stake_split_with_seed(const PrintConfig *print_config,
+                                       InstructionInfo *const *infos,
                                        size_t infos_length,
                                        bool legacy) {
     UNUSED(infos_length);
 
-    const Pubkey* base = NULL;
-    const SizedString* seed = NULL;
+    const Pubkey *base = NULL;
+    const SizedString *seed = NULL;
 
     if (legacy) {
-        const SystemAllocateWithSeedInfo* aws_info = &infos[0]->system.allocate_with_seed;
+        const SystemAllocateWithSeedInfo *aws_info = &infos[0]->system.allocate_with_seed;
         base = aws_info->base;
         seed = &aws_info->seed;
     } else {
-        const SystemCreateAccountWithSeedInfo* cws_info =
+        const SystemCreateAccountWithSeedInfo *cws_info =
             &infos[0]->system.create_account_with_seed;
         base = cws_info->base;
         seed = &cws_info->seed;
     }
 
-    const StakeSplitInfo* ss_info = &infos[1]->stake.split;
+    const StakeSplitInfo *ss_info = &infos[1]->stake.split;
 
     BAIL_IF(print_stake_split_info1(ss_info, print_config));
 
     if (print_config->expert_mode) {
-        SummaryItem* item = transaction_summary_general_item();
+        SummaryItem *item = transaction_summary_general_item();
         summary_item_set_pubkey(item, "Base", base);
         item = transaction_summary_general_item();
         summary_item_set_sized_string(item, "Seed", seed);
@@ -305,8 +305,8 @@ static int print_stake_split_with_seed(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_prefunded_split(const PrintConfig* print_config,
-                                 InstructionInfo* const* infos,
+static int print_prefunded_split(const PrintConfig *print_config,
+                                 InstructionInfo *const *infos,
                                  size_t infos_length) {
     UNUSED(infos_length);
 
@@ -316,8 +316,8 @@ static int print_prefunded_split(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_prefunded_split_with_seed(const PrintConfig* print_config,
-                                           InstructionInfo* const* infos,
+static int print_prefunded_split_with_seed(const PrintConfig *print_config,
+                                           InstructionInfo *const *infos,
                                            size_t infos_length) {
     UNUSED(infos_length);
 
@@ -327,14 +327,14 @@ static int print_prefunded_split_with_seed(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_stake_authorize_both(const PrintConfig* print_config,
-                                      InstructionInfo* const* infos,
+static int print_stake_authorize_both(const PrintConfig *print_config,
+                                      InstructionInfo *const *infos,
                                       size_t infos_length) {
     UNUSED(infos_length);
 
-    const StakeAuthorizeInfo* staker_info = &infos[0]->stake.authorize;
-    const StakeAuthorizeInfo* withdrawer_info = &infos[1]->stake.authorize;
-    SummaryItem* item;
+    const StakeAuthorizeInfo *staker_info = &infos[0]->stake.authorize;
+    const StakeAuthorizeInfo *withdrawer_info = &infos[1]->stake.authorize;
+    SummaryItem *item;
 
     // Sanity check
     BAIL_IF(staker_info->authorize != StakeAuthorizeStaker);
@@ -367,15 +367,15 @@ static int print_stake_authorize_both(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_create_nonce_account(const PrintConfig* print_config,
-                                      InstructionInfo* const* infos,
+static int print_create_nonce_account(const PrintConfig *print_config,
+                                      InstructionInfo *const *infos,
                                       size_t infos_length) {
     UNUSED(infos_length);
 
-    const SystemCreateAccountInfo* ca_info = &infos[0]->system.create_account;
-    const SystemInitializeNonceInfo* ni_info = &infos[1]->system.initialize_nonce;
+    const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
+    const SystemInitializeNonceInfo *ni_info = &infos[1]->system.initialize_nonce;
 
-    SummaryItem* item = transaction_summary_primary_item();
+    SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create nonce acct", ca_info->to);
 
     BAIL_IF(print_system_create_account_info(NULL, ca_info, print_config));
@@ -384,15 +384,15 @@ static int print_create_nonce_account(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_create_nonce_account_with_seed(const PrintConfig* print_config,
-                                                InstructionInfo* const* infos,
+static int print_create_nonce_account_with_seed(const PrintConfig *print_config,
+                                                InstructionInfo *const *infos,
                                                 size_t infos_length) {
     UNUSED(infos_length);
 
-    const SystemCreateAccountWithSeedInfo* ca_info = &infos[0]->system.create_account_with_seed;
-    const SystemInitializeNonceInfo* ni_info = &infos[1]->system.initialize_nonce;
+    const SystemCreateAccountWithSeedInfo *ca_info = &infos[0]->system.create_account_with_seed;
+    const SystemInitializeNonceInfo *ni_info = &infos[1]->system.initialize_nonce;
 
-    SummaryItem* item = transaction_summary_primary_item();
+    SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create nonce acct", ca_info->to);
 
     BAIL_IF(print_system_create_account_with_seed_info(NULL, ca_info, print_config));
@@ -401,15 +401,15 @@ static int print_create_nonce_account_with_seed(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_create_vote_account(const PrintConfig* print_config,
-                                     InstructionInfo* const* infos,
+static int print_create_vote_account(const PrintConfig *print_config,
+                                     InstructionInfo *const *infos,
                                      size_t infos_length) {
     UNUSED(infos_length);
 
-    const SystemCreateAccountInfo* ca_info = &infos[0]->system.create_account;
-    const VoteInitializeInfo* vi_info = &infos[1]->vote.initialize;
+    const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
+    const VoteInitializeInfo *vi_info = &infos[1]->vote.initialize;
 
-    SummaryItem* item = transaction_summary_primary_item();
+    SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create vote acct", ca_info->to);
 
     BAIL_IF(print_system_create_account_info(NULL, ca_info, print_config));
@@ -418,15 +418,15 @@ static int print_create_vote_account(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_create_vote_account_with_seed(const PrintConfig* print_config,
-                                               InstructionInfo* const* infos,
+static int print_create_vote_account_with_seed(const PrintConfig *print_config,
+                                               InstructionInfo *const *infos,
                                                size_t infos_length) {
     UNUSED(infos_length);
 
-    const SystemCreateAccountWithSeedInfo* ca_info = &infos[0]->system.create_account_with_seed;
-    const VoteInitializeInfo* vi_info = &infos[1]->vote.initialize;
+    const SystemCreateAccountWithSeedInfo *ca_info = &infos[0]->system.create_account_with_seed;
+    const VoteInitializeInfo *vi_info = &infos[1]->vote.initialize;
 
-    SummaryItem* item = transaction_summary_primary_item();
+    SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create vote acct", ca_info->to);
 
     BAIL_IF(print_system_create_account_with_seed_info(NULL, ca_info, print_config));
@@ -435,14 +435,14 @@ static int print_create_vote_account_with_seed(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_vote_authorize_both(const PrintConfig* print_config,
-                                     InstructionInfo* const* infos,
+static int print_vote_authorize_both(const PrintConfig *print_config,
+                                     InstructionInfo *const *infos,
                                      size_t infos_length) {
     UNUSED(infos_length);
 
-    const VoteAuthorizeInfo* voter_info = &infos[0]->vote.authorize;
-    const VoteAuthorizeInfo* withdrawer_info = &infos[1]->vote.authorize;
-    SummaryItem* item;
+    const VoteAuthorizeInfo *voter_info = &infos[0]->vote.authorize;
+    const VoteAuthorizeInfo *withdrawer_info = &infos[1]->vote.authorize;
+    SummaryItem *item;
 
     // Sanity check
     BAIL_IF(voter_info->authorize != VoteAuthorizeVoter);
@@ -470,15 +470,15 @@ static int print_vote_authorize_both(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_spl_token_create_mint(const PrintConfig* print_config,
-                                       InstructionInfo* const* infos,
+static int print_spl_token_create_mint(const PrintConfig *print_config,
+                                       InstructionInfo *const *infos,
                                        size_t infos_length) {
     UNUSED(infos_length);
 
-    const SystemCreateAccountInfo* ca_info = &infos[0]->system.create_account;
-    const SplTokenInitializeMintInfo* im_info = &infos[1]->spl_token.initialize_mint;
+    const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
+    const SplTokenInitializeMintInfo *im_info = &infos[1]->spl_token.initialize_mint;
 
-    SummaryItem* item = transaction_summary_primary_item();
+    SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create token mint", im_info->mint_account);
 
     item = transaction_summary_general_item();
@@ -503,15 +503,15 @@ static int print_spl_token_create_mint(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_spl_token_create_account(const PrintConfig* print_config,
-                                          InstructionInfo* const* infos,
+static int print_spl_token_create_account(const PrintConfig *print_config,
+                                          InstructionInfo *const *infos,
                                           size_t infos_length) {
     UNUSED(infos_length);
 
-    const SystemCreateAccountInfo* ca_info = &infos[0]->system.create_account;
-    const SplTokenInitializeAccountInfo* ia_info = &infos[1]->spl_token.initialize_account;
+    const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
+    const SplTokenInitializeAccountInfo *ia_info = &infos[1]->spl_token.initialize_account;
 
-    SummaryItem* item = transaction_summary_primary_item();
+    SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create token account", ia_info->token_account);
 
     item = transaction_summary_general_item();
@@ -531,15 +531,15 @@ static int print_spl_token_create_account(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_spl_token_create_multisig(const PrintConfig* print_config,
-                                           InstructionInfo* const* infos,
+static int print_spl_token_create_multisig(const PrintConfig *print_config,
+                                           InstructionInfo *const *infos,
                                            size_t infos_length) {
     UNUSED(infos_length);
 
-    const SystemCreateAccountInfo* ca_info = &infos[0]->system.create_account;
-    const SplTokenInitializeMultisigInfo* im_info = &infos[1]->spl_token.initialize_multisig;
+    const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
+    const SplTokenInitializeMultisigInfo *im_info = &infos[1]->spl_token.initialize_multisig;
 
-    SummaryItem* item = transaction_summary_primary_item();
+    SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create multisig", im_info->multisig_account);
 
     item = transaction_summary_general_item();
@@ -556,15 +556,15 @@ static int print_spl_token_create_multisig(const PrintConfig* print_config,
     return 0;
 }
 
-static int print_spl_associated_token_account_create_with_transfer(const PrintConfig* print_config,
-                                                                   InstructionInfo* const* infos,
+static int print_spl_associated_token_account_create_with_transfer(const PrintConfig *print_config,
+                                                                   InstructionInfo *const *infos,
                                                                    size_t infos_length) {
     UNUSED(infos_length);
 
-    const SplAssociatedTokenAccountCreateInfo* c_info =
+    const SplAssociatedTokenAccountCreateInfo *c_info =
         &infos[0]->spl_associated_token_account.create;
     SplTokenInfo spl_token = infos[1]->spl_token;
-    const SplTokenTransferInfo* t_info = &spl_token.transfer;
+    const SplTokenTransferInfo *t_info = &spl_token.transfer;
 
     print_spl_associated_token_account_create_info(c_info, print_config);
     print_spl_token_transfer_info(t_info, print_config, spl_token.is_token2022_kind, false);
@@ -572,8 +572,8 @@ static int print_spl_associated_token_account_create_with_transfer(const PrintCo
     return 0;
 }
 
-static int print_transaction_nonce_processed(const PrintConfig* print_config,
-                                             InstructionInfo* const* infos,
+static int print_transaction_nonce_processed(const PrintConfig *print_config,
+                                             InstructionInfo *const *infos,
                                              size_t infos_length) {
     switch (infos_length) {
         case 1:
@@ -670,19 +670,18 @@ static int print_transaction_nonce_processed(const PrintConfig* print_config,
     return 1;
 }
 
-int print_spl_token_extension_warning(){
-
-    SummaryItem* item = transaction_summary_general_item();
+int print_spl_token_extension_warning() {
+    SummaryItem *item = transaction_summary_general_item();
     summary_item_set_string(item, "Extension Warning", "Unsupported extensions found");
     item = transaction_summary_general_item();
-    summary_item_set_string(item, "","Verify transaction before signing");
+    summary_item_set_string(item, "", "Verify transaction before signing");
 
     return 0;
 }
 
-InstructionInfo* const* preprocess_compute_budget_instructions(const PrintConfig* print_config,
-                                                               InstructionInfo* const* infos,
-                                                               size_t* infos_length) {
+InstructionInfo *const *preprocess_compute_budget_instructions(const PrintConfig *print_config,
+                                                               InstructionInfo *const *infos,
+                                                               size_t *infos_length) {
     size_t infos_length_initial = *infos_length;
     if (infos_length_initial > 1) {
         // Iterate over infos and print compute budget instructions and offset pointers
@@ -694,7 +693,7 @@ InstructionInfo* const* preprocess_compute_budget_instructions(const PrintConfig
                                                         .instructions_count = infos_length_initial,
                                                         .signatures_count = 0};
         for (size_t info_idx = 0; info_idx < infos_length_initial; ++info_idx) {
-            InstructionInfo* instruction_info = infos[0];
+            InstructionInfo *instruction_info = infos[0];
             if (instruction_info->kind == ProgramIdComputeBudget) {
                 compute_budget_fee_info.signatures_count =
                     instruction_info->compute_budget.signatures_count;
@@ -722,12 +721,12 @@ InstructionInfo* const* preprocess_compute_budget_instructions(const PrintConfig
     return infos;
 }
 
-int print_transaction(const PrintConfig* print_config,
-                      InstructionInfo* const* infos,
+int print_transaction(const PrintConfig *print_config,
+                      InstructionInfo *const *infos,
                       size_t infos_length) {
     // Additional nonce info might be present at first position of in info list
     if ((infos_length > 1) && is_advance_nonce_account(infos[0])) {
-        const InstructionInfo* nonce_info = infos[0];
+        const InstructionInfo *nonce_info = infos[0];
         print_system_nonced_transaction_sentinel(&(nonce_info->system), print_config);
         // offset parameters given to print_transaction_nonce_processed()
         infos++;

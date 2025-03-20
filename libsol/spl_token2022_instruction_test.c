@@ -87,7 +87,7 @@ void test_parse_spl_token_create_token() {
 
     assert(info.kind == SplTokenKind(InitializeMint));
 
-    const SplTokenInitializeMintInfo* init_mint = &info.initialize_mint;
+    const SplTokenInitializeMintInfo *init_mint = &info.initialize_mint;
 
     const Pubkey mint_account = {{MINT_ACCOUNT}};
     assert_pubkey_equal(init_mint->mint_account, &mint_account);
@@ -167,7 +167,7 @@ void test_parse_spl_token_create_account() {
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(InitializeAccount));
-    const SplTokenInitializeAccountInfo* init_acc = &info.initialize_account;
+    const SplTokenInitializeAccountInfo *init_acc = &info.initialize_account;
 
     const Pubkey token_account = {{TOKEN_ACCOUNT}};
     assert_pubkey_equal(init_acc->token_account, &token_account);
@@ -178,7 +178,6 @@ void test_parse_spl_token_create_account() {
     const Pubkey owner = {{OWNER_ACCOUNT}};
     assert_pubkey_equal(init_acc->owner, &owner);
 }
-
 
 void test_parse_spl_token_create_account2() {
     uint8_t message[] = {0x02,
@@ -245,7 +244,7 @@ void test_parse_spl_token_create_account2() {
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(InitializeAccount2));
-    const SplTokenInitializeAccountInfo* init_acc = &info.initialize_account;
+    const SplTokenInitializeAccountInfo *init_acc = &info.initialize_account;
 
     const Pubkey token_account = {{TOKEN_ACCOUNT}};
     assert_pubkey_equal(init_acc->token_account, &token_account);
@@ -256,7 +255,6 @@ void test_parse_spl_token_create_account2() {
     const Pubkey owner = {{OWNER_ACCOUNT}};
     assert_pubkey_equal(init_acc->owner, &owner);
 }
-
 
 void test_parse_spl_token_create_multisig() {
     uint8_t message[] = {2,
@@ -326,7 +324,7 @@ void test_parse_spl_token_create_multisig() {
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(InitializeMultisig));
-    const SplTokenInitializeMultisigInfo* init_ms = &info.initialize_multisig;
+    const SplTokenInitializeMultisigInfo *init_ms = &info.initialize_multisig;
 
     assert(init_ms->body.m == 2);
 
@@ -334,7 +332,7 @@ void test_parse_spl_token_create_multisig() {
     assert_pubkey_equal(init_ms->multisig_account, &multisig_account);
 
     assert(init_ms->signers.count == 3);
-    const Pubkey* signer = init_ms->signers.first;
+    const Pubkey *signer = init_ms->signers.first;
     const Pubkey signer1 = {{SIGNER1}};
     assert_pubkey_equal(signer++, &signer1);
     const Pubkey signer2 = {{SIGNER2}};
@@ -342,7 +340,6 @@ void test_parse_spl_token_create_multisig() {
     const Pubkey signer3 = {{SIGNER3}};
     assert_pubkey_equal(signer++, &signer3);
 }
-
 
 void test_parse_spl_token_transfer() {
     uint8_t message[] = {1,
@@ -386,7 +383,7 @@ void test_parse_spl_token_transfer() {
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(TransferChecked));
-    const SplTokenTransferInfo* tr_info = &info.transfer;
+    const SplTokenTransferInfo *tr_info = &info.transfer;
 
     assert(tr_info->body.amount == 42);
     assert(tr_info->body.decimals == 9);
@@ -403,7 +400,6 @@ void test_parse_spl_token_transfer() {
     const Pubkey mint_account = {{MINT_ACCOUNT}};
     assert_pubkey_equal(tr_info->mint_account, &mint_account);
 }
-
 
 void test_parse_spl_token_approve() {
     uint8_t message[] = {1,
@@ -446,7 +442,7 @@ void test_parse_spl_token_approve() {
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(ApproveChecked));
-    const SplTokenApproveInfo* ap_info = &info.approve;
+    const SplTokenApproveInfo *ap_info = &info.approve;
 
     assert(ap_info->body.amount == 42);
     assert(ap_info->body.decimals == 9);
@@ -463,7 +459,6 @@ void test_parse_spl_token_approve() {
     const Pubkey mint_account = {{PROGRAM_ID_SPL_TOKEN_2022}};
     assert_pubkey_equal(ap_info->mint_account, &mint_account);
 }
-
 
 void test_parse_spl_token_revoke() {
     uint8_t message[] = {1,
@@ -494,7 +489,7 @@ void test_parse_spl_token_revoke() {
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(Revoke));
-    const SplTokenRevokeInfo* re_info = &info.revoke;
+    const SplTokenRevokeInfo *re_info = &info.revoke;
 
     const Pubkey token_account = {{TOKEN_ACCOUNT}};
     assert_pubkey_equal(re_info->token_account, &token_account);
@@ -502,7 +497,6 @@ void test_parse_spl_token_revoke() {
     const Pubkey owner = {{OWNER_ACCOUNT}};
     assert_pubkey_equal(re_info->sign.single.signer, &owner);
 }
-
 
 void test_parse_spl_token_set_authority() {
     uint8_t message[] = {1,
@@ -536,7 +530,7 @@ void test_parse_spl_token_set_authority() {
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(SetAuthority));
-    const SplTokenSetAuthorityInfo* so_info = &info.set_owner;
+    const SplTokenSetAuthorityInfo *so_info = &info.set_owner;
 
     const Pubkey token_account = {{TOKEN_ACCOUNT}};
     assert_pubkey_equal(so_info->account, &token_account);
@@ -549,7 +543,6 @@ void test_parse_spl_token_set_authority() {
     const Pubkey owner = {{OWNER_ACCOUNT}};
     assert_pubkey_equal(so_info->sign.single.signer, &owner);
 }
-
 
 void test_parse_spl_token_mint_to() {
     uint8_t message[] = {1,
@@ -590,7 +583,7 @@ void test_parse_spl_token_mint_to() {
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(MintToChecked));
-    const SplTokenMintToInfo* mt_info = &info.mint_to;
+    const SplTokenMintToInfo *mt_info = &info.mint_to;
 
     assert(mt_info->body.amount == 42);
     assert(mt_info->body.decimals == 9);
@@ -604,7 +597,6 @@ void test_parse_spl_token_mint_to() {
     const Pubkey owner = {{OWNER_ACCOUNT}};
     assert_pubkey_equal(mt_info->sign.single.signer, &owner);
 }
-
 
 void test_parse_spl_token_burn() {
     uint8_t message[] = {1,
@@ -646,7 +638,7 @@ void test_parse_spl_token_burn() {
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(BurnChecked));
-    const SplTokenBurnInfo* bn_info = &info.burn;
+    const SplTokenBurnInfo *bn_info = &info.burn;
 
     assert(bn_info->body.amount == 42);
     assert(bn_info->body.decimals == 9);
@@ -694,7 +686,7 @@ void test_parse_spl_token_close_account() {
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(CloseAccount));
-    const SplTokenCloseAccountInfo* close_acc = &info.close_account;
+    const SplTokenCloseAccountInfo *close_acc = &info.close_account;
 
     const Pubkey token_account = {{TOKEN_ACCOUNT}};
     assert_pubkey_equal(close_acc->token_account, &token_account);
@@ -736,7 +728,7 @@ void test_parse_spl_token_freeze_account() {
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(FreezeAccount));
-    const SplTokenFreezeAccountInfo* freeze_account = &info.freeze_account;
+    const SplTokenFreezeAccountInfo *freeze_account = &info.freeze_account;
 
     const Pubkey token_account = {{TOKEN_ACCOUNT}};
     assert_pubkey_equal(freeze_account->token_account, &token_account);
@@ -779,7 +771,7 @@ void test_parse_spl_token_thaw_account() {
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(ThawAccount));
-    const SplTokenThawAccountInfo* thaw_account = &info.thaw_account;
+    const SplTokenThawAccountInfo *thaw_account = &info.thaw_account;
 
     const Pubkey token_account = {{TOKEN_ACCOUNT}};
     assert_pubkey_equal(thaw_account->token_account, &token_account);
@@ -819,15 +811,13 @@ void test_parse_spl_token_sync_native() {
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(SyncNative));
-    const SplTokenSyncNativeInfo* sync_native = &info.sync_native;
+    const SplTokenSyncNativeInfo *sync_native = &info.sync_native;
 
     const Pubkey token_account = {{TOKEN_ACCOUNT}};
     assert_pubkey_equal(sync_native->token_account, &token_account);
 }
 
-
-int main(){
-
+int main() {
     test_parse_spl_token_create_token();
     test_parse_spl_token_create_account();
     test_parse_spl_token_create_account2();

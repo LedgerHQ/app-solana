@@ -15,7 +15,7 @@
 
 const Pubkey spl_token_program_id = {{PROGRAM_ID_SPL_TOKEN}};
 
-static int parse_spl_token_instruction_kind(Parser* parser, SplTokenInstructionKind* kind) {
+static int parse_spl_token_instruction_kind(Parser *parser, SplTokenInstructionKind *kind) {
     uint8_t maybe_kind;
     BAIL_IF(parse_u8(parser, &maybe_kind));
     switch (maybe_kind) {
@@ -34,7 +34,7 @@ static int parse_spl_token_instruction_kind(Parser* parser, SplTokenInstructionK
         case SplTokenKind(ThawAccount):
         case SplTokenKind(SyncNative):
 
-            //Token2022 extensions
+            // Token2022 extensions
         case SplTokenExtensionKind(TransferFeeExtension):
         case SplTokenExtensionKind(ConfidentialTransferExtension):
         case SplTokenExtensionKind(DefaultAccountStateExtension):
@@ -58,10 +58,10 @@ static int parse_spl_token_instruction_kind(Parser* parser, SplTokenInstructionK
     return 1;
 }
 
-static int parse_initialize_mint_spl_token_instruction(Parser* parser,
-                                                       const Instruction* instruction,
-                                                       const MessageHeader* header,
-                                                       SplTokenInitializeMintInfo* info) {
+static int parse_initialize_mint_spl_token_instruction(Parser *parser,
+                                                       const Instruction *instruction,
+                                                       const MessageHeader *header,
+                                                       SplTokenInitializeMintInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -82,10 +82,10 @@ static int parse_initialize_mint_spl_token_instruction(Parser* parser,
     return 0;
 }
 
-static int parse_initialize_account_spl_token_instruction(Parser* parser,
-                                                          const Instruction* instruction,
-                                                          const MessageHeader* header,
-                                                          SplTokenInitializeAccountInfo* info,
+static int parse_initialize_account_spl_token_instruction(Parser *parser,
+                                                          const Instruction *instruction,
+                                                          const MessageHeader *header,
+                                                          SplTokenInitializeAccountInfo *info,
                                                           bool expect_owner_in_accounts) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
@@ -109,8 +109,8 @@ static int parse_initialize_account_spl_token_instruction(Parser* parser,
     return 0;
 }
 
-static int parse_spl_token_multisigners(InstructionAccountsIterator* it,
-                                        SplTokenMultisigners* signers) {
+static int parse_spl_token_multisigners(InstructionAccountsIterator *it,
+                                        SplTokenMultisigners *signers) {
     size_t n = instruction_accounts_iterator_remaining(it);
     BAIL_IF(n > Token_MAX_SIGNERS);
     BAIL_IF(instruction_accounts_iterator_next(it, &signers->first));
@@ -119,10 +119,10 @@ static int parse_spl_token_multisigners(InstructionAccountsIterator* it,
     return 0;
 }
 
-static int parse_initialize_multisig_spl_token_instruction(Parser* parser,
-                                                           const Instruction* instruction,
-                                                           const MessageHeader* header,
-                                                           SplTokenInitializeMultisigInfo* info) {
+static int parse_initialize_multisig_spl_token_instruction(Parser *parser,
+                                                           const Instruction *instruction,
+                                                           const MessageHeader *header,
+                                                           SplTokenInitializeMultisigInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -137,7 +137,7 @@ static int parse_initialize_multisig_spl_token_instruction(Parser* parser,
     return 0;
 }
 
-static int parse_spl_token_sign(InstructionAccountsIterator* it, SplTokenSign* sign) {
+static int parse_spl_token_sign(InstructionAccountsIterator *it, SplTokenSign *sign) {
     size_t n = instruction_accounts_iterator_remaining(it);
     BAIL_IF(n == 0);
 
@@ -152,10 +152,10 @@ static int parse_spl_token_sign(InstructionAccountsIterator* it, SplTokenSign* s
     return 0;
 }
 
-static int parse_transfer_spl_token_instruction(Parser* parser,
-                                                const Instruction* instruction,
-                                                const MessageHeader* header,
-                                                SplTokenTransferInfo* info) {
+static int parse_transfer_spl_token_instruction(Parser *parser,
+                                                const Instruction *instruction,
+                                                const MessageHeader *header,
+                                                SplTokenTransferInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -212,10 +212,10 @@ static int parse_transfer_spl_token_instruction(Parser* parser,
     return 0;
 }
 
-static int parse_approve_spl_token_instruction(Parser* parser,
-                                               const Instruction* instruction,
-                                               const MessageHeader* header,
-                                               SplTokenApproveInfo* info) {
+static int parse_approve_spl_token_instruction(Parser *parser,
+                                               const Instruction *instruction,
+                                               const MessageHeader *header,
+                                               SplTokenApproveInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -231,9 +231,9 @@ static int parse_approve_spl_token_instruction(Parser* parser,
     return 0;
 }
 
-static int parse_revoke_spl_token_instruction(const Instruction* instruction,
-                                              const MessageHeader* header,
-                                              SplTokenRevokeInfo* info) {
+static int parse_revoke_spl_token_instruction(const Instruction *instruction,
+                                              const MessageHeader *header,
+                                              SplTokenRevokeInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -244,7 +244,7 @@ static int parse_revoke_spl_token_instruction(const Instruction* instruction,
     return 0;
 }
 
-static int parse_token_authority_type(Parser* parser, Token_AuthorityType* auth_type) {
+static int parse_token_authority_type(Parser *parser, Token_AuthorityType *auth_type) {
     uint8_t maybe_type;
     BAIL_IF(parse_u8(parser, &maybe_type));
     switch (maybe_type) {
@@ -258,7 +258,7 @@ static int parse_token_authority_type(Parser* parser, Token_AuthorityType* auth_
     return 1;
 }
 
-static const char* stringify_token_authority_type(Token_AuthorityType auth_type) {
+static const char *stringify_token_authority_type(Token_AuthorityType auth_type) {
     switch (auth_type) {
         case Token_AuthorityType_MintTokens:
             return "Mint tokens";
@@ -272,10 +272,10 @@ static const char* stringify_token_authority_type(Token_AuthorityType auth_type)
     return NULL;
 }
 
-static int parse_set_authority_spl_token_instruction(Parser* parser,
-                                                     const Instruction* instruction,
-                                                     const MessageHeader* header,
-                                                     SplTokenSetAuthorityInfo* info) {
+static int parse_set_authority_spl_token_instruction(Parser *parser,
+                                                     const Instruction *instruction,
+                                                     const MessageHeader *header,
+                                                     SplTokenSetAuthorityInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -296,10 +296,10 @@ static int parse_set_authority_spl_token_instruction(Parser* parser,
     return 0;
 }
 
-static int parse_mint_to_spl_token_instruction(Parser* parser,
-                                               const Instruction* instruction,
-                                               const MessageHeader* header,
-                                               SplTokenMintToInfo* info) {
+static int parse_mint_to_spl_token_instruction(Parser *parser,
+                                               const Instruction *instruction,
+                                               const MessageHeader *header,
+                                               SplTokenMintToInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -314,10 +314,10 @@ static int parse_mint_to_spl_token_instruction(Parser* parser,
     return 0;
 }
 
-static int parse_burn_spl_token_instruction(Parser* parser,
-                                            const Instruction* instruction,
-                                            const MessageHeader* header,
-                                            SplTokenBurnInfo* info) {
+static int parse_burn_spl_token_instruction(Parser *parser,
+                                            const Instruction *instruction,
+                                            const MessageHeader *header,
+                                            SplTokenBurnInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -332,9 +332,9 @@ static int parse_burn_spl_token_instruction(Parser* parser,
     return 0;
 }
 
-static int parse_close_account_spl_token_instruction(const Instruction* instruction,
-                                                     const MessageHeader* header,
-                                                     SplTokenCloseAccountInfo* info) {
+static int parse_close_account_spl_token_instruction(const Instruction *instruction,
+                                                     const MessageHeader *header,
+                                                     SplTokenCloseAccountInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -346,9 +346,9 @@ static int parse_close_account_spl_token_instruction(const Instruction* instruct
     return 0;
 }
 
-static int parse_freeze_account_spl_token_instruction(const Instruction* instruction,
-                                                      const MessageHeader* header,
-                                                      SplTokenFreezeAccountInfo* info) {
+static int parse_freeze_account_spl_token_instruction(const Instruction *instruction,
+                                                      const MessageHeader *header,
+                                                      SplTokenFreezeAccountInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -360,9 +360,9 @@ static int parse_freeze_account_spl_token_instruction(const Instruction* instruc
     return 0;
 }
 
-static int parse_thaw_account_spl_token_instruction(const Instruction* instruction,
-                                                    const MessageHeader* header,
-                                                    SplTokenThawAccountInfo* info) {
+static int parse_thaw_account_spl_token_instruction(const Instruction *instruction,
+                                                    const MessageHeader *header,
+                                                    SplTokenThawAccountInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -374,9 +374,9 @@ static int parse_thaw_account_spl_token_instruction(const Instruction* instructi
     return 0;
 }
 
-static int parse_sync_native_spl_token_instruction(const Instruction* instruction,
-                                                   const MessageHeader* header,
-                                                   SplTokenSyncNativeInfo* info) {
+static int parse_sync_native_spl_token_instruction(const Instruction *instruction,
+                                                   const MessageHeader *header,
+                                                   SplTokenSyncNativeInfo *info) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -385,11 +385,11 @@ static int parse_sync_native_spl_token_instruction(const Instruction* instructio
     return 0;
 }
 
-int parse_spl_token_instructions(const Instruction* instruction,
-                                 const MessageHeader* header,
-                                 SplTokenInfo* info,
-                                 SplTokenExtensionsMetadata* token_extensions_metadata,
-                                 bool* ignore_instruction_info) {
+int parse_spl_token_instructions(const Instruction *instruction,
+                                 const MessageHeader *header,
+                                 SplTokenInfo *info,
+                                 SplTokenExtensionsMetadata *token_extensions_metadata,
+                                 bool *ignore_instruction_info) {
     Parser parser = {instruction->data, instruction->data_length};
 
     BAIL_IF(parse_spl_token_instruction_kind(&parser, &info->kind));
@@ -464,14 +464,14 @@ int parse_spl_token_instructions(const Instruction* instruction,
         case SplTokenExtensionKind(ConfidentialTransferFeeExtension):
             // Mark that we have encountered not fully supported extension
             token_extensions_metadata->generate_extension_warning = true;
-        __attribute__((fallthrough));
+            __attribute__((fallthrough));
         case SplTokenExtensionKind(DefaultAccountStateExtension):
         case SplTokenExtensionKind(InterestBearingMintExtension):
         case SplTokenExtensionKind(CpiGuardExtension):
         case SplTokenExtensionKind(MetadataPointerExtension):
         case SplTokenExtensionKind(GroupPointerExtension):
         case SplTokenExtensionKind(GroupMemberPointerExtension):
-            //Don't generate any screens for the user for any extension
+            // Don't generate any screens for the user for any extension
             *ignore_instruction_info = true;
             return 0;
 
@@ -485,8 +485,8 @@ int parse_spl_token_instructions(const Instruction* instruction,
     return 1;
 }
 
-static int print_spl_token_sign(const SplTokenSign* sign, const PrintConfig* print_config) {
-    SummaryItem* item;
+static int print_spl_token_sign(const SplTokenSign *sign, const PrintConfig *print_config) {
+    SummaryItem *item;
 
     item = transaction_summary_general_item();
     if (sign->kind == SplTokenSignKindSingle) {
@@ -502,12 +502,12 @@ static int print_spl_token_sign(const SplTokenSign* sign, const PrintConfig* pri
     return 0;
 }
 
-static int print_spl_token_initialize_mint_info(const char* primary_title,
-                                                const SplTokenInitializeMintInfo* info,
-                                                const PrintConfig* print_config) {
+static int print_spl_token_initialize_mint_info(const char *primary_title,
+                                                const SplTokenInitializeMintInfo *info,
+                                                const PrintConfig *print_config) {
     UNUSED(print_config);
 
-    SummaryItem* item;
+    SummaryItem *item;
 
     if (primary_title != NULL) {
         item = transaction_summary_primary_item();
@@ -528,12 +528,12 @@ static int print_spl_token_initialize_mint_info(const char* primary_title,
     return 0;
 }
 
-static int print_spl_token_initialize_account_info(const char* primary_title,
-                                                   const SplTokenInitializeAccountInfo* info,
-                                                   const PrintConfig* print_config) {
+static int print_spl_token_initialize_account_info(const char *primary_title,
+                                                   const SplTokenInitializeAccountInfo *info,
+                                                   const PrintConfig *print_config) {
     UNUSED(print_config);
 
-    SummaryItem* item;
+    SummaryItem *item;
 
     if (primary_title != NULL) {
         item = transaction_summary_primary_item();
@@ -549,12 +549,12 @@ static int print_spl_token_initialize_account_info(const char* primary_title,
     return 0;
 }
 
-static int print_spl_token_initialize_multisig_info(const char* primary_title,
-                                                    const SplTokenInitializeMultisigInfo* info,
-                                                    const PrintConfig* print_config) {
+static int print_spl_token_initialize_multisig_info(const char *primary_title,
+                                                    const SplTokenInitializeMultisigInfo *info,
+                                                    const PrintConfig *print_config) {
     UNUSED(print_config);
 
-    SummaryItem* item;
+    SummaryItem *item;
 
     if (primary_title != NULL) {
         item = transaction_summary_primary_item();
@@ -567,11 +567,11 @@ static int print_spl_token_initialize_multisig_info(const char* primary_title,
     return 0;
 }
 
-int print_spl_token_transfer_info(const SplTokenTransferInfo* info,
-                                  const PrintConfig* print_config,
+int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
+                                  const PrintConfig *print_config,
                                   bool is_token2022_kind,
                                   bool primary) {
-    SummaryItem* item;
+    SummaryItem *item;
 
     if (primary) {
         item = transaction_summary_primary_item();
@@ -579,7 +579,7 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo* info,
         item = transaction_summary_general_item();
     }
 
-    const char* symbol = get_token_symbol(info->mint_account);
+    const char *symbol = get_token_symbol(info->mint_account);
     summary_item_set_token_amount(item,
                                   "Transfer tokens",
                                   info->body.amount,
@@ -604,7 +604,7 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo* info,
     item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "To (token account)", info->dest_account);
 
-    if(is_token2022_kind){
+    if (is_token2022_kind) {
         item = transaction_summary_general_item();
         summary_item_set_string(item, "Extension warning", "");
 
@@ -617,15 +617,15 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo* info,
     return 0;
 }
 
-static int print_spl_token_approve_info(const SplTokenApproveInfo* info,
-                                        const PrintConfig* print_config) {
-    SummaryItem* item;
+static int print_spl_token_approve_info(const SplTokenApproveInfo *info,
+                                        const PrintConfig *print_config) {
+    SummaryItem *item;
 
     item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Approve delegate", info->delegate);
 
     item = transaction_summary_general_item();
-    const char* symbol = get_token_symbol(info->mint_account);
+    const char *symbol = get_token_symbol(info->mint_account);
     summary_item_set_token_amount(item,
                                   "Allowance",
                                   info->body.amount,
@@ -643,11 +643,11 @@ static int print_spl_token_approve_info(const SplTokenApproveInfo* info,
     return 0;
 }
 
-static int print_spl_token_revoke_info(const SplTokenRevokeInfo* info,
-                                       const PrintConfig* print_config) {
+static int print_spl_token_revoke_info(const SplTokenRevokeInfo *info,
+                                       const PrintConfig *print_config) {
     UNUSED(print_config);
 
-    SummaryItem* item;
+    SummaryItem *item;
 
     item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Revoke delegate", info->token_account);
@@ -657,13 +657,13 @@ static int print_spl_token_revoke_info(const SplTokenRevokeInfo* info,
     return 0;
 }
 
-static int print_spl_token_set_authority_info(const SplTokenSetAuthorityInfo* info,
-                                              const PrintConfig* print_config) {
+static int print_spl_token_set_authority_info(const SplTokenSetAuthorityInfo *info,
+                                              const PrintConfig *print_config) {
     UNUSED(print_config);
 
-    SummaryItem* item;
+    SummaryItem *item;
     bool clear_authority = info->new_authority == NULL;
-    const char* primary_title = "Set authority";
+    const char *primary_title = "Set authority";
     if (clear_authority) {
         primary_title = "Clear authority";
     }
@@ -671,7 +671,7 @@ static int print_spl_token_set_authority_info(const SplTokenSetAuthorityInfo* in
     item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, primary_title, info->account);
 
-    const char* authority_type = stringify_token_authority_type(info->authority_type);
+    const char *authority_type = stringify_token_authority_type(info->authority_type);
     BAIL_IF(authority_type == NULL);
     item = transaction_summary_general_item();
     summary_item_set_string(item, "Type", authority_type);
@@ -686,12 +686,12 @@ static int print_spl_token_set_authority_info(const SplTokenSetAuthorityInfo* in
     return 0;
 }
 
-static int print_spl_token_mint_to_info(const SplTokenMintToInfo* info,
-                                        const PrintConfig* print_config) {
-    SummaryItem* item;
+static int print_spl_token_mint_to_info(const SplTokenMintToInfo *info,
+                                        const PrintConfig *print_config) {
+    SummaryItem *item;
 
     item = transaction_summary_primary_item();
-    const char* symbol = get_token_symbol(info->mint_account);
+    const char *symbol = get_token_symbol(info->mint_account);
     summary_item_set_token_amount(item,
                                   "Mint tokens",
                                   info->body.amount,
@@ -709,14 +709,14 @@ static int print_spl_token_mint_to_info(const SplTokenMintToInfo* info,
     return 0;
 }
 
-static int print_spl_token_burn_info(const SplTokenBurnInfo* info,
-                                     const PrintConfig* print_config) {
+static int print_spl_token_burn_info(const SplTokenBurnInfo *info,
+                                     const PrintConfig *print_config) {
     UNUSED(print_config);
 
-    SummaryItem* item;
+    SummaryItem *item;
 
     item = transaction_summary_primary_item();
-    const char* symbol = get_token_symbol(info->mint_account);
+    const char *symbol = get_token_symbol(info->mint_account);
     summary_item_set_token_amount(item,
                                   "Burn tokens",
                                   info->body.amount,
@@ -734,11 +734,11 @@ static int print_spl_token_burn_info(const SplTokenBurnInfo* info,
     return 0;
 }
 
-static int print_spl_token_close_account_info(const SplTokenCloseAccountInfo* info,
-                                              const PrintConfig* print_config) {
+static int print_spl_token_close_account_info(const SplTokenCloseAccountInfo *info,
+                                              const PrintConfig *print_config) {
     UNUSED(print_config);
 
-    SummaryItem* item;
+    SummaryItem *item;
 
     item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Close token account", info->token_account);
@@ -751,9 +751,9 @@ static int print_spl_token_close_account_info(const SplTokenCloseAccountInfo* in
     return 0;
 }
 
-static int print_spl_token_freeze_account_info(const SplTokenFreezeAccountInfo* info,
-                                               const PrintConfig* print_config) {
-    SummaryItem* item;
+static int print_spl_token_freeze_account_info(const SplTokenFreezeAccountInfo *info,
+                                               const PrintConfig *print_config) {
+    SummaryItem *item;
 
     item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Freeze token account", info->token_account);
@@ -768,9 +768,9 @@ static int print_spl_token_freeze_account_info(const SplTokenFreezeAccountInfo* 
     return 0;
 }
 
-static int print_spl_token_thaw_account_info(const SplTokenThawAccountInfo* info,
-                                             const PrintConfig* print_config) {
-    SummaryItem* item;
+static int print_spl_token_thaw_account_info(const SplTokenThawAccountInfo *info,
+                                             const PrintConfig *print_config) {
+    SummaryItem *item;
 
     item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Thaw token account", info->token_account);
@@ -785,11 +785,11 @@ static int print_spl_token_thaw_account_info(const SplTokenThawAccountInfo* info
     return 0;
 }
 
-static int print_spl_token_sync_native_info(const SplTokenSyncNativeInfo* info,
-                                            const PrintConfig* print_config) {
+static int print_spl_token_sync_native_info(const SplTokenSyncNativeInfo *info,
+                                            const PrintConfig *print_config) {
     UNUSED(print_config);
 
-    SummaryItem* item;
+    SummaryItem *item;
 
     item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Sync native account", info->token_account);
@@ -797,7 +797,7 @@ static int print_spl_token_sync_native_info(const SplTokenSyncNativeInfo* info,
     return 0;
 }
 
-int print_spl_token_info(const SplTokenInfo* info, const PrintConfig* print_config) {
+int print_spl_token_info(const SplTokenInfo *info, const PrintConfig *print_config) {
     switch (info->kind) {
         case SplTokenKind(InitializeMint):
             return print_spl_token_initialize_mint_info("Init mint",
@@ -823,7 +823,10 @@ int print_spl_token_info(const SplTokenInfo* info, const PrintConfig* print_conf
         case SplTokenKind(ThawAccount):
             return print_spl_token_thaw_account_info(&info->thaw_account, print_config);
         case SplTokenKind(TransferChecked):
-            return print_spl_token_transfer_info(&info->transfer, print_config, info->is_token2022_kind, true);
+            return print_spl_token_transfer_info(&info->transfer,
+                                                 print_config,
+                                                 info->is_token2022_kind,
+                                                 true);
         case SplTokenKind(ApproveChecked):
             return print_spl_token_approve_info(&info->approve, print_config);
         case SplTokenKind(MintToChecked):
@@ -833,7 +836,7 @@ int print_spl_token_info(const SplTokenInfo* info, const PrintConfig* print_conf
         case SplTokenKind(SyncNative):
             return print_spl_token_sync_native_info(&info->sync_native, print_config);
 
-        //For now, we don't display any information about the extensions
+        // For now, we don't display any information about the extensions
         case SplTokenExtensionKind(TransferFeeExtension):
         case SplTokenExtensionKind(ConfidentialTransferExtension):
         case SplTokenExtensionKind(DefaultAccountStateExtension):
@@ -858,7 +861,7 @@ int print_spl_token_info(const SplTokenInfo* info, const PrintConfig* print_conf
 }
 
 #define M_OF_N_MAX_LEN 9  // "11 of 11" + NUL
-static int print_m_of_n_string(uint8_t m, uint8_t n, char* buf, size_t buflen) {
+static int print_m_of_n_string(uint8_t m, uint8_t n, char *buf, size_t buflen) {
     BAIL_IF(n > Token_MAX_SIGNERS);
     BAIL_IF(m > n);
     BAIL_IF(buflen < M_OF_N_MAX_LEN);
@@ -875,7 +878,7 @@ static int print_m_of_n_string(uint8_t m, uint8_t n, char* buf, size_t buflen) {
     return 0;
 }
 
-void summary_item_set_multisig_m_of_n(SummaryItem* item, uint8_t m, uint8_t n) {
+void summary_item_set_multisig_m_of_n(SummaryItem *item, uint8_t m, uint8_t n) {
     static char m_of_n[M_OF_N_MAX_LEN];
 
     if (print_m_of_n_string(m, n, m_of_n, sizeof(m_of_n)) == 0) {
@@ -883,18 +886,18 @@ void summary_item_set_multisig_m_of_n(SummaryItem* item, uint8_t m, uint8_t n) {
     }
 }
 
-const Pubkey* spl_token_option_pubkey_get(const SplTokenOptionPubkey* option_pubkey) {
+const Pubkey *spl_token_option_pubkey_get(const SplTokenOptionPubkey *option_pubkey) {
     switch (option_pubkey->tag) {
         case SplTokenToOptionPubkeyKind(None):
             break;
         case SplTokenToOptionPubkeyKind(Some):
-            return (const Pubkey*) &option_pubkey->some;
+            return (const Pubkey *) &option_pubkey->some;
     }
     return NULL;
 }
 
-bool is_token2022_instruction(const Instruction* instruction, const MessageHeader* header) {
+bool is_token2022_instruction(const Instruction *instruction, const MessageHeader *header) {
     PRINTF("is_token2022_instruction ?\n");
-    const Pubkey* program_id = &header->pubkeys[instruction->program_id_index];
+    const Pubkey *program_id = &header->pubkeys[instruction->program_id_index];
     return memcmp(program_id, &spl_token2022_program_id, PUBKEY_SIZE) == 0;
 }

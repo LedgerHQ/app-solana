@@ -9,4 +9,3 @@
 #define SplTokenExtensionKind(b) Token_TokenExtensionInstruction_##b
 
 extern const Pubkey spl_token2022_program_id;
-

@@ -57,7 +57,7 @@ void test_parse_compute_budget_instructions_invalid_kind() {
                                .data_length = sizeof(message),
                                .accounts_length = 0};
 
-    MessageHeader* header = {0};
+    MessageHeader *header = {0};
 
     ComputeBudgetInfo info;
 

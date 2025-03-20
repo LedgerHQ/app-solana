@@ -5,6 +5,7 @@ IndentWidth: 4
 Language: Cpp
 ColumnLimit: 100
 PointerAlignment: Right
+DerivePointerAlignment: false
 AlignAfterOpenBracket: Align
 AlignConsecutiveMacros: true
 AllowAllParametersOfDeclarationOnNextLine: false
