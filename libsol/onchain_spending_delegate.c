@@ -26,5 +26,5 @@ const char *get_onchain_spending_delegate_name(const Pubkey *program_id) {
         }
     }
 
-    return "Goose";
+    return NULL;
 }
