@@ -3,8 +3,18 @@ from ragger.utils import RAPDU
 
 from .apps.solana import SolanaClient, ErrorType
 from .apps.solana_cmd_builder import SystemInstructionTransfer, Message, verify_signature, OffchainMessage
-from .apps.solana_utils import FOREIGN_PUBLIC_KEY, FOREIGN_PUBLIC_KEY_2, AMOUNT, AMOUNT_2, SOL_PACKED_DERIVATION_PATH, SOL_PACKED_DERIVATION_PATH_2, ROOT_SCREENSHOT_PATH
+from .apps.solana_utils import FOREIGN_ADDRESS_STR, FOREIGN_PUBLIC_KEY, FOREIGN_PUBLIC_KEY_2, AMOUNT, AMOUNT_2, OWNED_ADDRESS_STR, SOL_PACKED_DERIVATION_PATH, SOL_PACKED_DERIVATION_PATH_2, ROOT_SCREENSHOT_PATH
 from .apps.solana_utils import enable_blind_signing, enable_expert_mode
+
+from solders.pubkey import Pubkey
+from solders.transaction import Transaction
+from solders.hash import Hash
+from solders.message import Message as MessageSolders
+from spl.token.constants import TOKEN_PROGRAM_ID
+from spl.token.instructions import TransferCheckedParams, transfer_checked, ApproveCheckedParams, approve_checked, get_associated_token_address, create_associated_token_account
+from spl.token.constants import TOKEN_PROGRAM_ID
+from .apps import solana_utils as SOL
+from solders.keypair import Keypair
 
 
 class TestGetPublicKey:
@@ -74,6 +84,45 @@ class TestMessageSigning:
         rapdu: RAPDU = sol.get_async_response()
         assert rapdu.status == ErrorType.USER_CANCEL
 
+    def test_solana_spl_approve_spending_baanx(self, backend, scenario_navigator):
+        sol = SolanaClient(backend)
+        from_public_key = sol.get_public_key(SOL_PACKED_DERIVATION_PATH)
+
+        source = Pubkey.from_string("7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE")  # Token account that holds the tokens
+        baanx_delegate = Pubkey.from_string("BaanxDe1egate111111111111111111111111111111")  # Baanx delegate address
+        owner = Pubkey.from_string(OWNED_ADDRESS_STR)  # Owner of the token account
+        sender_public_key = Pubkey.from_bytes(from_public_key)
+        mint = Pubkey.from_string("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")  # USDC Token mint address
+
+        # Token USDC details
+        amount = 1000 * (10**6)  # Approving 1000 tokens (assuming 6 decimals)
+        decimals = 6  # Ensure the correct decimal count
+
+        # Create ApproveChecked instruction
+        approve_checked_ix = approve_checked(
+            ApproveCheckedParams(
+                program_id=TOKEN_PROGRAM_ID,
+                source=source,
+                mint=mint,
+                delegate=baanx_delegate,
+                owner=owner,
+                amount=amount,
+                decimals=decimals,
+            )
+        )
+
+        blockhash = Hash.default()
+        message = MessageSolders.new_with_blockhash([approve_checked_ix], sender_public_key, blockhash)
+        tx = Transaction.new_unsigned(message)
+
+        # Dump the message embedded in the transaction
+        message = tx.message_data()
+
+        with sol.send_async_sign_message(SOL_PACKED_DERIVATION_PATH, message):
+            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH)
+
+        signature: bytes = sol.get_async_response().data
+        verify_signature(from_public_key, message, signature)
 
 class TestOffchainMessageSigning:
 
@@ -211,16 +260,6 @@ TRUSTED_NAME = "EQ96zptNAWwM23m5v2ByChCMTFu6zUmJgRtUrQV1uYNM"
 # SPL token address (JUP Token)
 SOURCE_CONTRACT = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
 
-from solders.pubkey import Pubkey
-from solders.transaction import Transaction
-from solders.hash import Hash
-from solders.message import Message as MessageSolders
-from spl.token.constants import TOKEN_PROGRAM_ID
-from spl.token.instructions import TransferCheckedParams, transfer_checked, get_associated_token_address, create_associated_token_account
-from spl.token.constants import TOKEN_PROGRAM_ID
-from .apps import solana_utils as SOL
-from solders.keypair import Keypair
-from solders.pubkey import Pubkey
 # A bit hacky but way less hassle than actually writing an actual address decoder
 SOLANA_ADDRESS_DECODER = {
     SOL.FOREIGN_ADDRESS: SOL.FOREIGN_PUBLIC_KEY,
