@@ -7,6 +7,7 @@
 #include "sol/parser.h"
 #include "ed25519_helpers.h"
 #include "trusted_info.h"
+#include "onchain_spending_delegate.h"
 
 #include "spl_token_instruction.h"
 
@@ -539,18 +540,20 @@ static int print_spl_token_approve_info(const SplTokenApproveInfo *info,
     SummaryItem *item;
 
     item = transaction_summary_primary_item();
-    summary_item_set_pubkey(item, "Approve delegate", info->delegate);
-
-    item = transaction_summary_general_item();
     const char *symbol = get_token_symbol(info->mint_account);
     summary_item_set_token_amount(item,
-                                  "Allowance",
+                                  "Amount",
                                   info->body.amount,
                                   symbol,
                                   info->body.decimals);
 
     item = transaction_summary_general_item();
-    summary_item_set_pubkey(item, "Token address", info->mint_account);
+    const char * delegate_name = get_onchain_spending_delegate_name(info->delegate);
+    if ( delegate_name == NULL) {
+        summary_item_set_pubkey(item, "Approve to", info->delegate);
+    } else {
+        summary_item_set_string(item, "Approve to", delegate_name);
+    }
 
     item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "From (token account)", info->token_account);
