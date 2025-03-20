@@ -1,3 +1,5 @@
+import pytest
+
 from ragger.backend import RaisePolicy
 from ragger.utils import RAPDU
 
@@ -84,12 +86,29 @@ class TestMessageSigning:
         rapdu: RAPDU = sol.get_async_response()
         assert rapdu.status == ErrorType.USER_CANCEL
 
-    def test_solana_spl_approve_spending_baanx(self, backend, scenario_navigator):
-        sol = SolanaClient(backend)
-        from_public_key = sol.get_public_key(SOL_PACKED_DERIVATION_PATH)
 
+class TestOnchainSpendingApprove:
+
+    TEST_CASE_DATA = [
+        {
+            'case_name': 'baaanx_delegate',
+            'delegate_address': 'BaanxDe1egate111111111111111111111111111111'
+        },
+        {
+            'case_name': 'unknown_delegate',
+            'delegate_address': '8VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE'
+        }
+    ]
+
+
+    @pytest.mark.parametrize("test_case_data", TEST_CASE_DATA, ids=lambda case: case["case_name"])
+    def test_solana_spl_approve_spending(self, backend, scenario_navigator, test_case_data):
+        sol = SolanaClient(backend)
+        test_case_name = "test_solana_spl_approve_spending_" + test_case_data["case_name"]
+
+        from_public_key = sol.get_public_key(SOL_PACKED_DERIVATION_PATH)
         source = Pubkey.from_string("7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE")  # Token account that holds the tokens
-        baanx_delegate = Pubkey.from_string("BaanxDe1egate111111111111111111111111111111")  # Baanx delegate address
+        delegate = Pubkey.from_string(test_case_data["delegate_address"])  # Delegate address
         owner = Pubkey.from_string(OWNED_ADDRESS_STR)  # Owner of the token account
         sender_public_key = Pubkey.from_bytes(from_public_key)
         mint = Pubkey.from_string("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")  # USDC Token mint address
@@ -104,7 +123,7 @@ class TestMessageSigning:
                 program_id=TOKEN_PROGRAM_ID,
                 source=source,
                 mint=mint,
-                delegate=baanx_delegate,
+                delegate=delegate,
                 owner=owner,
                 amount=amount,
                 decimals=decimals,
@@ -119,7 +138,11 @@ class TestMessageSigning:
         message = tx.message_data()
 
         with sol.send_async_sign_message(SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH)
+            scenario_navigator.review_approve(
+                path=ROOT_SCREENSHOT_PATH,
+                test_name=test_case_name,
+                custom_screen_text=None
+            )
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
