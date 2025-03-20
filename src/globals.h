@@ -32,10 +32,6 @@
 #define TOTAL_SIGN_MESSAGE_BUFFER_LENGTH  (PACKET_DATA_SIZE + MAX_DERIVATION_PATH_BUFFER_LENGTH)
 
 #define MAX_MESSAGE_LENGTH ROUND_TO_NEXT(TOTAL_SIGN_MESSAGE_BUFFER_LENGTH, USB_SEGMENT_SIZE)
-#define SIGNATURE_LENGTH   64
-#define HASH_LENGTH        32
-#define PUBKEY_LENGTH      HASH_LENGTH
-#define PRIVATEKEY_LENGTH  HASH_LENGTH
 
 #define MAX_OFFCHAIN_MESSAGE_LENGTH    (MAX_MESSAGE_LENGTH - 1 > 1212 ? 1212 : MAX_MESSAGE_LENGTH - 1)
 #define OFFCHAIN_MESSAGE_HEADER_LENGTH 20
@@ -49,7 +45,9 @@ typedef enum InstructionCode {
     InsGetAppConfiguration = 0x04,
     InsGetPubkey = 0x05,
     InsSignMessage = 0x06,
-    InsSignOffchainMessage = 0x07
+    InsSignOffchainMessage = 0x07,
+    InsTrustedInfoGetChallenge = 0x20,
+    InsTrustedInfoProvideInfo = 0x21,
 } InstructionCode;
 
 extern volatile bool G_called_from_swap;
@@ -86,5 +84,5 @@ typedef struct internalStorage_t {
 } internalStorage_t;
 
 extern const internalStorage_t N_storage_real;
-#define N_storage (*(volatile internalStorage_t*) PIC(&N_storage_real))
+#define N_storage (*(volatile internalStorage_t *) PIC(&N_storage_real))
 #endif

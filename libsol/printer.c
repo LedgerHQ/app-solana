@@ -61,7 +61,6 @@ int print_token_amount(uint64_t amount,
     return 0;
 }
 
-#define SOL_DECIMALS 9
 int print_amount(uint64_t amount, char *out, size_t out_length) {
     return print_token_amount(amount, "SOL", SOL_DECIMALS, out, out_length);
 }

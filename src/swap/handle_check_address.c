@@ -27,11 +27,6 @@ int handle_check_address(const check_address_parameters_t *params) {
     PRINTF("Inside Solana handle_check_address\n");
     PRINTF("Params on the address %d\n", (unsigned int) params);
 
-    if (params->coin_configuration != NULL || params->coin_configuration_length != 0) {
-        PRINTF("No coin_configuration expected\n");
-        return 0;
-    }
-
     if (params->address_parameters == NULL) {
         PRINTF("derivation path expected\n");
         return 0;

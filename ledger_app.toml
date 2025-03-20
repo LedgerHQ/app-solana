@@ -1,7 +1,11 @@
 [app]
 build_directory = "./"
 sdk = "C"
-devices = ["nanos", "nanox", "nanos+", "stax", "flex"]
+devices = ["nanox", "nanos+", "stax", "flex"]
+
+[use_cases]
+trusted_name_test = "TRUSTED_NAME_TEST_KEY=1"
+dbg_trusted_name_test = "DEBUG=1 TRUSTED_NAME_TEST_KEY=1"
 
 [tests]
 pytest_directory = "./tests/python"

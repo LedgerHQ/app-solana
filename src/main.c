@@ -19,6 +19,8 @@
 #include "handle_get_pubkey.h"
 #include "handle_sign_message.h"
 #include "handle_sign_offchain_message.h"
+#include "handle_get_challenge.h"
+#include "handle_provide_trusted_info.h"
 #include "apdu.h"
 #include "ui_api.h"
 
@@ -34,8 +36,6 @@
 
 ApduCommand G_command;
 unsigned char G_io_seproxyhal_spi_buffer[IO_SEPROXYHAL_BUFFER_SIZE_B];
-volatile bool G_called_from_swap;
-volatile bool G_swap_response_ready;
 
 static void reset_main_globals(void) {
     MEMCLEAR(G_command);
@@ -53,11 +53,13 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
 
     const int ret = apdu_handle_message(G_io_apdu_buffer, rx, &G_command);
     if (ret != 0) {
+        PRINTF("Clear received invalid command\n");
         MEMCLEAR(G_command);
         THROW(ret);
     }
 
     if (G_command.state == ApduStatePayloadInProgress) {
+        PRINTF("Received first chunk of split payload\n");
         THROW(ApduReplySuccess);
     }
 
@@ -87,6 +89,14 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
             handle_sign_offchain_message(flags, tx);
             break;
 
+        case InsTrustedInfoGetChallenge:
+            handle_get_challenge(tx);
+            break;
+
+        case InsTrustedInfoProvideInfo:
+            handle_provide_trusted_info();
+            break;
+
         default:
             THROW(ApduReplyUnimplementedInstruction);
     }
@@ -101,6 +111,9 @@ void app_main(void) {
     // multiple APDUs before they become complete and executed.
     reset_getpubkey_globals();
     reset_main_globals();
+
+    // to prevent it from having a fixed value at boot
+    roll_challenge();
 
     // DESIGN NOTE: the bootloader ignores the way APDU are fetched. The only
     // goal is to retrieve APDU.

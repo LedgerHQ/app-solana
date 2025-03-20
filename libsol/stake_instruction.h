@@ -22,9 +22,9 @@ enum StakeInstructionKind {
 };
 
 typedef struct StakeDelegateInfo {
-    const Pubkey* stake_pubkey;
-    const Pubkey* vote_pubkey;
-    const Pubkey* authorized_pubkey;
+    const Pubkey *stake_pubkey;
+    const Pubkey *vote_pubkey;
+    const Pubkey *authorized_pubkey;
 } StakeDelegateInfo;
 
 // To support the `LockupArgs` type of the `SetLockup` instruction
@@ -42,20 +42,20 @@ typedef struct StakeLockup {
     StakeLockupPresent present;
     int64_t unix_timestamp;
     uint64_t epoch;
-    const Pubkey* custodian;
+    const Pubkey *custodian;
 } StakeLockup;
 
 typedef struct StakeInitializeInfo {
-    const Pubkey* account;
-    const Pubkey* stake_authority;
-    const Pubkey* withdraw_authority;
+    const Pubkey *account;
+    const Pubkey *stake_authority;
+    const Pubkey *withdraw_authority;
     StakeLockup lockup;
 } StakeInitializeInfo;
 
 typedef struct StakeWithdrawInfo {
-    const Pubkey* account;
-    const Pubkey* authority;
-    const Pubkey* to;
+    const Pubkey *account;
+    const Pubkey *authority;
+    const Pubkey *to;
     uint64_t lamports;
 } StakeWithdrawInfo;
 
@@ -65,35 +65,35 @@ enum StakeAuthorize {
 };
 
 typedef struct StakeAuthorizeInfo {
-    const Pubkey* account;
-    const Pubkey* authority;
-    const Pubkey* new_authority;
-    const Pubkey* custodian;
+    const Pubkey *account;
+    const Pubkey *authority;
+    const Pubkey *new_authority;
+    const Pubkey *custodian;
     enum StakeAuthorize authorize;
 } StakeAuthorizeInfo;
 
 typedef struct StakeDeactivateInfo {
-    const Pubkey* account;
-    const Pubkey* authority;
+    const Pubkey *account;
+    const Pubkey *authority;
 } StakeDeactivateInfo;
 
 typedef struct StakeSetLockupInfo {
-    const Pubkey* account;
-    const Pubkey* custodian;
+    const Pubkey *account;
+    const Pubkey *custodian;
     StakeLockup lockup;
 } StakeSetLockupInfo;
 
 typedef struct StakeSplitInfo {
-    const Pubkey* account;
-    const Pubkey* authority;
-    const Pubkey* split_account;
+    const Pubkey *account;
+    const Pubkey *authority;
+    const Pubkey *split_account;
     uint64_t lamports;
 } StakeSplitInfo;
 
 typedef struct StakeMergeInfo {
-    const Pubkey* destination;
-    const Pubkey* source;
-    const Pubkey* authority;
+    const Pubkey *destination;
+    const Pubkey *source;
+    const Pubkey *authority;
 } StakeMergeInfo;
 
 typedef struct StakeInfo {
@@ -110,20 +110,20 @@ typedef struct StakeInfo {
     };
 } StakeInfo;
 
-int parse_stake_instructions(const Instruction* instruction,
-                             const MessageHeader* header,
-                             StakeInfo* info);
-int print_stake_info(const StakeInfo* info, const PrintConfig* print_config);
+int parse_stake_instructions(const Instruction *instruction,
+                             const MessageHeader *header,
+                             StakeInfo *info);
+int print_stake_info(const StakeInfo *info, const PrintConfig *print_config);
 
-int print_stake_initialize_info(const char* primary_title,
-                                const StakeInitializeInfo* info,
-                                const PrintConfig* print_config);
-int print_stake_split_info(const StakeSplitInfo* info, const PrintConfig* print_config);
+int print_stake_initialize_info(const char *primary_title,
+                                const StakeInitializeInfo *info,
+                                const PrintConfig *print_config);
+int print_stake_split_info(const StakeSplitInfo *info, const PrintConfig *print_config);
 
-int print_stake_split_info1(const StakeSplitInfo* info, const PrintConfig* print_config);
+int print_stake_split_info1(const StakeSplitInfo *info, const PrintConfig *print_config);
 
-int print_stake_split_info2(const StakeSplitInfo* info, const PrintConfig* print_config);
+int print_stake_split_info2(const StakeSplitInfo *info, const PrintConfig *print_config);
 
-int print_delegate_stake_info(const char* primary_title,
-                              const StakeDelegateInfo* info,
-                              const PrintConfig* print_config);
+int print_delegate_stake_info(const char *primary_title,
+                              const StakeDelegateInfo *info,
+                              const PrintConfig *print_config);

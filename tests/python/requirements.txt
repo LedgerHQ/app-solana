@@ -1,2 +1,5 @@
 base58
+ecdsa
 ragger[tests,speculos]
+solders
+solana

@@ -5,6 +5,7 @@ IndentWidth: 4
 Language: Cpp
 ColumnLimit: 100
 PointerAlignment: Right
+DerivePointerAlignment: false
 AlignAfterOpenBracket: Align
 AlignConsecutiveMacros: true
 AllowAllParametersOfDeclarationOnNextLine: false
@@ -12,9 +13,9 @@ SortIncludes: false
 SpaceAfterCStyleCast: true
 AllowShortCaseLabelsOnASingleLine: false
 AllowAllArgumentsOnNextLine: false
-AllowAllParametersOfDeclarationOnNextLine: false
 AllowShortBlocksOnASingleLine: Never
 AllowShortFunctionsOnASingleLine: None
 BinPackArguments: false
 BinPackParameters: false
 ---
+

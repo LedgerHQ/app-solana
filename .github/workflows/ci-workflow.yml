@@ -14,6 +14,7 @@ jobs:
     uses: LedgerHQ/ledger-app-workflows/.github/workflows/reusable_build.yml@v1
     with:
       upload_app_binaries_artifact: compiled_app_binaries
+      flags: "TRUSTED_NAME_TEST_KEY=1"
 
   ragger_tests:
     name: Run ragger tests using the reusable workflow

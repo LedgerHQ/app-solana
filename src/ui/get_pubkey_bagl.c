@@ -20,7 +20,7 @@
 
 #include "handle_get_pubkey.h"
 #include "apdu.h"
-#include "io.h"
+#include "io_utils.h"
 #include "ux.h"
 
 UX_STEP_NOCB(ux_display_public_flow_5_step,

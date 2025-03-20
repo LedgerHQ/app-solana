@@ -36,8 +36,8 @@ APPNAME = "Solana"
 
 # Application version
 APPVERSION_M = 1
-APPVERSION_N = 5
-APPVERSION_P = 2
+APPVERSION_N = 7
+APPVERSION_P = 1
 APPVERSION = "$(APPVERSION_M).$(APPVERSION_N).$(APPVERSION_P)"
 
 # Application source files
@@ -61,15 +61,19 @@ VARIANT_PARAM = COIN
 VARIANT_VALUES = solana
 
 # Enabling DEBUG flag will enable PRINTF and disable optimizations
-#DEBUG = 1
+# DEBUG = 1
 
 ########################################
 #     Application custom permissions   #
 ########################################
-HAVE_APPLICATION_FLAG_LIBRARY = 1
 ifeq ($(TARGET_NAME),$(filter $(TARGET_NAME),TARGET_NANOX TARGET_STAX TARGET_FLEX))
 HAVE_APPLICATION_FLAG_BOLOS_SETTINGS = 1
 endif
+
+########################################
+# Swap features #
+########################################
+ENABLE_SWAP = 1
 
 ########################################
 # Application communication interfaces #
@@ -90,6 +94,9 @@ DISABLE_STANDARD_APP_FILES = 1
 
 # Allow usage of function from lib_standard_app/crypto_helpers.c
 APP_SOURCE_FILES += ${BOLOS_SDK}/lib_standard_app/crypto_helpers.c
+APP_SOURCE_FILES += ${BOLOS_SDK}/lib_standard_app/swap_utils.c
+APP_SOURCE_FILES += ${BOLOS_SDK}/lib_standard_app/base58.c
+CFLAGS           += -I${BOLOS_SDK}/lib_standard_app/
 
 WITH_U2F?=0
 ifneq ($(WITH_U2F),0)
@@ -98,12 +105,28 @@ ifneq ($(WITH_U2F),0)
 		SDK_SOURCE_PATH += lib_u2f
 endif
 
+DEFINES += HAVE_SDK_TLV_PARSER
+
 WITH_LIBSOL?=1
 ifneq ($(WITH_LIBSOL),0)
     SOURCE_FILES += $(filter-out %_test.c,$(wildcard libsol/*.c))
     CFLAGS       += -Ilibsol/include
+    CFLAGS       += -Ilibsol
     DEFINES      += HAVE_SNPRINTF_FORMAT_U
     DEFINES      += NDEBUG
+endif
+
+#######################################
+# Trusted Name Test Mode              #
+#######################################
+TRUSTED_NAME_TEST_KEY ?= 0
+ifneq ($(TRUSTED_NAME_TEST_KEY),0)
+  DEFINES += TRUSTED_NAME_TEST_KEY
+endif
+
+FIXED_TLV_CHALLENGE ?= 0
+ifneq ($(FIXED_TLV_CHALLENGE),0)
+  DEFINES += FIXED_TLV_CHALLENGE
 endif
 
 include $(BOLOS_SDK)/Makefile.standard_app

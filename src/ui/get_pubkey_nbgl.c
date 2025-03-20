@@ -18,7 +18,7 @@
 #ifdef HAVE_NBGL
 
 #include "handle_get_pubkey.h"
-#include "io.h"
+#include "io_utils.h"
 #include "sol/printer.h"
 #include "nbgl_use_case.h"
 #include "ui_api.h"

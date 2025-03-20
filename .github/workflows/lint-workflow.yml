@@ -45,4 +45,4 @@ jobs:
         # Use Config file when the github action supports it
         builtin: clear,rare
         check_filenames: true
-        skip: ./libsol/printer_test.c,./tests/Cargo.lock
+        skip: ./libsol/printer_test.c,./tests/Cargo.lock,./tools/apdu_generator/Cargo.lock

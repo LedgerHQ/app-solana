@@ -34,18 +34,24 @@ FEES_BYTES      = lamports_to_bytes(FEES)
 
 
 ### Proposed foreign and owned addresses ###
-
 # "Foreign" Solana public key (actually the device public key derived on m/44'/501'/11111')
-FOREIGN_ADDRESS     = b"AxmUF3qkdz1zs151Q5WttVMkFpFGQPwghZs4d1mwY55d"
+FOREIGN_ADDRESS_STR = "AxmUF3qkdz1zs151Q5WttVMkFpFGQPwghZs4d1mwY55d"
+FOREIGN_ADDRESS     = FOREIGN_ADDRESS_STR.encode('utf-8')
 FOREIGN_PUBLIC_KEY  = base58.b58decode(FOREIGN_ADDRESS)
 
 # "Foreign" Solana public key (actually the device public key derived on m/44'/501'/11112')
-FOREIGN_ADDRESS_2       = b"8bjDMujLMttbmkTtoFgfw2sPYchSzzcTCEPGYDaNs3nj"
+FOREIGN_ADDRESS_2_STR   = "8bjDMujLMttbmkTtoFgfw2sPYchSzzcTCEPGYDaNs3nj"
+FOREIGN_ADDRESS_2       = FOREIGN_ADDRESS_2_STR.encode('utf-8')
 FOREIGN_PUBLIC_KEY_2    = base58.b58decode(FOREIGN_ADDRESS_2)
 
 # Device Solana public key (derived on m/44'/501'/12345')
-OWNED_ADDRESS       = b"3GJzvStsiYZonWE7WTsmt1BpWXkfcgWMGinaDwNs9HBc"
+OWNED_ADDRESS_STR   = "3GJzvStsiYZonWE7WTsmt1BpWXkfcgWMGinaDwNs9HBc"
+OWNED_ADDRESS       = OWNED_ADDRESS_STR.encode('utf-8')
 OWNED_PUBLIC_KEY    = base58.b58decode(OWNED_ADDRESS)
+
+JUP_MINT_ADDRESS_STR = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
+JUP_MINT_ADDRESS     = JUP_MINT_ADDRESS_STR.encode('utf-8')
+JUP_MINT_PUBLIC_KEY  = base58.b58decode(JUP_MINT_ADDRESS_STR)
 
 
 ### Proposed Solana derivation paths for tests ###

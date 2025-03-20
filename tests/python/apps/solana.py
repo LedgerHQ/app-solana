@@ -1,9 +1,13 @@
-from typing import List, Generator
+from typing import List, Generator, Optional
 from enum import IntEnum
 from contextlib import contextmanager
 
 from ragger.backend.interface import BackendInterface, RAPDU
+from ragger.firmware import Firmware
+from ragger.error import ExceptionRAPDU
 
+from .solana_tlv import FieldTag, format_tlv
+from .solana_keychain import Key, sign_data
 
 class INS(IntEnum):
     # DEPRECATED - Use non "16" suffixed variants below
@@ -15,6 +19,8 @@ class INS(IntEnum):
     INS_GET_PUBKEY = 0x05
     INS_SIGN_MESSAGE = 0x06
     INS_SIGN_OFFCHAIN_MESSAGE = 0x07
+    INS_GET_CHALLENGE = 0x20
+    INS_TRUSTED_INFO = 0x21
 
 
 CLA = 0xE0
@@ -69,12 +75,108 @@ def _extend_and_serialize_multiple_derivations_paths(derivations_paths: List[byt
         serialized += derivations_path
     return serialized
 
+class StatusWord(IntEnum):
+    OK = 0x9000
+    ERROR_NO_INFO = 0x6a00
+    INVALID_DATA = 0x6a80
+    INSUFFICIENT_MEMORY = 0x6a84
+    INVALID_INS = 0x6d00
+    INVALID_P1_P2 = 0x6b00
+    CONDITION_NOT_SATISFIED = 0x6985
+    REF_DATA_NOT_FOUND = 0x6a88
+    EXCEPTION_OVERFLOW = 0x6807
+    NOT_IMPLEMENTED = 0x911c
+
+class PKIClient:
+    _CLA: int = 0xB0
+    _INS: int = 0x06
+
+    def __init__(self, client: BackendInterface) -> None:
+        self._client = client
+
+    def  send_certificate(self, payload: bytes) -> RAPDU:
+        response = self.send_raw(payload)
+
+    def send_raw(self, payload: bytes) -> RAPDU:
+        header = bytearray()
+        header.append(self._CLA)
+        header.append(self._INS)
+        header.append(0x04) # PubKeyUsage = 0x04
+        header.append(0x00)
+        header.append(len(payload))
+        return self._client.exchange_raw(header + payload)
 
 class SolanaClient:
     client: BackendInterface
 
     def __init__(self, client: BackendInterface):
         self._client = client
+        self._pki_client: Optional[PKIClient] = None
+        if self._client.firmware != Firmware.NANOS:
+            # LedgerPKI not supported on Nanos
+            self._pki_client = PKIClient(self._client)
+
+    def _exchange_split(self, cla: int, ins: int, p1: int, payload: bytes) -> RAPDU:
+        payload_split = [payload[x:x + MAX_CHUNK_SIZE] for x in range(0, len(payload), MAX_CHUNK_SIZE)]
+        for i, p in enumerate(payload_split):
+            p2 = P2_NONE
+            # Send all chunks with P2_MORE except for the last chunk
+            if i != len(payload_split) - 1:
+                p2 |= P2_MORE
+            # Send all chunks with P2_EXTEND except for the first chunk
+            if i != 0:
+                p2 |= P2_EXTEND
+            rapdu = self._client.exchange(CLA, ins=ins, p1=p1, p2=p2, data=p)
+
+        return rapdu
+
+    def provide_trusted_name(self,
+                             source_contract: bytes,
+                             trusted_name: bytes,
+                             address: bytes,
+                             chain_id: int,
+                             challenge: Optional[int] = None):
+
+        payload = format_tlv(FieldTag.TAG_STRUCTURE_TYPE, 3)
+        payload += format_tlv(FieldTag.TAG_VERSION, 2)
+        payload += format_tlv(FieldTag.TAG_TRUSTED_NAME_TYPE, 0x06)
+        payload += format_tlv(FieldTag.TAG_TRUSTED_NAME_SOURCE, 0x06)
+        payload += format_tlv(FieldTag.TAG_TRUSTED_NAME, trusted_name)
+        payload += format_tlv(FieldTag.TAG_CHAIN_ID, chain_id)
+        payload += format_tlv(FieldTag.TAG_ADDRESS, address)
+        payload += format_tlv(FieldTag.TAG_TRUSTED_NAME_SOURCE_CONTRACT, source_contract)
+        if challenge is not None:
+            payload += format_tlv(FieldTag.TAG_CHALLENGE, challenge)
+        payload += format_tlv(FieldTag.TAG_SIGNER_KEY_ID, 0)  # test key
+        payload += format_tlv(FieldTag.TAG_SIGNER_ALGO, 1)  # secp256k1
+        payload += format_tlv(FieldTag.TAG_DER_SIGNATURE,
+                              sign_data(Key.TRUSTED_NAME, payload))
+
+        # send PKI certificate
+        if self._pki_client is None:
+            print(f"Ledger-PKI Not supported on '{self._client.firmware.name}'")
+        else:
+            # pylint: disable=line-too-long
+            if self._client.firmware == Firmware.NANOSP:
+                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F6534010135010315473045022100D494B106E217B46BB90BF20A4E9285529C4C8382D9B80FF462F74942579785F802202D68D0F85CD7CA36BDF351FD41332F310E93163BD175F6A92446C14A3329CC8B"  # noqa: E501
+            elif self._client.firmware == Firmware.NANOX:
+                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F653401013501021546304402207FCD665B94B43A6E838E8CD68BE52403D38A7E6A98E2CE291AB1C5D24A41101D02207AB1863E5CB127D9E8A680AC63FF2F2CBEA79CE76652A72832EF154BF1AD6477"  # noqa: E501
+            elif self._client.firmware == Firmware.STAX:
+                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F65340101350104154730450221008F8FB0117C8D51F0D13A77680C18CA98B4B317C3D6C67F23BF9198410BEDF1A1022023B1052CA43E86E2411831990C64B1E027D85E142AD39F480948E3EF9517E55E"  # noqa: E501
+            elif self._client.firmware == Firmware.FLEX:
+                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F6534010135010515473045022100CEF28780DCAFA3A485D83406D519F9AC12FD9B9C3AA7AE798896013F07DD178D022020F01B1AB1D2AAEDA70357F615EAC55E17FE94EC36DF9DE850CEFACBC98D16C8"  # noqa: E501
+            # pylint: enable=line-too-long
+
+            self._pki_client.send_certificate(bytes.fromhex(cert_apdu))
+
+        # send TLV trusted info
+        # res: RAPDU = self._client.exchange(CLA, INS.INS_TRUSTED_INFO, P1_NON_CONFIRM, P2_NONE, payload)
+        self._exchange_split(CLA, INS.INS_TRUSTED_INFO, P1_NON_CONFIRM, payload)
+
+
+    def get_challenge(self) -> bytes:
+        challenge: RAPDU = self._client.exchange(CLA, INS.INS_GET_CHALLENGE,P1_NON_CONFIRM, P2_NONE)
+        return challenge.data
 
 
     def get_public_key(self, derivation_path: bytes) -> bytes:
@@ -93,14 +195,13 @@ class SolanaClient:
             yield
 
 
-    def split_and_prefix_message(self, derivation_path : bytes, message: bytes) -> List[bytes]:
+    def split_and_prefix_message(self, derivation_path: bytes, message: bytes) -> List[bytes]:
         assert len(message) <= 65535, "Message to send is too long"
         header: bytes = _extend_and_serialize_multiple_derivations_paths([derivation_path])
-        # Check to see if this data needs to be split up and sent in chunks.
-        max_size = MAX_CHUNK_SIZE - len(header)
+        max_size = MAX_CHUNK_SIZE
         message_splited = [message[x:x + max_size] for x in range(0, len(message), max_size)]
-        # Add the header to every chunk
-        return [header + s for s in message_splited]
+        # The first chunk is the header, then all chunks with max size
+        return [header] + message_splited
 
 
     def send_first_message_batch(self, ins: INS, messages: List[bytes], p1: int) -> RAPDU:

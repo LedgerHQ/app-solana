@@ -29,7 +29,7 @@
 #include "apdu.h"
 #include "ui_api.h"
 #include "handle_swap_sign_transaction.h"
-#include "io.h"
+#include "io_utils.h"
 
 #ifdef HAVE_BAGL
 // override point, but nothing more to do
