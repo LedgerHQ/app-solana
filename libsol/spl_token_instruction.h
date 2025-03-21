@@ -120,6 +120,7 @@ typedef struct SplTokenSyncNativeInfo {
 typedef struct SplTokenInfo {
     SplTokenInstructionKind kind;
     bool is_token2022_kind;
+    bool generate_extension_warning;
     union {
         SplTokenInitializeMintInfo initialize_mint;
         SplTokenInitializeAccountInfo initialize_account;
@@ -137,16 +138,11 @@ typedef struct SplTokenInfo {
     };
 } SplTokenInfo;
 
-typedef struct SplTokenExtensionsMetadata {
-    bool generate_extension_warning;
-} SplTokenExtensionsMetadata;
-
 bool is_token2022_instruction(const Instruction *instruction, const MessageHeader *header);
 
 int parse_spl_token_instructions(const Instruction *instruction,
                                  const MessageHeader *header,
                                  SplTokenInfo *info,
-                                 SplTokenExtensionsMetadata *token_extensions_metadata,
                                  bool *ignore_instruction_info);
 int print_spl_token_info(const SplTokenInfo *info, const PrintConfig *print_config);
 void summary_item_set_multisig_m_of_n(SummaryItem *item, uint8_t m, uint8_t n);

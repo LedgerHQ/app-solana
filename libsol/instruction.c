@@ -1,3 +1,4 @@
+#include "os.h"
 #include "instruction.h"
 #include "serum_assert_owner_instruction.h"
 #include "spl_memo_instruction.h"

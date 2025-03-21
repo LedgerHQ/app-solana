@@ -1,3 +1,4 @@
+#include "os.h"
 #include "instruction.h"
 #include "sol/parser.h"
 #include "sol/message.h"
@@ -28,7 +29,7 @@ int process_message_body(const uint8_t *message_body,
 
     // Track if given transaction contains token2022 extensions that are not fully supported
     // Needed to display user proper warning
-    SplTokenExtensionsMetadata token_extensions_metadata = {false};
+    bool generate_extension_warning = false;
 
     size_t display_instruction_count = 0;
     InstructionInfo *display_instruction_info[MAX_INSTRUCTIONS];
@@ -41,7 +42,6 @@ int process_message_body(const uint8_t *message_body,
 
         InstructionInfo *info = &instruction_info[instruction_count];
         bool ignore_instruction_info = false;
-
         enum ProgramId program_id = instruction_program_id(&instruction, header);
         switch (program_id) {
             case ProgramIdSerumAssertOwner: {
@@ -68,11 +68,11 @@ int process_message_body(const uint8_t *message_body,
                 if (parse_spl_token_instructions(&instruction,
                                                  header,
                                                  &info->spl_token,
-                                                 &token_extensions_metadata,
                                                  &ignore_instruction_info) == 0) {
                     info->spl_token.is_token2022_kind =
                         is_token2022_instruction(&instruction, header);
                     if (info->spl_token.is_token2022_kind) {
+                        generate_extension_warning |= info->spl_token.generate_extension_warning;
                         PRINTF("info->spl_token.is_token2022_kind\n");
                     } else {
                         PRINTF("!info->spl_token.is_token2022_kind\n");
@@ -145,7 +145,7 @@ int process_message_body(const uint8_t *message_body,
         BAIL_IF(instruction_info[i].kind == ProgramIdUnknown);
     }
 
-    if (token_extensions_metadata.generate_extension_warning) {
+    if (generate_extension_warning) {
         BAIL_IF(print_spl_token_extension_warning());
     }
     return print_transaction(print_config, display_instruction_info, display_instruction_count);

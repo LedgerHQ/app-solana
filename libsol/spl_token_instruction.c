@@ -1,6 +1,4 @@
-// #include "os.h"
-// #include "globals.h"
-#include "ed25519_helpers.h"
+#include "os.h"
 #include "common_byte_strings.h"
 #include "instruction.h"
 #include "sol/parser.h"
@@ -9,7 +7,9 @@
 #include "spl_token2022_instruction.h"
 #include "token_info.h"
 #include "util.h"
-#include "sol/trusted_info.h"
+#include "sol/parser.h"
+#include "ed25519_helpers.h"
+#include "trusted_info.h"
 
 #include "spl_token_instruction.h"
 
@@ -53,6 +53,10 @@ static int parse_spl_token_instruction_kind(Parser *parser, SplTokenInstructionK
         case SplTokenKind(Approve):
         case SplTokenKind(MintTo):
         case SplTokenKind(Burn):
+            PRINTF("Deprecated instruction %d\n", maybe_kind);
+            break;
+        default:
+            PRINTF("Unknown instruction %d\n", maybe_kind);
             break;
     }
     return 1;
@@ -140,6 +144,7 @@ static int parse_initialize_multisig_spl_token_instruction(Parser *parser,
 static int parse_spl_token_sign(InstructionAccountsIterator *it, SplTokenSign *sign) {
     size_t n = instruction_accounts_iterator_remaining(it);
     BAIL_IF(n == 0);
+    PRINTF("n = %d\n", n);
 
     if (n == 1) {
         sign->kind = SplTokenSignKindSingle;
@@ -155,7 +160,8 @@ static int parse_spl_token_sign(InstructionAccountsIterator *it, SplTokenSign *s
 static int parse_transfer_spl_token_instruction(Parser *parser,
                                                 const Instruction *instruction,
                                                 const MessageHeader *header,
-                                                SplTokenTransferInfo *info) {
+                                                SplTokenTransferInfo *info,
+                                                bool is_token2022_kind) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
@@ -166,46 +172,18 @@ static int parse_transfer_spl_token_instruction(Parser *parser,
     BAIL_IF(instruction_accounts_iterator_next(&it, &info->mint_account));
     BAIL_IF(instruction_accounts_iterator_next(&it, &info->dest_account));
 
+    PRINTF("num_required_signatures = %d\n", header->pubkeys_header.num_required_signatures);
+    PRINTF("num_readonly_signed_accounts = %d\n", header->pubkeys_header.num_readonly_signed_accounts);
+    PRINTF("num_readonly_unsigned_accounts = %d\n", header->pubkeys_header.num_readonly_unsigned_accounts);
+    PRINTF("pubkeys_length = %d\n", header->pubkeys_header.pubkeys_length);
+
     BAIL_IF(parse_spl_token_sign(&it, &info->sign));
 
-    // Here we will check the content of the SPL transaction against the received descriptor
-    if (!g_trusted_info.received) {
-        PRINTF("Descriptor info is required for a SPL transfer\n");
-        return -1;
-    }
-
-    // We have received a destination ATA, we will validate it by comparing it against the
-    // derivation of the owner address + mint address
-    // We must have received the owner address from the descriptor for this
-
-    PRINTF("=== TX INFO ===\n");
-    PRINTF("src_account           = %.*H\n", PUBKEY_LENGTH, info->src_account->data);
-    PRINTF("mint_account          = %.*H\n", PUBKEY_LENGTH, info->mint_account->data);
-    PRINTF("dest_account          = %.*H\n", PUBKEY_LENGTH, info->dest_account->data);
-
-    PRINTF("=== TRUSTED INFO ===\n");
-    PRINTF("encoded_owner_address = %s\n", g_trusted_info.encoded_owner_address);
-    PRINTF("owner_address         = %.*H\n", PUBKEY_LENGTH, g_trusted_info.owner_address);
-    PRINTF("encoded_token_address = %s\n", g_trusted_info.encoded_token_address);
-    PRINTF("token_address         = %.*H\n", PUBKEY_LENGTH, g_trusted_info.token_address);
-    PRINTF("encoded_mint_address  = %s\n", g_trusted_info.encoded_mint_address);
-    PRINTF("mint_address          = %.*H\n", PUBKEY_LENGTH, g_trusted_info.mint_address);
-
-    if (memcmp(g_trusted_info.mint_address, info->mint_account->data, PUBKEY_LENGTH) != 0) {
-        PRINTF("Mint address does not match with mint address in descriptor\n");
-        return -1;
-    }
-
-    if (memcmp(g_trusted_info.token_address, info->dest_account->data, PUBKEY_LENGTH) != 0) {
-        PRINTF("Token address does not match with token address in descriptor\n");
-        return -1;
-    }
-
-    if (!validate_associated_token_address(g_trusted_info.owner_address,
-                                           info->mint_account->data,
-                                           info->dest_account->data,
-                                           is_token2022_instruction(instruction, header))) {
-        PRINTF("Failed to validate ATA\n");
+    if (!check_ata_agaisnt_trusted_info(info->src_account->data,
+                                        info->mint_account->data,
+                                        info->dest_account->data,
+                                        is_token2022_kind)) {
+        PRINTF("check_ata_agaisnt_trusted_info failed\n");
         return -1;
     }
 
@@ -388,11 +366,13 @@ static int parse_sync_native_spl_token_instruction(const Instruction *instructio
 int parse_spl_token_instructions(const Instruction *instruction,
                                  const MessageHeader *header,
                                  SplTokenInfo *info,
-                                 SplTokenExtensionsMetadata *token_extensions_metadata,
                                  bool *ignore_instruction_info) {
     Parser parser = {instruction->data, instruction->data_length};
 
-    BAIL_IF(parse_spl_token_instruction_kind(&parser, &info->kind));
+    if (parse_spl_token_instruction_kind(&parser, &info->kind) != 0) {
+        PRINTF("parse_spl_token_instruction_kind failed\n");
+        return -1;
+    }
 
     switch (info->kind) {
         case SplTokenKind(InitializeMint):
@@ -440,7 +420,8 @@ int parse_spl_token_instructions(const Instruction *instruction,
             return parse_transfer_spl_token_instruction(&parser,
                                                         instruction,
                                                         header,
-                                                        &info->transfer);
+                                                        &info->transfer,
+                                                        info->is_token2022_kind);
         case SplTokenKind(ApproveChecked):
             return parse_approve_spl_token_instruction(&parser,
                                                        instruction,
@@ -463,7 +444,7 @@ int parse_spl_token_instructions(const Instruction *instruction,
         case SplTokenExtensionKind(TransferHookExtension):
         case SplTokenExtensionKind(ConfidentialTransferFeeExtension):
             // Mark that we have encountered not fully supported extension
-            token_extensions_metadata->generate_extension_warning = true;
+            info->generate_extension_warning = true;
             __attribute__((fallthrough));
         case SplTokenExtensionKind(DefaultAccountStateExtension):
         case SplTokenExtensionKind(InterestBearingMintExtension):
@@ -586,14 +567,13 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
                                   symbol,
                                   info->body.decimals);
 
-    // Already checked in parsing step but let's be secure
-    if (!g_trusted_info.received) {
-        PRINTF("Descriptor info is required for a SPL transfer\n");
+    char *to_address;
+    if (get_transfer_to_address(&to_address) != 0) {
         return -1;
     }
 
     item = transaction_summary_general_item();
-    summary_item_set_string(item, "To", g_trusted_info.encoded_owner_address);
+    summary_item_set_string(item, "To", to_address);
 
     item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "Token address", info->mint_account);

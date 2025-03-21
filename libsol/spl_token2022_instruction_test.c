@@ -82,7 +82,8 @@ void test_parse_spl_token_create_token() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(InitializeMint));
@@ -163,7 +164,8 @@ void test_parse_spl_token_create_account() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(InitializeAccount));
@@ -240,7 +242,8 @@ void test_parse_spl_token_create_account2() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(InitializeAccount2));
@@ -320,7 +323,8 @@ void test_parse_spl_token_create_multisig() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(InitializeMultisig));
@@ -379,7 +383,8 @@ void test_parse_spl_token_transfer() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(TransferChecked));
@@ -438,7 +443,8 @@ void test_parse_spl_token_approve() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(ApproveChecked));
@@ -485,7 +491,8 @@ void test_parse_spl_token_revoke() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(Revoke));
@@ -526,7 +533,8 @@ void test_parse_spl_token_set_authority() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(SetAuthority));
@@ -579,7 +587,8 @@ void test_parse_spl_token_mint_to() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(MintToChecked));
@@ -634,7 +643,8 @@ void test_parse_spl_token_burn() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(BurnChecked));
@@ -682,7 +692,8 @@ void test_parse_spl_token_close_account() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(CloseAccount));
@@ -724,7 +735,8 @@ void test_parse_spl_token_freeze_account() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(FreezeAccount));
@@ -767,7 +779,8 @@ void test_parse_spl_token_thaw_account() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(ThawAccount));
@@ -807,7 +820,8 @@ void test_parse_spl_token_sync_native() {
     assert(instruction_validate(&instruction, &header) == 0);
 
     SplTokenInfo info;
-    assert(parse_spl_token_instructions(&instruction, &header, &info) == 0);
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) == 0);
     assert(parser.buffer_length == 0);
 
     assert(info.kind == SplTokenKind(SyncNative));
