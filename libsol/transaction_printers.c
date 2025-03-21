@@ -737,7 +737,7 @@ int print_transaction(const PrintConfig *print_config,
     int res = print_transaction_nonce_processed(print_config, infos, infos_length);
 
     // Compute budget should be printed after all other instructions
-    if (res == 0 && compute_budget_info.is_found) {
+    if (compute_budget_info.is_found) {
         print_compute_budget(&compute_budget_info.compute_budget_fee_info, print_config);
     }
 
