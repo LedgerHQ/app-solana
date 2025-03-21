@@ -17,6 +17,7 @@ from spl.token.instructions import TransferCheckedParams, transfer_checked, Appr
 from spl.token.constants import TOKEN_PROGRAM_ID
 from .apps import solana_utils as SOL
 from solders.keypair import Keypair
+from solders.compute_budget import set_compute_unit_limit, set_compute_unit_price
 
 
 class TestGetPublicKey:
@@ -91,12 +92,24 @@ class TestOnchainSpendingApprove:
 
     TEST_CASE_DATA = [
         {
+            'case_name': 'baaanx_delegate_with_compute_budget',
+            'delegate_address': 'BaanxDe1egate111111111111111111111111111111',
+            'compute_budget': (2_000_000, 100_500)
+        },
+        {
             'case_name': 'baaanx_delegate',
-            'delegate_address': 'BaanxDe1egate111111111111111111111111111111'
+            'delegate_address': 'BaanxDe1egate111111111111111111111111111111',
+            'compute_budget': None
+        },
+        {
+            'case_name': 'unknown_delegate_with_compute_budget',
+            'delegate_address': '8VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE',
+            'compute_budget': (1_000_000, 100_000)
         },
         {
             'case_name': 'unknown_delegate',
-            'delegate_address': '8VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE'
+            'delegate_address': '8VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE',
+            'compute_budget': None
         }
     ]
 
@@ -105,6 +118,15 @@ class TestOnchainSpendingApprove:
     def test_solana_spl_approve_spending(self, backend, scenario_navigator, test_case_data):
         sol = SolanaClient(backend)
         test_case_name = "test_solana_spl_approve_spending_" + test_case_data["case_name"]
+
+        instructions = []
+
+        # Set compute budget if required
+        if test_case_data["compute_budget"]:
+            compute_unit_limit_ix = set_compute_unit_limit(1_000_000)
+            instructions.append(compute_unit_limit_ix)
+            compute_unit_price_ix = set_compute_unit_price(100_000)
+            instructions.append(compute_unit_price_ix)
 
         from_public_key = sol.get_public_key(SOL_PACKED_DERIVATION_PATH)
         source = Pubkey.from_string("7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE")  # Token account that holds the tokens
@@ -129,9 +151,14 @@ class TestOnchainSpendingApprove:
                 decimals=decimals,
             )
         )
+        instructions.append(approve_checked_ix)
 
         blockhash = Hash.default()
-        message = MessageSolders.new_with_blockhash([approve_checked_ix], sender_public_key, blockhash)
+        message = MessageSolders.new_with_blockhash(
+            instructions,
+            sender_public_key,
+            blockhash
+        )
         tx = Transaction.new_unsigned(message)
 
         # Dump the message embedded in the transaction
