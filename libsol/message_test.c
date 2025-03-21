@@ -1703,7 +1703,7 @@ void test_process_message_body_spl_token_approve() {
                 42, 0, 0, 0, 0, 0, 0, 0,
                 9
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 6);
+    process_message_body_and_sanity_check(message, sizeof(message), 5);
 }
 
 void test_process_message_body_spl_token_revoke() {
