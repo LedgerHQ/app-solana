@@ -173,6 +173,11 @@ int transaction_summary_set_fee_payer_pubkey(const Pubkey *pubkey) {
     return 0;
 }
 
+static void set_extended_string(const char* value){
+    //Set pointer to the temporary buffer, so 'libsol' does not have to include ux API from SDK
+    //G_transaction_summary_extended_text = (char*) value;
+}
+
 static int transaction_summary_update_display_for_item(const SummaryItem *item,
                                                        enum DisplayFlags flags) {
     switch (item->kind) {

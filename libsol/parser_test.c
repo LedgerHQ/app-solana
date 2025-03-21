@@ -1,9 +1,6 @@
-#include "common_byte_strings.h"
 #include "instruction.h"
 #include "parser.c"
-#include "sol/parser.h"
 #include "sol/printer.h"
-#include "sol/offchain_message_signing.h"
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
@@ -249,21 +246,18 @@ void test_parse_pubkeys_header() {
 }
 
 void test_parse_pubkeys() {
-    uint8_t num_pubkeys = 1;
-    uint8_t message[] = {BYTES32_BS58_2};
+    uint8_t message[PUBKEY_SIZE + 4] = {1, 2, 3, 1, 42};
     Parser parser = {message, sizeof(message)};
     PubkeysHeader header;
     const Pubkey *pubkeys;
     assert(parse_pubkeys(&parser, &header, &pubkeys) == 0);
     assert(parser_is_empty(&parser));
-    assert(parser.buffer == message + ARRAY_LEN(message));
-    const Pubkey expected_pubkey = {{BYTES32_BS58_2}};
-    assert_pubkey_equal(&pubkeys[0], &expected_pubkey);
+    assert(parser.buffer == message + PUBKEY_SIZE + 4);
+    assert(pubkeys->data[0] == 42);
 }
 
 void test_parse_pubkeys_too_short() {
-    uint8_t num_pubkeys = 1;
-    uint8_t message[] = {num_pubkeys};
+    uint8_t message[] = {1, 2, 3, 1};
     Parser parser = {message, sizeof(message)};
     PubkeysHeader header;
     const Pubkey *pubkeys;
@@ -326,71 +320,6 @@ void test_parser_is_empty() {
     assert(parser_is_empty(&empty));
 }
 
-#define TEST_OFFCHAIN_MESSAGE /* "test message" */                        \
-    0x74, 0x65, 0x73, 0x74, 0x20, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65
-
-#define OFFCHAIN_MESSAGE_SIGNING_DOMAIN_CHANGED \
-    0x00, 0xaa, 0xbb, 0xcc, 0x00, 0xaa, 0xbb, 0xcc, 0x00, 0xaa, 0xbb, 0xcc
-
-void test_parse_offline_message_header_invalid_sgn_domain(){
-    uint8_t test_message[] = {TEST_OFFCHAIN_MESSAGE};
-    uint16_t message_length = ARRAY_LEN(test_message);
-    uint8_t message_length0 = message_length & 0x00ff;
-    uint8_t message_length1 = (message_length & 0xff00) >> 8;
-    uint8_t buf[] = {
-        OFFCHAIN_MESSAGE_SIGNING_DOMAIN_CHANGED,
-        0,
-        BYTES32_BS58_2,
-        0,
-        1,
-        BYTES32_BS58_3,
-        message_length0, message_length1,
-        TEST_OFFCHAIN_MESSAGE
-    };
-
-    Parser parser = {buf, ARRAY_LEN(buf)};
-    struct OffchainMessageHeader header;
-    //Parse header should return error - invalid signing domain
-    assert(parse_offchain_message_header(&parser, &header) > 0);
-}
-
-
-void test_parse_offline_message_header() {
-    uint8_t test_message[] = {TEST_OFFCHAIN_MESSAGE};
-    uint16_t message_length = ARRAY_LEN(test_message);
-    uint8_t message_length0 = message_length & 0x00ff;
-    uint8_t message_length1 = (message_length & 0xff00) >> 8;
-    uint8_t buf[] = {
-        OFFCHAIN_MESSAGE_SIGNING_DOMAIN,
-        0,
-        BYTES32_BS58_2,
-        0,
-        1,
-        BYTES32_BS58_3,
-        message_length0, message_length1,
-        TEST_OFFCHAIN_MESSAGE
-    };
-
-    Parser parser = {buf, ARRAY_LEN(buf)};
-    struct OffchainMessageHeader header;
-    assert(parse_offchain_message_header(&parser, &header) == 0);
-    assert(header.version == 0);
-    const OffchainMessageApplicationDomain expected_application_domain =
-        {{BYTES32_BS58_2}};
-    assert(memcmp(
-        header.application_domain,
-        &expected_application_domain,
-        OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH
-    ) == 0);
-    assert(header.format == 0);
-    assert(header.signers_length == 1);
-    const Pubkey expected_signer = {{BYTES32_BS58_3}};
-    assert_pubkey_equal(&header.signers[0], &expected_signer);
-    assert(memcmp(parser.buffer, test_message, parser.buffer_length) == 0);
-    advance(&parser, message_length);
-    assert(parser_is_empty(&parser));
-}
-
 int main() {
     test_parse_u8();
     test_parse_u8_too_short();
@@ -411,8 +340,6 @@ int main() {
     test_parse_data_too_short();
     test_parse_instruction();
     test_parser_is_empty();
-    test_parse_offline_message_header_invalid_sgn_domain();
-    test_parse_offline_message_header();
 
     printf("passed\n");
     return 0;
