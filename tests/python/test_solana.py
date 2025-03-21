@@ -94,7 +94,7 @@ class TestOnchainSpendingApprove:
         {
             'case_name': 'baaanx_delegate_with_compute_budget',
             'delegate_address': 'BaanxDe1egate111111111111111111111111111111',
-            'compute_budget': (2_000_000, 100_500)
+            'compute_budget': (2_000_000, 100_500),
         },
         {
             'case_name': 'baaanx_delegate',
@@ -110,6 +110,12 @@ class TestOnchainSpendingApprove:
             'case_name': 'unknown_delegate',
             'delegate_address': '8VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE',
             'compute_budget': None
+        },
+        {
+            'case_name': 'unknown_delegate_with_unknown_token',
+            'delegate_address': '8VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE',
+            'compute_budget': (2_000_000, 100_500),
+            'token': 'FPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
         }
     ]
 
@@ -118,6 +124,7 @@ class TestOnchainSpendingApprove:
     def test_solana_spl_approve_spending(self, backend, scenario_navigator, test_case_data):
         sol = SolanaClient(backend)
         test_case_name = "test_solana_spl_approve_spending_" + test_case_data["case_name"]
+        token_address = ""
 
         instructions = []
 
@@ -128,12 +135,19 @@ class TestOnchainSpendingApprove:
             compute_unit_price_ix = set_compute_unit_price(100_000)
             instructions.append(compute_unit_price_ix)
 
+        # Set token address
+        if test_case_data.get('token'):
+            token_address = test_case_data['token']
+        else:
+            # USDC Token mint address
+            token_address = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+
         from_public_key = sol.get_public_key(SOL_PACKED_DERIVATION_PATH)
         source = Pubkey.from_string("7VHUFJHWu2CuExkJcJrzhQPJ2oygupTWkL2A2For4BmE")  # Token account that holds the tokens
         delegate = Pubkey.from_string(test_case_data["delegate_address"])  # Delegate address
         owner = Pubkey.from_string(OWNED_ADDRESS_STR)  # Owner of the token account
         sender_public_key = Pubkey.from_bytes(from_public_key)
-        mint = Pubkey.from_string("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")  # USDC Token mint address
+        mint = Pubkey.from_string(token_address)  # Token mint address
 
         # Token USDC details
         amount = 1000 * (10**6)  # Approving 1000 tokens (assuming 6 decimals)
