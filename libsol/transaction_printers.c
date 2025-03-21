@@ -675,7 +675,6 @@ typedef struct ComputeBudgetFeeInfoFound {
 } ComputeBudgetFeeInfoFound;
 
 InstructionInfo *const *preprocess_compute_budget_instructions(
-    const PrintConfig *print_config,
     InstructionInfo *const *infos,
     size_t *infos_length,
     ComputeBudgetFeeInfoFound *compute_budget_fee_info_found) {
@@ -733,10 +732,7 @@ int print_transaction(const PrintConfig *print_config,
 
     ComputeBudgetFeeInfoFound compute_budget_info = {.is_found = false};
 
-    infos = preprocess_compute_budget_instructions(print_config,
-                                                   infos,
-                                                   &infos_length,
-                                                   &compute_budget_info);
+    infos = preprocess_compute_budget_instructions(infos, &infos_length, &compute_budget_info);
 
     int res = print_transaction_nonce_processed(print_config, infos, infos_length);
 
