@@ -731,7 +731,7 @@ int print_transaction(const PrintConfig *print_config,
         infos_length--;
     }
 
-    ComputeBudgetFeeInfoFound compute_budget_info = {};
+    ComputeBudgetFeeInfoFound compute_budget_info = {.is_found = false};
 
     infos = preprocess_compute_budget_instructions(print_config,
                                                    infos,
