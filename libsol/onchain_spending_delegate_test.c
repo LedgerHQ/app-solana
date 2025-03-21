@@ -7,7 +7,7 @@
 
 void test_onchain_spending_delegate_name_matches() {
     int res = strcmp(get_onchain_spending_delegate_name(&DELEGATE_REGISTRY[0].program_id),
-                     DELEGATE_REGISTRY[0].name, );
+                     DELEGATE_REGISTRY[0].name);
     assert(res == 0);
 
     assert(!get_onchain_spending_delegate_name(&system_program_id));
