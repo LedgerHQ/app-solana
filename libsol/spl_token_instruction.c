@@ -551,9 +551,6 @@ static int print_spl_token_approve_info(const SplTokenApproveInfo *info,
         summary_item_set_string(item, "Approve to", delegate_name);
     }
 
-    item = transaction_summary_general_item();
-    summary_item_set_pubkey(item, "From (token account)", info->token_account);
-
     print_spl_token_sign(&info->sign, print_config);
 
     return 0;

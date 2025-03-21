@@ -669,9 +669,16 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
     return 1;
 }
 
-InstructionInfo *const *preprocess_compute_budget_instructions(const PrintConfig *print_config,
-                                                               InstructionInfo *const *infos,
-                                                               size_t *infos_length) {
+typedef struct ComputeBudgetFeeInfoFound {
+    bool is_found;
+    ComputeBudgetFeeInfo compute_budget_fee_info;
+} ComputeBudgetFeeInfoFound;
+
+InstructionInfo *const *preprocess_compute_budget_instructions(
+    const PrintConfig *print_config,
+    InstructionInfo *const *infos,
+    size_t *infos_length,
+    ComputeBudgetFeeInfoFound *compute_budget_fee_info_found) {
     size_t infos_length_initial = *infos_length;
     if (infos_length_initial > 1) {
         // Iterate over infos and print compute budget instructions and offset pointers
@@ -705,7 +712,8 @@ InstructionInfo *const *preprocess_compute_budget_instructions(const PrintConfig
             compute_budget_fee_info.change_unit_price) {
             // We do not want to display anything related to the compute budget
             // if no instructions of this type were present in the transaction
-            print_compute_budget(&compute_budget_fee_info, print_config);
+            compute_budget_fee_info_found->is_found = true;
+            compute_budget_fee_info_found->compute_budget_fee_info = compute_budget_fee_info;
         }
     }
     return infos;
@@ -723,7 +731,19 @@ int print_transaction(const PrintConfig *print_config,
         infos_length--;
     }
 
-    infos = preprocess_compute_budget_instructions(print_config, infos, &infos_length);
+    ComputeBudgetFeeInfoFound compute_budget_info = {};
 
-    return print_transaction_nonce_processed(print_config, infos, infos_length);
+    infos = preprocess_compute_budget_instructions(print_config,
+                                                   infos,
+                                                   &infos_length,
+                                                   &compute_budget_info);
+
+    int res = print_transaction_nonce_processed(print_config, infos, infos_length);
+
+    // Compute budget should be printed after all other instructions
+    if (res == 0 && compute_budget_info.is_found) {
+        print_compute_budget(&compute_budget_info.compute_budget_fee_info, print_config);
+    }
+
+    return res;
 }
