@@ -69,7 +69,7 @@ void setup_ui(OffchainMessageHeader *header, bool is_ascii, Parser *parser, size
         THROW(ApduReplySolanaSummaryFinalizeFailed);
     }
 
-    start_sign_offchain_message_ui(num_summary_steps, summary_step_kinds);
+    start_sign_offchain_message_ui(is_ascii, num_summary_steps);
 }
 
 void handle_sign_offchain_message(volatile unsigned int *flags, volatile unsigned int *tx) {
