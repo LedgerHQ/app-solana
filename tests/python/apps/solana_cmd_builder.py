@@ -150,8 +150,9 @@ class MessageFormat(IntEnum):
 class v0_OffchainMessage:
     format: MessageFormat
     message: bytes
+    signer_pubkey: bytes
 
-    def __init__(self, message: bytes):
+    def __init__(self, message: bytes, signer_pubkey: bytes):
         # /// Construct a new OffchainMessage object from the given message
         if len(message) <= MAX_LEN_LEDGER:
             if is_printable_ascii(message):
@@ -167,6 +168,7 @@ class v0_OffchainMessage:
                 raise ValueError()
         else:
             raise ValueError()
+        self.signer_pubkey = signer_pubkey
         self.message = message
 
     # Serialize the message to bytes, including the full header
@@ -175,6 +177,10 @@ class v0_OffchainMessage:
         data: bytes = b""
         # format
         data += self.format.to_bytes(1, byteorder='little')
+        # signers count
+        data += (1).to_bytes(1, byteorder='little')
+        # signers
+        data += self.signer_pubkey
         # message length
         data += len(self.message).to_bytes(2, byteorder='little')
         # message
@@ -187,10 +193,10 @@ class OffchainMessage:
     message: v0_OffchainMessage
 
     # Construct a new OffchainMessage object from the given version and message
-    def __init__(self, version: int, message: bytes):
+    def __init__(self, version: int, message: bytes, signer_pubkey: bytes):
         self.version = version
         if version == 0:
-            self.message = v0_OffchainMessage(message)
+            self.message = v0_OffchainMessage(message, signer_pubkey)
         else:
             raise ValueError()
 
@@ -199,8 +205,9 @@ class OffchainMessage:
         data: bytes = b""
         # serialize signing domain
         data += SIGNING_DOMAIN
-
         # serialize version and call version specific serializer
         data += self.version.to_bytes(1, byteorder='little')
+        # Providing EMPTY app domain
+        data += bytearray(32)
         data += self.message.serialize()
         return data
