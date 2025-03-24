@@ -64,13 +64,10 @@ int process_message_body(const uint8_t *message_body,
                 break;
             }
             case ProgramIdSplToken:
-                PRINTF("case ProgramIdSplToken\n");
                 if (parse_spl_token_instructions(&instruction,
                                                  header,
                                                  &info->spl_token,
                                                  &ignore_instruction_info) == 0) {
-                    info->spl_token.is_token2022_kind =
-                        is_token2022_instruction(&instruction, header);
                     if (info->spl_token.is_token2022_kind) {
                         generate_extension_warning |= info->spl_token.generate_extension_warning;
                         PRINTF("info->spl_token.is_token2022_kind\n");

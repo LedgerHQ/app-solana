@@ -101,7 +101,7 @@ typedef struct Token_COption_Pubkey {
 /**
  * Instructions supported by the token program.
  * List is compliant with the program source code at:
- * https://github.com/solana-labs/solana-program-library/blob/master/token/program-2022/src/instruction.rs
+ * https://github.com/solana-program/token-2022/blob/main/program/src/instruction.rs
  */
 typedef enum Token_TokenInstruction_Tag {
     /**
@@ -120,7 +120,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   1. `[]` Rent sysvar
      *
      */
-    Token_TokenInstruction_InitializeMint,
+    Token_TokenInstruction_InitializeMint = 0,
     /**
      * Initializes a new account to hold tokens.  If this account is associated
      * with the native mint then the token balance of the initialized account
@@ -141,7 +141,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   2. `[]` The new account's owner/multisignature.
      *   3. `[]` Rent sysvar
      */
-    Token_TokenInstruction_InitializeAccount,
+    Token_TokenInstruction_InitializeAccount = 1,
     /**
      * Initializes a multisignature account with N provided signers.
      *
@@ -163,7 +163,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   2. ..2+N. `[]` The signer accounts, must equal to N where 1 <= N <=
      *      11.
      */
-    Token_TokenInstruction_InitializeMultisig,
+    Token_TokenInstruction_InitializeMultisig = 2,
     /**
      * Transfers tokens from one account to another either directly or via a
      * delegate.  If this account is associated with the native mint then equal
@@ -183,7 +183,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   2. `[]` The source account's multisignature owner/delegate.
      *   3. ..3+M `[signer]` M signer accounts.
      */
-    Token_TokenInstruction_Transfer,
+    Token_TokenInstruction_Transfer = 3,
     /**
      * Approves a delegate.  A delegate is given the authority over tokens on
      * behalf of the source account's owner.
@@ -201,7 +201,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   2. `[]` The source account's multisignature owner.
      *   3. ..3+M `[signer]` M signer accounts
      */
-    Token_TokenInstruction_Approve,
+    Token_TokenInstruction_Approve = 4,
     /**
      * Revokes the delegate's authority.
      *
@@ -216,7 +216,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   1. `[]` The source account's multisignature owner.
      *   2. ..2+M `[signer]` M signer accounts
      */
-    Token_TokenInstruction_Revoke,
+    Token_TokenInstruction_Revoke = 5,
     /**
      * Sets a new authority of a mint or account.
      *
@@ -231,7 +231,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   1. `[]` The mint's or account's current multisignature authority.
      *   2. ..2+M `[signer]` M signer accounts
      */
-    Token_TokenInstruction_SetAuthority,
+    Token_TokenInstruction_SetAuthority = 6,
     /**
      * Mints new tokens to an account.  The native mint does not support
      * minting.
@@ -249,7 +249,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   2. `[]` The mint's multisignature mint-tokens authority.
      *   3. ..3+M `[signer]` M signer accounts.
      */
-    Token_TokenInstruction_MintTo,
+    Token_TokenInstruction_MintTo = 7,
     /**
      * Burns tokens by removing them from an account.  `Burn` does not support
      * accounts associated with the native mint, use `CloseAccount` instead.
@@ -267,7 +267,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   2. `[]` The account's multisignature owner/delegate.
      *   3. ..3+M `[signer]` M signer accounts.
      */
-    Token_TokenInstruction_Burn,
+    Token_TokenInstruction_Burn = 8,
     /**
      * Close an account by transferring all its SOL to the destination account.
      * Non-native accounts may only be closed if its token amount is zero.
@@ -285,7 +285,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   2. `[]` The account's multisignature owner.
      *   3. ..3+M `[signer]` M signer accounts.
      */
-    Token_TokenInstruction_CloseAccount,
+    Token_TokenInstruction_CloseAccount = 9,
     /**
      * Freeze an Initialized account using the Mint's freeze_authority (if
      * set).
@@ -303,7 +303,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   2. `[]` The mint's multisignature freeze authority.
      *   3. ..3+M `[signer]` M signer accounts.
      */
-    Token_TokenInstruction_FreezeAccount,
+    Token_TokenInstruction_FreezeAccount = 10,
     /**
      * Thaw a Frozen account using the Mint's freeze_authority (if set).
      *
@@ -320,7 +320,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   2. `[]` The mint's multisignature freeze authority.
      *   3. ..3+M `[signer]` M signer accounts.
      */
-    Token_TokenInstruction_ThawAccount,
+    Token_TokenInstruction_ThawAccount = 11,
     /**
      * Transfers tokens from one account to another either directly or via a
      * delegate.  If this account is associated with the native mint then equal
@@ -346,7 +346,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   3. `[]` The source account's multisignature owner/delegate.
      *   4. ..4+M `[signer]` M signer accounts.
      */
-    Token_TokenInstruction_TransferChecked,
+    Token_TokenInstruction_TransferChecked = 12,
     /**
      * Approves a delegate.  A delegate is given the authority over tokens on
      * behalf of the source account's owner.
@@ -370,7 +370,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   3. `[]` The source account's multisignature owner.
      *   4. ..4+M `[signer]` M signer accounts
      */
-    Token_TokenInstruction_ApproveChecked,
+    Token_TokenInstruction_ApproveChecked = 13,
     /**
      * Mints new tokens to an account.  The native mint does not support
      * minting.
@@ -392,7 +392,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   2. `[]` The mint's multisignature mint-tokens authority.
      *   3. ..3+M `[signer]` M signer accounts.
      */
-    Token_TokenInstruction_MintToChecked,
+    Token_TokenInstruction_MintToChecked = 14,
     /**
      * Burns tokens by removing them from an account.  `BurnChecked` does not
      * support accounts associated with the native mint, use `CloseAccount`
@@ -415,7 +415,7 @@ typedef enum Token_TokenInstruction_Tag {
      *   2. `[]` The account's multisignature owner/delegate.
      *   3. ..3+M `[signer]` M signer accounts.
      */
-    Token_TokenInstruction_BurnChecked,
+    Token_TokenInstruction_BurnChecked = 15,
     /**
      * Like InitializeAccount, but the owner pubkey is passed via instruction data
      * rather than the accounts list. This variant may be preferable when using
@@ -428,7 +428,8 @@ typedef enum Token_TokenInstruction_Tag {
      *   1. `[]` The mint this account will be associated with.
      *   3. `[]` Rent sysvar
      */
-    Token_TokenInstruction_InitializeAccount2,
+    Token_TokenInstruction_InitializeAccount2 = 16,
+
     /**
      * Given a wrapped / native token account (a token account containing SOL)
      * updates its amount field based on the account's underlying `lamports`.
@@ -440,7 +441,27 @@ typedef enum Token_TokenInstruction_Tag {
      *
      *   0. `[writable]`  The native token account to sync with its underlying lamports.
      */
-    Token_TokenInstruction_SyncNative,
+    Token_TokenInstruction_SyncNative = 17,
+
+    /**
+     * Unsupported
+     *
+     * InitializeAccount3 = 18,
+     *
+     * InitializeMultisig2 = 19,
+     *
+     * InitializeMint2 = 20,
+     *
+     * GetAccountDataSize = 21,
+     *
+     * InitializeImmutableOwner = 22,
+     *
+     * AmountToUiAmount = 23,
+     *
+     * UiAmountToAmount = 24,
+     *
+     * InitializeMintCloseAuthority = 25,
+     */
 
     /**
      * The common instruction prefix for Transfer Fee extension instructions.
@@ -466,11 +487,25 @@ typedef enum Token_TokenInstruction_Tag {
     Token_TokenExtensionInstruction_DefaultAccountStateExtension = 28,
 
     /**
+     * Unsupported
+     *
+     * Reallocate = 29
+     */
+
+    /**
      * The common instruction prefix for Memo Transfer account extension instructions.
      * See `extension::memo_transfer::instruction::RequiredMemoTransfersInstruction` for
      * further details about the extended instructions that share this instruction prefix
      */
     Token_TokenExtensionInstruction_MemoTransferExtension = 30,
+
+    /**
+     * Unsupported
+     *
+     * CreateNativeMint = 31
+     *
+     * InitializeNonTransferableMint = 32
+     */
 
     /**
      * The common instruction prefix for Interest Bearing extension instructions.
@@ -487,6 +522,12 @@ typedef enum Token_TokenInstruction_Tag {
     Token_TokenExtensionInstruction_CpiGuardExtension = 34,
 
     /**
+     * Unsupported
+     *
+     * InitializePermanentDelegate = 35,
+     */
+
+    /**
      * The common instruction prefix for transfer hook extension instructions.
      * See `extension::transfer_hook::instruction::TransferHookInstruction`
      * for further details about the extended instructions that share this instruction prefix
@@ -499,6 +540,12 @@ typedef enum Token_TokenInstruction_Tag {
      * for further details about the extended instructions that share this instruction prefix
      */
     Token_TokenExtensionInstruction_ConfidentialTransferFeeExtension = 37,
+
+    /**
+     * Unsupported
+     *
+     * WithdrawExcessLamports = 38,
+     */
 
     /**
      * The common instruction prefix for metadata pointer extension instructions.
@@ -519,7 +566,17 @@ typedef enum Token_TokenInstruction_Tag {
      * See `extension::group_member_pointer::instruction::GroupMemberPointerInstruction`
      * for further details about the extended instructions that share this instruction prefix
      */
-    Token_TokenExtensionInstruction_GroupMemberPointerExtension = 41
+    Token_TokenExtensionInstruction_GroupMemberPointerExtension = 41,
+
+    /**
+     * Unsupported
+     *
+     * ConfidentialMintBurnExtension = 42,
+     *
+     * ScaledUiAmountExtension = 43,
+     *
+     * PausableExtension = 44,
+     */
 } Token_TokenInstruction_Tag;
 
 typedef struct Token_TokenInstruction_Token_InitializeMint_Body {

@@ -148,9 +148,11 @@ static int parse_spl_token_sign(InstructionAccountsIterator *it, SplTokenSign *s
 
     if (n == 1) {
         sign->kind = SplTokenSignKindSingle;
+        PRINTF("SplTokenSignKindSingle\n");
         BAIL_IF(instruction_accounts_iterator_next(it, &sign->single.signer));
     } else {
         sign->kind = SplTokenSignKindMulti;
+        PRINTF("SplTokenSignKindMulti\n");
         BAIL_IF(instruction_accounts_iterator_next(it, &sign->multi.account));
         BAIL_IF(parse_spl_token_multisigners(it, &sign->multi.signers));
     }
@@ -367,12 +369,15 @@ int parse_spl_token_instructions(const Instruction *instruction,
                                  const MessageHeader *header,
                                  SplTokenInfo *info,
                                  bool *ignore_instruction_info) {
+
     Parser parser = {instruction->data, instruction->data_length};
 
     if (parse_spl_token_instruction_kind(&parser, &info->kind) != 0) {
         PRINTF("parse_spl_token_instruction_kind failed\n");
         return -1;
     }
+
+    info->is_token2022_kind = is_token2022_instruction(instruction, header);
 
     switch (info->kind) {
         case SplTokenKind(InitializeMint):
