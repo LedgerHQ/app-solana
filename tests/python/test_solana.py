@@ -155,6 +155,22 @@ class TestOffchainMessageSigning:
         verify_signature(from_public_key, message, signature)
 
 
+    def test_ledger_sign_offchain_message_with_app_domain_utf8_ok(self, backend, scenario_navigator, navigator, test_name):
+        enable_blind_signing(navigator, backend.firmware, test_name + "_1")
+
+        sol = SolanaClient(backend)
+        from_public_key = sol.get_public_key(SOL_PACKED_DERIVATION_PATH)
+
+        offchain_message: OffchainMessage = OffchainMessage(0, bytes("Tęśtową wiądómóścią", 'utf-8'), from_public_key, b"My Candy App")
+        message: bytes = offchain_message.serialize()
+
+        with sol.send_async_sign_offchain_message(SOL_PACKED_DERIVATION_PATH, message):
+            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, test_name=test_name + "_2")
+
+        signature: bytes = sol.get_async_response().data
+        verify_signature(from_public_key, message, signature)
+
+
     def test_ledger_sign_offchain_message_utf8_refused(self, backend, scenario_navigator, navigator, test_name):
         enable_blind_signing(navigator, backend.firmware, test_name + "_1")
 

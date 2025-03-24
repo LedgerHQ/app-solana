@@ -191,23 +191,29 @@ class v0_OffchainMessage:
 class OffchainMessage:
     version: int
     message: v0_OffchainMessage
+    app_domain: bytes
 
     # Construct a new OffchainMessage object from the given version and message
-    def __init__(self, version: int, message: bytes, signer_pubkey: bytes):
+    def __init__(self, version: int, message: bytes, signer_pubkey: bytes, app_domain: bytes=b""):
         self.version = version
+        # Ensure app_domain is exactly 32 bytes, pad with zeros if necessary
+        self.app_domain = app_domain.ljust(32, b'\x00')[:32]
+        
         if version == 0:
             self.message = v0_OffchainMessage(message, signer_pubkey)
         else:
-            raise ValueError()
+            raise ValueError("Unsupported version")
 
     # Serialize the off-chain message to bytes including full header
     def serialize(self) -> bytes:
         data: bytes = b""
-        # serialize signing domain
+        # Serialize signing domain
         data += SIGNING_DOMAIN
-        # serialize version and call version specific serializer
+        # Serialize version
         data += self.version.to_bytes(1, byteorder='little')
-        # Providing EMPTY app domain
-        data += bytearray(32)
+        # Include padded app_domain
+        data += self.app_domain
+        # Serialize message
         data += self.message.serialize()
         return data
+
