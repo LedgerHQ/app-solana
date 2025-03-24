@@ -47,8 +47,8 @@ void ui_general(OffchainMessageHeader *header,
     if (is_ascii) {
         item = transaction_summary_general_item();
         summary_item_set_extended_string(item, "Message", (const char *) parser->buffer);
-#endif
     }
+#endif
 }
 
 void setup_ui(OffchainMessageHeader *header, bool is_ascii, Parser *parser, size_t signer_index) {
