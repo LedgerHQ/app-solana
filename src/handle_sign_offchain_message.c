@@ -43,10 +43,9 @@ void ui_general(OffchainMessageHeader *header,
     } else if (!is_ascii) {
         summary_item_set_hash(transaction_summary_general_item(), "Hash", &G_command.message_hash);
     }
-
+#ifndef HAVE_NBGL
     if (is_ascii) {
         item = transaction_summary_general_item();
-#ifndef HAVE_NBGL
         summary_item_set_extended_string(item, "Message", (const char *) parser->buffer);
 #endif
     }
