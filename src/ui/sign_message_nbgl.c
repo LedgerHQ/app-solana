@@ -10,6 +10,7 @@
 #include "apdu.h"
 #include "utils.h"
 #include "ui_api.h"
+#include "io_utils.h"
 
 #include "nbgl_page.h"
 #include "nbgl_use_case.h"
