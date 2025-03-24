@@ -35,9 +35,9 @@ void get_public_key(uint8_t publicKeyArray[static PUBKEY_LENGTH],
 }
 
 int get_pubkey_index(const Pubkey *needle,
-                    const Pubkey *haystack,
-                    size_t haystack_len,
-                    size_t *index) {
+                     const Pubkey *haystack,
+                     size_t haystack_len,
+                     size_t *index) {
     for (size_t i = 0; i < haystack_len; ++i) {
         const Pubkey *current_pubkey = &(haystack[i]);
         if (memcmp(current_pubkey, needle, PUBKEY_SIZE) == 0) {
