@@ -14,7 +14,12 @@
 // ensure the command buffer has space to append a NUL terminal
 CASSERT(MAX_OFFCHAIN_MESSAGE_LENGTH < MAX_MESSAGE_LENGTH, global_h);
 
-void ui_general(OffchainMessageHeader *header, bool is_ascii, Parser *parser) {
+// To reduce unnecessary
+// preprocessor directives and keep the function cleaner, i explicitly suppress
+// warnings about unused `parser`.
+void ui_general(OffchainMessageHeader *header,
+                bool is_ascii,
+                Parser *parser __attribute__((unused))) {
     const uint8_t empty_application_domain[OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH] = {
         OFFCHAIN_EMPTY_APPLICATION_DOMAIN};
     // Check if application domain buffer contains only zeroes
