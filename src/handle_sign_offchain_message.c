@@ -41,7 +41,9 @@ void ui_general(OffchainMessageHeader *header, bool is_ascii, Parser *parser) {
 
     if (is_ascii) {
         item = transaction_summary_general_item();
+#ifndef HAVE_NBGL
         summary_item_set_extended_string(item, "Message", (const char *) parser->buffer);
+#endif
     }
 }
 
@@ -67,8 +69,12 @@ void setup_ui(OffchainMessageHeader *header, bool is_ascii, Parser *parser, size
     if (transaction_summary_finalize(summary_step_kinds, &num_summary_steps)) {
         THROW(ApduReplySolanaSummaryFinalizeFailed);
     }
-
+#ifdef HAVE_NBGL
     start_sign_offchain_message_ui(is_ascii, num_summary_steps);
+#endif
+#ifdef HAVE_BAGL
+    start_sign_offchain_message_ui(num_summary_steps, summary_step_kinds);
+#endif
 }
 
 void handle_sign_offchain_message(volatile unsigned int *flags, volatile unsigned int *tx) {
