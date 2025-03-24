@@ -48,7 +48,6 @@ int get_pubkey_index(const Pubkey *needle,
     return -1;
 }
 
-
 int read_derivation_path(const uint8_t *data_buffer,
                          size_t data_size,
                          uint32_t *derivation_path,
