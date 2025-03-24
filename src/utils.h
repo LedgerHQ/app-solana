@@ -26,6 +26,8 @@ void get_public_key(uint8_t publicKeyArray[static PUBKEY_LENGTH],
                     const uint32_t *derivationPath,
                     size_t pathLength);
 
+int get_pubkey_index(const Pubkey* needle, const Pubkey* haystack, size_t haystack_len, size_t* index);
+
 /**
  * Deserialize derivation path from raw bytes.
  *

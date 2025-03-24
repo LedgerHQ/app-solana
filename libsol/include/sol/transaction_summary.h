@@ -105,3 +105,7 @@ void summary_item_set_hash(SummaryItem *item, const char *title, const Hash *val
 void summary_item_set_sized_string(SummaryItem *item, const char *title, const SizedString *value);
 void summary_item_set_string(SummaryItem *item, const char *title, const char *value);
 void summary_item_set_timestamp(SummaryItem *item, const char *title, int64_t value);
+void summary_item_set_offchain_message_application_domain(SummaryItem* item,
+    const char* title,
+    const OffchainMessageApplicationDomain* value);
+void summary_item_set_extended_string(SummaryItem* item, const char* title, const char* value);
