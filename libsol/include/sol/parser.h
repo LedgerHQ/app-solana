@@ -67,10 +67,10 @@ typedef struct OffchainMessageApplicationDomain {
 
 typedef struct OffchainMessageHeader {
     uint8_t version;
-    const OffchainMessageApplicationDomain* application_domain;
+    const OffchainMessageApplicationDomain *application_domain;
     uint8_t format;
     size_t signers_length;
-    const Pubkey* signers;
+    const Pubkey *signers;
     uint16_t length;
 } OffchainMessageHeader;
 

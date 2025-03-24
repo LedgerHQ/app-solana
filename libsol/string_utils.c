@@ -1,6 +1,5 @@
 #include "include/sol/string_utils.h"
 
-
 /**
  * Checks if data is in UTF-8 format.
  * Adapted from: https://www.cl.cam.ac.uk/~mgk25/ucs/utf8_check.c
@@ -58,11 +57,10 @@ bool is_data_ascii(const uint8_t *data, size_t length) {
         return false;
     }
     for (size_t i = 0; i < length; ++i) {
-        //Line feed char is accepted
+        // Line feed char is accepted
         if (((data[i] < 0x20 && data[i] != 0x0A) || data[i] > 0x7e)) {
             return false;
         }
     }
     return true;
 }
-

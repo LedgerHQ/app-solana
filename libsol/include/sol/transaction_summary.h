@@ -20,13 +20,12 @@
 //
 // If all _Required_ `SummaryItem`s have not been set, finalization will fail.
 
-
 #if defined(SDK_TARGET_NANOX) || defined(SDK_TARGET_NANOS2) || defined(SDK_TARGET_STAX)
-    #define NUM_GENERAL_ITEMS 40
+#define NUM_GENERAL_ITEMS 40
 #else
-    //Memory constraints on Nano S does not allow for more than 13 general items
-    //Or if target is unknown
-    #define NUM_GENERAL_ITEMS 12
+// Memory constraints on Nano S does not allow for more than 13 general items
+// Or if target is unknown
+#define NUM_GENERAL_ITEMS 12
 #endif
 
 #define DEFAULT_COMPUTE_UNIT_LIMIT 200000
@@ -66,12 +65,13 @@ typedef struct SummaryItem SummaryItem;
 extern char G_transaction_summary_title[TITLE_SIZE];
 
 // Text buffer needs to be large enough to hold the longest possible message text to sign
-//#define TEXT_BUFFER_LENGTH (OFFCHAIN_MESSAGE_MAXIMUM_MESSAGE_LENGTH - OFFCHAIN_MESSAGE_MINIMAL_HEADER_SIZE)
+// #define TEXT_BUFFER_LENGTH (OFFCHAIN_MESSAGE_MAXIMUM_MESSAGE_LENGTH -
+// OFFCHAIN_MESSAGE_MINIMAL_HEADER_SIZE)
 #define TEXT_BUFFER_LENGTH BASE58_PUBKEY_LENGTH
 
 extern char G_transaction_summary_text[TEXT_BUFFER_LENGTH];
 
-extern char* G_transaction_summary_extended_text;
+extern char *G_transaction_summary_extended_text;
 
 void transaction_summary_reset();
 enum DisplayFlags {
@@ -105,7 +105,8 @@ void summary_item_set_hash(SummaryItem *item, const char *title, const Hash *val
 void summary_item_set_sized_string(SummaryItem *item, const char *title, const SizedString *value);
 void summary_item_set_string(SummaryItem *item, const char *title, const char *value);
 void summary_item_set_timestamp(SummaryItem *item, const char *title, int64_t value);
-void summary_item_set_offchain_message_application_domain(SummaryItem* item,
-    const char* title,
-    const OffchainMessageApplicationDomain* value);
-void summary_item_set_extended_string(SummaryItem* item, const char* title, const char* value);
+void summary_item_set_offchain_message_application_domain(
+    SummaryItem *item,
+    const char *title,
+    const OffchainMessageApplicationDomain *value);
+void summary_item_set_extended_string(SummaryItem *item, const char *title, const char *value);
