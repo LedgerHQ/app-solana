@@ -11,7 +11,6 @@
 #include "handle_sign_offchain_message.h"
 #include "ui_api.h"
 
-
 // ensure the command buffer has space to append a NUL terminal
 CASSERT(MAX_OFFCHAIN_MESSAGE_LENGTH < MAX_MESSAGE_LENGTH, global_h);
 

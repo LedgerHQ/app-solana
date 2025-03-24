@@ -175,7 +175,7 @@ int transaction_summary_set_fee_payer_pubkey(const Pubkey *pubkey) {
 
 
 /*
- * Supress warning about const qualifier - changes required in ledger's SDK
+ * Suppress warning about const qualifier - changes required in ledger's SDK
  * warning suppression is used on purpose to avoid casting pointers without const qualifier
  * G_ux.externalText is not modified anywhere
  */

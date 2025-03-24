@@ -38,17 +38,18 @@
 #define OFFCHAIN_MESSAGE_HEADER_LENGTH 85
 
 // Application buffer - no content reference value
-#define OFFCHAIN_EMPTY_APPLICATION_DOMAIN 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+#define OFFCHAIN_EMPTY_APPLICATION_DOMAIN                                                         \
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,     \
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
+        0x00, 0x00
 
 #define MAX_MESSAGE_LENGTH ROUND_TO_NEXT(TOTAL_SIGN_MESSAGE_BUFFER_LENGTH, USB_SEGMENT_SIZE)
 
 // credit: https://stackoverflow.com/questions/807244/c-compiler-asserts-how-to-implement
-#define CASSERT(predicate, file) _impl_CASSERT_LINE(predicate,__LINE__,file)
-#define _impl_PASTE(a,b) a##b
+#define CASSERT(predicate, file) _impl_CASSERT_LINE(predicate, __LINE__, file)
+#define _impl_PASTE(a, b)        a##b
 #define _impl_CASSERT_LINE(predicate, line, file) \
-    typedef char _impl_PASTE(assertion_failed_##file##_,line)[2*!!(predicate)-1];
+    typedef char _impl_PASTE(assertion_failed_##file##_, line)[2 * !!(predicate) -1];
 
 typedef enum InstructionCode {
     // DEPRECATED - Use non "16" suffixed variants below
