@@ -345,6 +345,21 @@ typedef enum Token_TokenInstruction_Tag {
      *   2. `[writable]` The destination account.
      *   3. `[]` The source account's multisignature owner/delegate.
      *   4. ..4+M `[signer]` M signer accounts.
+     *
+     *   * Single owner/delegate with token-2022 transfer hook
+     *   0. `[writable]` The source account.
+     *   1. `[]` The token mint.
+     *   2. `[writable]` The destination account.
+     *   3. `[signer]` The source account's owner/delegate.
+     *   4. ..4+M `[writable]` N hook additional accounts.
+     *
+     *   * Multisignature owner/delegate with token-2022 transfer hook
+     *   0. `[writable]` The source account.
+     *   1. `[]` The token mint.
+     *   2. `[writable]` The destination account.
+     *   3. `[]` The source account's multisignature owner/delegate.
+     *   4. ..4+M `[signer]` M signer accounts.
+     *   5+M. ..5+M+N `[writable]` N hook additional accounts.
      */
     Token_TokenInstruction_TransferChecked = 12,
     /**

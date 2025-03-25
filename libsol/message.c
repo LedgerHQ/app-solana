@@ -23,6 +23,16 @@ int process_message_body(const uint8_t *message_body,
     BAIL_IF(header->instructions_length == 0);
     BAIL_IF(header->instructions_length > MAX_INSTRUCTIONS);
 
+    PRINTF("num_required_signatures = %d\n", header->pubkeys_header.num_required_signatures);
+    PRINTF("num_readonly_signed_accounts = %d\n",
+           header->pubkeys_header.num_readonly_signed_accounts);
+    PRINTF("num_readonly_unsigned_accounts = %d\n",
+           header->pubkeys_header.num_readonly_unsigned_accounts);
+    PRINTF("pubkeys_length = %d\n", header->pubkeys_header.pubkeys_length);
+    for (uint8_t i = 0; i < header->pubkeys_header.pubkeys_length; ++i) {
+        PRINTF("pubkeys[%d] = %.*H\n", i, PUBKEY_SIZE, header->pubkeys[i].data);
+    }
+
     size_t instruction_count = 0;
     InstructionInfo instruction_info[MAX_INSTRUCTIONS];
     explicit_bzero(instruction_info, sizeof(InstructionInfo) * MAX_INSTRUCTIONS);
@@ -39,6 +49,14 @@ int process_message_body(const uint8_t *message_body,
         Instruction instruction;
         BAIL_IF(parse_instruction(&parser, &instruction));
         BAIL_IF(instruction_validate(&instruction, header));
+        PRINTF("Accounts of instruction %d\n", instruction_count);
+        for (uint8_t i = 0; i < instruction.accounts_length; ++i) {
+            PRINTF("accounts[%d] = pubkeys[%d] = %.*H\n",
+                   i,
+                   instruction.accounts[i],
+                   PUBKEY_SIZE,
+                   header->pubkeys[instruction.accounts[i]].data);
+        }
 
         InstructionInfo *info = &instruction_info[instruction_count];
         bool ignore_instruction_info = false;
@@ -68,12 +86,6 @@ int process_message_body(const uint8_t *message_body,
                                                  header,
                                                  &info->spl_token,
                                                  &ignore_instruction_info) == 0) {
-                    if (info->spl_token.is_token2022_kind) {
-                        generate_extension_warning |= info->spl_token.generate_extension_warning;
-                        PRINTF("info->spl_token.is_token2022_kind\n");
-                    } else {
-                        PRINTF("!info->spl_token.is_token2022_kind\n");
-                    }
                     info->kind = program_id;
                 } else {
                     PRINTF("failed parse_spl_token_instructions\n");
@@ -143,6 +155,7 @@ int process_message_body(const uint8_t *message_body,
     }
 
     if (generate_extension_warning) {
+        PRINTF("generate_extension_warning\n");
         BAIL_IF(print_spl_token_extension_warning());
     }
     return print_transaction(print_config, display_instruction_info, display_instruction_count);

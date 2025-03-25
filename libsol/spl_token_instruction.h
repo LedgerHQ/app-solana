@@ -59,6 +59,9 @@ typedef struct SplTokenTransferInfo {
     const Pubkey *mint_account;
     SplTokenSign sign;
     SplTokenBody(TransferChecked) body;
+    bool is_transfer_checked_with_fee;
+    uint64_t transfer_checked_with_fee_amount;
+    bool is_transfer_checked_with_hook;
 } SplTokenTransferInfo;
 
 typedef struct SplTokenApproveInfo {

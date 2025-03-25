@@ -1,3 +1,4 @@
+#include "os.h"
 #include "instruction.h"
 #include "sol/parser.h"
 #include "sol/print_config.h"
@@ -575,6 +576,7 @@ static int print_spl_associated_token_account_create_with_transfer(const PrintCo
 static int print_transaction_nonce_processed(const PrintConfig *print_config,
                                              InstructionInfo *const *infos,
                                              size_t infos_length) {
+    PRINTF("infos_length = %d\n", infos_length);
     switch (infos_length) {
         case 1:
             switch (infos[0]->kind) {
@@ -670,6 +672,7 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
     return 1;
 }
 
+// Warning for MINT extensions. Not transfer
 int print_spl_token_extension_warning() {
     SummaryItem *item = transaction_summary_general_item();
     summary_item_set_string(item, "Extension Warning", "Unsupported extensions found");

@@ -97,6 +97,9 @@ void handle_sign_message_parse_message(volatile unsigned int *tx) {
     if (print_config_show_authority(&print_config, fee_payer)) {
         transaction_summary_set_fee_payer_pubkey(fee_payer);
     }
+
+    // // Add the warnings if needed
+    // set_token_warnings(print_config.fee_warning, print_config.hook_warning)
 }
 
 // Accept amount + recipient (+ fees)

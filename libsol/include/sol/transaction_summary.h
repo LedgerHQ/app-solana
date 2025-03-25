@@ -87,3 +87,6 @@ void summary_item_set_hash(SummaryItem *item, const char *title, const Hash *val
 void summary_item_set_sized_string(SummaryItem *item, const char *title, const SizedString *value);
 void summary_item_set_string(SummaryItem *item, const char *title, const char *value);
 void summary_item_set_timestamp(SummaryItem *item, const char *title, int64_t value);
+void transaction_summary_set_token_fee_warning(bool fee_warning);
+void transaction_summary_set_token_hook_warning(bool hook_warning);
+void transaction_summary_get_token_warnings(bool *fee_warning, bool *hook_warning);
