@@ -33,8 +33,7 @@
 
 #define MAX_OFFCHAIN_MESSAGE_LENGTH PACKET_DATA_SIZE
 
-// 1232 + 32 + 1 + 1 + 32 + 1 + 16
-// Assuming that only one signer is present and that message is in ASCII format
+// Assuming that only one signer
 #define OFFCHAIN_MESSAGE_HEADER_LENGTH 85
 
 // Application buffer - no content reference value

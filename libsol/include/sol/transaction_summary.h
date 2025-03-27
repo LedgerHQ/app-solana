@@ -53,14 +53,10 @@ typedef struct SummaryItem SummaryItem;
 
 extern char G_transaction_summary_title[TITLE_SIZE];
 
-// Text buffer needs to be large enough to hold the longest possible message text to sign
-//#define TEXT_BUFFER_LENGTH (OFFCHAIN_MESSAGE_MAXIMUM_MESSAGE_LENGTH -
-// OFFCHAIN_MESSAGE_MINIMAL_HEADER_SIZE)
 #define TEXT_BUFFER_LENGTH BASE58_PUBKEY_LENGTH
 
 extern char G_transaction_summary_text[TEXT_BUFFER_LENGTH];
 
-extern char *G_transaction_summary_extended_text;
 
 void transaction_summary_reset();
 enum DisplayFlags {

@@ -102,8 +102,6 @@ static TransactionSummary G_transaction_summary;
 char G_transaction_summary_title[TITLE_SIZE];
 char G_transaction_summary_text[TEXT_BUFFER_LENGTH];
 
-//char *G_transaction_summary_extended_text;
-
 void transaction_summary_reset() {
     explicit_bzero(&G_transaction_summary, sizeof(TransactionSummary));
     explicit_bzero(&G_transaction_summary_title, TITLE_SIZE);
@@ -159,25 +157,6 @@ int transaction_summary_set_fee_payer_pubkey(const Pubkey *pubkey) {
     return 0;
 }
 
-// /*
-//  * Suppress warning about const qualifier - changes required in ledger's SDK
-//  * warning suppression is used on purpose to avoid casting pointers without const qualifier
-//  * G_ux.externalText is not modified anywhere
-//  */
-// #pragma GCC diagnostic push
-// #pragma GCC diagnostic ignored "-Wcast-qual"
-// static void set_extended_string(const char *value) {
-//     // Set pointer to the temporary buffer, so 'libsol' does not have to include ux API from SDK
-//     G_transaction_summary_extended_text = (char *) value;
-// }
-// #pragma GCC diagnostic pop
-
-// void summary_item_set_extended_string(SummaryItem *item, const char *title, const char *value) {
-//     item->kind = SummaryItemExtendedString;
-//     item->title = title;
-//     item->string = value;
-// }
-
 static int transaction_summary_update_display_for_item(const SummaryItem *item,
                                                        enum DisplayFlags flags) {
     switch (item->kind) {
@@ -219,9 +198,6 @@ static int transaction_summary_update_display_for_item(const SummaryItem *item,
                                   G_transaction_summary_text,
                                   TEXT_BUFFER_LENGTH));
             break;
-        // case SummaryItemExtendedString:
-        //     set_extended_string(item->string);
-        //     break;
         case SummaryItemString:
             print_string(item->string, G_transaction_summary_text, TEXT_BUFFER_LENGTH);
             break;
