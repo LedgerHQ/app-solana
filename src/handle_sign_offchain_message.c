@@ -43,12 +43,6 @@ void ui_general(OffchainMessageHeader *header,
     } else if (!is_ascii) {
         summary_item_set_hash(transaction_summary_general_item(), "Hash", &G_command.message_hash);
     }
-#ifndef HAVE_NBGL
-    if (is_ascii) {
-        item = transaction_summary_general_item();
-        summary_item_set_extended_string(item, "Message", (const char *) parser->buffer);
-    }
-#endif
 }
 
 void setup_ui(OffchainMessageHeader *header, bool is_ascii, Parser *parser, size_t signer_index) {
@@ -77,7 +71,7 @@ void setup_ui(OffchainMessageHeader *header, bool is_ascii, Parser *parser, size
     start_sign_offchain_message_ui(is_ascii, num_summary_steps);
 #endif
 #ifdef HAVE_BAGL
-    start_sign_offchain_message_ui(num_summary_steps, summary_step_kinds);
+    start_sign_offchain_message_ui(is_ascii, num_summary_steps);
 #endif
 }
 
