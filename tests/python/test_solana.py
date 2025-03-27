@@ -1,11 +1,14 @@
 from ragger.backend import RaisePolicy
 from ragger.utils import RAPDU
+from ragger.error import ExceptionRAPDU
 
 from .apps.solana import SolanaClient, ErrorType
 from .apps.solana_cmd_builder import SystemInstructionTransfer, Message, verify_signature, OffchainMessage
 from .apps.solana_utils import FOREIGN_PUBLIC_KEY, FOREIGN_PUBLIC_KEY_2, AMOUNT, AMOUNT_2, SOL_PACKED_DERIVATION_PATH, SOL_PACKED_DERIVATION_PATH_2, ROOT_SCREENSHOT_PATH
 from .apps.solana_utils import enable_blind_signing, enable_expert_mode
 
+import random
+import string
 
 class TestGetPublicKey:
 
@@ -105,6 +108,23 @@ class TestOffchainMessageSigning:
         rapdu: RAPDU = sol.get_async_response()
         assert rapdu.status == ErrorType.USER_CANCEL
 
+    def test_ledger_sign_offchain_message_ascii_message_too_long(self, backend, scenario_navigator):
+        sol = SolanaClient(backend)
+        from_public_key = sol.get_public_key(SOL_PACKED_DERIVATION_PATH)
+
+        INVALID_LONG_MESSAGE = ''.join(random.choices(string.ascii_letters, k=2048))
+        INVALID_LONG_MESSAGE = INVALID_LONG_MESSAGE.encode("ascii")
+        
+        offchain_message: OffchainMessage = OffchainMessage(0, INVALID_LONG_MESSAGE, from_public_key)
+        message: bytes = offchain_message.serialize()
+
+        try:
+            with sol.send_async_sign_offchain_message(SOL_PACKED_DERIVATION_PATH, message):
+                pass
+            assert False, "Ledger accepted too long message"
+        except ExceptionRAPDU as e:
+            assert e.status == ErrorType.SOLANA_INVALID_MESSAGE_SIZE
+
 
     def test_ledger_sign_offchain_message_ascii_expert_ok(self, backend, scenario_navigator, navigator, test_name):
         enable_expert_mode(navigator, backend.firmware, test_name + "_1")
@@ -153,6 +173,26 @@ class TestOffchainMessageSigning:
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
+
+    def test_ledger_sign_offchain_message_utf8_message_too_long(self, backend, scenario_navigator):
+        sol = SolanaClient(backend)
+        from_public_key = sol.get_public_key(SOL_PACKED_DERIVATION_PATH)
+
+        # Generate 2048 random bytes
+        random_bytes = bytes(random.randint(0, 255) for _ in range(4096))
+
+        # Decode to a UTF-8 string, ignoring invalid characters
+        INVALID_LONG_MESSAGE = random_bytes.decode("utf-8", errors="ignore").encode("utf-8")
+
+        offchain_message: OffchainMessage = OffchainMessage(0, INVALID_LONG_MESSAGE, from_public_key)
+        message: bytes = offchain_message.serialize()
+
+        try:
+            with sol.send_async_sign_offchain_message(SOL_PACKED_DERIVATION_PATH, message):
+                pass
+            assert False, "Ledger accepted too long message"
+        except ExceptionRAPDU as e:
+            assert e.status == ErrorType.SOLANA_INVALID_MESSAGE_SIZE
 
 
     def test_ledger_sign_offchain_message_with_app_domain_utf8_ok(self, backend, scenario_navigator, navigator, test_name):

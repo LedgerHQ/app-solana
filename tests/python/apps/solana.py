@@ -67,6 +67,7 @@ class ErrorType:
     SOLANA_SUMMARY_UPDATE_FAILED = 0x6f01
     UNIMPLEMENTED_INSTRUCTION = 0x6d00
     INVALID_CLA = 0x6e00
+    SOLANA_INVALID_MESSAGE_SIZE = 0x6a83
 
 
 def _extend_and_serialize_multiple_derivations_paths(derivations_paths: List[bytes]):

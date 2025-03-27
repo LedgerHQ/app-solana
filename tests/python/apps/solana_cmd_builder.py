@@ -154,20 +154,19 @@ class v0_OffchainMessage:
 
     def __init__(self, message: bytes, signer_pubkey: bytes):
         # /// Construct a new OffchainMessage object from the given message
-        if len(message) <= MAX_LEN_LEDGER:
-            if is_printable_ascii(message):
-                self.format = MessageFormat.RestrictedAscii
-            elif is_utf8(message):
-                self.format = MessageFormat.LimitedUtf8
-            else:
-                raise ValueError()
-        elif len(message) <= MAX_LEN:
+        if is_printable_ascii(message):
+            self.format = MessageFormat.RestrictedAscii
+        elif is_utf8(message):
+            self.format = MessageFormat.LimitedUtf8
+        else:
+            raise ValueError()
+
+        if len(message) <= MAX_LEN:
             if is_utf8(message):
                 self.format = MessageFormat.ExtendedUtf8
             else:
                 raise ValueError()
-        else:
-            raise ValueError()
+        
         self.signer_pubkey = signer_pubkey
         self.message = message
 
