@@ -25,7 +25,7 @@
 #define ROUND_TO_NEXT(x, next) (((x) == 0) ? 0 : ((((x - 1) / (next)) + 1) * (next)))
 
 /* See constant by same name in sdk/src/packet.rs */
-#define PACKET_DATA_SIZE ((15*1024) - 40 - 8)
+#define PACKET_DATA_SIZE ((15 * 1024) - 40 - 8)
 
 #define MAX_BIP32_PATH_LENGTH             5
 #define MAX_DERIVATION_PATH_BUFFER_LENGTH (1 + MAX_BIP32_PATH_LENGTH * 4)
