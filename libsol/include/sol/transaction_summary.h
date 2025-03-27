@@ -46,17 +46,14 @@ enum SummaryItemKind {
     SummaryItemTimestamp,
     SummaryItemOffchainMessageApplicationDomain,
 };
-
 typedef enum SummaryItemKind SummaryItemKind_t;
 
 typedef struct SummaryItem SummaryItem;
 
 extern char G_transaction_summary_title[TITLE_SIZE];
-
 #define TEXT_BUFFER_LENGTH BASE58_PUBKEY_LENGTH
 
 extern char G_transaction_summary_text[TEXT_BUFFER_LENGTH];
-
 
 void transaction_summary_reset();
 enum DisplayFlags {
