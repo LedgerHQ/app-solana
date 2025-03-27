@@ -2,7 +2,6 @@
 
 #include "sol/parser.h"
 #include "sol/printer.h"
-#include "offchain_message_signing.h"
 
 // TransactionSummary management
 //
@@ -20,16 +19,7 @@
 //
 // If all _Required_ `SummaryItem`s have not been set, finalization will fail.
 
-#if defined(SDK_TARGET_NANOX) || defined(SDK_TARGET_NANOS2) || defined(SDK_TARGET_STAX)
-#define NUM_GENERAL_ITEMS 40
-#else
-// Memory constraints on Nano S does not allow for more than 13 general items
-// Or if target is unknown
-#define NUM_GENERAL_ITEMS 12
-#endif
-
-#define DEFAULT_COMPUTE_UNIT_LIMIT 200000
-#define COMPUTE_UNIT_PRICE_DIVIDER 1000000
+#define NUM_GENERAL_ITEMS 11
 #define MAX_TRANSACTION_SUMMARY_ITEMS              \
     (1                       /* primary */         \
      + NUM_GENERAL_ITEMS + 1 /* nonce_account */   \
@@ -65,7 +55,7 @@ typedef struct SummaryItem SummaryItem;
 extern char G_transaction_summary_title[TITLE_SIZE];
 
 // Text buffer needs to be large enough to hold the longest possible message text to sign
-// #define TEXT_BUFFER_LENGTH (OFFCHAIN_MESSAGE_MAXIMUM_MESSAGE_LENGTH -
+//#define TEXT_BUFFER_LENGTH (OFFCHAIN_MESSAGE_MAXIMUM_MESSAGE_LENGTH -
 // OFFCHAIN_MESSAGE_MINIMAL_HEADER_SIZE)
 #define TEXT_BUFFER_LENGTH BASE58_PUBKEY_LENGTH
 
