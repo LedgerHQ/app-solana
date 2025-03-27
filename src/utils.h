@@ -55,6 +55,7 @@ uint8_t set_result_sign_message(void);
 
 #endif  //_UTILS_H_
 
+
 // Outdated ?
 #ifdef TEST
 #include <stdio.h>
@@ -64,8 +65,8 @@ uint8_t set_result_sign_message(void);
     } while (0)
 #define PRINTF(msg, arg) printf(msg, arg)
 #define PIC(code)        code
-#define TARGET_BLUE      1
-#define MEMCLEAR(dest)   explicit_bzero(&dest, sizeof(dest));
+#define TARGET_BLUE    1
+#define MEMCLEAR(dest) explicit_bzero(&dest, sizeof(dest));
 #else
 #define MEMCLEAR(dest)                       \
     do {                                     \

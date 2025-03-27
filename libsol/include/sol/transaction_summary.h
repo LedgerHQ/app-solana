@@ -45,7 +45,6 @@ enum SummaryItemKind {
     SummaryItemString,
     SummaryItemTimestamp,
     SummaryItemOffchainMessageApplicationDomain,
-    SummaryItemExtendedString,
 };
 
 typedef enum SummaryItemKind SummaryItemKind_t;
@@ -99,4 +98,3 @@ void summary_item_set_offchain_message_application_domain(
     SummaryItem *item,
     const char *title,
     const OffchainMessageApplicationDomain *value);
-void summary_item_set_extended_string(SummaryItem *item, const char *title, const char *value);

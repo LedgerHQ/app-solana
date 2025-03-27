@@ -1,5 +1,6 @@
 #include "os.h"
 #include "cx.h"
+#include <stdbool.h>
 #include <stdlib.h>
 
 #include "lib_standard_app/crypto_helpers.h"

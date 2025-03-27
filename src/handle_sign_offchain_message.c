@@ -67,12 +67,7 @@ void setup_ui(OffchainMessageHeader *header, bool is_ascii, Parser *parser, size
     if (transaction_summary_finalize(summary_step_kinds, &num_summary_steps)) {
         THROW(ApduReplySolanaSummaryFinalizeFailed);
     }
-#ifdef HAVE_NBGL
     start_sign_offchain_message_ui(is_ascii, num_summary_steps);
-#endif
-#ifdef HAVE_BAGL
-    start_sign_offchain_message_ui(is_ascii, num_summary_steps);
-#endif
 }
 
 void handle_sign_offchain_message(volatile unsigned int *flags, volatile unsigned int *tx) {
