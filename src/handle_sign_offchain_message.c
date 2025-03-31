@@ -16,15 +16,16 @@ CASSERT(MAX_OFFCHAIN_MESSAGE_LENGTH < MAX_MESSAGE_LENGTH, global_h);
 
 void ui_application_domain(const OffchainMessageHeader *header) {
     const uint8_t empty_application_domain[OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH] = {
-        OFFCHAIN_EMPTY_APPLICATION_DOMAIN
-    };
+        OFFCHAIN_EMPTY_APPLICATION_DOMAIN};
 
     // Check if application domain buffer contains only zeroes
     if (memcmp(header->application_domain,
                empty_application_domain,
                OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH) == 0) {
         // Application buffer contains only zeroes - displaying base58 encoded string not needed
-        summary_item_set_string(transaction_summary_general_item(), "Application", "Domain not provided");
+        summary_item_set_string(transaction_summary_general_item(),
+                                "Application",
+                                "Domain not provided");
     } else {
         summary_item_set_offchain_message_application_domain(transaction_summary_general_item(),
                                                              "Application",
@@ -38,8 +39,7 @@ void ui_application_domain(const OffchainMessageHeader *header) {
 void ui_general(const OffchainMessageHeader *header,
                 const bool is_ascii,
                 const size_t signer_index,
-                Parser *parser __attribute__((unused))
-) {
+                Parser *parser __attribute__((unused))) {
     if (N_storage.settings.display_mode == DisplayModeExpert) {
         SummaryItem *item = transaction_summary_fee_payer_item();
         // First signer
@@ -61,7 +61,10 @@ void ui_general(const OffchainMessageHeader *header,
     }
 }
 
-void setup_ui(const OffchainMessageHeader *header, const bool is_ascii, Parser *parser, const size_t signer_index) {
+void setup_ui(const OffchainMessageHeader *header,
+              const bool is_ascii,
+              Parser *parser,
+              const size_t signer_index) {
     // fill out UI steps
     transaction_summary_reset();
     SummaryItem *item = transaction_summary_primary_item();
@@ -131,7 +134,7 @@ void handle_sign_offchain_message(volatile unsigned int *flags, volatile unsigne
 
     // compute message hash if needed
     if (!is_ascii || N_storage.settings.display_mode == DisplayModeExpert) {
-        cx_hash_sha256(parser.buffer, // Only message content is hashed
+        cx_hash_sha256(parser.buffer,  // Only message content is hashed
                        header.length,
                        (uint8_t *) &G_command.message_hash,
                        HASH_LENGTH);
