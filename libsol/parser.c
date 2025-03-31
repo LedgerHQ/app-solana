@@ -1,9 +1,6 @@
 #include "sol/parser.h"
+#include "sol/offchain_message_signing.h"
 #include "util.h"
-
-#define OFFCHAIN_MESSAGE_SIGNING_DOMAIN \
-    "\xff"                              \
-    "solana offchain"
 
 static int check_buffer_length(Parser *parser, size_t num) {
     return parser->buffer_length < num ? 1 : 0;
@@ -115,6 +112,14 @@ int parse_pubkeys(Parser *parser, PubkeysHeader *header, const Pubkey **pubkeys)
     return 0;
 }
 
+int parse_pubkeys_with_len(Parser *parser, size_t num_pubkeys, const Pubkey **pubkeys) {
+    size_t pubkeys_size = num_pubkeys * PUBKEY_SIZE;
+    BAIL_IF(check_buffer_length(parser, pubkeys_size));
+    *pubkeys = (const Pubkey *) parser->buffer;
+    advance(parser, pubkeys_size);
+    return 0;
+}
+
 int parse_hash(Parser *parser, const Hash **hash) {
     BAIL_IF(check_buffer_length(parser, HASH_SIZE));
     *hash = (const Hash *) parser->buffer;
@@ -136,26 +141,43 @@ int parse_version(Parser *parser, MessageHeader *header) {
     return 0;
 }
 
+int parse_offchain_message_application_domain(Parser *parser,
+                                              const OffchainMessageApplicationDomain **app_domain) {
+    BAIL_IF(check_buffer_length(parser, OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH));
+    *app_domain = (const OffchainMessageApplicationDomain *) parser->buffer;
+    advance(parser, OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH);
+    return 0;
+}
+
 int parse_message_header(Parser *parser, MessageHeader *header) {
     BAIL_IF(parse_version(parser, header));
-    BAIL_IF(parse_pubkeys(parser, &header->pubkeys_header, &header->pubkeys));
+    BAIL_IF(parse_pubkeys_header(parser, &header->pubkeys_header));
+    BAIL_IF(
+        parse_pubkeys_with_len(parser, header->pubkeys_header.pubkeys_length, &header->pubkeys));
     BAIL_IF(parse_blockhash(parser, &header->blockhash));
     BAIL_IF(parse_length(parser, &header->instructions_length));
     return 0;
 }
 
 int parse_offchain_message_header(Parser *parser, OffchainMessageHeader *header) {
-    const size_t domain_len = strlen(OFFCHAIN_MESSAGE_SIGNING_DOMAIN);
+    const size_t domain_len = OFFCHAIN_MESSAGE_SIGNING_DOMAIN_LENGTH;
     BAIL_IF(check_buffer_length(parser, domain_len));
     int res;
-    if ((res = memcmp(OFFCHAIN_MESSAGE_SIGNING_DOMAIN, parser->buffer, domain_len)) != 0) {
+    if ((res =
+             memcmp((const void *) &offchain_message_signing_domain, parser->buffer, domain_len)) !=
+        0) {
         return res;
     }
-    advance(parser, domain_len);
+    advance(parser, domain_len);  // Signing domain - 16 bytes
 
-    BAIL_IF(parse_u8(parser, &header->version));
-    BAIL_IF(parse_u8(parser, &header->format));
-    BAIL_IF(parse_u16(parser, &header->length));
+    BAIL_IF(parse_u8(parser, &header->version));  // Header version
+    BAIL_IF(parse_offchain_message_application_domain(parser, &header->application_domain));
+    BAIL_IF(parse_u8(parser, &header->format));  // Message format
+    uint8_t signers_length = 0;
+    BAIL_IF(parse_u8(parser, &signers_length));  // Signer count
+    header->signers_length = signers_length;
+    BAIL_IF(parse_pubkeys_with_len(parser, header->signers_length, &header->signers));
+    BAIL_IF(parse_u16(parser, &header->length));  // Message length
     return 0;
 }
 

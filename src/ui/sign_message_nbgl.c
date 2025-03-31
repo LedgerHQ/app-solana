@@ -140,10 +140,10 @@ void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
     // Start review
     nbgl_useCaseReview(operation_type,
                        &content,
-                       &C_icon_solana_64x64,
-                       "Review off-chain\nmessage",
+                       &C_Review_64px,
+                       "Review message",
                        NULL,
-                       "Sign off-chain message on Solana network?",
+                       "Sign message?",
                        review_choice);
 }
 #endif
