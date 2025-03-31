@@ -150,23 +150,24 @@ class MessageFormat(IntEnum):
 class v0_OffchainMessage:
     format: MessageFormat
     message: bytes
+    signer_pubkey: bytes
 
-    def __init__(self, message: bytes):
+    def __init__(self, message: bytes, signer_pubkey: bytes):
         # /// Construct a new OffchainMessage object from the given message
-        if len(message) <= MAX_LEN_LEDGER:
-            if is_printable_ascii(message):
-                self.format = MessageFormat.RestrictedAscii
-            elif is_utf8(message):
-                self.format = MessageFormat.LimitedUtf8
-            else:
-                raise ValueError()
-        elif len(message) <= MAX_LEN:
+        if is_printable_ascii(message):
+            self.format = MessageFormat.RestrictedAscii
+        elif is_utf8(message):
+            self.format = MessageFormat.LimitedUtf8
+        else:
+            raise ValueError()
+
+        if len(message) <= MAX_LEN:
             if is_utf8(message):
                 self.format = MessageFormat.ExtendedUtf8
             else:
                 raise ValueError()
-        else:
-            raise ValueError()
+        
+        self.signer_pubkey = signer_pubkey
         self.message = message
 
     # Serialize the message to bytes, including the full header
@@ -175,6 +176,10 @@ class v0_OffchainMessage:
         data: bytes = b""
         # format
         data += self.format.to_bytes(1, byteorder='little')
+        # signers count
+        data += (1).to_bytes(1, byteorder='little')
+        # signers
+        data += self.signer_pubkey
         # message length
         data += len(self.message).to_bytes(2, byteorder='little')
         # message
@@ -185,22 +190,29 @@ class v0_OffchainMessage:
 class OffchainMessage:
     version: int
     message: v0_OffchainMessage
+    app_domain: bytes
 
     # Construct a new OffchainMessage object from the given version and message
-    def __init__(self, version: int, message: bytes):
+    def __init__(self, version: int, message: bytes, signer_pubkey: bytes, app_domain: bytes=b""):
         self.version = version
+        # Ensure app_domain is exactly 32 bytes, pad with zeros if necessary
+        self.app_domain = app_domain.ljust(32, b'\x00')[:32]
+        
         if version == 0:
-            self.message = v0_OffchainMessage(message)
+            self.message = v0_OffchainMessage(message, signer_pubkey)
         else:
-            raise ValueError()
+            raise ValueError("Unsupported version")
 
     # Serialize the off-chain message to bytes including full header
     def serialize(self) -> bytes:
         data: bytes = b""
-        # serialize signing domain
+        # Serialize signing domain
         data += SIGNING_DOMAIN
-
-        # serialize version and call version specific serializer
+        # Serialize version
         data += self.version.to_bytes(1, byteorder='little')
+        # Include padded app_domain
+        data += self.app_domain
+        # Serialize message
         data += self.message.serialize()
         return data
+
