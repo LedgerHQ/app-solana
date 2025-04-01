@@ -1,6 +1,5 @@
 #include "io_utils.h"
 #include "os.h"
-#include "ux.h"
 #include "cx.h"
 #include "utils.h"
 #include "sol/string_utils.h"
@@ -41,13 +40,14 @@ void ui_general(const OffchainMessageHeader *header,
                 const size_t signer_index,
                 Parser *parser __attribute__((unused))) {
     if (N_storage.settings.display_mode == DisplayModeExpert) {
-        SummaryItem *item = transaction_summary_fee_payer_item();
+        SummaryItem *item = transaction_summary_primary_or_general_item();
         // First signer
         summary_item_set_pubkey(item, "Signer", &header->signers[signer_index]);
 
         if (header->signers_length > 1) {
-            item = transaction_summary_general_item();
-            summary_item_set_u64(item, "Other signers", header->signers_length);
+            summary_item_set_u64(transaction_summary_general_item(),
+                                 "Other signers",
+                                 header->signers_length);
         }
 
         ui_application_domain(header);
@@ -57,7 +57,9 @@ void ui_general(const OffchainMessageHeader *header,
         summary_item_set_u64(transaction_summary_general_item(), "Size", header->length);
         summary_item_set_hash(transaction_summary_general_item(), "Hash", &G_command.message_hash);
     } else if (!is_ascii) {
-        summary_item_set_hash(transaction_summary_general_item(), "Hash", &G_command.message_hash);
+        summary_item_set_hash(transaction_summary_primary_or_general_item(),
+                              "Hash",
+                              &G_command.message_hash);
     }
 }
 
@@ -67,14 +69,13 @@ void setup_ui(const OffchainMessageHeader *header,
               const size_t signer_index) {
     // fill out UI steps
     transaction_summary_reset();
-    SummaryItem *item = transaction_summary_primary_item();
-    summary_item_set_string(item, "Review message", "");
 
     ui_general(header, is_ascii, signer_index, parser);
 
     enum SummaryItemKind summary_step_kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
     size_t num_summary_steps = 0;
-    if (transaction_summary_finalize(summary_step_kinds, &num_summary_steps)) {
+    if (transaction_summary_finalize(summary_step_kinds, &num_summary_steps) > 1) {
+        // We can ignore missing primary item in this case
         THROW(ApduReplySolanaSummaryFinalizeFailed);
     }
     start_sign_offchain_message_ui(is_ascii, num_summary_steps);

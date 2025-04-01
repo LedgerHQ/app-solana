@@ -19,6 +19,8 @@ UX_STEP_NOCB(ux_sign_msg_text_step,
                  .text = (const char *) G_command.message + OFFCHAIN_MESSAGE_HEADER_LENGTH,
              });
 
+UX_STEP_NOCB(ux_sign_msg_text_icon_init, pnn, {&C_icon_certificate, "Review message", ""});
+
 // Display dynamic transaction item screen
 UX_STEP_NOCB_INIT(ux_summary_step,
                   bnnn_paging,
@@ -77,7 +79,7 @@ if ascii:
 - message text
 */
 #define MAX_FLOW_STEPS_OFFCHAIN \
-    (7 + 1 /* approve */        \
+    (8 + 1 /* approve */        \
      + 1   /* reject */         \
      + 1   /* FLOW_END_STEP */  \
     )
@@ -97,15 +99,20 @@ void start_sign_tx_ui(size_t num_summary_steps) {
     ux_flow_init(0, flow_steps, NULL);
 }
 
-void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
+void start_sign_offchain_message_ui(const bool is_ascii, const size_t num_summary_steps) {
     MEMCLEAR(flow_steps);
     size_t num_flow_steps = 0;
-    for (size_t i = 0; i < num_summary_steps; i++) {
+
+    flow_steps[num_flow_steps++] = &ux_sign_msg_text_icon_init;
+
+    for (size_t i = 1; i < num_summary_steps; i++) {
         flow_steps[num_flow_steps++] = &ux_summary_step;
     }
+
     if (is_ascii) {
         flow_steps[num_flow_steps++] = &ux_sign_msg_text_step;
     }
+
     flow_steps[num_flow_steps++] = &ux_approve_step;
     flow_steps[num_flow_steps++] = &ux_reject_step;
     flow_steps[num_flow_steps++] = FLOW_END_STEP;

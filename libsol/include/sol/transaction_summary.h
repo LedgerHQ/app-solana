@@ -70,6 +70,7 @@ SummaryItem *transaction_summary_fee_payer_item();
 SummaryItem *transaction_summary_nonce_account_item();
 SummaryItem *transaction_summary_nonce_authority_item();
 SummaryItem *transaction_summary_general_item();
+SummaryItem *transaction_summary_primary_or_general_item();
 
 int transaction_summary_set_fee_payer_pubkey(const Pubkey *pubkey);
 

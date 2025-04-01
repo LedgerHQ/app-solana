@@ -7,6 +7,7 @@
 struct SummaryItem {
     const char *title;
     enum SummaryItemKind kind;
+
     union {
         uint64_t u64;
         int64_t i64;
@@ -149,7 +150,16 @@ SummaryItem *transaction_summary_general_item() {
     return NULL;
 }
 
+SummaryItem *transaction_summary_primary_or_general_item() {
+    SummaryItem *item = transaction_summary_primary_item();
+    if (item != NULL) {
+        return item;
+    }
+    return transaction_summary_general_item();
+}
+
 #define FEE_PAYER_TITLE "Fee payer"
+
 int transaction_summary_set_fee_payer_pubkey(const Pubkey *pubkey) {
     SummaryItem *item = transaction_summary_fee_payer_item();
     BAIL_IF(item == NULL);
