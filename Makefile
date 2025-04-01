@@ -70,11 +70,7 @@ ifeq ($(TARGET_NAME),$(filter $(TARGET_NAME),TARGET_NANOX TARGET_STAX TARGET_FLE
 HAVE_APPLICATION_FLAG_BOLOS_SETTINGS = 1
 endif
 
-########################################
-# Swap features #
-########################################
-ENABLE_SWAP = 1
-
+# --8<-- [start:variables]
 ########################################
 # Application communication interfaces #
 ########################################
@@ -84,6 +80,12 @@ ENABLE_BLUETOOTH = 1
 #         NBGL custom features         #
 ########################################
 ENABLE_NBGL_QRCODE = 1
+
+########################################
+#            Swap features             #
+########################################
+ENABLE_SWAP = 1
+# --8<-- [end:variables]
 
 ########################################
 #          Features disablers          #

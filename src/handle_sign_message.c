@@ -303,6 +303,7 @@ static bool check_swap_validity(const SummaryItemKind_t kinds[MAX_TRANSACTION_SU
     }
 }
 
+// --8<-- [start:handle_sign_message_ui]
 void handle_sign_message_ui(volatile unsigned int *flags) {
     // Display the transaction summary
     SummaryItemKind_t summary_step_kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
@@ -323,13 +324,14 @@ void handle_sign_message_ui(volatile unsigned int *flags) {
                 G_swap_response_ready = true;
             }
             if (check_swap_validity(summary_step_kinds, num_summary_steps)) {
-                PRINTF("Valid swap transaction signed\n");
+                PRINTF("Valid swap transaction received, signing and replying it\n");
                 sendResponse(set_result_sign_message(), ApduReplySuccess, false);
             } else {
-                PRINTF("Refused signing incorrect Swap transaction\n");
+                PRINTF("Refuse to sign an incorrect Swap transaction\n");
                 sendResponse(0, ApduReplySolanaSummaryFinalizeFailed, false);
             }
         } else {
+            // We have been started from the dashboard, prompt the UI to the user as usual
             start_sign_tx_ui(num_summary_steps);
         }
     } else {
@@ -338,3 +340,4 @@ void handle_sign_message_ui(volatile unsigned int *flags) {
 
     *flags |= IO_ASYNCH_REPLY;
 }
+// --8<-- [end:handle_sign_message_ui]

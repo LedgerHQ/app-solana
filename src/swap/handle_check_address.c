@@ -1,3 +1,5 @@
+// --8<-- [start:file]
+
 #include <string.h>
 
 #include "handle_check_address.h"
@@ -5,6 +7,7 @@
 #include "utils.h"
 #include "sol/printer.h"
 
+// Helper to get our public key in base58 format for a given derivation path
 static int derive_public_key(const uint8_t *buffer,
                              uint16_t buffer_length,
                              uint8_t public_key[PUBKEY_LENGTH],
@@ -23,27 +26,30 @@ static int derive_public_key(const uint8_t *buffer,
     return encode_base58(public_key, PUBKEY_LENGTH, public_key_str, BASE58_PUBKEY_LENGTH);
 }
 
-int handle_check_address(const check_address_parameters_t *params) {
-    PRINTF("Inside Solana handle_check_address\n");
+// Check that params->address_to_check belongs to us on derivation path params->address_parameters
+void swap_handle_check_address(check_address_parameters_t *params) {
+    PRINTF("Inside Solana swap_handle_check_address\n");
+    // ensure result is zero even if an exception is thrown
+    params->result = 0;
     PRINTF("Params on the address %d\n", (unsigned int) params);
 
     if (params->address_parameters == NULL) {
         PRINTF("derivation path expected\n");
-        return 0;
+        return;
     }
 
     if (params->address_to_check == NULL) {
         PRINTF("Address to check expected\n");
-        return 0;
+        return;
     }
     PRINTF("Address to check %s\n", params->address_to_check);
 
     if (params->extra_id_to_check == NULL) {
         PRINTF("extra_id_to_check expected\n");
-        return 0;
+        return;
     } else if (params->extra_id_to_check[0] != '\0') {
         PRINTF("extra_id_to_check expected empty, not '%s'\n", params->extra_id_to_check);
-        return 0;
+        return;
     }
 
     uint8_t public_key[PUBKEY_LENGTH];
@@ -53,16 +59,18 @@ int handle_check_address(const check_address_parameters_t *params) {
                           public_key,
                           public_key_str) != 0) {
         PRINTF("Failed to derive public key\n");
-        return 0;
+        return;
     }
     // Only public_key_str is useful in this context
     UNUSED(public_key);
 
     if (strcmp(params->address_to_check, public_key_str) != 0) {
         PRINTF("Address %s != %s\n", params->address_to_check, public_key_str);
-        return 0;
+        return;
     }
 
     PRINTF("Addresses match\n");
-    return 1;
+    params->result = 1;
 }
+
+// --8<-- [end:file]
