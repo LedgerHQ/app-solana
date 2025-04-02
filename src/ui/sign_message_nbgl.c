@@ -36,6 +36,22 @@ static dynamic_slot_t displayed_slots[MAX_SIMULTANEOUS_DISPLAYED_SLOTS];
 static size_t transaction_steps_number;
 static bool last_step_is_ascii;
 
+static inline void populate_displayed_slot_non_ascii(const size_t slot, const uint8_t index) {
+    enum DisplayFlags flags = DisplayFlagNone;
+    if (N_storage.settings.pubkey_display == PubkeyDisplayLong) {
+        flags |= DisplayFlagLongPubkeys;
+    }
+    if (transaction_summary_display_item(index, flags)) {
+        THROW(ApduReplySolanaSummaryUpdateFailed);
+    }
+    memcpy(&displayed_slots[slot].title,
+           &G_transaction_summary_title,
+           sizeof(displayed_slots[slot].title));
+    memcpy(&displayed_slots[slot].text,
+           &G_transaction_summary_text,
+           sizeof(displayed_slots[slot].text));
+}
+
 // function called by NBGL to get the current_pair indexed by "index"
 // current_pair will point at values stored in displayed_slots[]
 // this will enable displaying at most sizeof(displayed_slots) values simultaneously
@@ -48,24 +64,29 @@ static nbgl_contentTagValue_t *get_single_action_review_pair(uint8_t index) {
                 (const char *) G_command.message + OFFCHAIN_MESSAGE_HEADER_LENGTH,
                 sizeof(displayed_slots[slot].text));
     } else {
-        enum DisplayFlags flags = DisplayFlagNone;
-        if (N_storage.settings.pubkey_display == PubkeyDisplayLong) {
-            flags |= DisplayFlagLongPubkeys;
-        }
-        if (transaction_summary_display_item(index, flags)) {
-            THROW(ApduReplySolanaSummaryUpdateFailed);
-        }
-        memcpy(&displayed_slots[slot].title,
-               &G_transaction_summary_title,
-               sizeof(displayed_slots[slot].title));
-        memcpy(&displayed_slots[slot].text,
-               &G_transaction_summary_text,
-               sizeof(displayed_slots[slot].text));
+        populate_displayed_slot_non_ascii(slot, index);
     }
     current_pair.item = displayed_slots[slot].title;
     current_pair.value = displayed_slots[slot].text;
     return &current_pair;
 }
+
+static nbgl_contentTagValue_t *get_single_action_long_review_pair(uint8_t index) {
+    uint8_t slot = index % ARRAY_COUNT(displayed_slots);
+    // Final step is special for ASCII messages
+    if (index == transaction_steps_number - 1 && last_step_is_ascii) {
+        strlcpy(displayed_slots[slot].title, "Message", sizeof(displayed_slots[slot].title));
+        current_pair.value = (const char *) G_command.message + OFFCHAIN_MESSAGE_HEADER_LENGTH;
+    } else {
+        populate_displayed_slot_non_ascii(slot, index);
+        current_pair.value = displayed_slots[slot].text;
+    }
+
+    current_pair.item = displayed_slots[slot].title;
+
+    return &current_pair;
+}
+
 
 static void review_choice(bool confirm) {
     // Answer, display a status page and go back to main
@@ -133,7 +154,7 @@ void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
     content.smallCaseForValue = false;
     content.wrapping = true;
     content.pairs = NULL;  // to indicate that callback should be used
-    content.callback = get_single_action_review_pair;
+    content.callback = get_single_action_long_review_pair;
     content.startIndex = 0;
     content.nbPairs = transaction_steps_number;
 
