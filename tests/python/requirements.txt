@@ -3,3 +3,4 @@ ecdsa
 ragger[tests,speculos]
 solders
 solana
+pytest
