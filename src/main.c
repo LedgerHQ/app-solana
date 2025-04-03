@@ -268,9 +268,7 @@ static void start_app_from_lib(void) {
 static void library_main_helper(libargs_t *args) {
     switch (args->command) {
         case CHECK_ADDRESS:
-            // ensure result is zero if an exception is thrown
-            args->check_address->result = 0;
-            args->check_address->result = handle_check_address(args->check_address);
+            swap_handle_check_address(args->check_address);
             break;
         case SIGN_TRANSACTION:
             if (copy_transaction_parameters(args->create_transaction)) {
@@ -279,7 +277,7 @@ static void library_main_helper(libargs_t *args) {
             }
             break;
         case GET_PRINTABLE_AMOUNT:
-            handle_get_printable_amount(args->get_printable_amount);
+            swap_handle_get_printable_amount(args->get_printable_amount);
             break;
         default:
             break;
