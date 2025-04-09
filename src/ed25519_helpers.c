@@ -1,5 +1,3 @@
-// #include <cx.h>
-
 #include "common_byte_strings.h"
 
 #include "cx.h"

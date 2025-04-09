@@ -672,7 +672,6 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
     return 1;
 }
 
-// Warning for MINT extensions. Not transfer
 int print_spl_token_extension_warning() {
     SummaryItem *item = transaction_summary_general_item();
     summary_item_set_string(item, "Extension Warning", "Unsupported extensions found");

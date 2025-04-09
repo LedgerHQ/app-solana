@@ -111,6 +111,13 @@ int instruction_accounts_iterator_next(InstructionAccountsIterator *it,
     return 1;
 }
 
+int instruction_accounts_iterator_get_current_account_index(InstructionAccountsIterator *it) {
+    if (instruction_accounts_iterator_remaining(it) == 0) {
+        return -1;
+    }
+    return it->instruction_accounts[it->current_instruction_account];
+}
+
 size_t instruction_accounts_iterator_remaining(const InstructionAccountsIterator *it) {
     if (it->current_instruction_account < it->instruction_accounts_length) {
         return it->instruction_accounts_length - it->current_instruction_account;
