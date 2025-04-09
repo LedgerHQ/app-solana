@@ -710,6 +710,7 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
                                               !info->is_transfer_checked_with_fee);
     transaction_summary_set_token_hook_warning(is_token2022_kind &&
                                                info->is_transfer_checked_with_hook);
+    transaction_summary_set_is_token_2022_transfer(is_token2022_kind);
 
     print_spl_token_sign(&info->sign, print_config);
 

@@ -80,6 +80,7 @@ void summary_item_set_timestamp(SummaryItem *item, const char *title, int64_t va
 }
 
 typedef struct TransactionSummary {
+    bool is_token_2022_transfer;
     bool fee_warning;
     bool hook_warning;
     SummaryItem primary;
@@ -152,6 +153,14 @@ void transaction_summary_set_token_hook_warning(bool hook_warning) {
 void transaction_summary_get_token_warnings(bool *fee_warning, bool *hook_warning) {
     *fee_warning = G_transaction_summary.fee_warning;
     *hook_warning = G_transaction_summary.hook_warning;
+}
+
+void transaction_summary_set_is_token_2022_transfer(bool is_token_2022_transfer) {
+    G_transaction_summary.is_token_2022_transfer = is_token_2022_transfer;
+}
+
+void transaction_summary_get_is_token_2022_transfer(bool *is_token_2022_transfer) {
+    *is_token_2022_transfer = G_transaction_summary.is_token_2022_transfer;
 }
 
 #define FEE_PAYER_TITLE "Fee payer"
