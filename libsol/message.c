@@ -87,8 +87,7 @@ int process_message_body(const uint8_t *message_body,
                                                  &info->spl_token,
                                                  &ignore_instruction_info) == 0) {
                     info->kind = program_id;
-                } else {
-                    PRINTF("failed parse_spl_token_instructions\n");
+                    generate_extension_warning |= info->spl_token.generate_extension_warning;
                 }
                 break;
             case ProgramIdSystem: {

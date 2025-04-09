@@ -162,10 +162,9 @@ static int parse_spl_token_sign(InstructionAccountsIterator *it, SplTokenSign *s
 static int parse_spl_token2022_sign(const MessageHeader *header,
                                     InstructionAccountsIterator *it,
                                     SplTokenSign *sign) {
-    size_t n = instruction_accounts_iterator_remaining(it);
+    int current_account_index = instruction_accounts_iterator_get_current_account_index(it);
     // We need at least the standard signer
-    BAIL_IF(n == 0);
-    uint8_t current_account_index = it->instruction_accounts[it->current_instruction_account];
+    BAIL_IF(current_account_index < 0);
     // Check if the first additional account is a signed one.
     if (current_account_index < header->pubkeys_header.num_required_signatures) {
         sign->kind = SplTokenSignKindSingle;
@@ -179,8 +178,8 @@ static int parse_spl_token2022_sign(const MessageHeader *header,
         BAIL_IF(instruction_accounts_iterator_next(it, &sign->multi.signers.first));
         uint8_t signers_count = 1;
         // Count and skip all next signers
-        while (it->current_instruction_account < it->instruction_accounts_length) {
-            current_account_index = it->instruction_accounts[it->current_instruction_account];
+        while (instruction_accounts_iterator_remaining(it) > 0) {
+            current_account_index = instruction_accounts_iterator_get_current_account_index(it);
             PRINTF("Checking account[%d] = %d: ",
                    it->current_instruction_account,
                    current_account_index);

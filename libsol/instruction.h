@@ -78,4 +78,6 @@ void instruction_accounts_iterator_init(InstructionAccountsIterator *it,
 int instruction_accounts_iterator_next(InstructionAccountsIterator *it,
                                        const Pubkey **next_account);
 
+int instruction_accounts_iterator_get_current_account_index(InstructionAccountsIterator *it);
+
 size_t instruction_accounts_iterator_remaining(const InstructionAccountsIterator *it);
