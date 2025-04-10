@@ -129,13 +129,13 @@ void start_sign_tx_ui(size_t num_summary_steps) {
     if (hook_warning) {
         warning_title = "Transfer Hook";
         warning_text =
-            "This transaction invokes a\ncustom program. It may lead\nto unexpected behaviour.";
+            "This transaction invokes a custom program. It may lead to unexpected behaviour.";
     } else {
         if (fee_warning) {
-            warning_title = "Token Extensions\ncannot be verified";
+            warning_title = "Token Extensions cannot be verified";
             warning_text =
-                "A token in this transaction may\ncontain Transfer Fee extension\nwhich would lead "
-                "to additional\nfees upon broadcast.";
+                "A token in this transaction may contain Transfer Fee extension which would lead "
+                "to additional fees upon broadcast.";
         } else {
             // No warning
         }
