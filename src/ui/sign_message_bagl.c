@@ -70,7 +70,12 @@ UX_STEP_NOCB(ux_hook_warning_p1_step,
 
 UX_STEP_NOCB(ux_hook_warning_p2_step,
              nnnn,
-             {"A custom program in", "this transaction may", "lead to unexpected", "behaviour."});
+             {
+                 "A custom program in",
+                 "this transaction may",
+                 "lead to unexpected",
+                 "behaviour.",
+             });
 
 UX_STEP_NOCB(ux_fee_warning_p1_step,
              pbb,
@@ -83,7 +88,7 @@ UX_STEP_NOCB(ux_fee_warning_p1_step,
 UX_STEP_NOCB(ux_fee_warning_p2_step,
              nnn,
              {
-                 "It may lead lead to",
+                 "It may lead to",
                  "additional fees upon",
                  "broadcast.",
              });
