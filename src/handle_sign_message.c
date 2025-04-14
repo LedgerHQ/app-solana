@@ -303,9 +303,14 @@ static bool check_swap_validity(const SummaryItemKind_t kinds[MAX_TRANSACTION_SU
         bool is_token_2022;
         transaction_summary_get_is_token_2022_transfer(&is_token_2022);
         if (is_token_2022) {
-            bool has_transfer_fees;
+            bool unknonw_transfer_fees;
             bool has_transfer_hook;
-            transaction_summary_get_token_warnings(&has_transfer_fees, &has_transfer_hook);
+            transaction_summary_get_token_warnings(&unknonw_transfer_fees, &has_transfer_hook);
+            if (unknonw_transfer_fees) {
+                PRINTF(
+                    "TransferChecked refused in swap context, TransferCheckedWithFees required\n");
+                return false;
+            }
             if (has_transfer_hook) {
                 PRINTF("Transaction with transfer hook refused\n");
                 return false;
