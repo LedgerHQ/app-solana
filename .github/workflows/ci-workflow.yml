@@ -17,6 +17,11 @@ on:
       - develop
   pull_request:
 
+# Cancel previous runs on this reference
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build_application:
     name: Build application using the reusable workflow
