@@ -4,7 +4,8 @@
 
 bool check_ata_agaisnt_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
                                     const uint8_t mint_account[PUBKEY_LENGTH],
-                                    const uint8_t dest_account[PUBKEY_LENGTH]) {
+                                    const uint8_t dest_account[PUBKEY_LENGTH],
+                                    bool is_token_2022) {
     UNUSED(src_account);
     // Here we will check the content of the SPL transaction against the received descriptor
     if (!g_trusted_info.received) {
@@ -41,7 +42,8 @@ bool check_ata_agaisnt_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
 
     if (!validate_associated_token_address(g_trusted_info.owner_address,
                                            mint_account,
-                                           dest_account)) {
+                                           dest_account,
+                                           is_token_2022)) {
         return false;
     }
 

@@ -59,6 +59,9 @@ typedef struct SplTokenTransferInfo {
     const Pubkey *mint_account;
     SplTokenSign sign;
     SplTokenBody(TransferChecked) body;
+    bool is_transfer_checked_with_fee;
+    uint64_t transfer_checked_with_fee_amount;
+    bool is_transfer_checked_with_hook;
 } SplTokenTransferInfo;
 
 typedef struct SplTokenApproveInfo {
@@ -119,6 +122,8 @@ typedef struct SplTokenSyncNativeInfo {
 
 typedef struct SplTokenInfo {
     SplTokenInstructionKind kind;
+    bool is_token2022_kind;
+    bool generate_extension_warning;
     union {
         SplTokenInitializeMintInfo initialize_mint;
         SplTokenInitializeAccountInfo initialize_account;
@@ -136,9 +141,12 @@ typedef struct SplTokenInfo {
     };
 } SplTokenInfo;
 
+bool is_token2022_instruction(const Instruction *instruction, const MessageHeader *header);
+
 int parse_spl_token_instructions(const Instruction *instruction,
                                  const MessageHeader *header,
-                                 SplTokenInfo *info);
+                                 SplTokenInfo *info,
+                                 bool *ignore_instruction_info);
 int print_spl_token_info(const SplTokenInfo *info, const PrintConfig *print_config);
 void summary_item_set_multisig_m_of_n(SummaryItem *item, uint8_t m, uint8_t n);
 
@@ -150,4 +158,5 @@ const Pubkey *spl_token_option_pubkey_get(const SplTokenOptionPubkey *option_pub
 
 int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
                                   const PrintConfig *print_config,
+                                  bool is_token2022_kind,
                                   bool primary);

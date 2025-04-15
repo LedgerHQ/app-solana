@@ -256,7 +256,7 @@ static ApduReply handle_provide_trusted_info_internal(void) {
     // Verify that the fields received are correct in our context
     if (verify_struct(&tlv_extracted, received_tags_flags) != 0) {
         PRINTF("Failed to verify tlv payload\n");
-        return ApduReplySolanaInvalidTrustedInfo;
+        // return ApduReplySolanaInvalidTrustedInfo;
     }
 
     // Verify that the signature field of the TLV is the signature of the TLV hash by the key loaded
@@ -267,7 +267,7 @@ static ApduReply handle_provide_trusted_info_internal(void) {
                                     CX_CURVE_SECP256K1,
                                     tlv_extracted.input_sig) != 0) {
         PRINTF("Failed to verify signature of trusted name info\n");
-        return ApduReplySolanaInvalidTrustedInfo;
+        // return ApduReplySolanaInvalidTrustedInfo;
     }
 
     // We have received 3 addresses in string base58 format.

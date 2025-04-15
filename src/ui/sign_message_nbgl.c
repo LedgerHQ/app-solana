@@ -22,7 +22,7 @@ static nbgl_contentTagValueList_t content;
 // Used by NBGL to display the reference the pair number N
 static nbgl_layoutTagValue_t current_pair;
 // Used to differentiate between message and transaction review
-nbgl_operationType_t operation_type;
+static nbgl_operationType_t operation_type;
 
 // We will display at most 4 items on a Stax review screen
 #define MAX_SIMULTANEOUS_DISPLAYED_SLOTS NB_MAX_DISPLAYED_PAIRS_IN_REVIEW
@@ -33,8 +33,8 @@ typedef struct dynamic_slot_s {
 static dynamic_slot_t displayed_slots[MAX_SIMULTANEOUS_DISPLAYED_SLOTS];
 
 // NBGL library has to know how many steps will be displayed
-static size_t transaction_steps_number;
-static bool last_step_is_ascii;
+static size_t G_transaction_steps_number;
+static bool G_last_step_is_ascii;
 
 // function called by NBGL to get the current_pair indexed by "index"
 // current_pair will point at values stored in displayed_slots[]
@@ -42,7 +42,7 @@ static bool last_step_is_ascii;
 static nbgl_contentTagValue_t *get_single_action_review_pair(uint8_t index) {
     uint8_t slot = index % ARRAY_COUNT(displayed_slots);
     // Final step is special for ASCII messages
-    if (index == transaction_steps_number - 1 && last_step_is_ascii) {
+    if (index == G_transaction_steps_number - 1 && G_last_step_is_ascii) {
         strlcpy(displayed_slots[slot].title, "Message", sizeof(displayed_slots[slot].title));
         strlcpy(displayed_slots[slot].text,
                 (const char *) G_command.message + OFFCHAIN_MESSAGE_HEADER_LENGTH,
@@ -90,31 +90,67 @@ static void review_choice(bool confirm) {
     }
 }
 
+static void on_warning_choice(bool cancel) {
+    if (cancel) {
+        review_choice(false);
+    } else {
+        // Set the transaction type
+        operation_type = TYPE_TRANSACTION;
+
+        // Save steps number for later
+        G_last_step_is_ascii = false;
+
+        // Initialize the content structure
+        content.nbMaxLinesForValue = 0;
+        content.smallCaseForValue = false;
+        content.wrapping = true;
+        content.pairs = NULL;  // to indicate that callback should be used
+        content.callback = get_single_action_review_pair;
+        content.startIndex = 0;
+        content.nbPairs = G_transaction_steps_number;
+
+        nbgl_useCaseReview(operation_type,
+                           &content,
+                           &C_icon_solana_64x64,
+                           "Review transaction",
+                           NULL,
+                           "Sign transaction on Solana network?",
+                           review_choice);
+    }
+}
+
 void start_sign_tx_ui(size_t num_summary_steps) {
-    // Set the transaction type
-    operation_type = TYPE_TRANSACTION;
+    bool fee_warning;
+    bool hook_warning;
+    transaction_summary_get_token_warnings(&fee_warning, &hook_warning);
+    G_transaction_steps_number = num_summary_steps;
+    const char *warning_title = NULL;
+    const char *warning_text = NULL;
+    if (hook_warning) {
+        warning_title = "Transfer Hook";
+        warning_text =
+            "This transaction invokes a\ncustom program. It may lead\nto unexpected behaviour.";
+    } else {
+        if (fee_warning) {
+            warning_title = "Token Extensions\ncannot be verified";
+            warning_text =
+                "A token in this transaction may\ncontain Transfer Fee extension\nwhich would lead "
+                "to additional\nfees upon broadcast.";
+        } else {
+            // No warning
+        }
+    }
 
-    // Save steps number for later
-    transaction_steps_number = num_summary_steps;
-    last_step_is_ascii = false;
-
-    // Initialize the content structure
-    content.nbMaxLinesForValue = 0;
-    content.smallCaseForValue = false;
-    content.wrapping = true;
-    content.pairs = NULL;  // to indicate that callback should be used
-    content.callback = get_single_action_review_pair;
-    content.startIndex = 0;
-    content.nbPairs = transaction_steps_number;
-
-    // Start review
-    nbgl_useCaseReview(operation_type,
-                       &content,
-                       &C_icon_solana_64x64,
-                       "Review transaction",
-                       NULL,
-                       "Sign transaction on Solana network?",
-                       review_choice);
+    if (warning_title != NULL) {
+        nbgl_useCaseChoice(&C_Warning_64px,
+                           warning_title,
+                           warning_text,
+                           "Back to safety",
+                           "Continue anyway",
+                           on_warning_choice);
+    } else {
+        on_warning_choice(false);
+    }
 }
 
 void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
@@ -122,10 +158,10 @@ void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
     operation_type = TYPE_MESSAGE;
 
     // Save steps number for later
-    transaction_steps_number = num_summary_steps;
-    last_step_is_ascii = is_ascii;
+    G_transaction_steps_number = num_summary_steps;
+    G_last_step_is_ascii = is_ascii;
     if (is_ascii) {
-        ++transaction_steps_number;
+        ++G_transaction_steps_number;
     }
 
     // Initialize the content structure
@@ -135,7 +171,7 @@ void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
     content.pairs = NULL;  // to indicate that callback should be used
     content.callback = get_single_action_review_pair;
     content.startIndex = 0;
-    content.nbPairs = transaction_steps_number;
+    content.nbPairs = G_transaction_steps_number;
 
     // Start review
     nbgl_useCaseReview(operation_type,
