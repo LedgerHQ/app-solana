@@ -1,7 +1,7 @@
-#include <cx.h>
-
 #include "common_byte_strings.h"
 
+#include "cx.h"
+#include "sol/printer.h"
 #include "ed25519_helpers.h"
 
 static bool is_on_curve_internal(const uint8_t compressed_point[PUBKEY_LENGTH]) {
@@ -47,26 +47,25 @@ static bool is_on_curve(const uint8_t compressed_point[PUBKEY_LENGTH]) {
 static int derivate_ata_candidate(const uint8_t *owner_account,
                                   const uint8_t *mint_account,
                                   uint8_t nonce,
+                                  bool is_token_2022,
                                   uint8_t (*derived_ata_candidate)[PUBKEY_LENGTH]) {
     cx_sha256_t hash_ctx;
-    uint8_t program_id_spl_token[32] = {PROGRAM_ID_SPL_TOKEN};
-    uint8_t program_id_spl_associated_token_account[32] = {PROGRAM_ID_SPL_ASSOCIATED_TOKEN_ACCOUNT};
-    const char program_derived_address[] = "ProgramDerivedAddress";
-
     cx_sha256_init(&hash_ctx);
-
     if (cx_hash_no_throw((cx_hash_t *) &hash_ctx, 0, owner_account, PUBKEY_LENGTH, NULL, 0) !=
         CX_OK) {
         PRINTF("ERROR: Failed to hash owner account\n");
         return -1;
     }
 
-    if (cx_hash_no_throw((cx_hash_t *) &hash_ctx,
-                         0,
-                         program_id_spl_token,
-                         PUBKEY_LENGTH,
-                         NULL,
-                         0) != CX_OK) {
+    uint8_t program_id_spl_token[32] = {PROGRAM_ID_SPL_TOKEN};
+    uint8_t program_id_spl_token_2022[32] = {PROGRAM_ID_SPL_TOKEN_2022};
+    uint8_t *program_id;
+    if (is_token_2022) {
+        program_id = program_id_spl_token_2022;
+    } else {
+        program_id = program_id_spl_token;
+    }
+    if (cx_hash_no_throw((cx_hash_t *) &hash_ctx, 0, program_id, PUBKEY_LENGTH, NULL, 0) != CX_OK) {
         PRINTF("ERROR: Failed to hash program ID\n");
         return -1;
     }
@@ -82,6 +81,7 @@ static int derivate_ata_candidate(const uint8_t *owner_account,
         return -1;
     }
 
+    uint8_t program_id_spl_associated_token_account[32] = {PROGRAM_ID_SPL_ASSOCIATED_TOKEN_ACCOUNT};
     if (cx_hash_no_throw((cx_hash_t *) &hash_ctx,
                          0,
                          program_id_spl_associated_token_account,
@@ -92,6 +92,7 @@ static int derivate_ata_candidate(const uint8_t *owner_account,
         return -1;
     }
 
+    const char program_derived_address[] = "ProgramDerivedAddress";
     if (cx_hash_no_throw((cx_hash_t *) &hash_ctx,
                          0,
                          (const uint8_t *) program_derived_address,
@@ -117,7 +118,8 @@ static int derivate_ata_candidate(const uint8_t *owner_account,
 
 bool validate_associated_token_address(const uint8_t owner_account[PUBKEY_LENGTH],
                                        const uint8_t mint_account[PUBKEY_LENGTH],
-                                       const uint8_t provided_ata[PUBKEY_LENGTH]) {
+                                       const uint8_t provided_ata[PUBKEY_LENGTH],
+                                       bool is_token_2022) {
     uint8_t derived_ata[PUBKEY_LENGTH];
 
     // Start with the maximum nonce value
@@ -127,7 +129,11 @@ bool validate_associated_token_address(const uint8_t owner_account[PUBKEY_LENGTH
     PRINTF("Trying to validate provided_ata %.*H\n", PUBKEY_LENGTH, provided_ata);
     while (nonce > 0) {
         // Worst case scenario is 255 hash + 255 memcmp. The performance hit is not noticeable.
-        if (derivate_ata_candidate(owner_account, mint_account, nonce, &derived_ata) != 0) {
+        if (derivate_ata_candidate(owner_account,
+                                   mint_account,
+                                   nonce,
+                                   is_token_2022,
+                                   &derived_ata) != 0) {
             PRINTF("Error derivate_ata_candidate for nonce %d\n", nonce);
             return false;
         }

@@ -1,7 +1,10 @@
+#include "os.h"
 #include "common_byte_strings.h"
 #include "instruction.h"
 #include "sol/parser.h"
 #include "sol/transaction_summary.h"
+#include "spl_token_instruction.h"
+#include "spl_token2022_instruction.h"
 #include "token_info.h"
 #include "util.h"
 #include "sol/parser.h"
@@ -30,16 +33,33 @@ static int parse_spl_token_instruction_kind(Parser *parser, SplTokenInstructionK
         case SplTokenKind(FreezeAccount):
         case SplTokenKind(ThawAccount):
         case SplTokenKind(SyncNative):
+
+            // Token2022 extensions
+        case SplTokenExtensionKind(TransferFeeExtension):
+        case SplTokenExtensionKind(ConfidentialTransferExtension):
+        case SplTokenExtensionKind(DefaultAccountStateExtension):
+        case SplTokenExtensionKind(MemoTransferExtension):
+        case SplTokenExtensionKind(InterestBearingMintExtension):
+        case SplTokenExtensionKind(CpiGuardExtension):
+        case SplTokenExtensionKind(TransferHookExtension):
+        case SplTokenExtensionKind(ConfidentialTransferFeeExtension):
+        case SplTokenExtensionKind(MetadataPointerExtension):
+        case SplTokenExtensionKind(GroupPointerExtension):
+        case SplTokenExtensionKind(GroupMemberPointerExtension):
             *kind = (SplTokenInstructionKind) maybe_kind;
             return 0;
+
         // Deprecated instructions
         case SplTokenKind(Transfer):
         case SplTokenKind(Approve):
         case SplTokenKind(MintTo):
         case SplTokenKind(Burn):
-            break;
+            PRINTF("Deprecated instruction %d\n", maybe_kind);
+            return 1;
+        default:
+            PRINTF("Unknown instruction %d\n", maybe_kind);
+            return 1;
     }
-    return 1;
 }
 
 static int parse_initialize_mint_spl_token_instruction(Parser *parser,
@@ -99,7 +119,6 @@ static int parse_spl_token_multisigners(InstructionAccountsIterator *it,
     BAIL_IF(n > Token_MAX_SIGNERS);
     BAIL_IF(instruction_accounts_iterator_next(it, &signers->first));
     signers->count = n;
-
     return 0;
 }
 
@@ -124,37 +143,108 @@ static int parse_initialize_multisig_spl_token_instruction(Parser *parser,
 static int parse_spl_token_sign(InstructionAccountsIterator *it, SplTokenSign *sign) {
     size_t n = instruction_accounts_iterator_remaining(it);
     BAIL_IF(n == 0);
-
     if (n == 1) {
         sign->kind = SplTokenSignKindSingle;
+        PRINTF("Single signer transaction\n");
         BAIL_IF(instruction_accounts_iterator_next(it, &sign->single.signer));
     } else {
         sign->kind = SplTokenSignKindMulti;
+        PRINTF("Multi signer transaction\n");
+        // We don't bother with trailing account refined detection, all are treated as signers
+        // Maybe this should be re-evaluated even for legacy tokens?
         BAIL_IF(instruction_accounts_iterator_next(it, &sign->multi.account));
         BAIL_IF(parse_spl_token_multisigners(it, &sign->multi.signers));
     }
     return 0;
 }
 
+// Please see comments on TransferChecked in token.h to understand better account ordering
+static int parse_spl_token2022_sign(const MessageHeader *header,
+                                    InstructionAccountsIterator *it,
+                                    SplTokenSign *sign) {
+    int current_account_index = instruction_accounts_iterator_get_current_account_index(it);
+    // We need at least the standard signer
+    BAIL_IF(current_account_index < 0);
+    // Check if the first additional account is a signed one.
+    if (current_account_index < header->pubkeys_header.num_required_signatures) {
+        sign->kind = SplTokenSignKindSingle;
+        PRINTF("Single signer transaction\n");
+        BAIL_IF(instruction_accounts_iterator_next(it, &sign->single.signer));
+    } else {
+        // Multi signature detected
+        sign->kind = SplTokenSignKindMulti;
+        PRINTF("Multi signers transaction\n");
+        BAIL_IF(instruction_accounts_iterator_next(it, &sign->multi.account));
+        BAIL_IF(instruction_accounts_iterator_next(it, &sign->multi.signers.first));
+        uint8_t signers_count = 1;
+        // Count and skip all next signers
+        while (instruction_accounts_iterator_remaining(it) > 0) {
+            current_account_index = instruction_accounts_iterator_get_current_account_index(it);
+            PRINTF("Checking account[%d] = %d: ",
+                   it->current_instruction_account,
+                   current_account_index);
+            if (current_account_index < header->pubkeys_header.num_required_signatures) {
+                PRINTF("Signer\n");
+                ++signers_count;
+                BAIL_IF(instruction_accounts_iterator_next(it, NULL));
+            } else {
+                // Not signers anymore
+                PRINTF("NOT a signer\n");
+                break;
+            }
+        }
+        // Register signers count
+        BAIL_IF(signers_count > Token_MAX_SIGNERS);
+        sign->multi.signers.count = signers_count;
+        PRINTF("Multi signers count = %d\n", sign->multi.signers.count);
+    }
+    return 0;
+}
+
+static int parse_spl_token_hook(InstructionAccountsIterator *it,
+                                bool *is_transfer_checked_with_hook) {
+    // We skipped the whole single / multi signers accounts. If we have remaining accounts it means
+    // we are signing a TX that will trigger a transfer hook.
+    size_t n = instruction_accounts_iterator_remaining(it);
+    *is_transfer_checked_with_hook = (n != 0);
+    return 0;
+}
+
 static int parse_transfer_spl_token_instruction(Parser *parser,
                                                 const Instruction *instruction,
                                                 const MessageHeader *header,
-                                                SplTokenTransferInfo *info) {
+                                                SplTokenTransferInfo *info,
+                                                bool is_transfer_checked_with_fee,
+                                                bool is_token2022_kind) {
     InstructionAccountsIterator it;
     instruction_accounts_iterator_init(&it, header, instruction);
 
     BAIL_IF(parse_u64(parser, &info->body.amount));
     BAIL_IF(parse_u8(parser, &info->body.decimals));
+    info->is_transfer_checked_with_fee = is_transfer_checked_with_fee;
+    if (is_transfer_checked_with_fee) {
+        BAIL_IF(parse_u64(parser, &info->transfer_checked_with_fee_amount));
+    }
 
     BAIL_IF(instruction_accounts_iterator_next(&it, &info->src_account));
     BAIL_IF(instruction_accounts_iterator_next(&it, &info->mint_account));
     BAIL_IF(instruction_accounts_iterator_next(&it, &info->dest_account));
 
-    BAIL_IF(parse_spl_token_sign(&it, &info->sign));
+    if (is_token2022_kind) {
+        BAIL_IF(parse_spl_token2022_sign(header, &it, &info->sign));
+        BAIL_IF(parse_spl_token_hook(&it, &info->is_transfer_checked_with_hook));
+        if (info->is_transfer_checked_with_hook) {
+            PRINTF("Transfer hook detected\n");
+        }
+    } else {
+        BAIL_IF(parse_spl_token_sign(&it, &info->sign));
+    }
 
     if (!check_ata_agaisnt_trusted_info(info->src_account->data,
                                         info->mint_account->data,
-                                        info->dest_account->data)) {
+                                        info->dest_account->data,
+                                        is_token2022_kind)) {
+        PRINTF("check_ata_agaisnt_trusted_info failed\n");
         return -1;
     }
 
@@ -334,12 +424,45 @@ static int parse_sync_native_spl_token_instruction(const Instruction *instructio
     return 0;
 }
 
+typedef enum transfer_fee_instruction_tag_e {
+    InitializeTransferFeeConfig = 0,
+    TransferCheckedWithFee = 1,
+    WithdrawWithheldTokensFromMint = 2,
+    WithdrawWithheldTokensFromAccounts = 3,
+    HarvestWithheldTokensToMint = 4,
+    SetTransferFee = 5,
+} transfer_fee_instruction_tag_t;
+
+static int parse_transfer_fee_instruction(Parser *parser, transfer_fee_instruction_tag_t *tag) {
+    uint8_t maybe_tag;
+    BAIL_IF(parse_u8(parser, &maybe_tag));
+    switch (maybe_tag) {
+        case InitializeTransferFeeConfig:
+        case TransferCheckedWithFee:
+        case WithdrawWithheldTokensFromMint:
+        case WithdrawWithheldTokensFromAccounts:
+        case HarvestWithheldTokensToMint:
+        case SetTransferFee:
+            *tag = (transfer_fee_instruction_tag_t) maybe_tag;
+            return 0;
+        default:
+            PRINTF("Unknown transfer_fee_instruction tag %d\n", maybe_tag);
+            return 1;
+    }
+}
+
 int parse_spl_token_instructions(const Instruction *instruction,
                                  const MessageHeader *header,
-                                 SplTokenInfo *info) {
+                                 SplTokenInfo *info,
+                                 bool *ignore_instruction_info) {
     Parser parser = {instruction->data, instruction->data_length};
 
-    BAIL_IF(parse_spl_token_instruction_kind(&parser, &info->kind));
+    if (parse_spl_token_instruction_kind(&parser, &info->kind) != 0) {
+        PRINTF("parse_spl_token_instruction_kind failed\n");
+        return -1;
+    }
+
+    info->is_token2022_kind = is_token2022_instruction(instruction, header);
 
     switch (info->kind) {
         case SplTokenKind(InitializeMint):
@@ -387,7 +510,9 @@ int parse_spl_token_instructions(const Instruction *instruction,
             return parse_transfer_spl_token_instruction(&parser,
                                                         instruction,
                                                         header,
-                                                        &info->transfer);
+                                                        &info->transfer,
+                                                        false,
+                                                        info->is_token2022_kind);
         case SplTokenKind(ApproveChecked):
             return parse_approve_spl_token_instruction(&parser,
                                                        instruction,
@@ -402,6 +527,46 @@ int parse_spl_token_instructions(const Instruction *instruction,
             return parse_burn_spl_token_instruction(&parser, instruction, header, &info->burn);
         case SplTokenKind(SyncNative):
             return parse_sync_native_spl_token_instruction(instruction, header, &info->sync_native);
+
+        // Handle only TransferCheckedWithFee of the TransferFeeExtension
+        case SplTokenExtensionKind(TransferFeeExtension):
+            if (!info->is_token2022_kind) {
+                PRINTF("Can't use extension with standard token\n");
+                return 1;
+            }
+            transfer_fee_instruction_tag_t tag;
+            if (parse_transfer_fee_instruction(&parser, &tag) != 0) {
+                PRINTF("Failed parse_transfer_fee_instruction\n");
+                return 1;
+            }
+            if (tag == TransferCheckedWithFee) {
+                return parse_transfer_spl_token_instruction(&parser,
+                                                            instruction,
+                                                            header,
+                                                            &info->transfer,
+                                                            true,
+                                                            info->is_token2022_kind);
+            }
+            __attribute__((fallthrough));
+
+        // Currently we do not need to parse these extensions in any way
+        case SplTokenExtensionKind(ConfidentialTransferExtension):
+        case SplTokenExtensionKind(MemoTransferExtension):
+        case SplTokenExtensionKind(TransferHookExtension):
+        case SplTokenExtensionKind(ConfidentialTransferFeeExtension):
+            // Mark that we have encountered not fully supported extension
+            info->generate_extension_warning = true;
+            __attribute__((fallthrough));
+        case SplTokenExtensionKind(DefaultAccountStateExtension):
+        case SplTokenExtensionKind(InterestBearingMintExtension):
+        case SplTokenExtensionKind(CpiGuardExtension):
+        case SplTokenExtensionKind(MetadataPointerExtension):
+        case SplTokenExtensionKind(GroupPointerExtension):
+        case SplTokenExtensionKind(GroupMemberPointerExtension):
+            // Don't generate any screens for the user for any extension
+            *ignore_instruction_info = true;
+            return 0;
+
         // Deprecated instructions
         case SplTokenKind(Transfer):
         case SplTokenKind(Approve):
@@ -496,6 +661,7 @@ static int print_spl_token_initialize_multisig_info(const char *primary_title,
 
 int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
                                   const PrintConfig *print_config,
+                                  bool is_token2022_kind,
                                   bool primary) {
     SummaryItem *item;
 
@@ -512,11 +678,21 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
                                   symbol,
                                   info->body.decimals);
 
+    item = transaction_summary_general_item();
+    if (info->is_transfer_checked_with_fee) {
+        if (info->transfer_checked_with_fee_amount != 0) {
+            summary_item_set_token_amount(item,
+                                          "Token transfer fee",
+                                          info->transfer_checked_with_fee_amount,
+                                          symbol,
+                                          info->body.decimals);
+        }
+    }
+
     char *to_address;
     if (get_transfer_to_address(&to_address) != 0) {
         return -1;
     }
-
     item = transaction_summary_general_item();
     summary_item_set_string(item, "To", to_address);
 
@@ -528,6 +704,12 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
 
     item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "To (token account)", info->dest_account);
+
+    transaction_summary_set_token_fee_warning(is_token2022_kind &&
+                                              !info->is_transfer_checked_with_fee);
+    transaction_summary_set_token_hook_warning(is_token2022_kind &&
+                                               info->is_transfer_checked_with_hook);
+    transaction_summary_set_is_token_2022_transfer(is_token2022_kind);
 
     print_spl_token_sign(&info->sign, print_config);
 
@@ -740,7 +922,10 @@ int print_spl_token_info(const SplTokenInfo *info, const PrintConfig *print_conf
         case SplTokenKind(ThawAccount):
             return print_spl_token_thaw_account_info(&info->thaw_account, print_config);
         case SplTokenKind(TransferChecked):
-            return print_spl_token_transfer_info(&info->transfer, print_config, true);
+            return print_spl_token_transfer_info(&info->transfer,
+                                                 print_config,
+                                                 info->is_token2022_kind,
+                                                 true);
         case SplTokenKind(ApproveChecked):
             return print_spl_token_approve_info(&info->approve, print_config);
         case SplTokenKind(MintToChecked):
@@ -749,6 +934,25 @@ int print_spl_token_info(const SplTokenInfo *info, const PrintConfig *print_conf
             return print_spl_token_burn_info(&info->burn, print_config);
         case SplTokenKind(SyncNative):
             return print_spl_token_sync_native_info(&info->sync_native, print_config);
+
+        case SplTokenExtensionKind(TransferFeeExtension):
+            return print_spl_token_transfer_info(&info->transfer,
+                                                 print_config,
+                                                 info->is_token2022_kind,
+                                                 true);
+
+        // For now, we don't display any information about the extensions
+        case SplTokenExtensionKind(ConfidentialTransferExtension):
+        case SplTokenExtensionKind(DefaultAccountStateExtension):
+        case SplTokenExtensionKind(MemoTransferExtension):
+        case SplTokenExtensionKind(InterestBearingMintExtension):
+        case SplTokenExtensionKind(CpiGuardExtension):
+        case SplTokenExtensionKind(TransferHookExtension):
+        case SplTokenExtensionKind(ConfidentialTransferFeeExtension):
+        case SplTokenExtensionKind(MetadataPointerExtension):
+        case SplTokenExtensionKind(GroupPointerExtension):
+        case SplTokenExtensionKind(GroupMemberPointerExtension):
+
         // Deprecated instructions
         case SplTokenKind(Transfer):
         case SplTokenKind(Approve):
@@ -794,4 +998,10 @@ const Pubkey *spl_token_option_pubkey_get(const SplTokenOptionPubkey *option_pub
             return (const Pubkey *) &option_pubkey->some;
     }
     return NULL;
+}
+
+bool is_token2022_instruction(const Instruction *instruction, const MessageHeader *header) {
+    PRINTF("is_token2022_instruction ?\n");
+    const Pubkey *program_id = &header->pubkeys[instruction->program_id_index];
+    return memcmp(program_id, &spl_token2022_program_id, PUBKEY_SIZE) == 0;
 }

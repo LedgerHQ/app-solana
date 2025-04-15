@@ -54,6 +54,7 @@ void handle_sign_message_parse_message(volatile unsigned int *tx) {
                                G_command.derivation_path_length,
                                &signer_index,
                                header) != 0) {
+        PRINTF("scan_header_for_signer failed\n");
         THROW(ApduReplySolanaInvalidMessageHeader);
     }
     print_config.signer_pubkey = &header->pubkeys[signer_index];
@@ -164,7 +165,8 @@ static bool check_swap_validity_native(const SummaryItemKind_t kinds[MAX_TRANSAC
 
 // Accept token amount + SOL recipient + mint + from + ATA recipient (+ fees)
 static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACTION_SUMMARY_ITEMS],
-                                      size_t num_summary_steps) {
+                                      size_t num_summary_steps,
+                                      bool is_token_2022) {
     bool amount_ok = false;
     bool mint_ok = false;
     bool dest_ata_ok = false;
@@ -174,14 +176,15 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
     if (!g_trusted_info.received) {
         // This case should never happen because this is already checked at TX parsing
         PRINTF("Descriptor info is required for a SPL transfer\n");
-        return -1;
+        return false;
     }
     if (!validate_associated_token_address(g_trusted_info.owner_address,
                                            g_trusted_info.mint_address,
-                                           g_trusted_info.token_address)) {
+                                           g_trusted_info.token_address,
+                                           is_token_2022)) {
         // This case should never happen because this is already checked at TX parsing
         PRINTF("Failed to validate ATA\n");
-        return -1;
+        return false;
     }
 
     for (size_t i = 0; i < num_summary_steps; ++i) {
@@ -297,7 +300,23 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
 static bool check_swap_validity(const SummaryItemKind_t kinds[MAX_TRANSACTION_SUMMARY_ITEMS],
                                 size_t num_summary_steps) {
     if (is_token_transaction()) {
-        return check_swap_validity_token(kinds, num_summary_steps);
+        bool is_token_2022;
+        transaction_summary_get_is_token_2022_transfer(&is_token_2022);
+        if (is_token_2022) {
+            bool unknonw_transfer_fees;
+            bool has_transfer_hook;
+            transaction_summary_get_token_warnings(&unknonw_transfer_fees, &has_transfer_hook);
+            if (unknonw_transfer_fees) {
+                PRINTF(
+                    "TransferChecked refused in swap context, TransferCheckedWithFees required\n");
+                return false;
+            }
+            if (has_transfer_hook) {
+                PRINTF("Transaction with transfer hook refused\n");
+                return false;
+            }
+        }
+        return check_swap_validity_token(kinds, num_summary_steps, is_token_2022);
     } else {
         return check_swap_validity_native(kinds, num_summary_steps);
     }
@@ -310,7 +329,7 @@ void handle_sign_message_ui(volatile unsigned int *flags) {
     size_t num_summary_steps = 0;
     if (transaction_summary_finalize(summary_step_kinds, &num_summary_steps) == 0) {
         // If we are in swap context, do not redisplay the message data
-        // Instead, ensure they are identitical with what was previously displayed
+        // Instead, ensure they are identical with what was previously displayed
         if (G_called_from_swap) {
             if (G_swap_response_ready) {
                 // Safety against trying to make the app sign multiple TX
