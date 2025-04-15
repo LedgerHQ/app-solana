@@ -8,6 +8,11 @@ on:
     - develop
   pull_request:
 
+# Cancel previous runs on this reference
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   job_functional_tests:
     uses: LedgerHQ/app-exchange/.github/workflows/reusable_swap_functional_tests.yml@develop
