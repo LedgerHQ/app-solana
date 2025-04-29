@@ -6,7 +6,7 @@ from ragger.backend.interface import BackendInterface, RAPDU
 from ragger.firmware import Firmware
 from ragger.error import ExceptionRAPDU
 
-from .solana_tlv import FieldTag, format_tlv
+from .tlv import format_tlv
 from .solana_keychain import Key, sign_data
 
 class INS(IntEnum):
@@ -68,6 +68,22 @@ class ErrorType:
     UNIMPLEMENTED_INSTRUCTION = 0x6d00
     INVALID_CLA = 0x6e00
 
+# https://ledgerhq.atlassian.net/wiki/spaces/TrustServices/pages/3736863735/LNS+Arch+Nano+Trusted+Names+Descriptor+Format+APIs#TLV-description
+class TrustedNameTag(IntEnum):
+    STRUCTURE_TYPE = 0x01
+    VERSION = 0x02
+    TRUSTED_NAME_TYPE = 0x70
+    TRUSTED_NAME_SOURCE = 0x71
+    TRUSTED_NAME = 0x20
+    CHAIN_ID = 0x23
+    ADDRESS = 0x22
+    TRUSTED_NAME_NFT_ID = 0x72
+    TRUSTED_NAME_SOURCE_CONTRACT = 0x73
+    CHALLENGE = 0x12
+    NOT_VALID_AFTER = 0x10
+    SIGNER_KEY_ID = 0x13
+    SIGNER_ALGO = 0x14
+    DER_SIGNATURE = 0x15
 
 def _extend_and_serialize_multiple_derivations_paths(derivations_paths: List[bytes]):
     serialized: bytes = len(derivations_paths).to_bytes(1, byteorder='little')
@@ -137,19 +153,19 @@ class SolanaClient:
                              chain_id: int,
                              challenge: Optional[int] = None):
 
-        payload = format_tlv(FieldTag.TAG_STRUCTURE_TYPE, 3)
-        payload += format_tlv(FieldTag.TAG_VERSION, 2)
-        payload += format_tlv(FieldTag.TAG_TRUSTED_NAME_TYPE, 0x06)
-        payload += format_tlv(FieldTag.TAG_TRUSTED_NAME_SOURCE, 0x06)
-        payload += format_tlv(FieldTag.TAG_TRUSTED_NAME, trusted_name)
-        payload += format_tlv(FieldTag.TAG_CHAIN_ID, chain_id)
-        payload += format_tlv(FieldTag.TAG_ADDRESS, address)
-        payload += format_tlv(FieldTag.TAG_TRUSTED_NAME_SOURCE_CONTRACT, source_contract)
+        payload = format_tlv(TrustedNameTag.STRUCTURE_TYPE, 3)
+        payload += format_tlv(TrustedNameTag.VERSION, 2)
+        payload += format_tlv(TrustedNameTag.TRUSTED_NAME_TYPE, 0x06)
+        payload += format_tlv(TrustedNameTag.TRUSTED_NAME_SOURCE, 0x06)
+        payload += format_tlv(TrustedNameTag.TRUSTED_NAME, trusted_name)
+        payload += format_tlv(TrustedNameTag.CHAIN_ID, chain_id)
+        payload += format_tlv(TrustedNameTag.ADDRESS, address)
+        payload += format_tlv(TrustedNameTag.TRUSTED_NAME_SOURCE_CONTRACT, source_contract)
         if challenge is not None:
-            payload += format_tlv(FieldTag.TAG_CHALLENGE, challenge)
-        payload += format_tlv(FieldTag.TAG_SIGNER_KEY_ID, 0)  # test key
-        payload += format_tlv(FieldTag.TAG_SIGNER_ALGO, 1)  # secp256k1
-        payload += format_tlv(FieldTag.TAG_DER_SIGNATURE,
+            payload += format_tlv(TrustedNameTag.CHALLENGE, challenge)
+        payload += format_tlv(TrustedNameTag.SIGNER_KEY_ID, 0)  # test key
+        payload += format_tlv(TrustedNameTag.SIGNER_ALGO, 1)  # secp256k1
+        payload += format_tlv(TrustedNameTag.DER_SIGNATURE,
                               sign_data(Key.TRUSTED_NAME, payload))
 
         # send PKI certificate
