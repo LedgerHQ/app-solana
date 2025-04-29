@@ -12,8 +12,7 @@
 #include "sol/printer.h"
 
 #include "macros.h"
-#include "tlv.h"
-#include "tlv_utils.h"
+#include "tlv_library.h"
 #include "os_pki.h"
 #include "ledger_pki.h"
 
@@ -34,52 +33,86 @@ static void trusted_info_reset(trusted_info_t *trusted_info) {
     explicit_bzero(trusted_info, sizeof(*trusted_info));
 }
 
-static bool handle_struct_type(const tlv_data_t *data, tlv_out_t *tlv_extracted) {
+// Parsed TLV data
+typedef struct tlv_extracted_s {
+    // Received tags set by the parser
+    TLV_reception_t received_tags;
+
+    // Trusted name output data
+    uint8_t struct_type;
+    uint8_t struct_version;
+    buffer_t encoded_token_address;
+    buffer_t encoded_owner_address;
+    buffer_t encoded_mint_address;
+    uint64_t chain_id;
+    uint32_t challenge;
+    uint8_t name_type;
+    uint8_t name_source;
+
+    // TLV Signature checking related data
+    uint8_t key_id;
+    uint8_t sig_algorithm;
+    buffer_t input_sig;
+
+    // Progressive hash of the received TLVs (except the signature type)
+    cx_sha256_t hash_ctx;
+} tlv_extracted_t;
+
+static bool handle_struct_type(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
+    CX_ASSERT(cx_hash_update((cx_hash_t *) &tlv_extracted->hash_ctx, data->raw, data->raw_size));
     return get_uint8_t_from_tlv_data(data, &tlv_extracted->struct_type);
 }
 
-static bool handle_struct_version(const tlv_data_t *data, tlv_out_t *tlv_extracted) {
+static bool handle_struct_version(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
+    CX_ASSERT(cx_hash_update((cx_hash_t *) &tlv_extracted->hash_ctx, data->raw, data->raw_size));
     return get_uint8_t_from_tlv_data(data, &tlv_extracted->struct_version);
 }
 
-static bool handle_challenge(const tlv_data_t *data, tlv_out_t *tlv_extracted) {
-    return get_uint32_from_tlv_data(data, &tlv_extracted->challenge);
+static bool handle_challenge(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
+    CX_ASSERT(cx_hash_update((cx_hash_t *) &tlv_extracted->hash_ctx, data->raw, data->raw_size));
+    return get_uint32_t_from_tlv_data(data, &tlv_extracted->challenge);
 }
 
-static bool handle_sign_key_id(const tlv_data_t *data, tlv_out_t *tlv_extracted) {
+static bool handle_sign_key_id(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
+    CX_ASSERT(cx_hash_update((cx_hash_t *) &tlv_extracted->hash_ctx, data->raw, data->raw_size));
     return get_uint8_t_from_tlv_data(data, &tlv_extracted->key_id);
 }
 
-static bool handle_sign_algo(const tlv_data_t *data, tlv_out_t *tlv_extracted) {
+static bool handle_sign_algo(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
+    CX_ASSERT(cx_hash_update((cx_hash_t *) &tlv_extracted->hash_ctx, data->raw, data->raw_size));
     return get_uint8_t_from_tlv_data(data, &tlv_extracted->sig_algorithm);
 }
 
-static bool handle_signature(const tlv_data_t *data, tlv_out_t *tlv_extracted) {
+static bool handle_signature(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
     return get_buffer_from_tlv_data(data, &tlv_extracted->input_sig, 1, 0);
 }
 
-static bool handle_source_contract(const tlv_data_t *data, tlv_out_t *tlv_extracted) {
+static bool handle_source_contract(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
+    CX_ASSERT(cx_hash_update((cx_hash_t *) &tlv_extracted->hash_ctx, data->raw, data->raw_size));
     return get_buffer_from_tlv_data(data,
                                     &tlv_extracted->encoded_mint_address,
                                     1,
                                     BASE58_PUBKEY_LENGTH - 1);
 }
 
-static bool handle_trusted_name(const tlv_data_t *data, tlv_out_t *tlv_extracted) {
+static bool handle_trusted_name(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
+    CX_ASSERT(cx_hash_update((cx_hash_t *) &tlv_extracted->hash_ctx, data->raw, data->raw_size));
     return get_buffer_from_tlv_data(data,
                                     &tlv_extracted->encoded_token_address,
                                     1,
                                     BASE58_PUBKEY_LENGTH - 1);
 }
 
-static bool handle_address(const tlv_data_t *data, tlv_out_t *tlv_extracted) {
+static bool handle_address(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
+    CX_ASSERT(cx_hash_update((cx_hash_t *) &tlv_extracted->hash_ctx, data->raw, data->raw_size));
     return get_buffer_from_tlv_data(data,
                                     &tlv_extracted->encoded_owner_address,
                                     1,
                                     BASE58_PUBKEY_LENGTH - 1);
 }
 
-static bool handle_chain_id(const tlv_data_t *data, tlv_out_t *tlv_extracted) {
+static bool handle_chain_id(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
+    CX_ASSERT(cx_hash_update((cx_hash_t *) &tlv_extracted->hash_ctx, data->raw, data->raw_size));
     switch (data->length) {
         case 1:
             tlv_extracted->chain_id = data->value[0];
@@ -93,13 +126,41 @@ static bool handle_chain_id(const tlv_data_t *data, tlv_out_t *tlv_extracted) {
     }
 }
 
-static bool handle_trusted_name_type(const tlv_data_t *data, tlv_out_t *tlv_extracted) {
+static bool handle_trusted_name_type(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
+    CX_ASSERT(cx_hash_update((cx_hash_t *) &tlv_extracted->hash_ctx, data->raw, data->raw_size));
     return get_uint8_t_from_tlv_data(data, &tlv_extracted->name_type);
 }
 
-static bool handle_trusted_name_source(const tlv_data_t *data, tlv_out_t *tlv_extracted) {
+static bool handle_trusted_name_source(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
+    CX_ASSERT(cx_hash_update((cx_hash_t *) &tlv_extracted->hash_ctx, data->raw, data->raw_size));
     return get_uint8_t_from_tlv_data(data, &tlv_extracted->name_source);
 }
+
+static bool handle_hash_only(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
+    CX_ASSERT(cx_hash_update((cx_hash_t *) &tlv_extracted->hash_ctx, data->raw, data->raw_size));
+    return true;
+}
+
+// clang-format off
+// List of TLV tags recognized by the Solana application
+#define TLV_TAGS(X)                                                              \
+    X(0x01, STRUCT_TYPE,         handle_struct_type,         ENFORCE_UNIQUE_TAG) \
+    X(0x02, STRUCT_VERSION,      handle_struct_version,      ENFORCE_UNIQUE_TAG) \
+    X(0x70, TRUSTED_NAME_TYPE,   handle_trusted_name_type,   ENFORCE_UNIQUE_TAG) \
+    X(0x71, TRUSTED_NAME_SOURCE, handle_trusted_name_source, ENFORCE_UNIQUE_TAG) \
+    X(0x72, TRUSTED_NAME_NFT_ID, handle_hash_only,           ENFORCE_UNIQUE_TAG) \
+    X(0x20, TRUSTED_NAME,        handle_trusted_name,        ENFORCE_UNIQUE_TAG) \
+    X(0x23, CHAIN_ID,            handle_chain_id,            ENFORCE_UNIQUE_TAG) \
+    X(0x22, ADDRESS,             handle_address,             ENFORCE_UNIQUE_TAG) \
+    X(0x73, SOURCE_CONTRACT,     handle_source_contract,     ENFORCE_UNIQUE_TAG) \
+    X(0x12, CHALLENGE,           handle_challenge,           ENFORCE_UNIQUE_TAG) \
+    X(0x10, NOT_VALID_AFTER,     handle_hash_only,           ENFORCE_UNIQUE_TAG) \
+    X(0x13, SIGNER_KEY_ID,       handle_sign_key_id,         ENFORCE_UNIQUE_TAG) \
+    X(0x14, SIGNER_ALGO,         handle_sign_algo,           ENFORCE_UNIQUE_TAG) \
+    X(0x15, SIGNATURE,           handle_signature,           ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(TLV_TAGS, parse_tlv_trusted_name)
 
 static int copy_and_decode_pubkey(const buffer_t in_encoded_address,
                                   char *out_encoded_address,
@@ -135,12 +196,12 @@ static int copy_and_decode_pubkey(const buffer_t in_encoded_address,
     return 0;
 }
 
-static int verify_struct(const tlv_out_t *tlv_extracted, uint32_t received_tags_flags) {
-    if (!(get_tag_flag(STRUCT_TYPE) & received_tags_flags)) {
+static int verify_struct(const tlv_extracted_t *tlv_extracted) {
+    if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags, STRUCT_TYPE)) {
         PRINTF("Error: no struct type specified!\n");
         return -1;
     }
-    if (!(get_tag_flag(STRUCT_VERSION) & received_tags_flags)) {
+    if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags, STRUCT_VERSION)) {
         PRINTF("Error: no struct version specified!\n");
         return -1;
     }
@@ -155,18 +216,18 @@ static int verify_struct(const tlv_out_t *tlv_extracted, uint32_t received_tags_
 
     switch (tlv_extracted->struct_version) {
         case 2:
-            if (!RECEIVED_REQUIRED_TAGS(received_tags_flags,
-                                        STRUCT_TYPE,
-                                        STRUCT_VERSION,
-                                        TRUSTED_NAME_TYPE,
-                                        TRUSTED_NAME_SOURCE,
-                                        TRUSTED_NAME,
-                                        CHAIN_ID,
-                                        ADDRESS,
-                                        CHALLENGE,
-                                        SIGNER_KEY_ID,
-                                        SIGNER_ALGO,
-                                        SIGNATURE)) {
+            if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags,
+                                         STRUCT_TYPE,
+                                         STRUCT_VERSION,
+                                         TRUSTED_NAME_TYPE,
+                                         TRUSTED_NAME_SOURCE,
+                                         TRUSTED_NAME,
+                                         CHAIN_ID,
+                                         ADDRESS,
+                                         CHALLENGE,
+                                         SIGNER_KEY_ID,
+                                         SIGNER_ALGO,
+                                         SIGNATURE)) {
                 PRINTF("Error: missing required fields in struct version 2\n");
                 return -1;
             }
@@ -207,54 +268,28 @@ static int verify_struct(const tlv_out_t *tlv_extracted, uint32_t received_tags_
 
 static ApduReply handle_provide_trusted_info_internal(void) {
     // Main structure that will received the parsed TLV data
-    tlv_out_t tlv_extracted;
-    memset(&tlv_extracted, 0, sizeof(tlv_extracted));
-
-    // Will be filled by the parser with the flags of received tags
-    uint32_t received_tags_flags = 0;
-
-    // The parser will fill it with the hash of the whole TLV payload (except SIGN tag)
-    uint8_t tlv_hash[INT256_LENGTH] = {0};
-
-    // Mapping of tags to handler functions. Given to the parser
-    tlv_handler_t handlers[TLV_COUNT] = {
-        {.tag = STRUCT_TYPE, .func = &handle_struct_type},
-        {.tag = STRUCT_VERSION, .func = &handle_struct_version},
-        {.tag = TRUSTED_NAME_TYPE, .func = &handle_trusted_name_type},
-        {.tag = TRUSTED_NAME_SOURCE, .func = &handle_trusted_name_source},
-        {.tag = TRUSTED_NAME_NFT_ID, .func = NULL},
-        {.tag = TRUSTED_NAME, .func = &handle_trusted_name},
-        {.tag = CHAIN_ID, .func = &handle_chain_id},
-        {.tag = ADDRESS, .func = &handle_address},
-        {.tag = SOURCE_CONTRACT, .func = &handle_source_contract},
-        {.tag = CHALLENGE, .func = &handle_challenge},
-        {.tag = NOT_VALID_AFTER, .func = NULL},
-        {.tag = SIGNER_KEY_ID, .func = &handle_sign_key_id},
-        {.tag = SIGNER_ALGO, .func = &handle_sign_algo},
-        {.tag = SIGNATURE, .func = &handle_signature},
-    };
+    tlv_extracted_t tlv_extracted = {0};
 
     PRINTF("Received chunk of trusted info, length = %d\n", G_command.message_length);
 
-    // Convert G_command to buffer_t format. 0 copy
-    buffer_t payload;
-    payload.ptr = G_command.message;
-    payload.size = G_command.message_length;
+    // The parser will fill it with the hash of the whole TLV payload (except SIGN tag)
+    cx_sha256_init(&tlv_extracted.hash_ctx);
 
-    // Call the parser to extract the raw TLV payload into our parsed structure
-    if (!parse_tlv(handlers,
-                   ARRAY_LENGTH(handlers),
-                   &payload,
-                   &tlv_extracted,
-                   SIGNATURE,
-                   tlv_hash,
-                   &received_tags_flags)) {
+    // Convert G_command to buffer_t format. 0 copy
+    buffer_t payload = {.ptr = G_command.message, .size = G_command.message_length};
+
+    // Call the function created by the macro from the TLV lib
+    if (!parse_tlv_trusted_name(&payload, &tlv_extracted, &tlv_extracted.received_tags)) {
         PRINTF("Failed to parse tlv payload\n");
         return ApduReplySolanaInvalidTrustedInfo;
     }
 
+    // Finalize hash object filled by the parser
+    uint8_t tlv_hash[CX_SHA256_SIZE] = {0};
+    CX_ASSERT(cx_hash_final((cx_hash_t *) &tlv_extracted.hash_ctx, tlv_hash));
+
     // Verify that the fields received are correct in our context
-    if (verify_struct(&tlv_extracted, received_tags_flags) != 0) {
+    if (verify_struct(&tlv_extracted) != 0) {
         PRINTF("Failed to verify tlv payload\n");
         return ApduReplySolanaInvalidTrustedInfo;
     }
@@ -262,7 +297,7 @@ static ApduReply handle_provide_trusted_info_internal(void) {
     // Verify that the signature field of the TLV is the signature of the TLV hash by the key loaded
     // by the PKI
     if (check_signature_with_pubkey(tlv_hash,
-                                    INT256_LENGTH,
+                                    CX_SHA256_SIZE,
                                     CERTIFICATE_PUBLIC_KEY_USAGE_TRUSTED_NAME,
                                     CX_CURVE_SECP256K1,
                                     tlv_extracted.input_sig) != 0) {

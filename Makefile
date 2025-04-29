@@ -107,8 +107,6 @@ ifneq ($(WITH_U2F),0)
 		SDK_SOURCE_PATH += lib_u2f
 endif
 
-DEFINES += HAVE_SDK_TLV_PARSER
-
 WITH_LIBSOL?=1
 ifneq ($(WITH_LIBSOL),0)
     SOURCE_FILES += $(filter-out %_test.c,$(wildcard libsol/*.c))
