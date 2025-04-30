@@ -174,14 +174,14 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
     if (!g_trusted_info.received) {
         // This case should never happen because this is already checked at TX parsing
         PRINTF("Descriptor info is required for a SPL transfer\n");
-        return -1;
+        return false;
     }
     if (!validate_associated_token_address(g_trusted_info.owner_address,
                                            g_trusted_info.mint_address,
                                            g_trusted_info.token_address)) {
         // This case should never happen because this is already checked at TX parsing
         PRINTF("Failed to validate ATA\n");
-        return -1;
+        return false;
     }
 
     for (size_t i = 0; i < num_summary_steps; ++i) {
