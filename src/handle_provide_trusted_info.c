@@ -162,45 +162,16 @@ static bool handle_hash_only(const tlv_data_t *data, tlv_extracted_t *tlv_extrac
 
 DEFINE_TLV_PARSER(TLV_TAGS, parse_tlv_trusted_name)
 
-static int copy_and_decode_pubkey(const buffer_t in_encoded_address,
-                                  char *out_encoded_address,
-                                  uint8_t *decoded_address) {
-    int res;
-
-    // Should be caught at parsing but let's double check
-    if (in_encoded_address.size >= BASE58_PUBKEY_LENGTH) {
-        PRINTF("Input address size exceeds buffer length\n");
-        return -1;
-    }
-
-    // Should be caught at parsing but let's double check
-    if (in_encoded_address.size == 0) {
-        PRINTF("Input address size is 0\n");
-        return -1;
-    }
-
-    // Save the encoded address
-    memset(out_encoded_address, 0, BASE58_PUBKEY_LENGTH);
-    memcpy(out_encoded_address, in_encoded_address.ptr, in_encoded_address.size);
-
-    // Decode and save the decoded address
-    res = base58_decode(out_encoded_address,
-                        strlen(out_encoded_address),
-                        decoded_address,
-                        PUBKEY_LENGTH);
-    if (res != PUBKEY_LENGTH) {
-        PRINTF("base58_decode error, %d != PUBKEY_LENGTH %d\n", res, PUBKEY_LENGTH);
-        return -1;
-    }
-
-    return 0;
-}
-
 static int verify_struct(const tlv_extracted_t *tlv_extracted) {
     if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags, STRUCT_TYPE)) {
         PRINTF("Error: no struct type specified!\n");
         return -1;
     }
+    if (tlv_extracted->struct_type != STRUCT_TYPE_TRUSTED_NAME) {
+        PRINTF("Error: unexpected struct type %d\n", tlv_extracted->struct_type);
+        return -1;
+    }
+
     if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags, STRUCT_VERSION)) {
         PRINTF("Error: no struct version specified!\n");
         return -1;
@@ -217,8 +188,6 @@ static int verify_struct(const tlv_extracted_t *tlv_extracted) {
     switch (tlv_extracted->struct_version) {
         case 2:
             if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags,
-                                         STRUCT_TYPE,
-                                         STRUCT_VERSION,
                                          TRUSTED_NAME_TYPE,
                                          TRUSTED_NAME_SOURCE,
                                          TRUSTED_NAME,
@@ -236,10 +205,6 @@ static int verify_struct(const tlv_extracted_t *tlv_extracted) {
                 PRINTF("Error: wrong challenge, received %u expected %u\n",
                        tlv_extracted->challenge,
                        expected_challenge);
-                return -1;
-            }
-            if (tlv_extracted->struct_type != STRUCT_TYPE_TRUSTED_NAME) {
-                PRINTF("Error: unexpected struct type %d\n", tlv_extracted->struct_type);
                 return -1;
             }
             if (tlv_extracted->name_type != TYPE_ADDRESS) {

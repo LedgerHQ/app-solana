@@ -2,6 +2,7 @@
 #include "cx.h"
 #include <stdbool.h>
 #include <stdlib.h>
+#include "base58.h"
 
 #include "lib_standard_app/crypto_helpers.h"
 
@@ -86,4 +87,38 @@ uint8_t set_result_sign_message(void) {
     }
 
     return SIGNATURE_LENGTH;
+}
+
+int copy_and_decode_pubkey(const buffer_t in_encoded_address,
+                           char *out_encoded_address,
+                           uint8_t *decoded_address) {
+    int res;
+
+    // Should be caught at parsing but let's double check
+    if (in_encoded_address.size >= BASE58_PUBKEY_LENGTH) {
+        PRINTF("Input address size exceeds buffer length\n");
+        return -1;
+    }
+
+    // Should be caught at parsing but let's double check
+    if (in_encoded_address.size == 0) {
+        PRINTF("Input address size is 0\n");
+        return -1;
+    }
+
+    // Save the encoded address
+    memset(out_encoded_address, 0, BASE58_PUBKEY_LENGTH);
+    memcpy(out_encoded_address, in_encoded_address.ptr, in_encoded_address.size);
+
+    // Decode and save the decoded address
+    res = base58_decode(out_encoded_address,
+                        strlen(out_encoded_address),
+                        decoded_address,
+                        PUBKEY_LENGTH);
+    if (res != PUBKEY_LENGTH) {
+        PRINTF("base58_decode error, %d != PUBKEY_LENGTH %d\n", res, PUBKEY_LENGTH);
+        return -1;
+    }
+
+    return 0;
 }

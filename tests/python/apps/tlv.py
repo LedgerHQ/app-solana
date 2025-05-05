@@ -17,7 +17,7 @@ def format_tlv(tag: int, value: Union[int, str, bytes]) -> bytes:
 
     assert isinstance(value, bytes), f"Unhandled TLV formatting for type : {type(value)}"
 
-    tlv = bytearray()
+    tlv = b""
     tlv += der_encode(tag)
     tlv += der_encode(len(value))
     tlv += value

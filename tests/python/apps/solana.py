@@ -21,6 +21,7 @@ class INS(IntEnum):
     INS_SIGN_OFFCHAIN_MESSAGE = 0x07
     INS_GET_CHALLENGE = 0x20
     INS_TRUSTED_INFO = 0x21
+    INS_DYNAMIC_TOKEN = 0x22
 
 
 CLA = 0xE0
@@ -38,6 +39,9 @@ MAX_CHUNK_SIZE = 255
 
 STATUS_OK = 0x9000
 
+class STRUCTURE_TYPE(IntEnum):
+    TRUSTED_NAME = 0x03
+    DYNAMIC_TOKEN = 0x90
 
 class ErrorType:
     NO_APP_RESPONSE = 0x6700
@@ -63,9 +67,11 @@ class ErrorType:
     NO_APDU_RECEIVED = 0x6982
     USER_CANCEL = 0x6985
     SOLANA_INVALID_MESSAGE = 0x6a80
+    INVALID_TRUSTED_INFO = 0x6c00,
+    INVALID_DYNAMIC_TOKEN = 0x6ca0,
+    UNIMPLEMENTED_INSTRUCTION = 0x6d00
     SOLANA_SUMMARY_FINALIZE_FAILED = 0x6f00
     SOLANA_SUMMARY_UPDATE_FAILED = 0x6f01
-    UNIMPLEMENTED_INSTRUCTION = 0x6d00
     INVALID_CLA = 0x6e00
 
 # https://ledgerhq.atlassian.net/wiki/spaces/TrustServices/pages/3736863735/LNS+Arch+Nano+Trusted+Names+Descriptor+Format+APIs#TLV-description
@@ -84,6 +90,47 @@ class TrustedNameTag(IntEnum):
     SIGNER_KEY_ID = 0x13
     SIGNER_ALGO = 0x14
     DER_SIGNATURE = 0x15
+
+class SolanaTokenType(IntEnum):
+    TOKEN_LEGACY = 0x00
+    TOKEN_2022 = 0x01
+
+# https://ledgerhq.atlassian.net/wiki/spaces/~624b62984fe01d006ba98a93/pages/5603262535/Token+Dynamic+Descriptor#Solana
+class SolanaExtensionCodeValue(IntEnum):
+    MINT_CLOSE_AUTHORITY = 0X00
+    TRANSFER_FEES = 0X01
+    DEFAULT_ACCOUNT_STATE = 0X02
+    IMMUTABLE_OWNER = 0X03
+    NON_TRANSFERABLE_TOKENS = 0X04
+    REQUIRED_MEMO_ON_TRANSFER = 0X05
+    REALLOCATE = 0X06
+    INTEREST_BEARING_TOKENS = 0X07
+    PERMANENT_DELEGATE = 0X08
+    CPI_GUARD = 0X09
+    TRANSFER_HOOK = 0X0A
+    METADATA_POINTER = 0X0B
+    METADATA = 0X0C
+    GROUP_POINTER = 0X0D
+    GROUP = 0X0E
+    MEMBER_POINTER = 0X0F
+    MEMBER = 0X10
+
+# https://ledgerhq.atlassian.net/wiki/spaces/~624b62984fe01d006ba98a93/pages/5603262535/Token+Dynamic+Descriptor#Solana
+class DynamicTokenTag_TUID(IntEnum):
+    TOKEN_TYPE_FLAG = 0x10
+    MINT_ADDRESS = 0x11
+    EXT_CODE = 0x12
+
+# https://ledgerhq.atlassian.net/wiki/spaces/~624b62984fe01d006ba98a93/pages/5603262535/Token+Dynamic+Descriptor#Solana
+class DynamicTokenTag(IntEnum):
+    STRUCTURE_TYPE = 0x01
+    VERSION = 0x02
+    COIN_TYPE = 0x03
+    APP = 0x04
+    TICKER = 0x05
+    MAGNITUDE = 0x06
+    TUID = 0x07
+    SIGNATURE = 0x08
 
 def _extend_and_serialize_multiple_derivations_paths(derivations_paths: List[bytes]):
     serialized: bytes = len(derivations_paths).to_bytes(1, byteorder='little')
@@ -153,7 +200,7 @@ class SolanaClient:
                              chain_id: int,
                              challenge: Optional[int] = None):
 
-        payload = format_tlv(TrustedNameTag.STRUCTURE_TYPE, 3)
+        payload = format_tlv(TrustedNameTag.STRUCTURE_TYPE, STRUCTURE_TYPE.TRUSTED_NAME)
         payload += format_tlv(TrustedNameTag.VERSION, 2)
         payload += format_tlv(TrustedNameTag.TRUSTED_NAME_TYPE, 0x06)
         payload += format_tlv(TrustedNameTag.TRUSTED_NAME_SOURCE, 0x06)
@@ -188,6 +235,44 @@ class SolanaClient:
         # send TLV trusted info
         # res: RAPDU = self._client.exchange(CLA, INS.INS_TRUSTED_INFO, P1_NON_CONFIRM, P2_NONE, payload)
         self._exchange_split(CLA, INS.INS_TRUSTED_INFO, P1_NON_CONFIRM, payload)
+
+
+    def provide_dynamic_token(self,
+                              ticker: str,
+                              magnitude: int,
+                              is_token_2022: bool,
+                              mint_address: str):
+        tuid = format_tlv(DynamicTokenTag_TUID.TOKEN_TYPE_FLAG, SolanaTokenType.TOKEN_2022 if is_token_2022 else SolanaTokenType.TOKEN_LEGACY)
+        tuid += format_tlv(DynamicTokenTag_TUID.MINT_ADDRESS, mint_address)
+        tuid += format_tlv(DynamicTokenTag_TUID.EXT_CODE, b"")
+
+        payload = format_tlv(DynamicTokenTag.STRUCTURE_TYPE, STRUCTURE_TYPE.DYNAMIC_TOKEN)
+        payload += format_tlv(DynamicTokenTag.VERSION, 1)
+        payload += format_tlv(DynamicTokenTag.COIN_TYPE, 0x1F5)
+        payload += format_tlv(DynamicTokenTag.APP, "Solana")
+        payload += format_tlv(DynamicTokenTag.TICKER, ticker)
+        payload += format_tlv(DynamicTokenTag.MAGNITUDE, magnitude)
+        payload += format_tlv(DynamicTokenTag.TUID, tuid)
+        payload += format_tlv(DynamicTokenTag.SIGNATURE, sign_data(Key.TRUSTED_NAME, payload))
+
+        # send PKI certificate
+        if self._pki_client is None:
+            print(f"Ledger-PKI Not supported on '{self._client.firmware.name}'")
+        else:
+            # pylint: disable=line-too-long
+            if self._client.firmware == Firmware.NANOSP:
+                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F6534010135010315473045022100D494B106E217B46BB90BF20A4E9285529C4C8382D9B80FF462F74942579785F802202D68D0F85CD7CA36BDF351FD41332F310E93163BD175F6A92446C14A3329CC8B"  # noqa: E501
+            elif self._client.firmware == Firmware.NANOX:
+                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F653401013501021546304402207FCD665B94B43A6E838E8CD68BE52403D38A7E6A98E2CE291AB1C5D24A41101D02207AB1863E5CB127D9E8A680AC63FF2F2CBEA79CE76652A72832EF154BF1AD6477"  # noqa: E501
+            elif self._client.firmware == Firmware.STAX:
+                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F65340101350104154730450221008F8FB0117C8D51F0D13A77680C18CA98B4B317C3D6C67F23BF9198410BEDF1A1022023B1052CA43E86E2411831990C64B1E027D85E142AD39F480948E3EF9517E55E"  # noqa: E501
+            elif self._client.firmware == Firmware.FLEX:
+                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F6534010135010515473045022100CEF28780DCAFA3A485D83406D519F9AC12FD9B9C3AA7AE798896013F07DD178D022020F01B1AB1D2AAEDA70357F615EAC55E17FE94EC36DF9DE850CEFACBC98D16C8"  # noqa: E501
+            # pylint: enable=line-too-long
+
+            self._pki_client.send_certificate(bytes.fromhex(cert_apdu))
+
+        self._exchange_split(CLA, INS.INS_DYNAMIC_TOKEN, P1_NON_CONFIRM, payload)
 
 
     def get_challenge(self) -> bytes:

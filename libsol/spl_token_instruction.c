@@ -659,6 +659,16 @@ static int print_spl_token_initialize_multisig_info(const char *primary_title,
     return 0;
 }
 
+const char *get_token_symbol(const uint8_t *mint_address, bool is_token_2022_kind) {
+    const char *ret;
+    ret = get_dynamic_token_symbol(mint_address, is_token_2022_kind);
+    if (ret == NULL) {
+        PRINTF("No dynamic token info received, fallback on hardcoded list\n");
+        ret = get_hardcoded_token_symbol(mint_address);
+    }
+    return ret;
+}
+
 int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
                                   const PrintConfig *print_config,
                                   bool is_token2022_kind,
@@ -671,7 +681,8 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
         item = transaction_summary_general_item();
     }
 
-    const char *symbol = get_token_symbol(info->mint_account);
+    const char *symbol = get_token_symbol(info->mint_account->data, is_token2022_kind);
+
     summary_item_set_token_amount(item,
                                   "Transfer tokens",
                                   info->body.amount,
@@ -717,14 +728,15 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
 }
 
 static int print_spl_token_approve_info(const SplTokenApproveInfo *info,
-                                        const PrintConfig *print_config) {
+                                        const PrintConfig *print_config,
+                                        bool is_token2022_kind) {
     SummaryItem *item;
 
     item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Approve delegate", info->delegate);
 
     item = transaction_summary_general_item();
-    const char *symbol = get_token_symbol(info->mint_account);
+    const char *symbol = get_token_symbol(info->mint_account->data, is_token2022_kind);
     summary_item_set_token_amount(item,
                                   "Allowance",
                                   info->body.amount,
@@ -786,11 +798,12 @@ static int print_spl_token_set_authority_info(const SplTokenSetAuthorityInfo *in
 }
 
 static int print_spl_token_mint_to_info(const SplTokenMintToInfo *info,
-                                        const PrintConfig *print_config) {
+                                        const PrintConfig *print_config,
+                                        bool is_token2022_kind) {
     SummaryItem *item;
 
     item = transaction_summary_primary_item();
-    const char *symbol = get_token_symbol(info->mint_account);
+    const char *symbol = get_token_symbol(info->mint_account->data, is_token2022_kind);
     summary_item_set_token_amount(item,
                                   "Mint tokens",
                                   info->body.amount,
@@ -809,13 +822,14 @@ static int print_spl_token_mint_to_info(const SplTokenMintToInfo *info,
 }
 
 static int print_spl_token_burn_info(const SplTokenBurnInfo *info,
-                                     const PrintConfig *print_config) {
+                                     const PrintConfig *print_config,
+                                     bool is_token2022_kind) {
     UNUSED(print_config);
 
     SummaryItem *item;
 
     item = transaction_summary_primary_item();
-    const char *symbol = get_token_symbol(info->mint_account);
+    const char *symbol = get_token_symbol(info->mint_account->data, is_token2022_kind);
     summary_item_set_token_amount(item,
                                   "Burn tokens",
                                   info->body.amount,
@@ -927,11 +941,15 @@ int print_spl_token_info(const SplTokenInfo *info, const PrintConfig *print_conf
                                                  info->is_token2022_kind,
                                                  true);
         case SplTokenKind(ApproveChecked):
-            return print_spl_token_approve_info(&info->approve, print_config);
+            return print_spl_token_approve_info(&info->approve,
+                                                print_config,
+                                                info->is_token2022_kind);
         case SplTokenKind(MintToChecked):
-            return print_spl_token_mint_to_info(&info->mint_to, print_config);
+            return print_spl_token_mint_to_info(&info->mint_to,
+                                                print_config,
+                                                info->is_token2022_kind);
         case SplTokenKind(BurnChecked):
-            return print_spl_token_burn_info(&info->burn, print_config);
+            return print_spl_token_burn_info(&info->burn, print_config, info->is_token2022_kind);
         case SplTokenKind(SyncNative):
             return print_spl_token_sync_native_info(&info->sync_native, print_config);
 
