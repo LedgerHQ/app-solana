@@ -264,8 +264,7 @@ static int save_dynamic_token_info(const tlv_extracted_t *tlv_extracted,
 
     PRINTF("=== DYNAMIC TOKEN INFO ===\n");
     PRINTF("ticker               = %s\n", g_dynamic_token_info.ticker);
-    PRINTF("token_2022           = %s\n",
-           g_dynamic_token_info.is_token_2022_kind ? "true" : "false");
+    PRINTF("token_2022           = %d\n", g_dynamic_token_info.is_token_2022_kind);
     PRINTF("magnitude            = %d\n", g_dynamic_token_info.magnitude);
     PRINTF("encoded_mint_address = %s\n", g_dynamic_token_info.encoded_mint_address);
     PRINTF("mint_address         = %.*H\n", PUBKEY_LENGTH, g_dynamic_token_info.mint_address);
@@ -305,7 +304,7 @@ void handle_provide_dynamic_descriptor(void) {
     // by the PKI
     if (check_signature_with_pubkey(tlv_hash,
                                     CX_SHA256_SIZE,
-                                    CERTIFICATE_PUBLIC_KEY_USAGE_TRUSTED_NAME,
+                                    CERTIFICATE_PUBLIC_KEY_USAGE_COIN_META,
                                     CX_CURVE_SECP256K1,
                                     tlv_extracted.input_sig) != 0) {
         PRINTF("Failed to verify signature of dynamic token info\n");
