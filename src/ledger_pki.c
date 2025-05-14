@@ -1,5 +1,4 @@
-#include "apdu.h"
-#include "cx.h"
+#include "os_types.h"
 #include "os_pki.h"
 #include "ledger_pki.h"
 
@@ -12,8 +11,8 @@ int check_signature_with_pubkey(const uint8_t *buffer,
     size_t certificate_name_len = 0;
     uint8_t certificate_name[CERTIFICATE_TRUSTED_NAME_MAXLEN] = {0};
     cx_ecfp_384_public_key_t public_key = {0};
-
     bolos_err_t bolos_err;
+
     bolos_err = os_pki_get_info(&key_usage, certificate_name, &certificate_name_len, &public_key);
     if (bolos_err != 0x0000) {
         PRINTF("Error %x while getting PKI certificate info\n", bolos_err);
