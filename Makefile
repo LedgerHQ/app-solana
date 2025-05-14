@@ -36,8 +36,8 @@ APPNAME = "Solana"
 
 # Application version
 APPVERSION_M = 1
-APPVERSION_N = 8
-APPVERSION_P = 1
+APPVERSION_N = 9
+APPVERSION_P = 0
 APPVERSION = "$(APPVERSION_M).$(APPVERSION_N).$(APPVERSION_P)"
 
 # Application source files
@@ -106,8 +106,6 @@ ifneq ($(WITH_U2F),0)
     DEFINES         += U2F_PROXY_MAGIC=\"~SOL\"
 		SDK_SOURCE_PATH += lib_u2f
 endif
-
-DEFINES += HAVE_SDK_TLV_PARSER
 
 WITH_LIBSOL?=1
 ifneq ($(WITH_LIBSOL),0)

@@ -48,6 +48,7 @@ typedef enum InstructionCode {
     InsSignOffchainMessage = 0x07,
     InsTrustedInfoGetChallenge = 0x20,
     InsTrustedInfoProvideInfo = 0x21,
+    InsTrustedInfoProvideDynamicDescriptor = 0x22,
 } InstructionCode;
 
 extern volatile bool G_called_from_swap;

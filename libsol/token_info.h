@@ -9,4 +9,4 @@ typedef struct TokenInfo {
 
 extern TokenInfo const TOKEN_REGISTRY[];
 
-const char *get_token_symbol(const Pubkey *mint_address);
+const char *get_hardcoded_token_symbol(const uint8_t *mint_address);

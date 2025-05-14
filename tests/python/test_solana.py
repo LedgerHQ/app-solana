@@ -81,7 +81,8 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH)
+            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH,
+                                              custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -109,7 +110,9 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH, test_name=test_name + "_2")
+            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH,
+                                              test_name=test_name + "_2",
+                                              custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -125,7 +128,8 @@ class TestOffchainMessageSigning:
 
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-                scenario_navigator.review_reject(path=SOL.ROOT_SCREENSHOT_PATH, test_name=test_name + "_2")
+                scenario_navigator.review_reject(path=SOL.ROOT_SCREENSHOT_PATH,
+                                                 test_name=test_name + "_2")
         assert e.value.status == ErrorType.USER_CANCEL
 
 
@@ -139,7 +143,9 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH, test_name=test_name + "_2")
+            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH,
+                                              test_name=test_name + "_2",
+                                              custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -155,7 +161,8 @@ class TestOffchainMessageSigning:
 
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-                scenario_navigator.review_reject(path=SOL.ROOT_SCREENSHOT_PATH, test_name=test_name + "_2")
+                scenario_navigator.review_reject(path=SOL.ROOT_SCREENSHOT_PATH,
+                                                 test_name=test_name + "_2")
         assert e.value.status == ErrorType.USER_CANCEL
 
 
@@ -170,7 +177,9 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH, test_name=test_name + "_3")
+            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH,
+                                              test_name=test_name + "_3",
+                                              custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -187,5 +196,6 @@ class TestOffchainMessageSigning:
 
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-                scenario_navigator.review_reject(path=SOL.ROOT_SCREENSHOT_PATH, test_name=test_name + "_3")
+                scenario_navigator.review_reject(path=SOL.ROOT_SCREENSHOT_PATH,
+                                                 test_name=test_name + "_3")
         assert e.value.status == ErrorType.USER_CANCEL

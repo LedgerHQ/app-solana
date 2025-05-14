@@ -21,6 +21,7 @@
 #include "handle_sign_offchain_message.h"
 #include "handle_get_challenge.h"
 #include "handle_provide_trusted_info.h"
+#include "handle_provide_dynamic_descriptor.h"
 #include "apdu.h"
 #include "ui_api.h"
 
@@ -95,6 +96,10 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
 
         case InsTrustedInfoProvideInfo:
             handle_provide_trusted_info();
+            break;
+
+        case InsTrustedInfoProvideDynamicDescriptor:
+            handle_provide_dynamic_descriptor();
             break;
 
         default:

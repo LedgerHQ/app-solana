@@ -3,6 +3,7 @@
 #include "globals.h"
 #include <string.h>
 #include "apdu.h"
+#include "buffer.h"
 #include "sol/printer.h"
 
 #ifndef _UTILS_H_
@@ -69,3 +70,7 @@ uint8_t set_result_sign_message(void);
     } while (0)
 #include "bolos_target.h"
 #endif  // TEST
+
+int copy_and_decode_pubkey(const buffer_t in_encoded_address,
+                           char *out_encoded_address,
+                           uint8_t *decoded_address);

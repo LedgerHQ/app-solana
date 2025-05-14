@@ -57,6 +57,11 @@ USDT_MINT_ADDRESS_STR = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
 USDT_MINT_ADDRESS     = USDT_MINT_ADDRESS_STR.encode('utf-8')
 USDT_MINT_PUBLIC_KEY  = base58.b58decode(USDT_MINT_ADDRESS_STR)
 
+# This token is not hardcoded in the application
+GORK_MINT_ADDRESS_STR = "38PgzpJYu2HkiYvV8qePFakB8tuobPdGm2FFEn7Dpump"
+GORK_MINT_ADDRESS     = GORK_MINT_ADDRESS_STR.encode('utf-8')
+GORK_MINT_PUBLIC_KEY  = base58.b58decode(GORK_MINT_ADDRESS_STR)
+
 ### Proposed Solana derivation paths for tests ###
 
 SOL_PACKED_DERIVATION_PATH      = pack_derivation_path("m/44'/501'/12345'")
