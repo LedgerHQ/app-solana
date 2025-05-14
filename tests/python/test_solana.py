@@ -17,7 +17,7 @@ class TestGetPublicKey:
         from_public_key = sol.get_public_key(SOL_PACKED_DERIVATION_PATH)
 
         with sol.send_public_key_with_confirm(SOL_PACKED_DERIVATION_PATH):
-            scenario_navigator.address_review_approve(path=ROOT_SCREENSHOT_PATH)
+            scenario_navigator.address_review_approve(path=ROOT_SCREENSHOT_PATH, custom_screen_text=r"(Approve|Confirm)")
 
         assert sol.get_async_response().data == from_public_key
 
@@ -42,7 +42,7 @@ class TestMessageSigning:
         message: bytes = Message([instruction]).serialize()
 
         with sol.send_async_sign_message(SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH)
+            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -57,7 +57,7 @@ class TestMessageSigning:
         message: bytes = Message([instruction]).serialize()
 
         with sol.send_async_sign_message(SOL_PACKED_DERIVATION_PATH_2, message):
-            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH)
+            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -88,7 +88,7 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH)
+            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -97,12 +97,12 @@ class TestOffchainMessageSigning:
     def test_ledger_sign_offchain_very_long_message_ascii_ok(self, backend, scenario_navigator):
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL_PACKED_DERIVATION_PATH)
-        
+
         offchain_message: OffchainMessage = OffchainMessage(0, LONG_VALID_ASCII, from_public_key)
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH)
+            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -128,7 +128,7 @@ class TestOffchainMessageSigning:
 
         INVALID_LONG_MESSAGE = ''.join(random.choices(string.ascii_letters, k=32*1024))
         INVALID_LONG_MESSAGE = INVALID_LONG_MESSAGE.encode("ascii")
-        
+
         offchain_message: OffchainMessage = OffchainMessage(0, INVALID_LONG_MESSAGE, from_public_key)
         message: bytes = offchain_message.serialize()
 
@@ -150,7 +150,7 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, test_name=test_name + "_2")
+            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, test_name=test_name + "_2", custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -183,7 +183,7 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, test_name=test_name + "_2")
+            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, test_name=test_name + "_2", custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -202,7 +202,7 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, test_name=test_name + "_2")
+            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, test_name=test_name + "_2", custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -239,7 +239,7 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, test_name=test_name + "_2")
+            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, test_name=test_name + "_2", custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -273,7 +273,7 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, test_name=test_name + "_3")
+            scenario_navigator.review_approve(path=ROOT_SCREENSHOT_PATH, test_name=test_name + "_3", custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
