@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sol/printer.h"
+#include "tlv_use_case_dynamic_descriptor.h"
 
 // ATA DESCRIPTOR //
 
@@ -25,7 +26,6 @@ int get_transfer_to_address(char **to_address);
 
 // DYNAMIC TOKEN //
 
-#define MAX_TICKER_SIZE 32
 typedef struct dynamic_token_info_s {
     bool received;
     char ticker[MAX_TICKER_SIZE + 1];
