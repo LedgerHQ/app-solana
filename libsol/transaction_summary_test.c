@@ -41,7 +41,7 @@ void test_summary_item_setters() {
     assert_string_equal(item.title, "hash");
     assert(item.hash == &hash);
 
-    const char* string = "value";
+    const char *string = "value";
     summary_item_set_string(&item, "string", string);
     assert(item.kind == SummaryItemString);
     assert_string_equal(item.title, "string");
@@ -50,7 +50,7 @@ void test_summary_item_setters() {
     uint8_t string_data[4] = {0x74, 0x65, 0x73, 0x74};
     SizedString sized_string = {
         sizeof(string_data),
-        (char*) string_data,
+        (char *) string_data,
     };
     summary_item_set_sized_string(&item, "sizedString", &sized_string);
     assert(item.kind == SummaryItemSizedString);
@@ -108,7 +108,7 @@ void test_transaction_summary_reset() {
     assert(strlen(G_transaction_summary_title) == 0);
     assert(strlen(G_transaction_summary_text) == 0);
 
-    SummaryItem* item;
+    SummaryItem *item;
 
     assert((item = transaction_summary_primary_item()) != NULL);
     assert(item->kind == SummaryItemNone);
@@ -129,7 +129,7 @@ void test_transaction_summary_reset() {
 }
 
 void test_transaction_summary_item_getters() {
-    SummaryItem* item;
+    SummaryItem *item;
 
     assert((item = transaction_summary_primary_item()) != NULL);
     summary_item_set_u64(item, "item", 42);
@@ -197,12 +197,12 @@ void test_transaction_summary_update_display_for_item() {
     assert_transaction_summary_display("hash", "11111111111111111111111111111111");
 
     uint8_t string_data[] = {0x74, 0x65, 0x73, 0x74};
-    SizedString sized_string = {sizeof(string_data), (char*) string_data};
+    SizedString sized_string = {sizeof(string_data), (char *) string_data};
     summary_item_set_sized_string(&item, "sizedString", &sized_string);
     assert(transaction_summary_update_display_for_item(&item, DisplayFlagNone) == 0);
     assert_transaction_summary_display("sizedString", "test");
 
-    const char* string = "value";
+    const char *string = "value";
     summary_item_set_string(&item, "string", string);
     assert(transaction_summary_update_display_for_item(&item, DisplayFlagNone) == 0);
     assert_transaction_summary_display("string", "value");
@@ -214,7 +214,7 @@ void test_transaction_summary_update_display_for_item() {
 
 #define display_item_test_helper(item, item_index)                                  \
     do {                                                                            \
-        SummaryItem* si;                                                            \
+        SummaryItem *si;                                                            \
         assert((si = transaction_summary_##item##_item()) != NULL);                 \
         summary_item_set_u64(si, #item, 42);                                        \
         assert(transaction_summary_display_item(item_index, DisplayFlagNone) == 0); \
@@ -223,8 +223,8 @@ void test_transaction_summary_update_display_for_item() {
 
 #define display_item_test_helper_general_item(general_index)                               \
     do {                                                                                   \
-        SummaryItem* si;                                                                   \
-        const char* title = "general_" #general_index;                                     \
+        SummaryItem *si;                                                                   \
+        const char *title = "general_" #general_index;                                     \
         assert((si = transaction_summary_general_item()) != NULL);                         \
         summary_item_set_u64(si, title, 42);                                               \
         assert(transaction_summary_display_item(general_index + 1, DisplayFlagNone) == 0); \
@@ -262,7 +262,7 @@ void test_transaction_summary_display_item() {
 void test_transaction_summary_finalize() {
     enum SummaryItemKind kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
     size_t num_kinds;
-    SummaryItem* item;
+    SummaryItem *item;
 
     transaction_summary_reset();
 
@@ -333,16 +333,16 @@ void test_transaction_summary_finalize() {
 }
 
 void test_repro_unrecognized_format_reverse_nav_hash_corruption_bug() {
-    SummaryItem* item;
-    const char* primary_title = "Unrecognized";
-    const char* primary_text = "format";
-    const char* fee_payer_title = FEE_PAYER_TITLE;
-    const char* fee_payer_text = "1111111..1111111";
+    SummaryItem *item;
+    const char *primary_title = "Unrecognized";
+    const char *primary_text = "format";
+    const char *fee_payer_title = FEE_PAYER_TITLE;
+    const char *fee_payer_text = "1111111..1111111";
     Pubkey fee_payer = {{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
-    const char* message_hash_title = "Message hash";
-    const char* message_hash_text = "22222222222222222222222222222222222222222222";
+    const char *message_hash_title = "Message hash";
+    const char *message_hash_text = "22222222222222222222222222222222222222222222";
     Hash message_hash = {{0x0f, 0x1e, 0x6b, 0x14, 0x21, 0xc0, 0x4a, 0x07, 0x04, 0x31, 0x26,
                           0x5c, 0x19, 0xc5, 0xbb, 0xee, 0x19, 0x92, 0xba, 0xe8, 0xaf, 0xd1,
                           0xcd, 0x07, 0x8e, 0xf8, 0xaf, 0x70, 0x47, 0xdc, 0x11, 0xf7}};

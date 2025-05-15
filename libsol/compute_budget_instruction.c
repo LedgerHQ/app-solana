@@ -3,8 +3,8 @@
 
 const Pubkey compute_budget_program_id = {{PROGRAM_ID_COMPUTE_BUDGET}};
 
-static int parse_compute_budget_instruction_kind(Parser* parser,
-                                                 enum ComputeBudgetInstructionKind* kind) {
+static int parse_compute_budget_instruction_kind(Parser *parser,
+                                                 enum ComputeBudgetInstructionKind *kind) {
     uint8_t maybe_kind;
     BAIL_IF(parse_u8(parser, &maybe_kind));
     switch (maybe_kind) {
@@ -19,34 +19,34 @@ static int parse_compute_budget_instruction_kind(Parser* parser,
     }
 }
 
-static int parse_request_heap_frame_instruction(Parser* parser,
-                                                ComputeBudgetRequestHeapFrameInfo* info) {
+static int parse_request_heap_frame_instruction(Parser *parser,
+                                                ComputeBudgetRequestHeapFrameInfo *info) {
     BAIL_IF(parse_u32(parser, &info->bytes));
 
     return 0;
 }
 
-static int parse_unit_limit_instruction(Parser* parse, ComputeBudgetChangeUnitLimitInfo* info) {
+static int parse_unit_limit_instruction(Parser *parse, ComputeBudgetChangeUnitLimitInfo *info) {
     BAIL_IF(parse_u32(parse, &info->units));
 
     return 0;
 }
 
-static int parse_unit_price_instruction(Parser* parse, ComputeBudgetChangeUnitPriceInfo* info) {
+static int parse_unit_price_instruction(Parser *parse, ComputeBudgetChangeUnitPriceInfo *info) {
     BAIL_IF(parse_u64(parse, &info->units));
 
     return 0;
 }
 
 static int parse_loaded_accounts_data_size_limit(
-    Parser* parse,
-    ComputeBudgetSetLoadedAccountsDataSizeLimitInfo* info) {
+    Parser *parse,
+    ComputeBudgetSetLoadedAccountsDataSizeLimitInfo *info) {
     BAIL_IF(parse_u32(parse, &info->units));
 
     return 0;
 }
 
-static uint32_t calculate_max_fee(const ComputeBudgetFeeInfo* info) {
+static uint32_t calculate_max_fee(const ComputeBudgetFeeInfo *info) {
     uint32_t max_fee = FEE_LAMPORTS_PER_SIGNATURE * info->signatures_count;
 
     if (info->change_unit_price != NULL) {
@@ -63,10 +63,10 @@ static uint32_t calculate_max_fee(const ComputeBudgetFeeInfo* info) {
     return max_fee;
 }
 
-static int print_compute_budget_max_fee(uint32_t max_fee, const PrintConfig* print_config) {
+static int print_compute_budget_max_fee(uint32_t max_fee, const PrintConfig *print_config) {
     UNUSED(print_config);
 
-    SummaryItem* item;
+    SummaryItem *item;
 
     item = transaction_summary_general_item();
     summary_item_set_amount(item, "Max fees", max_fee);
@@ -79,14 +79,14 @@ static int print_compute_budget_max_fee(uint32_t max_fee, const PrintConfig* pri
  * RequestHeapFrame and SetLoadedAccountsDataSizeLimit instruction kinds
  * are omitted on purpose as they currently do not display any data on the screen
  */
-void print_compute_budget(ComputeBudgetFeeInfo* info, const PrintConfig* print_config) {
+void print_compute_budget(ComputeBudgetFeeInfo *info, const PrintConfig *print_config) {
     uint32_t transaction_max_fee = calculate_max_fee(info);
     print_compute_budget_max_fee(transaction_max_fee, print_config);
 }
 
-int parse_compute_budget_instructions(const Instruction* instruction,
-                                      const MessageHeader* header,
-                                      ComputeBudgetInfo* info) {
+int parse_compute_budget_instructions(const Instruction *instruction,
+                                      const MessageHeader *header,
+                                      ComputeBudgetInfo *info) {
     Parser parser = {instruction->data, instruction->data_length};
 
     BAIL_IF(parse_compute_budget_instruction_kind(&parser, &info->kind));

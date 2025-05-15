@@ -14,10 +14,10 @@
 
 #define MAX_INSTRUCTIONS 4
 
-int process_message_body(const uint8_t* message_body,
+int process_message_body(const uint8_t *message_body,
                          int message_body_length,
-                         const PrintConfig* print_config) {
-    const MessageHeader* header = &print_config->header;
+                         const PrintConfig *print_config) {
+    const MessageHeader *header = &print_config->header;
 
     BAIL_IF(header->instructions_length == 0);
     BAIL_IF(header->instructions_length > MAX_INSTRUCTIONS);
@@ -27,7 +27,7 @@ int process_message_body(const uint8_t* message_body,
     explicit_bzero(instruction_info, sizeof(InstructionInfo) * MAX_INSTRUCTIONS);
 
     size_t display_instruction_count = 0;
-    InstructionInfo* display_instruction_info[MAX_INSTRUCTIONS];
+    InstructionInfo *display_instruction_info[MAX_INSTRUCTIONS];
 
     Parser parser = {message_body, message_body_length};
     for (; instruction_count < header->instructions_length; instruction_count++) {
@@ -35,7 +35,7 @@ int process_message_body(const uint8_t* message_body,
         BAIL_IF(parse_instruction(&parser, &instruction));
         BAIL_IF(instruction_validate(&instruction, header));
 
-        InstructionInfo* info = &instruction_info[instruction_count];
+        InstructionInfo *info = &instruction_info[instruction_count];
         enum ProgramId program_id = instruction_program_id(&instruction, header);
         switch (program_id) {
             case ProgramIdSerumAssertOwner: {
@@ -117,7 +117,7 @@ int process_message_body(const uint8_t* message_body,
     // Ensure we've consumed the entire message body
     BAIL_IF(!parser_is_empty(&parser));
 
-    // If we don't know about all of the instructions, bail
+    // If we don't know about all the instructions, bail
     for (size_t i = 0; i < instruction_count; i++) {
         BAIL_IF(instruction_info[i].kind == ProgramIdUnknown);
     }

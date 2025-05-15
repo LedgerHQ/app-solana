@@ -3,6 +3,7 @@
 #include "globals.h"
 #include <string.h>
 #include "apdu.h"
+#include "sol/printer.h"
 
 #ifndef _UTILS_H_
 #define _UTILS_H_
@@ -24,6 +25,11 @@ typedef enum rlpTxType {
 void get_public_key(uint8_t publicKeyArray[static PUBKEY_LENGTH],
                     const uint32_t *derivationPath,
                     size_t pathLength);
+
+int get_pubkey_index(const Pubkey *needle,
+                     const Pubkey *haystack,
+                     size_t haystack_len,
+                     size_t *index);
 
 /**
  * Deserialize derivation path from raw bytes.
@@ -58,9 +64,8 @@ uint8_t set_result_sign_message(void);
     } while (0)
 #define PRINTF(msg, arg) printf(msg, arg)
 #define PIC(code)        code
-//#define TARGET_NANOS 1
-#define TARGET_BLUE    1
-#define MEMCLEAR(dest) explicit_bzero(&dest, sizeof(dest));
+#define TARGET_BLUE      1
+#define MEMCLEAR(dest)   explicit_bzero(&dest, sizeof(dest));
 #else
 #define MEMCLEAR(dest)                       \
     do {                                     \
