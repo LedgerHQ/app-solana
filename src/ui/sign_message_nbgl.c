@@ -87,7 +87,6 @@ static nbgl_contentTagValue_t *get_single_action_long_review_pair(uint8_t index)
     return &current_pair;
 }
 
-
 static void review_choice(bool confirm) {
     // Answer, display a status page and go back to main
     // validate_transaction(confirm);
