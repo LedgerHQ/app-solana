@@ -9,24 +9,37 @@
 #define DER_LONG_FORM_FLAG        0x80  // 8th bit set
 #define DER_FIRST_BYTE_VALUE_MASK 0x7f
 
-bool get_uint32_t_from_tlv_data(const tlv_data_t *data, uint32_t *value) {
-    uint8_t size_diff;
-    uint8_t buffer[sizeof(uint32_t)];
+#define U8BE(buf, off) (((uint64_t) U4BE(buf, off) << 32) | (uint64_t) U4BE(buf, off + 4))
 
-    if (data->length > sizeof(buffer)) {
-        PRINTF("Unexpectedly long value (%u bytes) for tag 0x%x\n", data->length, data->tag);
+bool get_uint64_t_from_tlv_data(const tlv_data_t *data, uint64_t *value) {
+    if (data->value.size == 0 || data->value.size > sizeof(uint64_t)) {
+        PRINTF("Invalid length (%u bytes) for tag 0x%x (expected 1-%zu bytes)\n",
+               data->value.size,
+               data->tag,
+               sizeof(uint64_t));
         return false;
     }
-    size_diff = sizeof(buffer) - data->length;
-    memset(buffer, 0, size_diff);
-    memcpy(buffer + size_diff, data->value, data->length);
-    *value = U4BE(buffer, 0);
+
+    // Pad with zeros before calling U8BE()
+    uint8_t buffer[sizeof(uint64_t)] = {0};
+    memcpy(buffer + (sizeof(buffer) - data->value.size), data->value.ptr, data->value.size);
+
+    *value = U8BE(buffer, 0);
+    return true;
+}
+
+bool get_uint32_t_from_tlv_data(const tlv_data_t *data, uint32_t *value) {
+    uint64_t tmp_value;
+    if (!get_uint64_t_from_tlv_data(data, &tmp_value) || tmp_value > UINT32_MAX) {
+        return false;
+    }
+    *value = (uint32_t) tmp_value;
     return true;
 }
 
 bool get_uint16_t_from_tlv_data(const tlv_data_t *data, uint16_t *value) {
-    uint32_t tmp_value;
-    if (!get_uint32_t_from_tlv_data(data, &tmp_value) || (tmp_value > UINT16_MAX)) {
+    uint64_t tmp_value;
+    if (!get_uint64_t_from_tlv_data(data, &tmp_value) || (tmp_value > UINT16_MAX)) {
         return false;
     }
     *value = (uint16_t) tmp_value;
@@ -34,8 +47,8 @@ bool get_uint16_t_from_tlv_data(const tlv_data_t *data, uint16_t *value) {
 }
 
 bool get_uint8_t_from_tlv_data(const tlv_data_t *data, uint8_t *value) {
-    uint32_t tmp_value;
-    if (!get_uint32_t_from_tlv_data(data, &tmp_value) || (tmp_value > UINT8_MAX)) {
+    uint64_t tmp_value;
+    if (!get_uint64_t_from_tlv_data(data, &tmp_value) || (tmp_value > UINT8_MAX)) {
         return false;
     }
     *value = (uint8_t) tmp_value;
@@ -46,16 +59,16 @@ bool get_buffer_from_tlv_data(const tlv_data_t *data,
                               buffer_t *out,
                               uint16_t min_size,
                               uint16_t max_size) {
-    if (min_size != 0 && data->length < min_size) {
-        PRINTF("Expected at least %d bytes, found %d\n", min_size, data->length);
+    if (min_size != 0 && data->value.size < min_size) {
+        PRINTF("Expected at least %d bytes, found %d\n", min_size, data->value.size);
         return false;
     }
-    if (max_size != 0 && data->length > max_size) {
-        PRINTF("Expected at most %d bytes, found %d\n", max_size, data->length);
+    if (max_size != 0 && data->value.size > max_size) {
+        PRINTF("Expected at most %d bytes, found %d\n", max_size, data->value.size);
         return false;
     }
-    out->size = data->length;
-    out->ptr = data->value;
+    out->size = data->value.size;
+    out->ptr = data->value.ptr;
     return true;
 }
 
@@ -64,24 +77,24 @@ bool get_string_from_tlv_data(const tlv_data_t *data,
                               uint16_t min_length,
                               uint16_t out_size) {
     // Reject TLV strings with embedded null bytes
-    size_t actual_length = strnlen((const char *) data->value, data->length);
-    if (actual_length != data->length) {
+    size_t actual_length = strnlen((const char *) data->value.ptr, data->value.size);
+    if (actual_length != data->value.size) {
         PRINTF("Embedded null byte at offset %u\n", (unsigned) actual_length);
         return false;
     }
 
-    if (min_length != 0 && data->length < min_length) {
-        PRINTF("Expected at least %u bytes, found %u\n", min_length, data->length);
+    if (min_length != 0 && data->value.size < min_length) {
+        PRINTF("Expected at least %u bytes, found %u\n", min_length, data->value.size);
         return false;
     }
     // The input is not '\0' terminated
-    if (out_size != 0 && data->length + 1 > out_size) {
-        PRINTF("Expected at most %u bytes, found %u (+1)\n", out_size, data->length);
+    if (out_size != 0 && data->value.size + 1 > out_size) {
+        PRINTF("Expected at most %u bytes, found %u (+1)\n", out_size, data->value.size);
         return false;
     }
 
-    memcpy(out, data->value, data->length);
-    out[data->length] = '\0';
+    memcpy(out, data->value.ptr, data->value.size);
+    out[data->value.size] = '\0';
 
     return true;
 }
@@ -197,6 +210,7 @@ typedef enum tlv_step_e {
 
 bool _parse_tlv_internal(const _internal_tlv_handler_t *handlers,
                          uint8_t handlers_count,
+                         tlv_handler_cb_t *common_handler,
                          tag_to_flag_function_t *tag_to_flag_function,
                          const buffer_t *payload,
                          void *tlv_out,
@@ -206,12 +220,16 @@ bool _parse_tlv_internal(const _internal_tlv_handler_t *handlers,
     size_t offset = 0;
     size_t tag_start_offset;
     const _internal_tlv_handler_t *handler;
+    tlv_handler_cb_t *fptr;
+    uint16_t size;
 
     explicit_bzero(received_tags_flags, sizeof(*received_tags_flags));
-    received_tags_flags->tag_to_flag_function = tag_to_flag_function;
+    received_tags_flags->tag_to_flag_function = PIC(tag_to_flag_function);
+
+    PRINTF("Parsing TLV payload %.*H\n", payload->size, payload->ptr);
 
     // handle TLV payload
-    while (offset < payload->size || (step == TLV_VALUE && data.length == 0)) {
+    while (offset < payload->size || (step == TLV_VALUE && data.value.size == 0)) {
         switch (step) {
             case TLV_TAG:
                 tag_start_offset = offset;
@@ -223,51 +241,63 @@ bool _parse_tlv_internal(const _internal_tlv_handler_t *handlers,
                     PRINTF("No handler found for tag 0x%x\n", data.tag);
                     return false;
                 }
+                step = TLV_LENGTH;
+                break;
+
+            case TLV_LENGTH:
+                if (!get_der_value_as_uint16(payload, &offset, &size)) {
+                    return false;
+                }
+                data.value.size = size;
+                step = TLV_VALUE;
+                break;
+
+            case TLV_VALUE:
+                if ((offset + data.value.size) > payload->size) {
+                    PRINTF("Error: can't read %d + %d, only %d\n",
+                           offset,
+                           data.value.size,
+                           payload->size);
+                    return false;
+                }
+                if (data.value.size > 0) {
+                    data.value.ptr = &payload->ptr[offset];
+                    PRINTF("Handling tag 0x%02x length %d value '%.*H'\n",
+                           data.tag,
+                           data.value.size,
+                           data.value.size,
+                           data.value.ptr);
+                } else {
+                    data.value.ptr = NULL;
+                    PRINTF("Handling tag 0x%02x length %d\n", data.tag, data.value.size);
+                }
+                offset += data.value.size;
+
+                // Calculate raw TLV start/end to give to the handler
+                data.raw.ptr = &payload->ptr[tag_start_offset];
+                data.raw.size = offset - tag_start_offset;
+
+                // Call the common handler if there is one
+                fptr = PIC(common_handler);
+                if (fptr != NULL && !(*fptr)(&data, tlv_out)) {
+                    PRINTF("Common handler error while handling tag 0x%x\n", handler->tag);
+                    return false;
+                }
+
+                // Call this tag's handler if there is one
+                fptr = PIC(handler->func);
+                if (fptr != NULL && !(*fptr)(&data, tlv_out)) {
+                    PRINTF("Handler error while handling tag 0x%x\n", handler->tag);
+                    return false;
+                }
+
+                // Flag reception after handler callback in case the handler wants to check it
                 if (!set_tag(received_tags_flags, data.tag)) {
                     if (handler->is_unique) {
                         PRINTF("Tag = %d was already received and is flagged unique\n", data.tag);
                         return false;
                     }
                 }
-                step = TLV_LENGTH;
-                break;
-
-            case TLV_LENGTH:
-                if (!get_der_value_as_uint16(payload, &offset, &data.length)) {
-                    return false;
-                }
-                step = TLV_VALUE;
-                break;
-
-            case TLV_VALUE:
-                if ((offset + data.length) > payload->size) {
-                    PRINTF("Error: value would go beyond the TLV payload!\n");
-                    return false;
-                }
-                if (data.length > 0) {
-                    data.value = &payload->ptr[offset];
-                    PRINTF("Handling tag 0x%02x length %d value '%.*H'\n",
-                           data.tag,
-                           data.length,
-                           data.length,
-                           data.value);
-                } else {
-                    data.value = NULL;
-                    PRINTF("Handling tag 0x%02x length %d\n", data.tag, data.length);
-                }
-                offset += data.length;
-
-                // Calculate raw TLV start/end to give to the handler
-                data.raw = &payload->ptr[tag_start_offset];
-                data.raw_size = offset - tag_start_offset;
-
-                // Call this tag's handler if there is one
-                tlv_handler_cb_t *fptr = PIC(handler->func);
-                if (fptr != NULL && !(*fptr)(&data, tlv_out)) {
-                    PRINTF("Handler error while handling tag 0x%x\n", handler->tag);
-                    return false;
-                }
-
                 step = TLV_TAG;
                 break;
 
