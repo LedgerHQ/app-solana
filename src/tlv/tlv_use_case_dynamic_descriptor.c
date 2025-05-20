@@ -153,11 +153,11 @@ int tlv_use_case_parse_dynamic_descriptor_payload(const buffer_t *payload,
     // Finalize hash object filled by the parser
     uint8_t tlv_hash[CX_SHA256_SIZE] = {0};
     CX_ASSERT(cx_hash_final((cx_hash_t *) &tlv_extracted.hash_ctx, tlv_hash));
+    buffer_t hash = {.ptr = tlv_hash, .size = sizeof(tlv_hash)};
 
     // Verify that the signature field of the TLV is the signature of the TLV hash by the key loaded
     // by the PKI
-    if (check_signature_with_pubkey(tlv_hash,
-                                    CX_SHA256_SIZE,
+    if (check_signature_with_pubkey(hash,
                                     CERTIFICATE_PUBLIC_KEY_USAGE_COIN_META,
                                     CX_CURVE_SECP256K1,
                                     tlv_extracted.input_sig) != 0) {

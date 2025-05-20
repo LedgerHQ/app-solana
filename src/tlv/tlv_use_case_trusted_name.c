@@ -20,22 +20,25 @@ typedef struct multi_hash_ctx_s {
 } multi_hash_ctx_t;
 
 // Output of the multi hash after hash finalize
-typedef union multi_hash_finalized_u {
+typedef struct multi_hash_finalized_u {
     // Use a union trick to always declare at max size
-    uint8_t _sha256[CX_SHA256_SIZE];
-    uint8_t _sha3_256[CX_SHA3_256_SIZE];
-    uint8_t _keccak_256[CX_KECCAK_256_SIZE];
-    uint8_t _ripemd160[CX_RIPEMD160_SIZE];
-    uint8_t _sha512[CX_SHA512_SIZE];
-    // Generic access at offset 0
-    uint8_t hash;
+    union {
+        uint8_t _sha256[CX_SHA256_SIZE];
+        uint8_t _sha3_256[CX_SHA3_256_SIZE];
+        uint8_t _keccak_256[CX_KECCAK_256_SIZE];
+        uint8_t _ripemd160[CX_RIPEMD160_SIZE];
+        uint8_t _sha512[CX_SHA512_SIZE];
+        // Generic access at offset 0
+        uint8_t _offset_0;
+    };
+    buffer_t hash;
 } multi_hash_finalized_t;
 
 static void init_multi_hash_ctx(multi_hash_ctx_t *hash_ctx) {
     // Use CX_ASSERT, none of those functions can reasonably fail
     CX_ASSERT(cx_sha256_init_no_throw(&hash_ctx->sha256));
-    CX_ASSERT(cx_sha3_init_no_throw(&hash_ctx->sha3_256, 256));
-    CX_ASSERT(cx_keccak_init_no_throw(&hash_ctx->keccak_256, 256));
+    CX_ASSERT(cx_sha3_init_no_throw(&hash_ctx->sha3_256, CX_SHA3_256_SIZE * 8));
+    CX_ASSERT(cx_keccak_init_no_throw(&hash_ctx->keccak_256, CX_KECCAK_256_SIZE * 8));
     CX_ASSERT(cx_ripemd160_init_no_throw(&hash_ctx->ripemd160));
     CX_ASSERT(cx_sha512_init_no_throw(&hash_ctx->sha512));
 }
@@ -58,27 +61,33 @@ static int finalize_hash_for_algo(const multi_hash_ctx_t *hash_ctx,
     switch (signer_algo) {
         case TLV_TRUSTED_NAME_SIGNER_ALGORITHM_ECDSA_SHA256:
             hash = (cx_hash_t *) &hash_ctx->sha256;
+            multi_hash_finalized->hash.size = sizeof(multi_hash_finalized->_sha256);
             break;
         case TLV_TRUSTED_NAME_SIGNER_ALGORITHM_ECDSA_SHA3_256:
         case TLV_TRUSTED_NAME_SIGNER_ALGORITHM_EDDSA_SHA3_256:
             hash = (cx_hash_t *) &hash_ctx->sha3_256;
+            multi_hash_finalized->hash.size = sizeof(multi_hash_finalized->_sha3_256);
             break;
         case TLV_TRUSTED_NAME_SIGNER_ALGORITHM_ECDSA_KECCAK_256:
         case TLV_TRUSTED_NAME_SIGNER_ALGORITHM_EDDSA_KECCAK_256:
             hash = (cx_hash_t *) &hash_ctx->keccak_256;
+            multi_hash_finalized->hash.size = sizeof(multi_hash_finalized->_keccak_256);
             break;
         case TLV_TRUSTED_NAME_SIGNER_ALGORITHM_ECDSA_RIPEMD160:
             hash = (cx_hash_t *) &hash_ctx->ripemd160;
+            multi_hash_finalized->hash.size = sizeof(multi_hash_finalized->_ripemd160);
             break;
         case TLV_TRUSTED_NAME_SIGNER_ALGORITHM_ECDSA_SHA512:
             hash = (cx_hash_t *) &hash_ctx->sha512;
+            multi_hash_finalized->hash.size = sizeof(multi_hash_finalized->_sha512);
             break;
         default:
             PRINTF("Unknown signer_algo %d\n", signer_algo);
             return -1;
     }
 
-    if (cx_hash_final(hash, &multi_hash_finalized->hash) != CX_OK) {
+    multi_hash_finalized->hash.ptr = &multi_hash_finalized->_offset_0;
+    if (cx_hash_final(hash, &multi_hash_finalized->_offset_0) != CX_OK) {
         PRINTF("cx_hash_final failed for algo %d\n", signer_algo);
         return -1;
     }
@@ -294,8 +303,7 @@ static int verify_trusted_name_signature(const tlv_extracted_t *tlv_extracted) {
 
     // Verify that the signature field of the TLV is the signature of the TLV hash by the key loaded
     // by the PKI
-    if (check_signature_with_pubkey(&multi_hash_finalized.hash,
-                                    CX_SHA256_SIZE,
+    if (check_signature_with_pubkey(multi_hash_finalized.hash,
                                     CERTIFICATE_PUBLIC_KEY_USAGE_TRUSTED_NAME,
                                     curve,
                                     tlv_extracted->input_sig) != 0) {

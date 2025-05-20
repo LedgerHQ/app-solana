@@ -2,8 +2,7 @@
 #include "os_pki.h"
 #include "ledger_pki.h"
 
-int check_signature_with_pubkey(const uint8_t *buffer,
-                                uint8_t buffer_length,
+int check_signature_with_pubkey(const buffer_t hash,
                                 uint8_t expected_key_usage,
                                 cx_curve_t expected_curve,
                                 const buffer_t signature) {
@@ -32,15 +31,15 @@ int check_signature_with_pubkey(const uint8_t *buffer,
     PRINTF("Certificate '%s' loaded with success\n", certificate_name);
 
     // Checking the signature with PKI
-    if (!os_pki_verify((uint8_t *) buffer,
-                       buffer_length,
+    if (!os_pki_verify((uint8_t *) hash.ptr,
+                       hash.size,
                        (uint8_t *) signature.ptr,
                        signature.size)) {
-        PRINTF("Error, '%.*H' is not a signature of buffer '%.*H' by the PKI key '%.*H'\n",
+        PRINTF("Error, '%.*H' is not a signature of hash '%.*H' by the PKI key '%.*H'\n",
                signature.size,
                signature.ptr,
-               buffer_length,
-               buffer,
+               hash.size,
+               hash.ptr,
                sizeof(public_key),
                &public_key);
         return -1;
