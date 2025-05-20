@@ -94,18 +94,32 @@ static bool handle_common(const tlv_data_t *data, tlv_extracted_t *tlv_extracted
     return true;
 }
 
-static int verify_struct(const tlv_extracted_t *tlv_extracted) {
-    if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags, TAG_STRUCTURE_TYPE)) {
+tlv_dynamic_descriptor_status_t tlv_use_case_dynamic_descriptor(const buffer_t *payload,
+                                                                tlv_dynamic_descriptor_out_t *out) {
+    // Parser output
+    tlv_extracted_t tlv_extracted = {0};
+    tlv_extracted.output = out;
+
+    // The parser will fill it with the hash of the whole TLV payload (except SIGN tag)
+    cx_sha256_init(&tlv_extracted.hash_ctx);
+
+    // Call the function created by the macro from the TLV lib
+    if (!parse_dynamic_token_tag(payload, &tlv_extracted, &tlv_extracted.received_tags)) {
+        PRINTF("Failed to parse tlv payload\n");
+        return TLV_DYNAMIC_DESCRIPTOR_PARSING_ERROR;
+    }
+
+    if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAG_STRUCTURE_TYPE)) {
         PRINTF("Error: no struct type specified!\n");
-        return -1;
+        return TLV_DYNAMIC_DESCRIPTOR_MISSING_STRUCTURE_TAG;
     }
 
-    if (tlv_extracted->structure_type != TYPE_DYNAMIC_TOKEN) {
-        PRINTF("Error: unexpected struct type %d\n", tlv_extracted->structure_type);
-        return -1;
+    if (tlv_extracted.structure_type != TYPE_DYNAMIC_TOKEN) {
+        PRINTF("Error: unexpected struct type %d\n", tlv_extracted.structure_type);
+        return TLV_DYNAMIC_DESCRIPTOR_WRONG_TYPE;
     }
 
-    if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags,
+    if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags,
                                  TAG_VERSION,
                                  TAG_COIN_TYPE,
                                  TAG_APPLICATION_NAME,
@@ -114,40 +128,17 @@ static int verify_struct(const tlv_extracted_t *tlv_extracted) {
                                  TAG_TUID,
                                  TAG_SIGNATURE)) {
         PRINTF("Error: missing required fields in struct version 1\n");
-        return -1;
+        return TLV_DYNAMIC_DESCRIPTOR_MISSING_TAG;
     }
 
-    if (strcmp(tlv_extracted->application_name, APPNAME) != 0) {
-        PRINTF("Error: unsupported application name %s\n", tlv_extracted->application_name);
-        return -1;
+    if (strcmp(tlv_extracted.application_name, APPNAME) != 0) {
+        PRINTF("Error: unsupported application name %s\n", tlv_extracted.application_name);
+        return TLV_DYNAMIC_DESCRIPTOR_WRONG_APPLICATION_NAME;
     }
 
-    if (tlv_extracted->output->version == 0 || tlv_extracted->output->version > 1) {
-        PRINTF("Error: unsupported struct version %d\n", tlv_extracted->output->version);
-        return -1;
-    }
-
-    return 0;
-}
-
-int tlv_use_case_parse_dynamic_descriptor_payload(const buffer_t *payload,
-                                                  tlv_dynamic_descriptor_out_t *tlv_output) {
-    tlv_extracted_t tlv_extracted = {0};
-    tlv_extracted.output = tlv_output;
-
-    // The parser will fill it with the hash of the whole TLV payload (except SIGN tag)
-    cx_sha256_init(&tlv_extracted.hash_ctx);
-
-    // Call the function created by the macro from the TLV lib
-    if (!parse_dynamic_token_tag(payload, &tlv_extracted, &tlv_extracted.received_tags)) {
-        PRINTF("Failed to parse tlv payload\n");
-        return -1;
-    }
-
-    // Verify that the fields received are correct in our context
-    if (verify_struct(&tlv_extracted) != 0) {
-        PRINTF("Failed to verify tlv payload\n");
-        return -1;
+    if (tlv_extracted.output->version == 0 || tlv_extracted.output->version > 1) {
+        PRINTF("Error: unsupported struct version %d\n", tlv_extracted.output->version);
+        return TLV_DYNAMIC_DESCRIPTOR_UNKNOWN_VERSION;
     }
 
     // Finalize hash object filled by the parser
@@ -157,13 +148,15 @@ int tlv_use_case_parse_dynamic_descriptor_payload(const buffer_t *payload,
 
     // Verify that the signature field of the TLV is the signature of the TLV hash by the key loaded
     // by the PKI
-    if (check_signature_with_pubkey(hash,
-                                    CERTIFICATE_PUBLIC_KEY_USAGE_COIN_META,
-                                    CX_CURVE_SECP256K1,
-                                    tlv_extracted.input_sig) != 0) {
+    check_signature_with_pki_status_t err;
+    err = check_signature_with_pki(hash,
+                                   CERTIFICATE_PUBLIC_KEY_USAGE_COIN_META,
+                                   CX_CURVE_SECP256K1,
+                                   tlv_extracted.input_sig);
+    if (err != CHECK_SIGNATURE_WITH_PKI_SUCCESS) {
         PRINTF("Failed to verify signature of dynamic token info\n");
-        return -1;
+        return TLV_DYNAMIC_DESCRIPTOR_SIGNATURE_ERROR | err;
     }
 
-    return 0;
+    return TLV_DYNAMIC_DESCRIPTOR_SUCCESS;
 }

@@ -132,7 +132,7 @@ static bool handle_trusted_name_source(const tlv_data_t *data, tlv_extracted_t *
 static bool handle_trusted_name(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
     return get_buffer_from_tlv_data(data,
                                     &tlv_extracted->output->trusted_name,
-                                    0,
+                                    1,
                                     TRUSTED_NAME_STRINGS_MAX_SIZE);
 }
 
@@ -141,10 +141,7 @@ static bool handle_chain_id(const tlv_data_t *data, tlv_extracted_t *tlv_extract
 }
 
 static bool handle_address(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
-    return get_buffer_from_tlv_data(data,
-                                    &tlv_extracted->output->address,
-                                    0,
-                                    TRUSTED_NAME_STRINGS_MAX_SIZE);
+    return get_buffer_from_tlv_data(data, &tlv_extracted->output->address, 1, 0);
 }
 
 static bool handle_nft_id(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
@@ -152,10 +149,7 @@ static bool handle_nft_id(const tlv_data_t *data, tlv_extracted_t *tlv_extracted
 }
 
 static bool handle_source_contract(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
-    return get_buffer_from_tlv_data(data,
-                                    &tlv_extracted->output->source_contract,
-                                    0,
-                                    TRUSTED_NAME_STRINGS_MAX_SIZE);
+    return get_buffer_from_tlv_data(data, &tlv_extracted->output->source_contract, 1, 0);
 }
 
 static bool handle_challenge(const tlv_data_t *data, tlv_extracted_t *tlv_extracted) {
@@ -222,7 +216,7 @@ static bool handle_common(const tlv_data_t *data, tlv_extracted_t *tlv_extracted
     return true;
 }
 
-static int verify_struct(const tlv_extracted_t *tlv_extracted) {
+static tlv_trusted_name_status_t verify_struct(const tlv_extracted_t *tlv_extracted) {
 #ifdef TRUSTED_NAME_TEST_KEY
     uint16_t valid_key_id = TLV_TRUSTED_NAME_SIGNER_KEY_ID_TEST;
 #else
@@ -231,12 +225,12 @@ static int verify_struct(const tlv_extracted_t *tlv_extracted) {
 
     if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags, TAG_STRUCTURE_TYPE)) {
         PRINTF("Error: no struct type specified!\n");
-        return -1;
+        return TLV_TRUSTED_NAME_MISSING_STRUCTURE_TAG;
     }
 
     if (tlv_extracted->structure_type != TLV_STRUCTURE_TYPE_TRUSTED_NAME) {
         PRINTF("Error: unexpected struct type %d\n", tlv_extracted->structure_type);
-        return -1;
+        return TLV_TRUSTED_NAME_WRONG_TYPE;
     }
 
     // Check required fields
@@ -251,7 +245,7 @@ static int verify_struct(const tlv_extracted_t *tlv_extracted) {
                                  TAG_SIGNER_ALGORITHM,
                                  TAG_DER_SIGNATURE)) {
         PRINTF("Error: missing required fields in struct version 2\n");
-        return -1;
+        return TLV_TRUSTED_NAME_MISSING_TAG;
     }
 
     // Forward optional fields to caller application
@@ -266,30 +260,30 @@ static int verify_struct(const tlv_extracted_t *tlv_extracted) {
 
     if (tlv_extracted->output->version == 0 || tlv_extracted->output->version > 2) {
         PRINTF("Error: unsupported struct version %d\n", tlv_extracted->output->version);
-        return -1;
+        return TLV_TRUSTED_NAME_UNKNOWN_VERSION;
     }
 
     if (tlv_extracted->output->source_contract_received && tlv_extracted->output->version < 2) {
         PRINTF("Error: source_contract_received is only supported in v >= 2\n");
-        return -1;
+        return TLV_TRUSTED_NAME_UNSUPPORTED_TAG;
     }
 
     if (tlv_extracted->signer_key_id != valid_key_id) {
         PRINTF("Error: wrong metadata key ID %u\n", tlv_extracted->signer_key_id);
-        return -1;
+        return TLV_TRUSTED_NAME_WRONG_KEY_ID;
     }
 
-    return 0;
+    return TLV_TRUSTED_NAME_SUCCESS;
 }
 
-static int verify_trusted_name_signature(const tlv_extracted_t *tlv_extracted) {
+static tlv_trusted_name_status_t verify_signature(const tlv_extracted_t *tlv_extracted) {
     // Finalize hash object filled by the parser
     multi_hash_finalized_t multi_hash_finalized;
     if (finalize_hash_for_algo(&tlv_extracted->hash_ctx,
                                tlv_extracted->signer_algo,
                                &multi_hash_finalized) != 0) {
         PRINTF("finalize_hash_for_algo failed\n");
-        return -1;
+        return TLV_TRUSTED_NAME_HASH_FAILED;
     }
 
     uint8_t curve;
@@ -303,22 +297,25 @@ static int verify_trusted_name_signature(const tlv_extracted_t *tlv_extracted) {
 
     // Verify that the signature field of the TLV is the signature of the TLV hash by the key loaded
     // by the PKI
-    if (check_signature_with_pubkey(multi_hash_finalized.hash,
-                                    CERTIFICATE_PUBLIC_KEY_USAGE_TRUSTED_NAME,
-                                    curve,
-                                    tlv_extracted->input_sig) != 0) {
-        PRINTF("Failed to verify signature of trusted name info\n");
-        return -1;
+    check_signature_with_pki_status_t err;
+    err = check_signature_with_pki(multi_hash_finalized.hash,
+                                   CERTIFICATE_PUBLIC_KEY_USAGE_TRUSTED_NAME,
+                                   curve,
+                                   tlv_extracted->input_sig);
+    if (err != CHECK_SIGNATURE_WITH_PKI_SUCCESS) {
+        PRINTF("Failed to verify signature of trusted token info\n");
+        return TLV_TRUSTED_NAME_SIGNATURE_ERROR | err;
     }
 
-    return 0;
+    return TLV_TRUSTED_NAME_SUCCESS;
 }
 
-int tlv_use_case_parse_trusted_name_payload(const buffer_t *payload,
-                                            tlv_trusted_name_out_t *output) {
+tlv_trusted_name_status_t tlv_use_case_trusted_name(const buffer_t *payload,
+                                                    tlv_trusted_name_out_t *output) {
     // Main structure that will received the parsed TLV data
     tlv_extracted_t tlv_extracted = {0};
     tlv_extracted.output = output;
+    tlv_trusted_name_status_t err;
 
     // The parser will fill it with the hash of the whole TLV payload (except SIGN tag)
     init_multi_hash_ctx(&tlv_extracted.hash_ctx);
@@ -326,20 +323,22 @@ int tlv_use_case_parse_trusted_name_payload(const buffer_t *payload,
     // Call the function created by the macro from the TLV lib
     if (!parse_tlv_trusted_name(payload, &tlv_extracted, &tlv_extracted.received_tags)) {
         PRINTF("Failed to parse tlv payload\n");
-        return -1;
+        return TLV_TRUSTED_NAME_PARSING_ERROR;
     }
 
     // Verify that the fields received are correct in our context
-    if (verify_struct(&tlv_extracted) != 0) {
+    err = verify_struct(&tlv_extracted);
+    if (err != TLV_TRUSTED_NAME_SUCCESS) {
         PRINTF("Failed to verify tlv payload\n");
-        return -1;
+        return err;
     }
 
     // Verify that the fields received are correct in our context
-    if (verify_trusted_name_signature(&tlv_extracted) != 0) {
+    err = verify_signature(&tlv_extracted);
+    if (err != TLV_TRUSTED_NAME_SUCCESS) {
         PRINTF("Failed to verify trusted name signature\n");
-        return -1;
+        return err;
     }
 
-    return 0;
+    return TLV_TRUSTED_NAME_SUCCESS;
 }

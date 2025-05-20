@@ -28,8 +28,8 @@ static int handle_provide_trusted_info_internal(void) {
     // Convert G_command to buffer_t format. 0 copy
     buffer_t payload = {.ptr = G_command.message, .size = G_command.message_length};
 
-    if (tlv_use_case_parse_trusted_name_payload(&payload, &tlv_output) != 0) {
-        PRINTF("tlv_use_case_parse_trusted_name_payload failed\n");
+    if (tlv_use_case_trusted_name(&payload, &tlv_output) != TLV_TRUSTED_NAME_SUCCESS) {
+        PRINTF("tlv_use_case_trusted_name failed\n");
         return -1;
     }
 

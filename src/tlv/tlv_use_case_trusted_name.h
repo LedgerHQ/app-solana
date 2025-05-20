@@ -76,5 +76,19 @@ typedef struct tlv_trusted_name_out_s {
     bool not_valid_after_received;
 } tlv_trusted_name_out_t;
 
-int tlv_use_case_parse_trusted_name_payload(const buffer_t *payload,
-                                            tlv_trusted_name_out_t *output);
+typedef enum tlv_trusted_name_status_e {
+    TLV_TRUSTED_NAME_SUCCESS = 0,
+    TLV_TRUSTED_NAME_PARSING_ERROR = 1,
+    TLV_TRUSTED_NAME_MISSING_STRUCTURE_TAG = 2,
+    TLV_TRUSTED_NAME_WRONG_TYPE = 3,
+    TLV_TRUSTED_NAME_MISSING_TAG = 4,
+    TLV_TRUSTED_NAME_UNKNOWN_VERSION = 5,
+    TLV_TRUSTED_NAME_UNSUPPORTED_TAG = 6,
+    TLV_TRUSTED_NAME_WRONG_KEY_ID = 7,
+    TLV_TRUSTED_NAME_HASH_FAILED = 8,
+    // Combined with check_signature_with_pki_status_t
+    TLV_TRUSTED_NAME_SIGNATURE_ERROR = 0x80,
+} tlv_trusted_name_status_t;
+
+tlv_trusted_name_status_t tlv_use_case_trusted_name(const buffer_t *payload,
+                                                    tlv_trusted_name_out_t *output);

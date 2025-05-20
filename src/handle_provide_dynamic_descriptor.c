@@ -96,8 +96,8 @@ void handle_provide_dynamic_descriptor(void) {
     // Convert G_command to buffer_t format. 0 copy
     buffer_t payload = {.ptr = G_command.message, .size = G_command.message_length};
 
-    if (tlv_use_case_parse_dynamic_descriptor_payload(&payload, &tlv_output) != 0) {
-        PRINTF("tlv_use_case_parse_dynamic_descriptor_payload failed\n");
+    if (tlv_use_case_dynamic_descriptor(&payload, &tlv_output) != TLV_DYNAMIC_DESCRIPTOR_SUCCESS) {
+        PRINTF("tlv_use_case_dynamic_descriptor failed\n");
         THROW(ApduReplySolanaInvalidDynamicToken);
     }
 
