@@ -4,8 +4,8 @@
 #include "buffer.h"
 #include "cx.h"
 
-#define DER_SIGNATURE_MIN_SIZE 70
-#define DER_SIGNATURE_MAX_SIZE 72
+#define DER_SIGNATURE_MIN_SIZE 64  // Ed25519 size
+#define DER_SIGNATURE_MAX_SIZE 72  // ECDSA max size
 
 typedef enum check_signature_with_pki_status_e {
     CHECK_SIGNATURE_WITH_PKI_SUCCESS = 0,
