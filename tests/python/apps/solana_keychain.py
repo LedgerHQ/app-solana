@@ -9,6 +9,7 @@ from enum import Enum, auto
 # Example: for an entry in the Enum named DEV, its PEM file must be at keychain/dev.pem
 class Key(Enum):
     TRUSTED_NAME = auto()
+    DYNAMIC_TOKEN = auto()
 
 
 _keys: dict[Key, SigningKey] = dict()
