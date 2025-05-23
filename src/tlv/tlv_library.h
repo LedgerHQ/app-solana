@@ -38,7 +38,7 @@ static bool my_handler_2(const tlv_data_t *data, my_tlv_output_t *out) {
 
 DEFINE_TLV_PARSER(MY_TAGS, NULL, my_tlv_parser)
 
-bool my_tlv_use_case(buffer_t payload, uint8_t *my_value_to_receive) {
+bool my_tlv_parser(buffer_t payload, uint8_t *my_value_to_receive) {
     my_tlv_output_t out = {0};
     if (!parse_tlv_trusted_name(&payload, &out, &out.received_tags)) {
         return false;
@@ -210,7 +210,7 @@ bool get_buffer_from_tlv_data(const tlv_data_t *data,
                               uint16_t max_size);
 
 /**
- * Get a buffer_t from tlv data
+ * Get a string from tlv data
  *
  * This function extracts a `string` from the TLV data, ensuring that the
  * extracted data's length is within the specified bounds (`min_size` and `max_size`).
