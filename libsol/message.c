@@ -148,7 +148,7 @@ int process_message_body(const uint8_t *message_body,
     // Ensure we've consumed the entire message body
     BAIL_IF(!parser_is_empty(&parser));
 
-    // If we don't know about all of the instructions, bail
+    // If we don't know about all the instructions, bail
     for (size_t i = 0; i < instruction_count; i++) {
         BAIL_IF(instruction_info[i].kind == ProgramIdUnknown);
     }

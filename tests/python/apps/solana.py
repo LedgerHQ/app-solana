@@ -73,6 +73,7 @@ class ErrorType:
     SOLANA_SUMMARY_FINALIZE_FAILED = 0x6f00
     SOLANA_SUMMARY_UPDATE_FAILED = 0x6f01
     INVALID_CLA = 0x6e00
+    SOLANA_INVALID_MESSAGE_SIZE = 0x6a83
 
 # https://ledgerhq.atlassian.net/wiki/spaces/TrustServices/pages/3736863735/LNS+Arch+Nano+Trusted+Names+Descriptor+Format+APIs#TLV-description
 class TrustedNameTag(IntEnum):
