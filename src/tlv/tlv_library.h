@@ -36,7 +36,7 @@ static bool my_handler_2(const tlv_data_t *data, my_tlv_output_t *out) {
     X(0x1F, TAG_B, my_handler_2, ENFORCE_UNIQUE_TAG) \
     X(0x77, TAG_C, NULL, ALLOW_MULTIPLE_TAG)
 
-DEFINE_TLV_PARSER(MY_TAGS, my_tlv_parser)
+DEFINE_TLV_PARSER(MY_TAGS, NULL, my_tlv_parser)
 
 bool my_tlv_use_case(buffer_t payload, uint8_t *my_value_to_receive) {
     my_tlv_output_t out = {0};
@@ -62,14 +62,15 @@ typedef struct tlv_data_s {
     // The tag is reminded in case the handler is generic and covers multiple tags
     TLV_tag_t tag;
     // The length of the value buffer
-    uint16_t length;
+    // uint16_t length;
     // The value buffer
-    const uint8_t *value;
+    buffer_t value;
 
     // In case the handler needs to do some processing on the raw TLV-encoded data
     // Computing a signature for example
-    const uint8_t *raw;
-    uint16_t raw_size;
+    // const uint8_t *raw;
+    // uint16_t raw_size;
+    buffer_t raw;
 } tlv_data_t;
 
 // The handlers prototype to give to give to DEFINE_TLV_PARSER() through the TAG_LIST parameter
@@ -95,6 +96,7 @@ typedef enum tag_unicity_e {
 TAG_LIST(X) \
     X(<uint32_t>, TAG_NAME, <tlv_handler_cb_t>, <tag_unicity_t>)
  * ```
+ * @param COMMON_HANDLER An optional handler to call for all tags in addition to the specific one
  * @param PARSE_FUNCTION_NAME Name of the function that will parse the TAG_LIST
  *
  * Example:
@@ -104,7 +106,7 @@ TAG_LIST(X) \
  *     X(0x1F, TAG_B, my_handler_2, ENFORCE_UNIQUE_TAG) \
  *     X(0x77, TAG_C, my_handler_2, ENFORCE_UNIQUE_TAG)
  *
- * DEFINE_TLV_PARSER(MY_TAGS, my_tlv_parser)
+ * DEFINE_TLV_PARSER(MY_TAGS, NULL, my_tlv_parser)
  * ```
  *
  * Expands to:
@@ -115,7 +117,7 @@ TAG_LIST(X) \
  * - `my_tlv_parser()`
  */
 // clang-format off
-#define DEFINE_TLV_PARSER(TAG_LIST, PARSE_FUNCTION_NAME)                                 \
+#define DEFINE_TLV_PARSER(TAG_LIST, COMMON_HANDLER, PARSE_FUNCTION_NAME)                 \
     /* Create an enum associating tags with their values */                              \
     enum {                                                                               \
         TAG_LIST(__X_DEFINE_TLV__TAG_ASSIGN)                                             \
@@ -161,6 +163,7 @@ TAG_LIST(X) \
         };                                                                               \
         return _parse_tlv_internal(handlers,                                             \
                                    PARSE_FUNCTION_NAME##_TAG_COUNT,                      \
+                                   (tlv_handler_cb_t*) COMMON_HANDLER,                   \
                                    PARSE_FUNCTION_NAME##_tag_to_flag,                    \
                                    payload,                                              \
                                    tlv_out,                                              \
@@ -171,16 +174,17 @@ TAG_LIST(X) \
 /**
  * Get uint from tlv data
  *
- * This function extracts an unsigned 32-bit integer (up to 4 bytes) from the TLV data.
- * The length of the data must not exceed 4 bytes.
+ * This function extracts an unsigned N-bit integer from the TLV data.
+ * The length of the data must not exceed the requested format.
  *
- * The data is padded with leading zeros if it is less than 4 bytes, and the resulting value is
- * converted to a 32-bit unsigned integer in big-endian byte order.
+ * The data is padded with leading zeros if it is less than N-bits, and the resulting value is
+ * converted to a N-bit unsigned integer in big-endian byte order.
  *
  * @param[in] data The TLV data containing the value to be extracted
- * @param[out] value Pointer to a uint32_t where the result will be stored
+ * @param[out] value Pointer to a uintN_t where the result will be stored
  * @return True if the extraction was successful, false otherwise (invalid length or data)
  */
+bool get_uint64_t_from_tlv_data(const tlv_data_t *data, uint64_t *value);
 bool get_uint32_t_from_tlv_data(const tlv_data_t *data, uint32_t *value);
 bool get_uint16_t_from_tlv_data(const tlv_data_t *data, uint16_t *value);
 bool get_uint8_t_from_tlv_data(const tlv_data_t *data, uint8_t *value);
@@ -269,6 +273,8 @@ typedef struct {
  *
  * @param[in] handlers array of handlers to use to parse the TLV
  * @param[in] handlers_count the number handlers given
+ * @param[in] common_handler an optional handler to call for all tags in addition to the specific
+ * one
  * @param[in] the function to map tags to flags
  * @param[in] payload the raw TLV payload
  * @param[out] tlv_out the parsed TLV data
@@ -277,6 +283,7 @@ typedef struct {
  */
 bool _parse_tlv_internal(const _internal_tlv_handler_t *handlers,
                          uint8_t handlers_count,
+                         tlv_handler_cb_t *common_handler,
                          tag_to_flag_function_t *tag_to_flag_function,
                          const buffer_t *payload,
                          void *tlv_out,
