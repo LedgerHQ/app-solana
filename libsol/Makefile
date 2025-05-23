@@ -13,6 +13,7 @@ CFLAGS += -Werror -Wall -Wextra -pedantic -Wshadow -Wcast-qual -Wcast-align -Wno
 CFLAGS += -fPIC
 CFLAGS += -Iinclude -Imock
 CFLAGS += $($(mode)_CFLAGS)
+CFLAGS += -D PRINTF\(...\)=
 
 ifeq ($(COVERAGE),1)
 	CFLAGS += --coverage

@@ -59,9 +59,17 @@ typedef struct MessageHeader {
     size_t instructions_length;
 } MessageHeader;
 
+#define OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH 32
+typedef struct OffchainMessageApplicationDomain {
+    uint8_t data[OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH];
+} OffchainMessageApplicationDomain;
+
 typedef struct OffchainMessageHeader {
     uint8_t version;
+    const OffchainMessageApplicationDomain *application_domain;
     uint8_t format;
+    size_t signers_length;
+    const Pubkey *signers;
     uint16_t length;
 } OffchainMessageHeader;
 
