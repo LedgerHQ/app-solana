@@ -3,6 +3,7 @@
 #include "sol/parser.h"
 #include "sol/print_config.h"
 #include "sol/transaction_summary.h"
+#include "spl_token2022_instruction.h"
 #include "transaction_printers.h"
 #include "util.h"
 
@@ -196,6 +197,15 @@ const InstructionBrief spl_associated_token_account_create_with_transfer_brief[]
 #define is_spl_associated_token_account_create_with_transfer(infos, infos_length)           \
     instruction_infos_match_briefs(infos,                                                   \
                                    spl_associated_token_account_create_with_transfer_brief, \
+                                   infos_length)
+
+const InstructionBrief spl_associated_token_account_create_with_transfer_fee_brief[] = {
+    SPL_ASSOCIATED_TOKEN_ACCOUNT_IX_BRIEF,
+    SPL_TOKEN_IX_BRIEF(SplTokenExtensionKind(TransferFeeExtension)),
+};
+#define is_spl_associated_token_account_create_with_transfer_fee(infos, infos_length)           \
+    instruction_infos_match_briefs(infos,                                                       \
+                                   spl_associated_token_account_create_with_transfer_fee_brief, \
                                    infos_length)
 
 static int print_create_stake_account(const PrintConfig *print_config,
@@ -638,6 +648,12 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
             } else if (is_spl_token_create_multisig(infos, infos_length)) {
                 return print_spl_token_create_multisig(print_config, infos, infos_length);
             } else if (is_spl_associated_token_account_create_with_transfer(infos, infos_length)) {
+                return print_spl_associated_token_account_create_with_transfer(print_config,
+                                                                               infos,
+                                                                               infos_length);
+            } else if (is_spl_associated_token_account_create_with_transfer_fee(infos,
+                                                                                infos_length)) {
+                // Also call print_spl_associated_token_account_create_with_transfer
                 return print_spl_associated_token_account_create_with_transfer(print_config,
                                                                                infos,
                                                                                infos_length);

@@ -332,6 +332,33 @@ class TestToken2022:
         signature: bytes = sol.get_async_response().data
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
+    def test_token_2022_create(self, backend, scenario_navigator):
+        create_instruction = create_associated_token_account(
+            payer=self.sender_ata,
+            owner=self.receiver_pubkey,
+            mint=self.mint_pubkey,
+        )
+        accounts = [
+            AccountMeta(pubkey=self.sender_ata, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=self.mint_pubkey, is_signer=False, is_writable=False),
+            AccountMeta(pubkey=self.destination_ata, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=False),
+        ]
+        transfer_instruction = Instruction(
+            program_id=TOKEN_2022_PROGRAM_ID,
+            accounts=accounts,
+            data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 100001, 6, 0)
+        )
+        message_data = craft_tx([create_instruction, transfer_instruction], self.sender_public_key)
+
+        sol = SolanaClient(backend)
+        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH)
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+
 class TestTokenDynamic:
     def test_dynamic_token_simple(self, backend, scenario_navigator):
         # Get the sender public key
