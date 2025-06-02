@@ -18,4 +18,3 @@ AllowShortFunctionsOnASingleLine: None
 BinPackArguments: false
 BinPackParameters: false
 ---
-
