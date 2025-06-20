@@ -24,6 +24,7 @@ int print_token_amount(uint64_t amount,
             if (i == decimals) {
                 out[i] = '.';
                 i += 1;
+                BAIL_IF(i >= outlen);
             }
             out[i] = (dVal % 10) + '0';
             dVal /= 10;
