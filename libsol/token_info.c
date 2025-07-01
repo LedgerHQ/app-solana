@@ -812,7 +812,7 @@ const TokenInfo TOKEN_REGISTRY[] = {
        0xed, 0x91, 0x54, 0x06, 0x98, 0xb2, 0xfe, 0xe1, 0x07, 0x2b}},
      "ZBCN"}};
 
-const char *get_token_symbol(const Pubkey *mint_address) {
+const char *get_hardcoded_token_symbol(const uint8_t *mint_address) {
     for (size_t i = 0; i < ARRAY_LEN(TOKEN_REGISTRY); i++) {
         const TokenInfo *info = &TOKEN_REGISTRY[i];
 

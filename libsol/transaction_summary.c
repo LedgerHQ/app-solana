@@ -91,6 +91,9 @@ void summary_item_set_offchain_message_application_domain(
 }
 
 typedef struct TransactionSummary {
+    bool is_token_2022_transfer;
+    bool fee_warning;
+    bool hook_warning;
     SummaryItem primary;
     SummaryItem fee_payer;
     SummaryItem nonce_account;
@@ -150,6 +153,29 @@ SummaryItem *transaction_summary_general_item() {
     return NULL;
 }
 
+void transaction_summary_set_token_fee_warning(bool fee_warning) {
+    G_transaction_summary.fee_warning = fee_warning;
+}
+
+void transaction_summary_set_token_hook_warning(bool hook_warning) {
+    G_transaction_summary.hook_warning = hook_warning;
+}
+
+void transaction_summary_get_token_warnings(bool *fee_warning, bool *hook_warning) {
+    *fee_warning = G_transaction_summary.fee_warning;
+    *hook_warning = G_transaction_summary.hook_warning;
+}
+
+void transaction_summary_set_is_token_2022_transfer(bool is_token_2022_transfer) {
+    G_transaction_summary.is_token_2022_transfer = is_token_2022_transfer;
+}
+
+void transaction_summary_get_is_token_2022_transfer(bool *is_token_2022_transfer) {
+    *is_token_2022_transfer = G_transaction_summary.is_token_2022_transfer;
+}
+
+#define FEE_PAYER_TITLE "Fee payer"
+
 SummaryItem *transaction_summary_primary_or_general_item() {
     SummaryItem *item = transaction_summary_primary_item();
     if (item != NULL) {
@@ -157,8 +183,6 @@ SummaryItem *transaction_summary_primary_or_general_item() {
     }
     return transaction_summary_general_item();
 }
-
-#define FEE_PAYER_TITLE "Fee payer"
 
 int transaction_summary_set_fee_payer_pubkey(const Pubkey *pubkey) {
     SummaryItem *item = transaction_summary_fee_payer_item();

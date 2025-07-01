@@ -1,7 +1,9 @@
+#include "os.h"
 #include "instruction.h"
 #include "sol/parser.h"
 #include "sol/print_config.h"
 #include "sol/transaction_summary.h"
+#include "spl_token2022_instruction.h"
 #include "transaction_printers.h"
 #include "util.h"
 
@@ -195,6 +197,15 @@ const InstructionBrief spl_associated_token_account_create_with_transfer_brief[]
 #define is_spl_associated_token_account_create_with_transfer(infos, infos_length)           \
     instruction_infos_match_briefs(infos,                                                   \
                                    spl_associated_token_account_create_with_transfer_brief, \
+                                   infos_length)
+
+const InstructionBrief spl_associated_token_account_create_with_transfer_fee_brief[] = {
+    SPL_ASSOCIATED_TOKEN_ACCOUNT_IX_BRIEF,
+    SPL_TOKEN_IX_BRIEF(SplTokenExtensionKind(TransferFeeExtension)),
+};
+#define is_spl_associated_token_account_create_with_transfer_fee(infos, infos_length)           \
+    instruction_infos_match_briefs(infos,                                                       \
+                                   spl_associated_token_account_create_with_transfer_fee_brief, \
                                    infos_length)
 
 static int print_create_stake_account(const PrintConfig *print_config,
@@ -563,10 +574,11 @@ static int print_spl_associated_token_account_create_with_transfer(const PrintCo
 
     const SplAssociatedTokenAccountCreateInfo *c_info =
         &infos[0]->spl_associated_token_account.create;
-    const SplTokenTransferInfo *t_info = &infos[1]->spl_token.transfer;
+    SplTokenInfo spl_token = infos[1]->spl_token;
+    const SplTokenTransferInfo *t_info = &spl_token.transfer;
 
     print_spl_associated_token_account_create_info(c_info, print_config);
-    print_spl_token_transfer_info(t_info, print_config, false);
+    print_spl_token_transfer_info(t_info, print_config, spl_token.is_token2022_kind, false);
 
     return 0;
 }
@@ -574,6 +586,7 @@ static int print_spl_associated_token_account_create_with_transfer(const PrintCo
 static int print_transaction_nonce_processed(const PrintConfig *print_config,
                                              InstructionInfo *const *infos,
                                              size_t infos_length) {
+    PRINTF("infos_length = %d\n", infos_length);
     switch (infos_length) {
         case 1:
             switch (infos[0]->kind) {
@@ -638,6 +651,12 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
                 return print_spl_associated_token_account_create_with_transfer(print_config,
                                                                                infos,
                                                                                infos_length);
+            } else if (is_spl_associated_token_account_create_with_transfer_fee(infos,
+                                                                                infos_length)) {
+                // Also call print_spl_associated_token_account_create_with_transfer
+                return print_spl_associated_token_account_create_with_transfer(print_config,
+                                                                               infos,
+                                                                               infos_length);
             }
             break;
 
@@ -667,6 +686,15 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
     }
 
     return 1;
+}
+
+int print_spl_token_extension_warning() {
+    SummaryItem *item = transaction_summary_general_item();
+    summary_item_set_string(item, "Extension Warning", "Unsupported extensions found");
+    item = transaction_summary_general_item();
+    summary_item_set_string(item, "", "Verify transaction before signing");
+
+    return 0;
 }
 
 InstructionInfo *const *preprocess_compute_budget_instructions(const PrintConfig *print_config,

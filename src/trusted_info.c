@@ -4,7 +4,8 @@
 
 bool check_ata_agaisnt_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
                                     const uint8_t mint_account[PUBKEY_LENGTH],
-                                    const uint8_t dest_account[PUBKEY_LENGTH]) {
+                                    const uint8_t dest_account[PUBKEY_LENGTH],
+                                    bool is_token_2022) {
     UNUSED(src_account);
     // Here we will check the content of the SPL transaction against the received descriptor
     if (!g_trusted_info.received) {
@@ -41,7 +42,8 @@ bool check_ata_agaisnt_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
 
     if (!validate_associated_token_address(g_trusted_info.owner_address,
                                            mint_account,
-                                           dest_account)) {
+                                           dest_account,
+                                           is_token_2022)) {
         return false;
     }
 
@@ -57,4 +59,33 @@ int get_transfer_to_address(char **to_address) {
 
     *to_address = g_trusted_info.encoded_owner_address;
     return 0;
+}
+
+const char *get_dynamic_token_symbol(const uint8_t *mint_address, bool is_token_2022_kind) {
+    if (!g_dynamic_token_info.received) {
+        return NULL;
+    }
+
+    // We have received a descriptor that should apply to the current token. use it.
+    if (memcmp(g_dynamic_token_info.mint_address, mint_address, PUBKEY_SIZE) != 0) {
+        PRINTF("Received dynamic token info for token '%.*H' != token '%.*H'\n",
+               PUBKEY_SIZE,
+               g_dynamic_token_info.mint_address,
+               PUBKEY_SIZE,
+               mint_address);
+        return NULL;
+    }
+
+    if (is_token_2022_kind != g_dynamic_token_info.is_token_2022_kind) {
+        PRINTF("Token kind mismatch %d != %d\n",
+               is_token_2022_kind,
+               g_dynamic_token_info.is_token_2022_kind);
+        return NULL;
+    }
+
+    PRINTF("Using dynamic token info to map token '%.*H' == ticker '%s'\n",
+           PUBKEY_SIZE,
+           g_dynamic_token_info.mint_address,
+           g_dynamic_token_info.ticker);
+    return g_dynamic_token_info.ticker;
 }

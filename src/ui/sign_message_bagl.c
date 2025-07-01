@@ -19,6 +19,8 @@ UX_STEP_NOCB(ux_sign_msg_text_step,
                  .text = (const char *) G_command.message + OFFCHAIN_MESSAGE_HEADER_LENGTH,
              });
 
+static bool G_has_warning;
+
 UX_STEP_NOCB(ux_sign_msg_text_icon_init, pnn, {&C_icon_certificate, "Review message", ""});
 
 // Display dynamic transaction item screen
@@ -26,6 +28,9 @@ UX_STEP_NOCB_INIT(ux_summary_step,
                   bnnn_paging,
                   {
                       size_t step_index = G_ux.flow_stack[stack_slot].index;
+                      if (G_has_warning) {
+                          step_index -= 2;
+                      }
                       enum DisplayFlags flags = DisplayFlagNone;
                       if (N_storage.settings.pubkey_display == PubkeyDisplayLong) {
                           flags |= DisplayFlagLongPubkeys;
@@ -57,10 +62,45 @@ UX_STEP_CB(ux_reject_step,
                "Reject",
            });
 
-#define MAX_FLOW_STEPS_ONCHAIN                             \
-    (MAX_TRANSACTION_SUMMARY_ITEMS + 1 /* approve */       \
-     + 1                               /* reject */        \
-     + 1                               /* FLOW_END_STEP */ \
+UX_STEP_NOCB(ux_hook_warning_p1_step,
+             pbb,
+             {
+                 &C_icon_warning,
+                 "Transfer Hook",
+                 "cannot be verified",
+             });
+
+UX_STEP_NOCB(ux_hook_warning_p2_step,
+             nnnn,
+             {
+                 "A custom program in",
+                 "this transaction may",
+                 "lead to unexpected",
+                 "behaviour.",
+             });
+
+UX_STEP_NOCB(ux_fee_warning_p1_step,
+             pbb,
+             {
+                 &C_icon_warning,
+                 "Token Extensions",
+                 "cannot be verified",
+             });
+
+UX_STEP_NOCB(ux_fee_warning_p2_step,
+             nnn,
+             {
+                 "It may lead to",
+                 "additional fees upon",
+                 "broadcast.",
+             });
+
+#define MAX_FLOW_STEPS_ONCHAIN                           \
+    (2                               /* warning */       \
+     + MAX_TRANSACTION_SUMMARY_ITEMS /* Items */         \
+     + 1                             /* approve */       \
+     + 1                             /* reject */        \
+     + 1                             /* FLOW_END_STEP */ \
     )
 /*
 OFFCHAIN UX Steps:
@@ -88,6 +128,23 @@ static ux_flow_step_t const *flow_steps[MAX(MAX_FLOW_STEPS_ONCHAIN, MAX_FLOW_STE
 void start_sign_tx_ui(size_t num_summary_steps) {
     MEMCLEAR(flow_steps);
     size_t num_flow_steps = 0;
+
+    bool fee_warning;
+    bool hook_warning;
+    transaction_summary_get_token_warnings(&fee_warning, &hook_warning);
+    if (hook_warning) {
+        G_has_warning = true;
+        flow_steps[num_flow_steps++] = &ux_hook_warning_p1_step;
+        flow_steps[num_flow_steps++] = &ux_hook_warning_p2_step;
+    } else {
+        if (fee_warning) {
+            G_has_warning = true;
+            flow_steps[num_flow_steps++] = &ux_fee_warning_p1_step;
+            flow_steps[num_flow_steps++] = &ux_fee_warning_p2_step;
+        } else {
+            G_has_warning = false;
+        }
+    }
     for (size_t i = 0; i < num_summary_steps; i++) {
         flow_steps[num_flow_steps++] = &ux_summary_step;
     }
@@ -102,7 +159,7 @@ void start_sign_tx_ui(size_t num_summary_steps) {
 void start_sign_offchain_message_ui(const bool is_ascii, const size_t num_summary_steps) {
     MEMCLEAR(flow_steps);
     size_t num_flow_steps = 0;
-
+    G_has_warning = false;
     flow_steps[num_flow_steps++] = &ux_sign_msg_text_icon_init;
 
     for (size_t i = 1; i < num_summary_steps; i++) {

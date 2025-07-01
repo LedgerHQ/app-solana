@@ -67,7 +67,8 @@ int apdu_handle_message(const uint8_t *apdu_message,
         case InsSignMessage:
         case InsSignOffchainMessage:
         case InsTrustedInfoGetChallenge:
-        case InsTrustedInfoProvideInfo: {
+        case InsTrustedInfoProvideInfo:
+        case InsTrustedInfoProvideDynamicDescriptor: {
             // must at least hold a full modern header
             if (apdu_message_len < OFFSET_CDATA) {
                 return ApduReplySolanaInvalidMessageSize;
@@ -113,7 +114,8 @@ int apdu_handle_message(const uint8_t *apdu_message,
     } else if (header.instruction == InsDeprecatedSignMessage ||
                header.instruction == InsSignMessage ||
                header.instruction == InsSignOffchainMessage ||
-               header.instruction == InsTrustedInfoProvideInfo) {
+               header.instruction == InsTrustedInfoProvideInfo ||
+               header.instruction == InsTrustedInfoProvideDynamicDescriptor) {
         // Split APDU reception is only allowed for this instructions
         if (!first_data_chunk) {
             // validate the command in progress
@@ -141,7 +143,8 @@ int apdu_handle_message(const uint8_t *apdu_message,
                 return ApduReplySolanaInvalidMessage;
             }
             // This step only makes sense in message signing context
-            if (header.instruction != InsTrustedInfoProvideInfo) {
+            if (header.instruction != InsTrustedInfoProvideInfo &&
+                header.instruction != InsTrustedInfoProvideDynamicDescriptor) {
                 if (apdu_command->num_derivation_paths != 1) {
                     PRINTF("Concatenate error: derivation path number %d != 1\n",
                            apdu_command->num_derivation_paths);
@@ -157,7 +160,8 @@ int apdu_handle_message(const uint8_t *apdu_message,
         explicit_bzero(apdu_command, sizeof(ApduCommand));
     }
 
-    if (first_data_chunk && (header.instruction != InsTrustedInfoProvideInfo)) {
+    if (first_data_chunk && header.instruction != InsTrustedInfoProvideInfo &&
+        header.instruction != InsTrustedInfoProvideDynamicDescriptor) {
         // read derivation path
         if (!header.deprecated_host && header.instruction != InsGetPubkey) {
             if (!header.data_length) {

@@ -21,6 +21,7 @@
 #include "handle_sign_offchain_message.h"
 #include "handle_get_challenge.h"
 #include "handle_provide_trusted_info.h"
+#include "handle_provide_dynamic_descriptor.h"
 #include "apdu.h"
 #include "ui_api.h"
 
@@ -95,6 +96,10 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
 
         case InsTrustedInfoProvideInfo:
             handle_provide_trusted_info();
+            break;
+
+        case InsTrustedInfoProvideDynamicDescriptor:
+            handle_provide_dynamic_descriptor();
             break;
 
         default:
@@ -268,9 +273,7 @@ static void start_app_from_lib(void) {
 static void library_main_helper(libargs_t *args) {
     switch (args->command) {
         case CHECK_ADDRESS:
-            // ensure result is zero if an exception is thrown
-            args->check_address->result = 0;
-            args->check_address->result = handle_check_address(args->check_address);
+            swap_handle_check_address(args->check_address);
             break;
         case SIGN_TRANSACTION:
             if (copy_transaction_parameters(args->create_transaction)) {
@@ -279,7 +282,7 @@ static void library_main_helper(libargs_t *args) {
             }
             break;
         case GET_PRINTABLE_AMOUNT:
-            handle_get_printable_amount(args->get_printable_amount);
+            swap_handle_get_printable_amount(args->get_printable_amount);
             break;
         default:
             break;

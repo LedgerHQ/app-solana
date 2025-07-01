@@ -36,8 +36,8 @@ APPNAME = "Solana"
 
 # Application version
 APPVERSION_M = 1
-APPVERSION_N = 8
-APPVERSION_P = 1
+APPVERSION_N = 9
+APPVERSION_P = 2
 APPVERSION = "$(APPVERSION_M).$(APPVERSION_N).$(APPVERSION_P)"
 
 # Application source files
@@ -70,11 +70,7 @@ ifeq ($(TARGET_NAME),$(filter $(TARGET_NAME),TARGET_NANOX TARGET_STAX TARGET_FLE
 HAVE_APPLICATION_FLAG_BOLOS_SETTINGS = 1
 endif
 
-########################################
-# Swap features #
-########################################
-ENABLE_SWAP = 1
-
+# --8<-- [start:variables]
 ########################################
 # Application communication interfaces #
 ########################################
@@ -84,6 +80,12 @@ ENABLE_BLUETOOTH = 1
 #         NBGL custom features         #
 ########################################
 ENABLE_NBGL_QRCODE = 1
+
+########################################
+#            Swap features             #
+########################################
+ENABLE_SWAP = 1
+# --8<-- [end:variables]
 
 ########################################
 #          Features disablers          #
@@ -104,8 +106,6 @@ ifneq ($(WITH_U2F),0)
     DEFINES         += U2F_PROXY_MAGIC=\"~SOL\"
 		SDK_SOURCE_PATH += lib_u2f
 endif
-
-DEFINES += HAVE_SDK_TLV_PARSER
 
 WITH_LIBSOL?=1
 ifneq ($(WITH_LIBSOL),0)

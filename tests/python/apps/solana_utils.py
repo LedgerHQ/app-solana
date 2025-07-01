@@ -53,6 +53,14 @@ JUP_MINT_ADDRESS_STR = "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"
 JUP_MINT_ADDRESS     = JUP_MINT_ADDRESS_STR.encode('utf-8')
 JUP_MINT_PUBLIC_KEY  = base58.b58decode(JUP_MINT_ADDRESS_STR)
 
+USDT_MINT_ADDRESS_STR = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+USDT_MINT_ADDRESS     = USDT_MINT_ADDRESS_STR.encode('utf-8')
+USDT_MINT_PUBLIC_KEY  = base58.b58decode(USDT_MINT_ADDRESS_STR)
+
+# This token is not hardcoded in the application
+GORK_MINT_ADDRESS_STR = "38PgzpJYu2HkiYvV8qePFakB8tuobPdGm2FFEn7Dpump"
+GORK_MINT_ADDRESS     = GORK_MINT_ADDRESS_STR.encode('utf-8')
+GORK_MINT_PUBLIC_KEY  = base58.b58decode(GORK_MINT_ADDRESS_STR)
 
 ### Proposed Solana derivation paths for tests ###
 
@@ -111,7 +119,8 @@ def enable_expert_mode(navigator, firmware, snapshots_name: str):
                NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
     elif firmware is Firmware.FLEX:
         nav = [NavInsID.USE_CASE_HOME_SETTINGS,
-               NavIns(NavInsID.TOUCH, (250,430)),
+               NavInsID.USE_CASE_SETTINGS_NEXT,
+               NavIns(NavInsID.TOUCH, (250,150)),
                NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
     navigator.navigate_and_compare(ROOT_SCREENSHOT_PATH,
                                    snapshots_name,

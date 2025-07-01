@@ -1,3 +1,4 @@
+// --8<-- [start:copy_transaction_parameters]
 #include "handle_swap_sign_transaction.h"
 #include "utils.h"
 #include "os.h"
@@ -85,6 +86,7 @@ bool copy_transaction_parameters(create_transaction_parameters_t *params) {
     memcpy(&G_swap_validated, &swap_validated, sizeof(swap_validated));
     return true;
 }
+// --8<-- [end:copy_transaction_parameters]
 
 // Check that the amount in parameter is the same as the previously saved amount
 bool check_swap_amount(const char *text) {
