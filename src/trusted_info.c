@@ -2,11 +2,10 @@
 #include "trusted_info.h"
 #include "ed25519_helpers.h"
 
-bool check_ata_agaisnt_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
+bool check_ata_against_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
                                     const uint8_t mint_account[PUBKEY_LENGTH],
                                     const uint8_t dest_account[PUBKEY_LENGTH],
                                     bool is_token_2022) {
-    UNUSED(src_account);
     // Here we will check the content of the SPL transaction against the received descriptor
     if (!g_trusted_info.received) {
         PRINTF("Descriptor info is required for a SPL transfer\n");
@@ -18,7 +17,10 @@ bool check_ata_agaisnt_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
     // We must have received the owner address from the descriptor for this
 
     PRINTF("=== TX INFO ===\n");
-    PRINTF("src_account           = %.*H\n", PUBKEY_LENGTH, src_account);
+    if (src_account != NULL) {
+        // We have no use of src_account here for computation but this log is useful.
+        PRINTF("src_account           = %.*H\n", PUBKEY_LENGTH, src_account);
+    }
     PRINTF("mint_account          = %.*H\n", PUBKEY_LENGTH, mint_account);
     PRINTF("dest_account          = %.*H\n", PUBKEY_LENGTH, dest_account);
 
