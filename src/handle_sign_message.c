@@ -11,89 +11,8 @@
 #include "ed25519_helpers.h"
 
 #include "handle_sign_message.h"
+#include "handle_provide_instruction_descriptor.h"
 #include "ui_api.h"
-
-static int scan_header_for_signer(const uint32_t *derivation_path,
-                                  uint32_t derivation_path_length,
-                                  size_t *signer_index,
-                                  const MessageHeader *header) {
-    Pubkey signer_pubkey;
-    get_public_key(signer_pubkey.data, derivation_path, derivation_path_length);
-    return get_pubkey_index(&signer_pubkey,
-                            header->pubkeys,
-                            header->pubkeys_header.num_required_signatures,
-                            signer_index);
-}
-
-void handle_sign_message_parse_message(volatile unsigned int *tx) {
-    if (!tx ||
-        (G_command.instruction != InsDeprecatedSignMessage &&
-         G_command.instruction != InsSignMessage) ||
-        G_command.state != ApduStatePayloadComplete) {
-        THROW(ApduReplySdkInvalidParameter);
-    }
-    // Handle the transaction message signing
-    Parser parser = {G_command.message, G_command.message_length};
-    PrintConfig print_config;
-    print_config.expert_mode = (N_storage.settings.display_mode == DisplayModeExpert);
-    print_config.signer_pubkey = NULL;
-    MessageHeader *header = &print_config.header;
-    size_t signer_index;
-
-    if (parse_message_header(&parser, header) != 0) {
-        // This is not a valid Solana message
-        THROW(ApduReplySolanaInvalidMessage);
-    }
-
-    // Ensure the requested signer is present in the header
-    if (scan_header_for_signer(G_command.derivation_path,
-                               G_command.derivation_path_length,
-                               &signer_index,
-                               header) != 0) {
-        PRINTF("scan_header_for_signer failed\n");
-        THROW(ApduReplySolanaInvalidMessageHeader);
-    }
-    print_config.signer_pubkey = &header->pubkeys[signer_index];
-
-    if (G_command.non_confirm) {
-        PRINTF("G_command.non_confirm refused\n");
-        // Uncomment this to allow unattended signing.
-        //*tx = set_result_sign_message();
-        // THROW(ApduReplySuccess);
-        UNUSED(tx);
-        THROW(ApduReplySdkNotSupported);
-    }
-
-    // Set the transaction summary
-    transaction_summary_reset();
-    if (process_message_body(parser.buffer, parser.buffer_length, &print_config) != 0) {
-        // Message not processed, throw if blind signing is not enabled or in swap context
-        if (G_called_from_swap) {
-            PRINTF("Refuse to process blind transaction in swap context\n");
-            THROW(ApduReplySdkNotSupported);
-        } else if (N_storage.settings.allow_blind_sign != BlindSignEnabled) {
-            PRINTF("Blind signing is not enabled\n");
-            THROW(ApduReplySdkNotSupported);
-        } else {
-            SummaryItem *item = transaction_summary_primary_item();
-            summary_item_set_string(item, "Unrecognized", "format");
-
-            cx_hash_sha256(G_command.message,
-                           G_command.message_length,
-                           (uint8_t *) &G_command.message_hash,
-                           HASH_LENGTH);
-
-            item = transaction_summary_general_item();
-            summary_item_set_hash(item, "Message Hash", &G_command.message_hash);
-        }
-    }
-
-    // Add fee payer to summary if needed
-    const Pubkey *fee_payer = &header->pubkeys[0];
-    if (print_config_show_authority(&print_config, fee_payer)) {
-        transaction_summary_set_fee_payer_pubkey(fee_payer);
-    }
-}
 
 // Accept amount + recipient (+ fees)
 static bool check_swap_validity_native(const SummaryItemKind_t kinds[MAX_TRANSACTION_SUMMARY_ITEMS],
@@ -318,8 +237,30 @@ static bool check_swap_validity(const SummaryItemKind_t kinds[MAX_TRANSACTION_SU
     }
 }
 
+static void swap_finalize(bool is_valid) {
+    if (G_swap_response_ready) {
+        // Safety against trying to make the app sign multiple TX
+        // This code should never be triggered as the app is supposed to exit after
+        // sending the signed transaction
+        PRINTF("Safety against double signing triggered\n");
+        os_sched_exit(-1);
+    } else {
+        // We will quit the app after this transaction, whether it succeeds or fails
+        PRINTF("Swap response is ready, the app will quit after the next send\n");
+        G_swap_response_ready = true;
+    }
+
+    if (is_valid) {
+        PRINTF("Valid swap transaction received, signing and replying it\n");
+        sendResponse(set_result_sign_message(), ApduReplySuccess, false);
+    } else {
+        PRINTF("Refuse to sign an incorrect Swap transaction\n");
+        sendResponse(0, ApduReplySolanaSummaryFinalizeFailed, false);
+    }
+}
+
 // --8<-- [start:handle_sign_message_ui]
-void handle_sign_message_ui(volatile unsigned int *flags) {
+static void handle_sign_message_ui(volatile unsigned int *flags) {
     // Display the transaction summary
     SummaryItemKind_t summary_step_kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
     size_t num_summary_steps = 0;
@@ -327,32 +268,119 @@ void handle_sign_message_ui(volatile unsigned int *flags) {
         // If we are in swap context, do not redisplay the message data
         // Instead, ensure they are identical with what was previously displayed
         if (G_called_from_swap) {
-            if (G_swap_response_ready) {
-                // Safety against trying to make the app sign multiple TX
-                // This code should never be triggered as the app is supposed to exit after
-                // sending the signed transaction
-                PRINTF("Safety against double signing triggered\n");
-                os_sched_exit(-1);
-            } else {
-                // We will quit the app after this transaction, whether it succeeds or fails
-                PRINTF("Swap response is ready, the app will quit after the next send\n");
-                G_swap_response_ready = true;
-            }
-            if (check_swap_validity(summary_step_kinds, num_summary_steps)) {
-                PRINTF("Valid swap transaction received, signing and replying it\n");
-                sendResponse(set_result_sign_message(), ApduReplySuccess, false);
-            } else {
-                PRINTF("Refuse to sign an incorrect Swap transaction\n");
-                sendResponse(0, ApduReplySolanaSummaryFinalizeFailed, false);
-            }
+            swap_finalize(check_swap_validity(summary_step_kinds, num_summary_steps));
         } else {
             // We have been started from the dashboard, prompt the UI to the user as usual
             start_sign_tx_ui(num_summary_steps);
         }
     } else {
+        PRINTF("Error transaction_summary_finalize failed\n");
         THROW(ApduReplySolanaSummaryFinalizeFailed);
     }
 
     *flags |= IO_ASYNCH_REPLY;
 }
 // --8<-- [end:handle_sign_message_ui]
+
+static int scan_header_for_signer(const uint32_t *derivation_path,
+                                  uint32_t derivation_path_length,
+                                  size_t *signer_index,
+                                  const MessageHeader *header) {
+    Pubkey signer_pubkey;
+    get_public_key(signer_pubkey.data, derivation_path, derivation_path_length);
+    return get_pubkey_index(&signer_pubkey,
+                            header->pubkeys,
+                            header->pubkeys_header.num_required_signatures,
+                            signer_index);
+}
+
+void handle_sign_message_parse_message(volatile unsigned int *flags, volatile unsigned int *tx) {
+    if (!tx ||
+        (G_command.instruction != InsDeprecatedSignMessage &&
+         G_command.instruction != InsSignMessage) ||
+        G_command.state != ApduStatePayloadComplete) {
+        THROW(ApduReplySdkInvalidParameter);
+    }
+    // Handle the transaction message signing
+    Parser parser = {G_command.message, G_command.message_length};
+    PrintConfig print_config;
+    print_config.expert_mode = (N_storage.settings.display_mode == DisplayModeExpert);
+    print_config.signer_pubkey = NULL;
+    MessageHeader *header = &print_config.header;
+    size_t signer_index;
+
+    if (parse_message_header(&parser, header) != 0) {
+        // This is not a valid Solana message
+        THROW(ApduReplySolanaInvalidMessage);
+    }
+
+    // Ensure the requested signer is present in the header
+    if (scan_header_for_signer(G_command.derivation_path,
+                               G_command.derivation_path_length,
+                               &signer_index,
+                               header) != 0) {
+        PRINTF("scan_header_for_signer failed\n");
+        THROW(ApduReplySolanaInvalidMessageHeader);
+    }
+    print_config.signer_pubkey = &header->pubkeys[signer_index];
+
+    if (G_command.non_confirm) {
+        PRINTF("G_command.non_confirm refused\n");
+        // Uncomment this to allow unattended signing.
+        //*tx = set_result_sign_message();
+        // THROW(ApduReplySuccess);
+        UNUSED(tx);
+        THROW(ApduReplySdkNotSupported);
+    }
+
+    // Set the transaction summary
+    transaction_summary_reset();
+
+    if (instruction_descriptor_received()) {
+        // Descriptor should not have been accepted so this code should never run but let's be safe
+        if (!G_called_from_swap) {
+            PRINTF("instruction_descriptor_received outside of swap context\n");
+            THROW(ApduReplySdkNotSupported);
+        }
+        PRINTF("Using instruction descriptor\n");
+        if (process_message_body_with_descriptor(parser.buffer,
+                                                 parser.buffer_length,
+                                                 &print_config) != 0) {
+            PRINTF("Error in process_message_body_with_descriptor\n");
+            swap_finalize(false);
+        } else {
+            swap_finalize(true);
+        }
+    } else {
+        if (process_message_body(parser.buffer, parser.buffer_length, &print_config) != 0) {
+            // Message not processed, throw if blind signing is not enabled or in swap context
+            if (G_called_from_swap) {
+                PRINTF("Refuse to process blind transaction in swap context\n");
+                swap_finalize(false);
+            } else if (N_storage.settings.allow_blind_sign != BlindSignEnabled) {
+                PRINTF("Blind signing is not enabled\n");
+                THROW(ApduReplySdkNotSupported);
+            } else {
+                SummaryItem *item = transaction_summary_primary_item();
+                summary_item_set_string(item, "Unrecognized", "format");
+
+                cx_hash_sha256(G_command.message,
+                               G_command.message_length,
+                               (uint8_t *) &G_command.message_hash,
+                               HASH_LENGTH);
+
+                item = transaction_summary_general_item();
+                summary_item_set_hash(item, "Message Hash", &G_command.message_hash);
+            }
+
+            // Add fee payer to summary if needed
+            const Pubkey *fee_payer = &header->pubkeys[0];
+            if (print_config_show_authority(&print_config, fee_payer)) {
+                PRINTF("Adding fee payer to displayable info\n");
+                transaction_summary_set_fee_payer_pubkey(fee_payer);
+            }
+        }
+
+        handle_sign_message_ui(flags);
+    }
+}

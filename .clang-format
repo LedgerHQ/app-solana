@@ -4,6 +4,8 @@ IndentWidth: 4
 ---
 Language: Cpp
 ColumnLimit: 100
+ContinuationIndentWidth: 4
+PenaltyBreakAssignment: 1000000
 PointerAlignment: Right
 DerivePointerAlignment: false
 AlignAfterOpenBracket: Align

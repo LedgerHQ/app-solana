@@ -163,9 +163,9 @@ int parse_offchain_message_header(Parser *parser, OffchainMessageHeader *header)
     const size_t domain_len = OFFCHAIN_MESSAGE_SIGNING_DOMAIN_LENGTH;
     BAIL_IF(check_buffer_length(parser, domain_len));
     int res;
-    if ((res =
-             memcmp((const void *) &offchain_message_signing_domain, parser->buffer, domain_len)) !=
-        0) {
+    if ((res = memcmp((const void *) &offchain_message_signing_domain,
+                      parser->buffer,
+                      domain_len)) != 0) {
         return res;
     }
     advance(parser, domain_len);  // Signing domain - 16 bytes

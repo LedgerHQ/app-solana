@@ -55,6 +55,15 @@ bool get_uint8_t_from_tlv_data(const tlv_data_t *data, uint8_t *value) {
     return true;
 }
 
+bool get_bool_from_tlv_data(const tlv_data_t *data, bool *value) {
+    uint8_t tmp_value;
+    if (!get_uint8_t_from_tlv_data(data, &tmp_value) || (tmp_value > 1)) {
+        return false;
+    }
+    *value = (tmp_value == 1);
+    return true;
+}
+
 bool get_buffer_from_tlv_data(const tlv_data_t *data,
                               buffer_t *out,
                               uint16_t min_size,

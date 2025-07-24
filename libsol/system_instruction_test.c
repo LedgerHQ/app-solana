@@ -2,6 +2,7 @@
 #include "instruction.h"
 #include "system_instruction.c"
 #include "util.h"
+#include "test_utils.h"
 #include <stdio.h>
 #include <assert.h>
 
@@ -325,11 +326,11 @@ void test_parse_system_instruction_kind() {
 }
 
 int main() {
-    test_parse_system_transfer_instructions();
-    test_parse_system_transfer_instructions_with_payer();
-    test_parse_system_advance_nonce_account_instruction();
-    test_system_create_account_with_seed_instruction();
-    test_process_system_transfer();
+    RUN_TEST(test_parse_system_transfer_instructions);
+    RUN_TEST(test_parse_system_transfer_instructions_with_payer);
+    RUN_TEST(test_parse_system_advance_nonce_account_instruction);
+    RUN_TEST(test_system_create_account_with_seed_instruction);
+    RUN_TEST(test_process_system_transfer);
 
     printf("passed\n");
     return 0;

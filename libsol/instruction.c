@@ -124,3 +124,20 @@ size_t instruction_accounts_iterator_remaining(const InstructionAccountsIterator
     }
     return 0;
 }
+
+const uint8_t *get_account_from_ins(const Instruction *instruction,
+                                    const MessageHeader *header,
+                                    uint8_t account_index) {
+    if (account_index >= instruction->accounts_length) {
+        PRINTF("Error account_index %d while instruction accounts_length %d\n",
+               account_index,
+               instruction->accounts_length);
+        return NULL;
+    }
+    PRINTF("account_index %d = pubkey %d = %.*H\n",
+           account_index,
+           instruction->accounts[account_index],
+           PUBKEY_SIZE,
+           header->pubkeys[instruction->accounts[account_index]].data);
+    return header->pubkeys[instruction->accounts[account_index]].data;
+}

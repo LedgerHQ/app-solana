@@ -1,6 +1,7 @@
 #include "instruction.h"
 #include "parser.c"
 #include "sol/printer.h"
+#include "test_utils.h"
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
@@ -321,25 +322,25 @@ void test_parser_is_empty() {
 }
 
 int main() {
-    test_parse_u8();
-    test_parse_u8_too_short();
-    test_parse_u16();
-    test_parse_u32();
-    test_parse_u64();
-    test_parse_i64();
-    test_parse_length();
-    test_parse_length_two_bytes();
-    test_parse_sized_string();
-    test_parse_pubkey();
-    test_parse_pubkeys_header();
-    test_parse_pubkeys();
-    test_parse_pubkeys_too_short();
-    test_parse_hash();
-    test_parse_hash_too_short();
-    test_parse_data();
-    test_parse_data_too_short();
-    test_parse_instruction();
-    test_parser_is_empty();
+    RUN_TEST(test_parse_u8);
+    RUN_TEST(test_parse_u8_too_short);
+    RUN_TEST(test_parse_u16);
+    RUN_TEST(test_parse_u32);
+    RUN_TEST(test_parse_u64);
+    RUN_TEST(test_parse_i64);
+    RUN_TEST(test_parse_length);
+    RUN_TEST(test_parse_length_two_bytes);
+    RUN_TEST(test_parse_sized_string);
+    RUN_TEST(test_parse_pubkey);
+    RUN_TEST(test_parse_pubkeys_header);
+    RUN_TEST(test_parse_pubkeys);
+    RUN_TEST(test_parse_pubkeys_too_short);
+    RUN_TEST(test_parse_hash);
+    RUN_TEST(test_parse_hash_too_short);
+    RUN_TEST(test_parse_data);
+    RUN_TEST(test_parse_data_too_short);
+    RUN_TEST(test_parse_instruction);
+    RUN_TEST(test_parser_is_empty);
 
     printf("passed\n");
     return 0;

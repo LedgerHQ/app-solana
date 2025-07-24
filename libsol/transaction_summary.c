@@ -1,3 +1,4 @@
+#include "os.h"
 #include "sol/parser.h"
 #include "sol/printer.h"
 #include "sol/transaction_summary.h"
@@ -320,6 +321,7 @@ int transaction_summary_finalize(enum SummaryItemKind *item_kinds, size_t *item_
     size_t index = 0;
 
     if (summary->primary.kind == SummaryItemNone) {
+        PRINTF("Error transaction summary is unset\n");
         return 1;
     }
 

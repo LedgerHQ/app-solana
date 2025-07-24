@@ -78,3 +78,7 @@ uint8_t set_result_sign_message(void);
 int copy_and_decode_pubkey(const buffer_t in_encoded_address,
                            char *out_encoded_address,
                            uint8_t *decoded_address);
+
+void debug_print_u64(const char *prefix, uint64_t u64);
+
+#define HAS_MASK(value, mask) (((value) & (mask)) == (mask))

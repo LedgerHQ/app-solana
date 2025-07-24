@@ -54,8 +54,8 @@ static uint32_t calculate_max_fee(const ComputeBudgetFeeInfo *info) {
         if (info->change_unit_limit != NULL) {
             max_compute = info->change_unit_limit->units;
         } else {
-            max_compute =
-                MIN(info->instructions_count * MAX_CU_PER_INSTRUCTION, MAX_CU_PER_TRANSACTION);
+            max_compute = MIN(info->instructions_count * MAX_CU_PER_INSTRUCTION,
+                              MAX_CU_PER_TRANSACTION);
         }
         return max_fee +
                ((info->change_unit_price->units * max_compute) / MICRO_LAMPORT_MULTIPLIER);

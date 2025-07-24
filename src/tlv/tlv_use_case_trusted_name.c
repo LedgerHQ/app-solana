@@ -249,14 +249,17 @@ static tlv_trusted_name_status_t verify_struct(const tlv_extracted_t *tlv_extrac
     }
 
     // Forward optional fields to caller application
-    tlv_extracted->output->nft_id_received =
-        TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags, TAG_NFT_ID);
-    tlv_extracted->output->source_contract_received =
-        TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags, TAG_SOURCE_CONTRACT);
-    tlv_extracted->output->challenge_received =
-        TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags, TAG_CHALLENGE);
-    tlv_extracted->output->not_valid_after_received =
-        TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags, TAG_NOT_VALID_AFTER);
+    tlv_extracted->output->nft_id_received = TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags,
+                                                                     TAG_NFT_ID);
+    tlv_extracted->output->source_contract_received = TLV_CHECK_RECEIVED_TAGS(
+        tlv_extracted->received_tags,
+        TAG_SOURCE_CONTRACT);
+    tlv_extracted->output->challenge_received = TLV_CHECK_RECEIVED_TAGS(
+        tlv_extracted->received_tags,
+        TAG_CHALLENGE);
+    tlv_extracted->output->not_valid_after_received = TLV_CHECK_RECEIVED_TAGS(
+        tlv_extracted->received_tags,
+        TAG_NOT_VALID_AFTER);
 
     if (tlv_extracted->output->version == 0 || tlv_extracted->output->version > 2) {
         PRINTF("Error: unsupported struct version %d\n", tlv_extracted->output->version);

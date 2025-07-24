@@ -7,6 +7,7 @@
 #include "sol/printer.h"
 #include "swap_common.h"
 #include "util.h"
+#include "base58.h"
 
 typedef struct swap_validated_s {
     bool initialized;
@@ -113,7 +114,45 @@ bool check_swap_amount(const char *text) {
     }
 }
 
-bool is_valid_char(char c) {
+bool check_swap_amount_raw(uint64_t amount) {
+    if (!G_swap_validated.initialized) {
+        PRINTF("check_swap_ticker internal error\n");
+        return false;
+    }
+
+    debug_print_u64("Received amount", amount);
+    debug_print_u64("Validated G_swap_validated.amount", G_swap_validated.amount);
+    if (amount != G_swap_validated.amount) {
+        PRINTF("Amount mismatch\n");
+        return false;
+    }
+
+    PRINTF("Amount validated\n");
+    return true;
+}
+
+bool check_swap_ticker(const char *ticker) {
+    if (ticker == NULL || !G_swap_validated.initialized) {
+        PRINTF("check_swap_ticker internal error\n");
+        return false;
+    }
+
+    if (strncmp(ticker, G_swap_validated.ticker, MAX_SWAP_TOKEN_LENGTH) != 0) {
+        PRINTF("Ticker mismatch: received %s, validated %s\n", ticker, G_swap_validated.ticker);
+        return false;
+    }
+    return true;
+}
+
+const char *get_swap_ticker() {
+    if (!G_swap_validated.initialized) {
+        PRINTF("check_swap_ticker internal error\n");
+        return NULL;
+    }
+    return G_swap_validated.ticker;
+}
+
+static bool is_valid_char(char c) {
     return (c == '.' || (c >= '0' && c <= '9'));
 }
 
@@ -185,16 +224,39 @@ bool check_swap_fee(const char *text) {
 // Check that the recipient in parameter is the same as the previously saved recipient
 bool check_swap_recipient(const char *text) {
     if (!G_swap_validated.initialized) {
+        PRINTF("Error check_swap_recipient !G_swap_validated.initialized\n");
         return false;
     }
+
+    PRINTF("Recipient requested in this transaction = %s\n", text);
+    PRINTF("Recipient validated in swap = %s\n", G_swap_validated.recipient);
 
     if (strcmp(G_swap_validated.recipient, text) == 0) {
         return true;
     } else {
-        PRINTF("Recipient requested in this transaction = %s\n", text);
-        PRINTF("Recipient validated in swap = %s\n", G_swap_validated.recipient);
+        PRINTF("Error check_swap_recipient mismatch\n");
         return false;
     }
+}
+
+// Check that the recipient in parameter is the same as the previously saved recipient
+int get_swap_recipient(uint8_t recipient_address[PUBKEY_SIZE]) {
+    if (!G_swap_validated.initialized) {
+        PRINTF("Error get_swap_recipient !G_swap_validated.initialized\n");
+        return -1;
+    }
+    PRINTF("G_swap_validated.recipient = %s\n", G_swap_validated.recipient);
+    explicit_bzero(recipient_address, PUBKEY_SIZE);
+    int res = base58_decode(G_swap_validated.recipient,
+                            strlen(G_swap_validated.recipient),
+                            recipient_address,
+                            PUBKEY_SIZE);
+    if (res != PUBKEY_SIZE) {
+        PRINTF("base58_decode error, %d != PUBKEY_SIZE %d\n", res, PUBKEY_SIZE);
+        return -1;
+    }
+
+    return 0;
 }
 
 void __attribute__((noreturn)) finalize_exchange_sign_transaction(bool is_success) {
