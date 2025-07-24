@@ -21,14 +21,6 @@ TRANSFER_FEE_EXTENSION = 26
 TRANSFER_CHECKED_WITH_FEE = 1
 TRANSFER_CHECKED = 12
 
-
-def craft_tx(instructions, sender_public_key):
-    blockhash = Hash.default()
-    message = Message.new_with_blockhash(instructions, sender_public_key, blockhash)
-    tx = Transaction.new_unsigned(message)
-    print(tx)
-    return tx.message_data()
-
 class TestTrustedName:
 
     def test_solana_trusted_name(self, backend, scenario_navigator, root_pytest_dir):
@@ -53,9 +45,9 @@ class TestTrustedName:
                 decimals=6
             )
         )
-        message_data = craft_tx([transfer_instruction], sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
 
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
@@ -92,9 +84,9 @@ class TestTrustedName:
                 decimals=6
             )
         )
-        message_data = craft_tx([create_instruction, transfer_instruction], sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([create_instruction, transfer_instruction], sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
@@ -130,9 +122,9 @@ class TestToken2022:
             accounts=accounts,
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 100001, 6, 767)
         )
-        message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
@@ -152,9 +144,9 @@ class TestToken2022:
             accounts=accounts,
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 100001, 6, 0)
         )
-        message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
@@ -174,9 +166,9 @@ class TestToken2022:
                 decimals=6
             )
         )
-        message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             navigation_helper.navigate_with_warning_and_accept()
@@ -196,9 +188,9 @@ class TestToken2022:
                 decimals=6
             )
         )
-        message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
@@ -219,9 +211,9 @@ class TestToken2022:
             accounts=accounts,
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 108, 6, 77)
         )
-        message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             navigation_helper.navigate_with_warning_and_accept()
@@ -242,9 +234,9 @@ class TestToken2022:
             accounts=accounts,
             data=struct.pack("<BQB", TRANSFER_CHECKED, 108, 6)
         )
-        message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             navigation_helper.navigate_with_warning_and_accept()
@@ -265,9 +257,9 @@ class TestToken2022:
             accounts=accounts,
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 108, 6, 77)
         )
-        message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
@@ -290,9 +282,9 @@ class TestToken2022:
             accounts=accounts,
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 108, 6, 77)
         )
-        message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             navigation_helper.navigate_with_warning_and_accept()
@@ -314,9 +306,9 @@ class TestToken2022:
             accounts=accounts,
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 108, 6, 77)
         )
-        message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
@@ -340,9 +332,9 @@ class TestToken2022:
             accounts=accounts,
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 100001, 6, 0)
         )
-        message_data = craft_tx([create_instruction, transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([create_instruction, transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
@@ -373,9 +365,9 @@ class TestTokenDynamic:
                 decimals=6
             )
         )
-        message_data = craft_tx([transfer_instruction], sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], sender_public_key)
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
         sol.enroll_ata(SOL.GORK_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
 
@@ -406,9 +398,9 @@ class TestTokenDynamic:
                 decimals=6
             )
         )
-        message_data = craft_tx([transfer_instruction], sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], sender_public_key)
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.JUP_MINT_ADDRESS)
         sol.enroll_ata(SOL.GORK_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
 
@@ -439,9 +431,9 @@ class TestTokenDynamic:
                 decimals=6
             )
         )
-        message_data = craft_tx([transfer_instruction], sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], sender_public_key)
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=True, mint_address=SOL.GORK_MINT_ADDRESS_STR)
         sol.enroll_ata(SOL.GORK_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
 
@@ -472,9 +464,9 @@ class TestTokenDynamic:
                 decimals=6
             )
         )
-        message_data = craft_tx([transfer_instruction], sender_public_key)
 
         sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], sender_public_key)
         sol.provide_dynamic_token(ticker="JUP_override", magnitude=6, is_token_2022=False, mint_address=SOL.JUP_MINT_ADDRESS_STR)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
 
