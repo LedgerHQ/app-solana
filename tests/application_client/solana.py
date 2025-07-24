@@ -195,6 +195,10 @@ class SolanaClient:
             self._pki_client = PKIClient(self._client)
 
     def _exchange_split(self, cla: int, ins: int, p1: int, payload: bytes) -> RAPDU:
+        if not payload:
+            # Explicitly send one APDU with no data
+            return self._client.exchange(cla, ins=ins, p1=p1, p2=P2_NONE, data=b"")
+
         payload_split = [payload[x:x + MAX_CHUNK_SIZE] for x in range(0, len(payload), MAX_CHUNK_SIZE)]
         for i, p in enumerate(payload_split):
             p2 = P2_NONE
@@ -207,6 +211,15 @@ class SolanaClient:
             rapdu = self._client.exchange(CLA, ins=ins, p1=p1, p2=p2, data=p)
 
         return rapdu
+
+    def enroll_ata(self, mint_address, destination_ata, destination_address):
+        challenge = self.get_challenge()
+        self.provide_trusted_name(mint_address,
+                                  destination_ata,
+                                  destination_address,
+                                  # Values used across Trusted Name test
+                                  101,
+                                  challenge=challenge)
 
     def provide_trusted_name(self,
                              source_contract: bytes,

@@ -29,15 +29,6 @@ def craft_tx(instructions, sender_public_key):
     print(tx)
     return tx.message_data()
 
-def enroll_ata(sol, mint_address, destination_ata, destination_address):
-    challenge = sol.get_challenge()
-    sol.provide_trusted_name(mint_address,
-                             destination_ata,
-                             destination_address,
-                             # Values used across Trusted Name test
-                             101,
-                             challenge=challenge)
-
 class TestTrustedName:
 
     def test_solana_trusted_name(self, backend, scenario_navigator, root_pytest_dir):
@@ -65,7 +56,7 @@ class TestTrustedName:
         message_data = craft_tx([transfer_instruction], sender_public_key)
 
         sol = SolanaClient(backend)
-        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
 
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
@@ -104,7 +95,7 @@ class TestTrustedName:
         message_data = craft_tx([create_instruction, transfer_instruction], sender_public_key)
 
         sol = SolanaClient(backend)
-        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
         signature: bytes = sol.get_async_response().data
@@ -142,7 +133,7 @@ class TestToken2022:
         message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
-        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
         signature: bytes = sol.get_async_response().data
@@ -164,7 +155,7 @@ class TestToken2022:
         message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
-        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
         signature: bytes = sol.get_async_response().data
@@ -186,7 +177,7 @@ class TestToken2022:
         message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
-        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             navigation_helper.navigate_with_warning_and_accept()
         signature: bytes = sol.get_async_response().data
@@ -208,7 +199,7 @@ class TestToken2022:
         message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
-        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
                 navigation_helper.navigate_with_warning_and_reject()
@@ -231,7 +222,7 @@ class TestToken2022:
         message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
-        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             navigation_helper.navigate_with_warning_and_accept()
         signature: bytes = sol.get_async_response().data
@@ -254,7 +245,7 @@ class TestToken2022:
         message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
-        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             navigation_helper.navigate_with_warning_and_accept()
         signature: bytes = sol.get_async_response().data
@@ -277,7 +268,7 @@ class TestToken2022:
         message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
-        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
                 navigation_helper.navigate_with_warning_and_reject()
@@ -302,7 +293,7 @@ class TestToken2022:
         message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
-        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             navigation_helper.navigate_with_warning_and_accept()
         signature: bytes = sol.get_async_response().data
@@ -326,7 +317,7 @@ class TestToken2022:
         message_data = craft_tx([transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
-        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
         signature: bytes = sol.get_async_response().data
@@ -352,7 +343,7 @@ class TestToken2022:
         message_data = craft_tx([create_instruction, transfer_instruction], self.sender_public_key)
 
         sol = SolanaClient(backend)
-        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
         signature: bytes = sol.get_async_response().data
@@ -386,7 +377,7 @@ class TestTokenDynamic:
 
         sol = SolanaClient(backend)
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
-        enroll_ata(sol, SOL.GORK_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.GORK_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
 
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
@@ -419,7 +410,7 @@ class TestTokenDynamic:
 
         sol = SolanaClient(backend)
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.JUP_MINT_ADDRESS)
-        enroll_ata(sol, SOL.GORK_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.GORK_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
 
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
@@ -452,7 +443,7 @@ class TestTokenDynamic:
 
         sol = SolanaClient(backend)
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=True, mint_address=SOL.GORK_MINT_ADDRESS_STR)
-        enroll_ata(sol, SOL.GORK_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.GORK_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
 
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
@@ -485,7 +476,7 @@ class TestTokenDynamic:
 
         sol = SolanaClient(backend)
         sol.provide_dynamic_token(ticker="JUP_override", magnitude=6, is_token_2022=False, mint_address=SOL.JUP_MINT_ADDRESS_STR)
-        enroll_ata(sol, SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
 
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)

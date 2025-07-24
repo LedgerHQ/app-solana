@@ -5,6 +5,7 @@ from nacl.signing import VerifyKey
 
 
 PROGRAM_ID_SYSTEM = "11111111111111111111111111111111"
+PROGRAM_ID_COMPUTE_BUDGET = "ComputeBudget111111111111111111111111111111"
 
 # Fake blockhash so this example doesn't need a network connection. It should be queried from the cluster in normal use.
 FAKE_RECENT_BLOCKHASH = "11111111111111111111111111111111"
@@ -31,6 +32,11 @@ class SystemInstruction(IntEnum):
     TransferWithSeed        = 0x11
     UpgradeNonceAccount     = 0x12
 
+class ComputeBudgetInstructionType(IntEnum):
+    RequestUnits            = 0x00
+    RequestHeapFrame        = 0x01
+    SetComputeUnitLimit     = 0x02
+    SetComputeUnitPrice     = 0x03
 
 class MessageHeader:
     def __init__(self, num_required_signatures: int, num_readonly_signed_accounts: int, num_readonly_unsigned_accounts: int):
@@ -69,6 +75,18 @@ class SystemInstructionTransfer(Instruction):
         self.accounts = [AccountMeta(from_pubkey, True, True), AccountMeta(to_pubkey, False, True)]
         self.data = (SystemInstruction.Transfer).to_bytes(4, byteorder='little') + (amount).to_bytes(8, byteorder='little')
 
+class ComputeBudgetInstructionSetComputeUnitLimit(Instruction):
+    def __init__(self, units: int):
+        self.program_id = base58.b58decode(PROGRAM_ID_COMPUTE_BUDGET)
+        self.accounts = []
+        self.data = (ComputeBudgetInstructionType.SetComputeUnitLimit).to_bytes(1, byteorder='little') + (units).to_bytes(4, byteorder='little')
+
+class ComputeBudgetInstructionSetComputeUnitPrice(Instruction):
+    def __init__(self, microLamports: int):
+        self.program_id = base58.b58decode(PROGRAM_ID_COMPUTE_BUDGET)
+        self.accounts = []
+        self.data = (ComputeBudgetInstructionType.SetComputeUnitPrice).to_bytes(1, byteorder='little') + (microLamports).to_bytes(8, byteorder='little')
+
 # Cheat as we only support 1 SystemInstructionTransfer currently
 # TODO add support for multiple transfers and other instructions if the needs arises
 class CompiledInstruction:
@@ -99,12 +117,22 @@ class Message:
     compiled_instructions: List[CompiledInstruction]
 
     def __init__(self, instructions: List[Instruction]):
-        # Cheat as we only support 1 SystemInstructionTransfer currently
+        # Cheat as we only support 1 SystemInstructionTransfer currently and compute budget only
         # TODO add support for multiple transfers and other instructions if the needs arises
-        self.header = MessageHeader(2, 0, 1)
-        self.account_keys = [instructions[0].from_pubkey, instructions[0].to_pubkey, instructions[0].program_id]
+        self.account_keys = []
+        for instruction in instructions:
+            if hasattr(instruction, "from_pubkey") and hasattr(instruction, "to_pubkey"):
+                self.account_keys = [instruction.from_pubkey, instruction.to_pubkey] + self.account_keys
+            if instruction.program_id not in self.account_keys:
+                self.account_keys.append(instruction.program_id)
+        self.compiled_instructions = []
+        for instruction in instructions:
+            accountIndexes = []
+            if hasattr(instruction, "from_pubkey") and hasattr(instruction, "to_pubkey"):
+                accountIndexes = [self.account_keys.index(instruction.from_pubkey), self.account_keys.index(instruction.to_pubkey)]
+            self.compiled_instructions.append(CompiledInstruction(self.account_keys.index(instruction.program_id), accountIndexes, instruction.data))
+        self.header = MessageHeader(2, 0, len(self.account_keys) - 2)
         self.recent_blockhash = base58.b58decode(FAKE_RECENT_BLOCKHASH)
-        self.compiled_instructions = [CompiledInstruction(2, [0, 1], instructions[0].data)]
 
     def serialize(self) -> bytes:
         serialized: bytes = self.header.serialize()
@@ -113,7 +141,8 @@ class Message:
             serialized += account_key
         serialized += self.recent_blockhash
         serialized += len(self.compiled_instructions).to_bytes(1, byteorder='little')
-        serialized += self.compiled_instructions[0].serialize()
+        for instruction in self.compiled_instructions:
+            serialized += instruction.serialize()
         return serialized
 
 def is_printable_ascii(string: str) -> bool:
@@ -166,7 +195,7 @@ class v0_OffchainMessage:
                 self.format = MessageFormat.ExtendedUtf8
             else:
                 raise ValueError()
-        
+
         self.signer_pubkey = signer_pubkey
         self.message = message
 
@@ -197,7 +226,7 @@ class OffchainMessage:
         self.version = version
         # Ensure app_domain is exactly 32 bytes, pad with zeros if necessary
         self.app_domain = app_domain.ljust(32, b'\x00')[:32]
-        
+
         if version == 0:
             self.message = v0_OffchainMessage(message, signer_pubkey)
         else:

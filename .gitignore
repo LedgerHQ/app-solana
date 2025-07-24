@@ -16,4 +16,7 @@ __pycache__
 .pyc
 *~
 
-tests/python/snapshots-tmp/
+snapshots-tmp/
+
+tests/swap/.test_dependencies/app-ethereum
+tests/swap/.test_dependencies/app-exchange
