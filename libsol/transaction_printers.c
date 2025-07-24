@@ -294,8 +294,8 @@ static int print_stake_split_with_seed(const PrintConfig *print_config,
         base = aws_info->base;
         seed = &aws_info->seed;
     } else {
-        const SystemCreateAccountWithSeedInfo *cws_info =
-            &infos[0]->system.create_account_with_seed;
+        const SystemCreateAccountWithSeedInfo *cws_info = &infos[0]
+                                                               ->system.create_account_with_seed;
         base = cws_info->base;
         seed = &cws_info->seed;
     }
@@ -572,8 +572,8 @@ static int print_spl_associated_token_account_create_with_transfer(const PrintCo
                                                                    size_t infos_length) {
     UNUSED(infos_length);
 
-    const SplAssociatedTokenAccountCreateInfo *c_info =
-        &infos[0]->spl_associated_token_account.create;
+    const SplAssociatedTokenAccountCreateInfo *c_info = &infos[0]
+                                                             ->spl_associated_token_account.create;
     SplTokenInfo spl_token = infos[1]->spl_token;
     const SplTokenTransferInfo *t_info = &spl_token.transfer;
 
@@ -591,14 +591,19 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
         case 1:
             switch (infos[0]->kind) {
                 case ProgramIdSystem:
+                    PRINTF("Handling ProgramIdSystem\n");
                     return print_system_info(&(infos[0]->system), print_config);
                 case ProgramIdStake:
+                    PRINTF("Handling ProgramIdStake\n");
                     return print_stake_info(&(infos[0]->stake), print_config);
                 case ProgramIdVote:
+                    PRINTF("Handling ProgramIdVote\n");
                     return print_vote_info(&(infos[0]->vote), print_config);
                 case ProgramIdSplToken:
+                    PRINTF("Handling ProgramIdSplToken\n");
                     return print_spl_token_info(&(infos[0]->spl_token), print_config);
                 case ProgramIdSplAssociatedTokenAccount:
+                    PRINTF("Handling ProgramIdSplAssociatedTokenAccount\n");
                     return print_spl_associated_token_account_info(
                         &(infos[0]->spl_associated_token_account),
                         print_config);
@@ -606,8 +611,13 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
                 case ProgramIdSplMemo:
                 case ProgramIdComputeBudget:
                 case ProgramIdUnknown:
-                    break;
+                    PRINTF("Unhandled info kind %d\n", infos[0]->kind);
+                    return -1;
+                default:
+                    PRINTF("Unrecognized info kind %d\n", infos[0]->kind);
+                    return -1;
             }
+            // Unreachable
             break;
 
         case 2:
@@ -682,6 +692,7 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
             break;
 
         default:
+            PRINTF("Unsupported infos_length %d\n", infos_length);
             break;
     }
 
@@ -713,17 +724,17 @@ InstructionInfo *const *preprocess_compute_budget_instructions(const PrintConfig
         for (size_t info_idx = 0; info_idx < infos_length_initial; ++info_idx) {
             InstructionInfo *instruction_info = infos[0];
             if (instruction_info->kind == ProgramIdComputeBudget) {
-                compute_budget_fee_info.signatures_count =
-                    instruction_info->compute_budget.signatures_count;
+                compute_budget_fee_info.signatures_count = instruction_info->compute_budget
+                                                               .signatures_count;
                 // Unit limit and unit price needs to be aggregated
                 // before displaying as this is needed for calculating max fee properly
                 if (instruction_info->compute_budget.kind == ComputeBudgetChangeUnitLimit) {
-                    compute_budget_fee_info.change_unit_limit =
-                        &instruction_info->compute_budget.change_unit_limit;
+                    compute_budget_fee_info.change_unit_limit = &instruction_info->compute_budget
+                                                                     .change_unit_limit;
                 }
                 if (instruction_info->compute_budget.kind == ComputeBudgetChangeUnitPrice) {
-                    compute_budget_fee_info.change_unit_price =
-                        &instruction_info->compute_budget.change_unit_price;
+                    compute_budget_fee_info.change_unit_price = &instruction_info->compute_budget
+                                                                     .change_unit_price;
                 }
                 infos++;
                 (*infos_length)--;
@@ -744,6 +755,7 @@ int print_transaction(const PrintConfig *print_config,
                       size_t infos_length) {
     // Additional nonce info might be present at first position of in info list
     if ((infos_length > 1) && is_advance_nonce_account(infos[0])) {
+        PRINTF("Skip nonce\n");
         const InstructionInfo *nonce_info = infos[0];
         print_system_nonced_transaction_sentinel(&(nonce_info->system), print_config);
         // offset parameters given to print_transaction_nonce_processed()
@@ -753,5 +765,10 @@ int print_transaction(const PrintConfig *print_config,
 
     infos = preprocess_compute_budget_instructions(print_config, infos, &infos_length);
 
-    return print_transaction_nonce_processed(print_config, infos, infos_length);
+    if (print_transaction_nonce_processed(print_config, infos, infos_length) != 0) {
+        PRINTF("Error !print_transaction_nonce_processed\n");
+        return -1;
+    }
+
+    return 0;
 }

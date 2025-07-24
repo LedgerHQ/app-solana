@@ -11,13 +11,9 @@ bool check_ata_against_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
     return true;
 }
 
-int get_transfer_to_address(char **to_address) {
-    (void) to_address;
-    return 0;
-}
+const char *address = "trusted_address";
 
-const char *get_dynamic_token_symbol(const uint8_t *mint_address, bool is_token_2022_kind) {
-    (void) mint_address;
-    (void) is_token_2022_kind;
-    return NULL;
+int get_transfer_to_address(const char **to_address) {
+    *to_address = address;
+    return 0;
 }

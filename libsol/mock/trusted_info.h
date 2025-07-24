@@ -21,7 +21,7 @@ bool check_ata_against_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
                                     const uint8_t dest_account[PUBKEY_LENGTH],
                                     bool is_token_2022);
 
-int get_transfer_to_address(char **to_address);
+int get_transfer_to_address(const char **to_address);
 
 // DYNAMIC TOKEN //
 
@@ -38,5 +38,3 @@ typedef struct dynamic_token_info_s {
 } dynamic_token_info_t;
 
 // extern dynamic_token_info_t g_dynamic_token_info;
-
-const char *get_dynamic_token_symbol(const uint8_t *mint_address, bool is_token_2022_kind);

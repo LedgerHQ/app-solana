@@ -1,3 +1,4 @@
+#include "os.h"
 #include "common_byte_strings.h"
 #include "instruction.h"
 #include "sol/parser.h"
@@ -9,6 +10,7 @@
 #include "sol/parser.h"
 #include "ed25519_helpers.h"
 #include "trusted_info.h"
+#include "dynamic_token_info.h"
 
 #include "spl_token_instruction.h"
 
@@ -239,11 +241,11 @@ static int parse_transfer_spl_token_instruction(Parser *parser,
         BAIL_IF(parse_spl_token_sign(&it, &info->sign));
     }
 
-    if (!check_ata_agaisnt_trusted_info(info->src_account->data,
+    if (!check_ata_against_trusted_info(info->src_account->data,
                                         info->mint_account->data,
                                         info->dest_account->data,
                                         is_token2022_kind)) {
-        PRINTF("check_ata_agaisnt_trusted_info failed\n");
+        PRINTF("check_ata_against_trusted_info failed\n");
         return -1;
     }
 
@@ -658,16 +660,6 @@ static int print_spl_token_initialize_multisig_info(const char *primary_title,
     return 0;
 }
 
-const char *get_token_symbol(const uint8_t *mint_address, bool is_token_2022_kind) {
-    const char *ret;
-    ret = get_dynamic_token_symbol(mint_address, is_token_2022_kind);
-    if (ret == NULL) {
-        PRINTF("No dynamic token info received, fallback on hardcoded list\n");
-        ret = get_hardcoded_token_symbol(mint_address);
-    }
-    return ret;
-}
-
 int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
                                   const PrintConfig *print_config,
                                   bool is_token2022_kind,
@@ -681,6 +673,7 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
     }
 
     const char *symbol = get_token_symbol(info->mint_account->data, is_token2022_kind);
+    PRINTF("symbol = %s\n", symbol);
 
     summary_item_set_token_amount(item,
                                   "Transfer tokens",
@@ -699,7 +692,7 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
         }
     }
 
-    char *to_address;
+    const char *to_address;
     if (get_transfer_to_address(&to_address) != 0) {
         return -1;
     }

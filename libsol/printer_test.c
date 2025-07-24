@@ -1,4 +1,5 @@
 #include "printer.c"
+#include "test_utils.h"
 #include <assert.h>
 #include <stdio.h>
 
@@ -143,14 +144,14 @@ void test_print_timestamp() {
 }
 
 int main() {
-    test_print_amount();
-    test_print_token_amount();
-    test_print_sized_string();
-    test_print_string();
-    test_print_summary();
-    test_print_i64();
-    test_print_u64();
-    test_print_timestamp();
+    RUN_TEST(test_print_amount);
+    RUN_TEST(test_print_token_amount);
+    RUN_TEST(test_print_sized_string);
+    RUN_TEST(test_print_string);
+    RUN_TEST(test_print_summary);
+    RUN_TEST(test_print_i64);
+    RUN_TEST(test_print_u64);
+    RUN_TEST(test_print_timestamp);
 
     printf("passed\n");
     return 0;

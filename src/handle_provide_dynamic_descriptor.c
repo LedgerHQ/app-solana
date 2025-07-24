@@ -8,6 +8,7 @@
 #include "handle_get_challenge.h"
 #include "base58.h"
 #include "trusted_info.h"
+#include "dynamic_token_info.h"
 
 #include "sol/printer.h"
 

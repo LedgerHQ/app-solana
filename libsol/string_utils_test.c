@@ -1,4 +1,5 @@
 #include "include/sol/string_utils.h"
+#include "test_utils.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -79,18 +80,18 @@ void test_is_utf8_invalid_null() {
 }
 
 int main() {
-    test_is_ascii();
-    test_is_ascii_invalid_end_char();
-    test_is_ascii_invalid_emoji();
-    test_is_ascii_invalid_null();
+    RUN_TEST(test_is_ascii);
+    RUN_TEST(test_is_ascii_invalid_end_char);
+    RUN_TEST(test_is_ascii_invalid_emoji);
+    RUN_TEST(test_is_ascii_invalid_null);
 
-    test_is_utf8();
-    test_is_utf8_2();
-    test_is_utf8_invalid_1();
-    test_is_utf8_invalid_overlong();
-    test_is_utf8_invalid_surrogate();
-    test_is_utf8_invalid_3();
-    test_is_utf8_invalid_null();
+    RUN_TEST(test_is_utf8);
+    RUN_TEST(test_is_utf8_2);
+    RUN_TEST(test_is_utf8_invalid_1);
+    RUN_TEST(test_is_utf8_invalid_overlong);
+    RUN_TEST(test_is_utf8_invalid_surrogate);
+    RUN_TEST(test_is_utf8_invalid_3);
+    RUN_TEST(test_is_utf8_invalid_null);
 
     printf("passed\n");
     return 0;

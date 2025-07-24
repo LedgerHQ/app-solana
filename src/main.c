@@ -19,6 +19,7 @@
 #include "handle_get_pubkey.h"
 #include "handle_sign_message.h"
 #include "handle_sign_offchain_message.h"
+#include "handle_provide_instruction_descriptor.h"
 #include "handle_get_challenge.h"
 #include "handle_provide_trusted_info.h"
 #include "handle_provide_dynamic_descriptor.h"
@@ -82,12 +83,15 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
 
         case InsDeprecatedSignMessage:
         case InsSignMessage:
-            handle_sign_message_parse_message(tx);
-            handle_sign_message_ui(flags);
+            handle_sign_message_parse_message(flags, tx);
             break;
 
         case InsSignOffchainMessage:
             handle_sign_offchain_message(flags, tx);
+            break;
+
+        case InsProvideInstructionDescriptor:
+            handle_provide_instruction_descriptor();
             break;
 
         case InsTrustedInfoGetChallenge:
@@ -102,7 +106,13 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
             handle_provide_dynamic_descriptor();
             break;
 
+            // case InsTrustedInfoProvideDynamicDescriptor:
+            //     handle_provide_dynamic_descriptor();
+            //     break;
+
         default:
+            // Should have been caught by apdu_handle_message
+            PRINTF("Received unknown instruction %d\n", G_command.instruction);
             THROW(ApduReplyUnimplementedInstruction);
     }
 }
