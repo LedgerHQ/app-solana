@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 #pragma once
 
-void mcu_usb_prints(const char *str, unsigned int charcount);
+void os_io_seph_cmd_printf(const char *str, uint16_t charcount);
