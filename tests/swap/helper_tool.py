@@ -44,7 +44,7 @@ def run_cmd(cmd: str,
                          stderr=subprocess.STDOUT,
                          universal_newlines=True,
                          cwd=cwd)
-    if if not no_throw and ret.returncode:
+    if not no_throw and ret.returncode:
         print(f"[run_cmd] Error {ret.returncode} raised while running cmd: {cmd}")
         print("[run_cmd] Output was:")
         print(ret.stdout)
