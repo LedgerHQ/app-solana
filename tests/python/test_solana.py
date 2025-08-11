@@ -98,7 +98,7 @@ class TestOffchainMessageSigning:
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
             scenario_navigator.review_approve(path=root_pytest_dir,
-                                              custom_screen_text=r"(Approve|Hold to sign)")
+                                              custom_screen_text=r"(Sign message|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -146,7 +146,7 @@ class TestOffchainMessageSigning:
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
             scenario_navigator.review_approve(path=root_pytest_dir,
                                               test_name=test_name + "_2",
-                                              custom_screen_text=r"(Approve|Hold to sign)")
+                                              custom_screen_text=r"(Sign message|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -236,7 +236,7 @@ class TestOffchainMessageSigning:
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
             scenario_navigator.review_approve(path=root_pytest_dir,
                                               test_name=test_name + "_2",
-                                              custom_screen_text=r"(Approve|Hold to sign)")
+                                              custom_screen_text=r"(Sign message|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -271,7 +271,7 @@ class TestOffchainMessageSigning:
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
             scenario_navigator.review_approve(path=root_pytest_dir,
                                               test_name=test_name + "_3",
-                                              custom_screen_text=r"(Approve|Hold to sign)")
+                                              custom_screen_text=r"(Sign message|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)

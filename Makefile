@@ -26,8 +26,6 @@ ifeq ($(BOLOS_SDK),)
 $(error Environment variable BOLOS_SDK is not set)
 endif
 
-include $(BOLOS_SDK)/Makefile.defines
-
 ########################################
 #        Mandatory configuration       #
 ########################################
@@ -44,11 +42,12 @@ APPVERSION = "$(APPVERSION_M).$(APPVERSION_N).$(APPVERSION_P)"
 APP_SOURCE_PATH += src
 
 # Application icons
-ICON_NANOS = icons/nanos_app_solana.gif
-ICON_NANOX = icons/nanox_app_solana.gif
-ICON_NANOSP = icons/nanox_app_solana.gif
-ICON_STAX = icons/stax_app_solana.gif
-ICON_FLEX = icons/flex_app_solana.gif
+ICON_NANOX = icons/icon_solana_14px.gif
+ICON_NANOSP = icons/icon_solana_14px.gif
+ICON_STAX = icons/icon_solana_32px.gif
+ICON_FLEX = icons/icon_solana_40px.gif
+
+ICON_HOME_NANO = glyphs/home_boilerplate_14px.gif
 
 # Application allowed derivation curves
 CURVE_APP_LOAD_PARAMS = ed25519
@@ -62,13 +61,6 @@ VARIANT_VALUES = solana
 
 # Enabling DEBUG flag will enable PRINTF and disable optimizations
 # DEBUG = 1
-
-########################################
-#     Application custom permissions   #
-########################################
-ifeq ($(TARGET_NAME),$(filter $(TARGET_NAME),TARGET_NANOX TARGET_STAX TARGET_FLEX))
-HAVE_APPLICATION_FLAG_BOLOS_SETTINGS = 1
-endif
 
 # --8<-- [start:variables]
 ########################################
@@ -85,6 +77,11 @@ ENABLE_NBGL_QRCODE = 1
 #            Swap features             #
 ########################################
 ENABLE_SWAP = 1
+
+########################################
+#             UI features              #
+########################################
+ENABLE_NBGL_FOR_NANO_DEVICES = 1
 # --8<-- [end:variables]
 
 ########################################

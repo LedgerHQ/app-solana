@@ -25,16 +25,13 @@
 #include "handle_provide_dynamic_descriptor.h"
 #include "apdu.h"
 #include "ui_api.h"
+#include "nbgl_use_case.h"
 
 // Swap feature
 #include "swap_lib_calls.h"
 #include "handle_swap_sign_transaction.h"
 #include "handle_get_printable_amount.h"
 #include "handle_check_address.h"
-
-#ifdef HAVE_NBGL
-#include "nbgl_use_case.h"
-#endif
 
 ApduCommand G_command;
 
@@ -129,11 +126,7 @@ void nv_app_state_init() {
     if (N_storage.initialized != 0x01) {
         internalStorage_t storage;
         storage.settings.allow_blind_sign = BlindSignDisabled;
-#if !defined(TARGET_NANOS)
         storage.settings.pubkey_display = PubkeyDisplayLong;
-#else
-        storage.settings.pubkey_display = PubkeyDisplayShort;
-#endif
         storage.settings.display_mode = DisplayModeUser;
         storage.initialized = 0x01;
         nvm_write((void *) &N_storage, (void *) &storage, sizeof(internalStorage_t));
