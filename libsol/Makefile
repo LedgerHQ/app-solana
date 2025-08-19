@@ -20,7 +20,7 @@ CFLAGS += -Werror -Wall -Wextra -pedantic -Wshadow -Wcast-qual -Wcast-align -Wno
 CFLAGS += -fPIC
 CFLAGS += -Iinclude -Imock -I${FLEX_SDK}/include -I${FLEX_SDK}/io/include -I${FLEX_SDK}/target/flex/include/
 CFLAGS += $($(mode)_CFLAGS)
-CFLAGS += -D PRINTF=mcu_usb_printf -D HAVE_PRINTF
+# CFLAGS += -D PRINTF=mcu_usb_printf -D HAVE_PRINTF
 
 ifeq ($(COVERAGE),1)
 	CFLAGS += --coverage
