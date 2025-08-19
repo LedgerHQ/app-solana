@@ -33,7 +33,7 @@
 #include "handle_get_printable_amount.h"
 #include "handle_check_address.h"
 
-ApduCommand G_command;
+apdu_command_t G_command;
 
 const internalStorage_t N_storage_real;
 

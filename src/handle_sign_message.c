@@ -209,6 +209,11 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
     }
 
     // All expected elements should have been received and validated
+    PRINTF("amount_ok = %d\nmint_ok = %d\ndest_ata_ok = %d\ndest_sol_address_ok = %d\n",
+           amount_ok,
+           mint_ok,
+           dest_ata_ok,
+           dest_sol_address_ok);
     return amount_ok && mint_ok && dest_ata_ok && dest_sol_address_ok;
 }
 
@@ -306,6 +311,8 @@ void handle_sign_message_parse_message(volatile unsigned int *flags, volatile un
     PrintConfig print_config;
     print_config.expert_mode = (N_storage.settings.display_mode == DisplayModeExpert);
     print_config.signer_pubkey = NULL;
+    print_config.user_input_is_ata_or_token_account = G_command.user_input_is_ata_or_token_account;
+    print_config.force_full_print = G_called_from_swap;
     MessageHeader *header = &print_config.header;
     size_t signer_index;
 
