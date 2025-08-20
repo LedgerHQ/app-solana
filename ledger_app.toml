@@ -7,5 +7,14 @@ devices = ["nanox", "nanos+", "stax", "flex"]
 trusted_name_test = "TRUSTED_NAME_TEST_KEY=1"
 dbg_trusted_name_test = "DEBUG=1 TRUSTED_NAME_TEST_KEY=1"
 
-[tests]
-pytest_directory = "./tests/python"
+[pytest.standalone]
+directory = "./tests/python/"
+
+[pytest.swap]
+directory = "./tests/swap/"
+[pytest.swap.dependencies]
+testing_with_latest = [
+    {url = "https://github.com/LedgerHQ/app-exchange", ref = "develop", use_case = "dbg_use_test_keys"},
+    {url = "https://github.com/LedgerHQ/app-ethereum", ref = "develop", use_case = "use_test_keys"},
+]
+
