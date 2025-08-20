@@ -685,15 +685,10 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
                                   symbol,
                                   info->body.decimals);
 
-    item = transaction_summary_general_item();
-    if (info->is_transfer_checked_with_fee) {
-        if (info->transfer_checked_with_fee_amount != 0) {
-            summary_item_set_token_amount(item,
-                                          "Token transfer fee",
-                                          info->transfer_checked_with_fee_amount,
-                                          symbol,
-                                          info->body.decimals);
-        }
+    if (print_config->force_full_print || unknown_mint) {
+        PRINTF("Mint account print\n");
+        item = transaction_summary_general_item();
+        summary_item_set_pubkey(item, "Token address", info->mint_account);
     }
 
     if (print_config->force_full_print || !print_config->user_input_is_ata_or_token_account) {
@@ -712,10 +707,15 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
         summary_item_set_pubkey(item, "To (token account)", info->dest_account);
     }
 
-    if (print_config->force_full_print || unknown_mint) {
-        PRINTF("Mint account print\n");
-        item = transaction_summary_general_item();
-        summary_item_set_pubkey(item, "Token address", info->mint_account);
+    item = transaction_summary_general_item();
+    if (info->is_transfer_checked_with_fee) {
+        if (info->transfer_checked_with_fee_amount != 0) {
+            summary_item_set_token_amount(item,
+                                          "Token transfer fee",
+                                          info->transfer_checked_with_fee_amount,
+                                          symbol,
+                                          info->body.decimals);
+        }
     }
 
     transaction_summary_set_token_fee_warning(is_token2022_kind &&

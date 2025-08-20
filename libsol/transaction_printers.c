@@ -572,131 +572,17 @@ static int print_spl_associated_token_account_create_with_transfer(const PrintCo
                                                                    size_t infos_length) {
     UNUSED(infos_length);
 
+    // Unused currently as the additional fees are bundled with the computed fees
     const SplAssociatedTokenAccountCreateInfo *c_info = &infos[0]
                                                              ->spl_associated_token_account.create;
+    UNUSED(c_info);
+
     SplTokenInfo spl_token = infos[1]->spl_token;
     const SplTokenTransferInfo *t_info = &spl_token.transfer;
 
-    print_spl_associated_token_account_create_info(c_info, print_config);
-    print_spl_token_transfer_info(t_info, print_config, spl_token.is_token2022_kind, false);
+    print_spl_token_transfer_info(t_info, print_config, spl_token.is_token2022_kind, true);
 
     return 0;
-}
-
-static int print_transaction_nonce_processed(const PrintConfig *print_config,
-                                             InstructionInfo *const *infos,
-                                             size_t infos_length) {
-    PRINTF("infos_length = %d\n", infos_length);
-    switch (infos_length) {
-        case 1:
-            switch (infos[0]->kind) {
-                case ProgramIdSystem:
-                    PRINTF("Handling ProgramIdSystem\n");
-                    return print_system_info(&(infos[0]->system), print_config);
-                case ProgramIdStake:
-                    PRINTF("Handling ProgramIdStake\n");
-                    return print_stake_info(&(infos[0]->stake), print_config);
-                case ProgramIdVote:
-                    PRINTF("Handling ProgramIdVote\n");
-                    return print_vote_info(&(infos[0]->vote), print_config);
-                case ProgramIdSplToken:
-                    PRINTF("Handling ProgramIdSplToken\n");
-                    return print_spl_token_info(&(infos[0]->spl_token), print_config);
-                case ProgramIdSplAssociatedTokenAccount:
-                    PRINTF("Handling ProgramIdSplAssociatedTokenAccount\n");
-                    return print_spl_associated_token_account_info(
-                        &(infos[0]->spl_associated_token_account),
-                        print_config);
-                case ProgramIdSerumAssertOwner:
-                case ProgramIdSplMemo:
-                case ProgramIdComputeBudget:
-                case ProgramIdUnknown:
-                    PRINTF("Unhandled info kind %d\n", infos[0]->kind);
-                    return -1;
-                default:
-                    PRINTF("Unrecognized info kind %d\n", infos[0]->kind);
-                    return -1;
-            }
-            // Unreachable
-            break;
-
-        case 2:
-            if (is_create_stake_account(infos, infos_length) ||
-                is_create_stake_account_checked(infos, infos_length)) {
-                return print_create_stake_account(print_config, infos, infos_length);
-            } else if (is_create_stake_account_with_seed(infos, infos_length) ||
-                       is_create_stake_account_with_seed_checked(infos, infos_length)) {
-                return print_create_stake_account_with_seed(print_config, infos, infos_length);
-            } else if (is_create_nonce_account(infos, infos_length)) {
-                return print_create_nonce_account(print_config, infos, infos_length);
-            } else if (is_create_nonce_account_with_seed(infos, infos_length)) {
-                return print_create_nonce_account_with_seed(print_config, infos, infos_length);
-            } else if (is_create_vote_account(infos, infos_length)) {
-                return print_create_vote_account(print_config, infos, infos_length);
-            } else if (is_create_vote_account_with_seed(infos, infos_length)) {
-                return print_create_vote_account_with_seed(print_config, infos, infos_length);
-            } else if (is_stake_authorize_both(infos, infos_length) ||
-                       is_stake_authorize_checked_both(infos, infos_length)) {
-                return print_stake_authorize_both(print_config, infos, infos_length);
-            } else if (is_vote_authorize_both(infos, infos_length) ||
-                       is_vote_authorize_checked_both(infos, infos_length)) {
-                return print_vote_authorize_both(print_config, infos, infos_length);
-            } else if (is_stake_split_with_seed_v1_1(infos, infos_length)) {
-                return print_stake_split_with_seed(print_config, infos, infos_length, true);
-            } else if (is_stake_split_v1_2(infos, infos_length)) {
-                // System create account is issued with zero lamports in this
-                // case, so it has no interesting info to add. Print stake
-                // split as if it were a single instruction
-                return print_stake_info(&infos[1]->stake, print_config);
-            } else if (is_stake_split_with_seed_v1_2(infos, infos_length)) {
-                return print_stake_split_with_seed(print_config, infos, infos_length, false);
-            } else if (is_spl_token_create_mint(infos, infos_length)) {
-                return print_spl_token_create_mint(print_config, infos, infos_length);
-            } else if (is_spl_token_create_account(infos, infos_length) ||
-                       is_spl_token_create_account2(infos, infos_length)) {
-                return print_spl_token_create_account(print_config, infos, infos_length);
-            } else if (is_spl_token_create_multisig(infos, infos_length)) {
-                return print_spl_token_create_multisig(print_config, infos, infos_length);
-            } else if (is_spl_associated_token_account_create_with_transfer(infos, infos_length)) {
-                return print_spl_associated_token_account_create_with_transfer(print_config,
-                                                                               infos,
-                                                                               infos_length);
-            } else if (is_spl_associated_token_account_create_with_transfer_fee(infos,
-                                                                                infos_length)) {
-                // Also call print_spl_associated_token_account_create_with_transfer
-                return print_spl_associated_token_account_create_with_transfer(print_config,
-                                                                               infos,
-                                                                               infos_length);
-            }
-            break;
-
-        case 3:
-            if (is_create_stake_account_and_delegate(infos, infos_length)) {
-                return print_create_stake_account_and_delegate(print_config, infos, infos_length);
-            } else if (is_create_stake_account_with_seed_and_delegate(infos, infos_length)) {
-                return print_create_stake_account_with_seed_and_delegate(print_config,
-                                                                         infos,
-                                                                         infos_length);
-            } else if (is_stake_split_v1_1(infos, infos_length)) {
-                // System allocate/assign have no interesting info, print
-                // stake split as if it were a single instruction
-                return print_stake_info(&infos[2]->stake, print_config);
-            } else if (is_stake_split_with_seed_v1_3(infos, infos_length)) {
-                return print_prefunded_split_with_seed(print_config, infos, infos_length);
-            }
-            break;
-        case 4:
-            if (is_stake_split_v1_3(infos, infos_length)) {
-                return print_prefunded_split(print_config, infos, infos_length);
-            }
-            break;
-
-        default:
-            PRINTF("Unsupported infos_length %d\n", infos_length);
-            break;
-    }
-
-    return 1;
 }
 
 int print_spl_token_extension_warning() {
@@ -708,46 +594,203 @@ int print_spl_token_extension_warning() {
     return 0;
 }
 
-InstructionInfo *const *preprocess_compute_budget_instructions(const PrintConfig *print_config,
-                                                               InstructionInfo *const *infos,
-                                                               size_t *infos_length) {
+InstructionInfo *const *preprocess_compute_budget_instructions(
+    InstructionInfo *const *infos,
+    size_t *infos_length,
+    ComputeBudgetFeeInfo *compute_budget_fee_info) {
     size_t infos_length_initial = *infos_length;
+    explicit_bzero(compute_budget_fee_info, sizeof(*compute_budget_fee_info));
     if (infos_length_initial > 1) {
         // Iterate over infos and print compute budget instructions and offset pointers
         // Handle ComputeBudget instructions first due to tech limitations of the
         // print_transaction_nonce_processed. We can get one or 4 ComputeBudget instructions in a
         // single transaction, so we are not able to handle it in a static switch case.
-        ComputeBudgetFeeInfo compute_budget_fee_info = {.change_unit_limit = NULL,
-                                                        .change_unit_price = NULL,
-                                                        .instructions_count = infos_length_initial,
-                                                        .signatures_count = 0};
+        compute_budget_fee_info->change_unit_limit = NULL;
+        compute_budget_fee_info->change_unit_price = NULL;
+        compute_budget_fee_info->instructions_count = infos_length_initial;
+        compute_budget_fee_info->signatures_count = 0;
         for (size_t info_idx = 0; info_idx < infos_length_initial; ++info_idx) {
             InstructionInfo *instruction_info = infos[0];
             if (instruction_info->kind == ProgramIdComputeBudget) {
-                compute_budget_fee_info.signatures_count = instruction_info->compute_budget
-                                                               .signatures_count;
+                compute_budget_fee_info->signatures_count = instruction_info->compute_budget
+                                                                .signatures_count;
                 // Unit limit and unit price needs to be aggregated
                 // before displaying as this is needed for calculating max fee properly
                 if (instruction_info->compute_budget.kind == ComputeBudgetChangeUnitLimit) {
-                    compute_budget_fee_info.change_unit_limit = &instruction_info->compute_budget
-                                                                     .change_unit_limit;
+                    compute_budget_fee_info->change_unit_limit = &instruction_info->compute_budget
+                                                                      .change_unit_limit;
                 }
                 if (instruction_info->compute_budget.kind == ComputeBudgetChangeUnitPrice) {
-                    compute_budget_fee_info.change_unit_price = &instruction_info->compute_budget
-                                                                     .change_unit_price;
+                    compute_budget_fee_info->change_unit_price = &instruction_info->compute_budget
+                                                                      .change_unit_price;
                 }
                 infos++;
                 (*infos_length)--;
             }
         }
-        if (compute_budget_fee_info.change_unit_limit ||
-            compute_budget_fee_info.change_unit_price) {
-            // We do not want to display anything related to the compute budget
-            // if no instructions of this type were present in the transaction
-            print_compute_budget(&compute_budget_fee_info, print_config);
-        }
     }
     return infos;
+}
+
+static int print_transaction_nonce_processed(const PrintConfig *print_config,
+                                             InstructionInfo *const *infos,
+                                             size_t infos_length) {
+    int print_ret = 0;
+    uint32_t transaction_max_fee = 0;
+
+    // Extract compute budget from infos but don't print yet
+    ComputeBudgetFeeInfo compute_budget_fee_info;
+    infos = preprocess_compute_budget_instructions(infos, &infos_length, &compute_budget_fee_info);
+    if (compute_budget_fee_info.change_unit_limit || compute_budget_fee_info.change_unit_price) {
+        PRINTF("Compute budget set, calculating max fees\n");
+        transaction_max_fee = calculate_max_fee(&compute_budget_fee_info);
+    }
+
+    PRINTF("infos_length = %d\n", infos_length);
+    switch (infos_length) {
+        case 1:
+            switch (infos[0]->kind) {
+                case ProgramIdSystem:
+                    PRINTF("Handle with print_system_info\n");
+                    print_ret = print_system_info(&(infos[0]->system), print_config);
+                    break;
+                case ProgramIdStake:
+                    PRINTF("Handle with print_stake_info\n");
+                    print_ret = print_stake_info(&(infos[0]->stake), print_config);
+                    break;
+                case ProgramIdVote:
+                    PRINTF("Handle with print_vote_info\n");
+                    print_ret = print_vote_info(&(infos[0]->vote), print_config);
+                    break;
+                case ProgramIdSplToken:
+                    PRINTF("Handle with print_spl_token_info\n");
+                    print_ret = print_spl_token_info(&(infos[0]->spl_token), print_config);
+                    break;
+                case ProgramIdSplAssociatedTokenAccount:
+                    PRINTF("Handle with print_spl_associated_token_account_info\n");
+                    print_ret = print_spl_associated_token_account_info(
+                        &(infos[0]->spl_associated_token_account),
+                        print_config);
+                    break;
+                case ProgramIdSerumAssertOwner:
+                case ProgramIdSplMemo:
+                case ProgramIdComputeBudget:
+                case ProgramIdUnknown:
+                    PRINTF("Unhandled info kind %d\n", infos[0]->kind);
+                    return -1;
+                default:
+                    PRINTF("Unrecognized info kind %d\n", infos[0]->kind);
+                    return -1;
+            }
+            break;
+
+        case 2:
+            if (is_create_stake_account(infos, infos_length) ||
+                is_create_stake_account_checked(infos, infos_length)) {
+                PRINTF("Handle with print_create_stake_account\n");
+                print_ret = print_create_stake_account(print_config, infos, infos_length);
+            } else if (is_create_stake_account_with_seed(infos, infos_length) ||
+                       is_create_stake_account_with_seed_checked(infos, infos_length)) {
+                PRINTF("Handle with print_create_stake_account_with_seed\n");
+                print_ret = print_create_stake_account_with_seed(print_config, infos, infos_length);
+            } else if (is_create_nonce_account(infos, infos_length)) {
+                PRINTF("Handle with print_create_nonce_account\n");
+                print_ret = print_create_nonce_account(print_config, infos, infos_length);
+            } else if (is_create_nonce_account_with_seed(infos, infos_length)) {
+                PRINTF("Handle with print_create_nonce_account_with_seed\n");
+                print_ret = print_create_nonce_account_with_seed(print_config, infos, infos_length);
+            } else if (is_create_vote_account(infos, infos_length)) {
+                PRINTF("Handle with print_create_vote_account\n");
+                print_ret = print_create_vote_account(print_config, infos, infos_length);
+            } else if (is_create_vote_account_with_seed(infos, infos_length)) {
+                PRINTF("Handle with print_create_vote_account_with_seed\n");
+                print_ret = print_create_vote_account_with_seed(print_config, infos, infos_length);
+            } else if (is_stake_authorize_both(infos, infos_length) ||
+                       is_stake_authorize_checked_both(infos, infos_length)) {
+                PRINTF("Handle with print_stake_authorize_both\n");
+                print_ret = print_stake_authorize_both(print_config, infos, infos_length);
+            } else if (is_vote_authorize_both(infos, infos_length) ||
+                       is_vote_authorize_checked_both(infos, infos_length)) {
+                PRINTF("Handle with print_vote_authorize_both\n");
+                print_ret = print_vote_authorize_both(print_config, infos, infos_length);
+            } else if (is_stake_split_with_seed_v1_1(infos, infos_length)) {
+                PRINTF("Handle with print_stake_split_with_seed\n");
+                print_ret = print_stake_split_with_seed(print_config, infos, infos_length, true);
+            } else if (is_stake_split_v1_2(infos, infos_length)) {
+                // System create account is issued with zero lamports in this
+                // case, so it has no interesting info to add. Print stake
+                // split as if it were a single instruction
+                PRINTF("Handle with print_stake_info\n");
+                print_ret = print_stake_info(&infos[1]->stake, print_config);
+            } else if (is_stake_split_with_seed_v1_2(infos, infos_length)) {
+                PRINTF("Handle with print_stake_split_with_seed\n");
+                print_ret = print_stake_split_with_seed(print_config, infos, infos_length, false);
+            } else if (is_spl_token_create_mint(infos, infos_length)) {
+                PRINTF("Handle with print_spl_token_create_mint\n");
+                print_ret = print_spl_token_create_mint(print_config, infos, infos_length);
+            } else if (is_spl_token_create_account(infos, infos_length) ||
+                       is_spl_token_create_account2(infos, infos_length)) {
+                PRINTF("Handle with print_spl_token_create_account\n");
+                print_ret = print_spl_token_create_account(print_config, infos, infos_length);
+            } else if (is_spl_token_create_multisig(infos, infos_length)) {
+                PRINTF("Handle with print_spl_token_create_multisig\n");
+                print_ret = print_spl_token_create_multisig(print_config, infos, infos_length);
+            } else if (is_spl_associated_token_account_create_with_transfer(infos, infos_length) ||
+                       is_spl_associated_token_account_create_with_transfer_fee(infos,
+                                                                                infos_length)) {
+                PRINTF("Handle with print_spl_associated_token_account_create_with_transfer\n");
+                PRINTF("Adding hard coded rent-exempt balance to max fees\n");
+                transaction_max_fee += 2039280;
+                print_ret = print_spl_associated_token_account_create_with_transfer(print_config,
+                                                                                    infos,
+                                                                                    infos_length);
+            }
+            break;
+
+        case 3:
+            if (is_create_stake_account_and_delegate(infos, infos_length)) {
+                PRINTF("Handle with print_create_stake_account_and_delegate\n");
+                print_ret = print_create_stake_account_and_delegate(print_config,
+                                                                    infos,
+                                                                    infos_length);
+            } else if (is_create_stake_account_with_seed_and_delegate(infos, infos_length)) {
+                PRINTF("Handle with print_create_stake_account_with_seed_and_delegate\n");
+                print_ret = print_create_stake_account_with_seed_and_delegate(print_config,
+                                                                              infos,
+                                                                              infos_length);
+            } else if (is_stake_split_v1_1(infos, infos_length)) {
+                // System allocate/assign have no interesting info, print
+                // stake split as if it were a single instruction
+                PRINTF("Handle with print_stake_info\n");
+                print_ret = print_stake_info(&infos[2]->stake, print_config);
+            } else if (is_stake_split_with_seed_v1_3(infos, infos_length)) {
+                PRINTF("Handle with print_prefunded_split_with_seed\n");
+                print_ret = print_prefunded_split_with_seed(print_config, infos, infos_length);
+            }
+            break;
+        case 4:
+            if (is_stake_split_v1_3(infos, infos_length)) {
+                PRINTF("Handle with print_prefunded_split\n");
+                print_ret = print_prefunded_split(print_config, infos, infos_length);
+            }
+            break;
+
+        default:
+            PRINTF("Unsupported infos_length %d\n", infos_length);
+            break;
+    }
+
+    if (print_ret != 0) {
+        PRINTF("Handler print failed\n");
+        return print_ret;
+    }
+
+    if (transaction_max_fee != 0) {
+        PRINTF("Printing max fees\n");
+        print_compute_budget_max_fee(transaction_max_fee, print_config);
+    }
+
+    return 0;
 }
 
 int print_transaction(const PrintConfig *print_config,
@@ -762,8 +805,6 @@ int print_transaction(const PrintConfig *print_config,
         infos++;
         infos_length--;
     }
-
-    infos = preprocess_compute_budget_instructions(print_config, infos, &infos_length);
 
     if (print_transaction_nonce_processed(print_config, infos, infos_length) != 0) {
         PRINTF("Error !print_transaction_nonce_processed\n");
