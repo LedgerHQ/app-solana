@@ -125,6 +125,8 @@ size_t instruction_accounts_iterator_remaining(const InstructionAccountsIterator
     return 0;
 }
 
+// Instructions do not store the accounts they use, they only store the index of the accounts in
+// the header account array. This function resolves the indirection
 const uint8_t *get_account_from_ins(const Instruction *instruction,
                                     const MessageHeader *header,
                                     uint8_t account_index) {

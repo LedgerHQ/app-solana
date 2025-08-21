@@ -90,7 +90,7 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
             handle_sign_offchain_message(flags, tx);
             break;
 
-        case InsProvideInstructionDescriptor:
+        case InsTrustedInfoProvideInstructionDescriptor:
             handle_provide_instruction_descriptor();
             break;
 
@@ -105,10 +105,6 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
         case InsTrustedInfoProvideDynamicDescriptor:
             handle_provide_dynamic_descriptor();
             break;
-
-            // case InsTrustedInfoProvideDynamicDescriptor:
-            //     handle_provide_dynamic_descriptor();
-            //     break;
 
         default:
             // Should have been caught by apdu_handle_message

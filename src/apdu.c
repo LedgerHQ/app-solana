@@ -38,7 +38,7 @@ static int parse_apdu_header(const uint8_t *apdu_message,
         case InsGetPubkey:
         case InsSignMessage:
         case InsSignOffchainMessage:
-        case InsProvideInstructionDescriptor:
+        case InsTrustedInfoProvideInstructionDescriptor:
         case InsTrustedInfoGetChallenge:
         case InsTrustedInfoProvideInfo:
         case InsTrustedInfoProvideDynamicDescriptor:
@@ -102,7 +102,7 @@ static bool instruction_with_derivation_path_in_first_apdu(uint8_t instruction) 
     // All but this two ones
     return (instruction != InsTrustedInfoProvideInfo &&
             instruction != InsTrustedInfoProvideDynamicDescriptor &&
-            instruction != InsProvideInstructionDescriptor);
+            instruction != InsTrustedInfoProvideInstructionDescriptor);
 }
 
 static bool instruction_without_payload(uint8_t instruction) {
