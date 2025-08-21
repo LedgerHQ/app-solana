@@ -21,11 +21,6 @@
 #include "os.h"
 #include "ux.h"
 
-#ifdef HAVE_NBGL
-#include "nbgl_touch.h"
-#include "nbgl_page.h"
-#endif  // HAVE_NBGL
-
 #include "apdu.h"
 #include "ui_api.h"
 #include "handle_swap_sign_transaction.h"

@@ -1,5 +1,3 @@
-#ifdef HAVE_NBGL
-
 #include "io_utils.h"
 #include "sol/parser.h"
 #include "sol/printer.h"
@@ -11,7 +9,6 @@
 #include "utils.h"
 #include "ui_api.h"
 
-#include "nbgl_page.h"
 #include "nbgl_use_case.h"
 
 #include "handle_sign_message.h"
@@ -56,6 +53,7 @@ static inline void populate_displayed_slot_non_ascii(const size_t slot, const ui
 // current_pair will point at values stored in displayed_slots[]
 // this will enable displaying at most sizeof(displayed_slots) values simultaneously
 static nbgl_contentTagValue_t *get_single_action_review_pair(uint8_t index) {
+    PRINTF("get_single_action_review_pair index = %d\n", index);
     uint8_t slot = index % ARRAY_COUNT(displayed_slots);
     // Final step is special for ASCII messages
     if (index == G_transaction_steps_number - 1 && G_last_step_is_ascii) {
@@ -131,10 +129,14 @@ static void on_warning_choice(bool cancel) {
 
         nbgl_useCaseReview(operation_type,
                            &content,
-                           &C_icon_solana_64x64,
+                           &ICON_HOME,
                            "Review transaction",
                            NULL,
+#ifdef SCREEN_SIZE_WALLET
                            "Sign transaction on Solana network?",
+#else
+                           NULL,
+#endif
                            review_choice);
     }
 }
@@ -162,7 +164,7 @@ void start_sign_tx_ui(size_t num_summary_steps) {
     }
 
     if (warning_title != NULL) {
-        nbgl_useCaseChoice(&C_Warning_64px,
+        nbgl_useCaseChoice(&ICON_WARNING,
                            warning_title,
                            warning_text,
                            "Back to safety",
@@ -196,10 +198,13 @@ void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
     // Start review
     nbgl_useCaseReview(operation_type,
                        &content,
-                       &C_Review_64px,
+                       &ICON_REVIEW,
                        "Review message",
                        NULL,
+#ifdef SCREEN_SIZE_WALLET
                        "Sign message?",
+#else
+                       NULL,
+#endif
                        review_choice);
 }
-#endif

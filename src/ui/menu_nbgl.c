@@ -16,8 +16,6 @@
  *  limitations under the License.
  *****************************************************************************/
 
-#ifdef HAVE_NBGL
-
 #include "os.h"
 #include "glyphs.h"
 #include "nbgl_use_case.h"
@@ -103,7 +101,9 @@ void ui_idle(void) {
     G_switches[BLIND_SIGNING_IDX].text = "Blind signing";
     G_switches[BLIND_SIGNING_IDX].subText = "Enable blind signing";
     G_switches[BLIND_SIGNING_IDX].token = BLIND_SIGNING_TOKEN;
+#ifdef HAVE_PIEZO_SOUND
     G_switches[BLIND_SIGNING_IDX].tuneId = TUNE_TAP_CASUAL;
+#endif
     if (N_storage.settings.allow_blind_sign == BlindSignDisabled) {
         G_switches[BLIND_SIGNING_IDX].initState = OFF_STATE;
     } else {
@@ -113,7 +113,9 @@ void ui_idle(void) {
     G_switches[PUBLIC_KEY_LENGTH_IDX].text = "Public key length";
     G_switches[PUBLIC_KEY_LENGTH_IDX].subText = "Display short public keys";
     G_switches[PUBLIC_KEY_LENGTH_IDX].token = PUBLIC_KEY_LENGTH_TOKEN;
+#ifdef HAVE_PIEZO_SOUND
     G_switches[PUBLIC_KEY_LENGTH_IDX].tuneId = TUNE_TAP_CASUAL;
+#endif
     if (N_storage.settings.pubkey_display == PubkeyDisplayLong) {
         G_switches[PUBLIC_KEY_LENGTH_IDX].initState = OFF_STATE;
     } else {
@@ -123,7 +125,9 @@ void ui_idle(void) {
     G_switches[DISPLAY_MODE_IDX].text = "Display mode";
     G_switches[DISPLAY_MODE_IDX].subText = "Use Expert display mode";
     G_switches[DISPLAY_MODE_IDX].token = DISPLAY_MODE_TOKEN;
+#ifdef HAVE_PIEZO_SOUND
     G_switches[DISPLAY_MODE_IDX].tuneId = TUNE_TAP_CASUAL;
+#endif
     if (N_storage.settings.display_mode == DisplayModeUser) {
         G_switches[DISPLAY_MODE_IDX].initState = OFF_STATE;
     } else {
@@ -131,7 +135,7 @@ void ui_idle(void) {
     }
 
     nbgl_useCaseHomeAndSettings(APPNAME,
-                                &C_icon_solana_64x64,
+                                &ICON_HOME,
                                 NULL,
                                 INIT_HOME_PAGE,
                                 &settingContents,
@@ -139,4 +143,3 @@ void ui_idle(void) {
                                 NULL,
                                 quit_app_callback);
 }
-#endif
