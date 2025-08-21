@@ -9,6 +9,10 @@ from ragger.error import ExceptionRAPDU
 from .tlv import format_tlv
 from .solana_keychain import Key, sign_data
 
+from solders.hash import Hash
+from solders.message import Message
+from solders.transaction import Transaction
+
 class INS(IntEnum):
     # DEPRECATED - Use non "16" suffixed variants below
     INS_GET_APP_CONFIGURATION16 = 0x01
@@ -19,6 +23,7 @@ class INS(IntEnum):
     INS_GET_PUBKEY = 0x05
     INS_SIGN_MESSAGE = 0x06
     INS_SIGN_OFFCHAIN_MESSAGE = 0x07
+    INS_INSTRUCTION_DESCRIPTOR = 0x16
     INS_GET_CHALLENGE = 0x20
     INS_TRUSTED_INFO = 0x21
     INS_DYNAMIC_TOKEN = 0x22
@@ -42,6 +47,7 @@ STATUS_OK = 0x9000
 class STRUCTURE_TYPE(IntEnum):
     TRUSTED_NAME = 0x03
     DYNAMIC_TOKEN = 0x90
+    SOLANA_SWAP_TEMPLATE = 0x0a
 
 class ErrorType:
     NO_APP_RESPONSE = 0x6700
@@ -67,8 +73,9 @@ class ErrorType:
     NO_APDU_RECEIVED = 0x6982
     USER_CANCEL = 0x6985
     SOLANA_INVALID_MESSAGE = 0x6a80
-    INVALID_TRUSTED_INFO = 0x6c00,
-    INVALID_DYNAMIC_TOKEN = 0x6ca0,
+    INVALID_INSTRUCTION_DESCRIPTOR = 0x6b00
+    INVALID_TRUSTED_INFO = 0x6c00
+    INVALID_DYNAMIC_TOKEN = 0x6ca0
     UNIMPLEMENTED_INSTRUCTION = 0x6d00
     SOLANA_SUMMARY_FINALIZE_FAILED = 0x6f00
     SOLANA_SUMMARY_UPDATE_FAILED = 0x6f01
@@ -133,6 +140,27 @@ class DynamicTokenTag(IntEnum):
     TUID = 0x07
     SIGNATURE = 0x08
 
+# https://ledgerhq.atlassian.net/wiki/spaces/TA/pages/5764022544/ARCH+Solana+LiFi+swap+support
+
+AMOUNT_RULES_ENDIANESS_MASK = (1 << 0)
+AMOUNT_RULES_OFFSET_TYPE_MASK = (1 << 1)
+
+class InstructionDescriptorTag(IntEnum):
+    STRUCTURE_TYPE = 0x01
+    VERSION = 0x02
+    CHAIN_ID = 0x23
+    TEMPLATE_ID = 0x90
+    PROGRAM_ID = 0x91
+    DISCRIMINATOR = 0x92
+    AMOUNT_SIZE = 0x93
+    AMOUNT_OFFSET = 0x94
+    AMOUNT_RULES = 0x95
+    ASSET_ACCOUNT_INDEX = 0x96
+    ASSET_ATA_INDEX = 0x97
+    RECIPIENT_ACCOUNT_INDEX = 0x98
+    RECIPIENT_ATA_INDEX = 0x99
+    DER_SIGNATURE = 0x15
+
 def _extend_and_serialize_multiple_derivations_paths(derivations_paths: List[bytes]):
     serialized: bytes = len(derivations_paths).to_bytes(1, byteorder='little')
     for derivations_path in derivations_paths:
@@ -164,6 +192,7 @@ class CertificatePubKeyUsage(IntEnum):
     CERTIFICATE_PUBLIC_KEY_USAGE_TX_SIMU_SIGNER       = 0x0a,
     CERTIFICATE_PUBLIC_KEY_USAGE_CALLDATA             = 0x0b,
     CERTIFICATE_PUBLIC_KEY_USAGE_NETWORK              = 0x0c,
+    CERTIFICATE_PUBLIC_KEY_USAGE_SWAP_TEMPLATE        = 0x0d,
 
 class PKIClient:
     _CLA: int = 0xB0
@@ -211,6 +240,67 @@ class SolanaClient:
             rapdu = self._client.exchange(CLA, ins=ins, p1=p1, p2=p2, data=p)
 
         return rapdu
+
+    def provide_instruction_descriptor(self,
+                                       structure_type=STRUCTURE_TYPE.SOLANA_SWAP_TEMPLATE,
+                                       version=0x01,
+                                       chain_id=900,
+                                       template_id=0x01,
+                                       program_id=bytes.fromhex("00" * 32),
+                                       discriminator=b"",
+                                       amount_size = 0,
+                                       amount_offset = 0,
+                                       amount_rules_big_endian = False,
+                                       amount_rules_negative_offset = False,
+                                       asset_account_index = None,
+                                       asset_ata_index = None,
+                                       recipient_account_index = None,
+                                       recipient_ata_index = None):
+        amount_rules = 0
+        if amount_rules_big_endian:
+            amount_rules |= AMOUNT_RULES_ENDIANESS_MASK
+        if amount_rules_negative_offset:
+            amount_rules |= AMOUNT_RULES_OFFSET_TYPE_MASK
+
+        payload = b""
+        payload += format_tlv(InstructionDescriptorTag.STRUCTURE_TYPE, structure_type)
+        payload += format_tlv(InstructionDescriptorTag.VERSION, version)
+        payload += format_tlv(InstructionDescriptorTag.CHAIN_ID, chain_id)
+        payload += format_tlv(InstructionDescriptorTag.TEMPLATE_ID, template_id)
+        payload += format_tlv(InstructionDescriptorTag.PROGRAM_ID, program_id)
+        payload += format_tlv(InstructionDescriptorTag.DISCRIMINATOR, discriminator)
+        payload += format_tlv(InstructionDescriptorTag.AMOUNT_SIZE, amount_size)
+        payload += format_tlv(InstructionDescriptorTag.AMOUNT_OFFSET, amount_offset)
+        payload += format_tlv(InstructionDescriptorTag.AMOUNT_RULES, amount_rules)
+        if asset_account_index is not None:
+            payload += format_tlv(InstructionDescriptorTag.ASSET_ACCOUNT_INDEX, asset_account_index)
+        if asset_ata_index is not None:
+            payload += format_tlv(InstructionDescriptorTag.ASSET_ATA_INDEX, asset_ata_index)
+        if recipient_account_index is not None:
+            payload += format_tlv(InstructionDescriptorTag.RECIPIENT_ACCOUNT_INDEX, recipient_account_index)
+        if recipient_ata_index is not None:
+            payload += format_tlv(InstructionDescriptorTag.RECIPIENT_ATA_INDEX, recipient_ata_index)
+        payload += format_tlv(InstructionDescriptorTag.DER_SIGNATURE, sign_data(Key.INSTRUCTION_DESCRIPTOR, payload))
+
+        # send PKI certificate
+        if self._pki_client is None:
+            print(f"Ledger-PKI Not supported on '{self._client.firmware.name}'")
+        else:
+            # pylint: disable=line-too-long
+            if self._client.firmware == Firmware.NANOSP:
+                cert_apdu = "010101020102110400000002120100130200021401011604000000002016496E737472756374696F6E5F44657363726970746F723002000F31010D3201213321028E03CDF2147B980260C7800A07199D910D381E6F3F45BF625E805D466E96F03F340101350103154730450221009929503B375B192B1E91AF0B1AA9039E68A399932F30EE74CE376C1C7939CF2002201B1EAB947C29FA7B1D66A15DC8A9208BC363F289EB7EB71F973FF81154094674"  # noqa: E501
+            elif self._client.firmware == Firmware.NANOX:
+                cert_apdu = "010101020102110400000002120100130200021401011604000000002016496E737472756374696F6E5F44657363726970746F723002000F31010D3201213321028E03CDF2147B980260C7800A07199D910D381E6F3F45BF625E805D466E96F03F34010135010215473045022100E1117D524DA7C153E698EE8E7E592C8630BFF75A2D3CAA4D77A827EA6908B4730220567EFBE3BEA3A4191AAAABFFD8CC608D0787C94C453F733824B436D605FEFD87"  # noqa: E501
+            elif self._client.firmware == Firmware.STAX:
+                cert_apdu = "010101020102110400000002120100130200021401011604000000002016496E737472756374696F6E5F44657363726970746F723002000F31010D3201213321028E03CDF2147B980260C7800A07199D910D381E6F3F45BF625E805D466E96F03F34010135010415473045022100AE6527E96EF90909D5684856F16500414A28E4630598C1C0B5167CD1B5E2D9AF02202AF82D82937ADC4A08CFD50F196D76D26717817FC98E4B6DEB9208EF9EEFE1E3"  # noqa: E501
+            elif self._client.firmware == Firmware.FLEX:
+                cert_apdu = "010101020102110400000002120100130200021401011604000000002016496E737472756374696F6E5F44657363726970746F723002000F31010D3201213321028E03CDF2147B980260C7800A07199D910D381E6F3F45BF625E805D466E96F03F3401013501051547304502210092C3A04381DE963C5A514E54AAFCB1353A61E5428F66D9087F57784CECF6FB7302204981F0CEB10FFF93690D2A97254DD3E59DFEB08EFB52BFADCCDC41475A6014F8"  # noqa: E501
+            # pylint: enable=line-too-long
+
+            self._pki_client.send_certificate(CertificatePubKeyUsage.CERTIFICATE_PUBLIC_KEY_USAGE_SWAP_TEMPLATE,
+                                              bytes.fromhex(cert_apdu))
+
+        self._exchange_split(CLA, INS.INS_INSTRUCTION_DESCRIPTOR, P1_NON_CONFIRM, payload)
 
     def enroll_ata(self, mint_address, destination_ata, destination_address):
         challenge = self.get_challenge()
@@ -382,3 +472,10 @@ class SolanaClient:
 
     def get_async_response(self) -> RAPDU:
         return self._client.last_async_response
+
+    def craft_tx(self, instructions, sender_public_key):
+        blockhash = Hash.default()
+        message = Message.new_with_blockhash(instructions, sender_public_key, blockhash)
+        tx = Transaction.new_unsigned(message)
+        print(tx)
+        return tx.message_data()

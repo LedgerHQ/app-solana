@@ -1,3 +1,3 @@
 #pragma once
 
-#define PRINTF(...)
+#include "os_print.h"

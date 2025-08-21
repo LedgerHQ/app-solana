@@ -1,5 +1,6 @@
 #include "rfc3339.c"
 #include "util.h"
+#include "test_utils.h"
 #include <assert.h>
 #include <stdio.h>
 
@@ -26,7 +27,7 @@ void test_rfc3339_format() {
 }
 
 int main() {
-    test_rfc3339_format();
+    RUN_TEST(test_rfc3339_format);
 
     printf("passed\n");
     return 0;

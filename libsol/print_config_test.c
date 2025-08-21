@@ -1,5 +1,6 @@
 #include "common_byte_strings.h"
 #include "print_config.c"
+#include "test_utils.h"
 #include <assert.h>
 #include <stdio.h>
 
@@ -16,7 +17,7 @@ void test_print_config_show_authority() {
 }
 
 int main() {
-    test_print_config_show_authority();
+    RUN_TEST(test_print_config_show_authority);
 
     printf("passed\n");
     return 0;

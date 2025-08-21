@@ -2,11 +2,10 @@
 #include "trusted_info.h"
 #include "ed25519_helpers.h"
 
-bool check_ata_agaisnt_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
+bool check_ata_against_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
                                     const uint8_t mint_account[PUBKEY_LENGTH],
                                     const uint8_t dest_account[PUBKEY_LENGTH],
                                     bool is_token_2022) {
-    UNUSED(src_account);
     // Here we will check the content of the SPL transaction against the received descriptor
     if (!g_trusted_info.received) {
         PRINTF("Descriptor info is required for a SPL transfer\n");
@@ -18,7 +17,10 @@ bool check_ata_agaisnt_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
     // We must have received the owner address from the descriptor for this
 
     PRINTF("=== TX INFO ===\n");
-    PRINTF("src_account           = %.*H\n", PUBKEY_LENGTH, src_account);
+    if (src_account != NULL) {
+        // We have no use of src_account here for computation but this log is useful.
+        PRINTF("src_account           = %.*H\n", PUBKEY_LENGTH, src_account);
+    }
     PRINTF("mint_account          = %.*H\n", PUBKEY_LENGTH, mint_account);
     PRINTF("dest_account          = %.*H\n", PUBKEY_LENGTH, dest_account);
 
@@ -50,7 +52,7 @@ bool check_ata_agaisnt_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
     return true;
 }
 
-int get_transfer_to_address(char **to_address) {
+int get_transfer_to_address(const char **to_address) {
     // Already checked in parsing step but let's be secure
     if (!g_trusted_info.received) {
         PRINTF("Descriptor info is required for a SPL transfer\n");
@@ -59,33 +61,4 @@ int get_transfer_to_address(char **to_address) {
 
     *to_address = g_trusted_info.encoded_owner_address;
     return 0;
-}
-
-const char *get_dynamic_token_symbol(const uint8_t *mint_address, bool is_token_2022_kind) {
-    if (!g_dynamic_token_info.received) {
-        return NULL;
-    }
-
-    // We have received a descriptor that should apply to the current token. use it.
-    if (memcmp(g_dynamic_token_info.mint_address, mint_address, PUBKEY_SIZE) != 0) {
-        PRINTF("Received dynamic token info for token '%.*H' != token '%.*H'\n",
-               PUBKEY_SIZE,
-               g_dynamic_token_info.mint_address,
-               PUBKEY_SIZE,
-               mint_address);
-        return NULL;
-    }
-
-    if (is_token_2022_kind != g_dynamic_token_info.is_token_2022_kind) {
-        PRINTF("Token kind mismatch %d != %d\n",
-               is_token_2022_kind,
-               g_dynamic_token_info.is_token_2022_kind);
-        return NULL;
-    }
-
-    PRINTF("Using dynamic token info to map token '%.*H' == ticker '%s'\n",
-           PUBKEY_SIZE,
-           g_dynamic_token_info.mint_address,
-           g_dynamic_token_info.ticker);
-    return g_dynamic_token_info.ticker;
 }

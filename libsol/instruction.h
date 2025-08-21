@@ -81,3 +81,7 @@ int instruction_accounts_iterator_next(InstructionAccountsIterator *it,
 int instruction_accounts_iterator_get_current_account_index(InstructionAccountsIterator *it);
 
 size_t instruction_accounts_iterator_remaining(const InstructionAccountsIterator *it);
+
+const uint8_t *get_account_from_ins(const Instruction *instruction,
+                                    const MessageHeader *header,
+                                    uint8_t account_index);

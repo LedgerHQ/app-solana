@@ -10,6 +10,7 @@ from enum import Enum, auto
 class Key(Enum):
     TRUSTED_NAME = auto()
     DYNAMIC_TOKEN = auto()
+    INSTRUCTION_DESCRIPTOR = auto()
 
 
 _keys: dict[Key, SigningKey] = dict()

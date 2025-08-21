@@ -136,3 +136,15 @@ int copy_and_decode_pubkey(const buffer_t in_encoded_address,
 
     return 0;
 }
+
+// PRINTF cannot print u64. This function is optimized out when HAVE_PRINTF=0
+void debug_print_u64(const char *prefix, uint64_t u64) {
+#ifdef HAVE_PRINTF
+    uint32_t u64_high = (uint32_t) (u64 >> 32);
+    uint32_t u64_low = (uint32_t) (u64 & 0xFFFFFFFF);
+    PRINTF("%s = 0x%08X%08X\n", prefix, u64_high, u64_low);
+#else
+    UNUSED(prefix);
+    UNUSED(u64);
+#endif
+}

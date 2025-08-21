@@ -1,3 +1,8 @@
+# Run inside the docker
+ifeq ($(FLEX_SDK),)
+$(error Environment variable FLEX_SDK is not set)
+endif
+
 mode = debug
 target := $(shell uname -s)
 variant = $(target)_$(mode)
@@ -6,14 +11,16 @@ o = target/$(variant)
 test_files := $(wildcard *_test.c)
 test_exes = $(patsubst %.c,$o/%,$(test_files))
 test_oks = $(addsuffix .ok,$(test_exes))
+mock_files = $(wildcard mock/*.c)
+sdk_files = ${FLEX_SDK}/src/os_printf.c
 
 all: $(test_oks) $(test_exes) $o/libsol.a
 
 CFLAGS += -Werror -Wall -Wextra -pedantic -Wshadow -Wcast-qual -Wcast-align -Wno-unused-parameter
 CFLAGS += -fPIC
-CFLAGS += -Iinclude -Imock
+CFLAGS += -Iinclude -Imock -I${FLEX_SDK}/include -I${FLEX_SDK}/io/include -I${FLEX_SDK}/target/flex/include/
 CFLAGS += $($(mode)_CFLAGS)
-CFLAGS += -D PRINTF\(...\)=
+CFLAGS += -D PRINTF=mcu_usb_printf -D HAVE_PRINTF
 
 ifeq ($(COVERAGE),1)
 	CFLAGS += --coverage
@@ -28,23 +35,22 @@ libsol_depend_files = $(patsubst %.c,$o/%.d,$(libsol_source_files))
 
 -include $(libsol_depend_files)
 
-$o/%.o: %.c
+$o/%.o: %.c $(mock_files)
 	@echo "==> Compile $<"
 	@mkdir -p $(@D)
 	$(CC) -MMD -c $(CFLAGS) $< -o $@
 
 #
 # unit tests
-#
-# Note: this executes on the host, not via QEMU
-$o/%_test.ok: $o/%_test
+$o/%_test: $o/%_test.o $(sdk_files) $(mock_files) $o/libsol.a
+	@echo "==> Link test $@"
+	$(CC) $(CFLAGS) -o $@ $^
+
+$o/%_test.ok: $o/%_test $(mock_files)
 	@echo "==> Run test $<"
 	@$<
 	@touch $@
 
-$o/%_test: $o/%_test.o $o/libsol.a
-	@echo "==> Link test $@"
-	$(CC) $(CFLAGS) -o $@ $^
 
 #
 # libsol

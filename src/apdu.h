@@ -47,6 +47,7 @@ typedef enum ApduReply {
     ApduReplySolanaSummaryFinalizeFailed = 0x6f00,
     ApduReplySolanaSummaryUpdateFailed = 0x6f01,
 
+    ApduReplySolanaInvalidInstructionDescriptor = 0x6b00,
     ApduReplySolanaInvalidTrustedInfo = 0x6c00,
     ApduReplySolanaInvalidDynamicToken = 0x6ca0,
 
