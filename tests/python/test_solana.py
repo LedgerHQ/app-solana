@@ -1,36 +1,36 @@
 import pytest
 from ragger.error import ExceptionRAPDU
 
-from .apps.solana import SolanaClient, ErrorType
-from .apps.solana_cmd_builder import SystemInstructionTransfer, Message, verify_signature, OffchainMessage
-from .apps import solana_utils as SOL
+from application_client.solana import SolanaClient, ErrorType
+from application_client.solana_cmd_builder import SystemInstructionTransfer, Message, verify_signature, OffchainMessage
+from application_client import solana_utils as SOL
 
 import random
 import string
 
 class TestGetPublicKey:
 
-    def test_solana_get_public_key_ok(self, backend, scenario_navigator):
+    def test_solana_get_public_key_ok(self, backend, scenario_navigator, root_pytest_dir):
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
         with sol.send_public_key_with_confirm(SOL.SOL_PACKED_DERIVATION_PATH):
-            scenario_navigator.address_review_approve(path=SOL.ROOT_SCREENSHOT_PATH)
+            scenario_navigator.address_review_approve(path=root_pytest_dir)
 
         assert sol.get_async_response().data == from_public_key
 
 
-    def test_solana_get_public_key_refused(self, backend, scenario_navigator):
+    def test_solana_get_public_key_refused(self, backend, scenario_navigator, root_pytest_dir):
         sol = SolanaClient(backend)
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_public_key_with_confirm(SOL.SOL_PACKED_DERIVATION_PATH):
-                scenario_navigator.address_review_reject(path=SOL.ROOT_SCREENSHOT_PATH)
+                scenario_navigator.address_review_reject(path=root_pytest_dir)
         assert e.value.status == ErrorType.USER_CANCEL
 
 
 class TestMessageSigning:
 
-    def test_solana_simple_transfer_ok_1(self, backend, scenario_navigator):
+    def test_solana_simple_transfer_ok_1(self, backend, scenario_navigator, root_pytest_dir):
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -39,13 +39,13 @@ class TestMessageSigning:
         message: bytes = Message([instruction]).serialize()
 
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH)
+            scenario_navigator.review_approve(path=root_pytest_dir)
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
 
 
-    def test_solana_simple_transfer_ok_2(self, backend, scenario_navigator):
+    def test_solana_simple_transfer_ok_2(self, backend, scenario_navigator, root_pytest_dir):
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH_2)
 
@@ -54,13 +54,13 @@ class TestMessageSigning:
         message: bytes = Message([instruction]).serialize()
 
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH_2, message):
-            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH)
+            scenario_navigator.review_approve(path=root_pytest_dir)
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
 
 
-    def test_solana_simple_transfer_refused(self, backend, scenario_navigator):
+    def test_solana_simple_transfer_refused(self, backend, scenario_navigator, root_pytest_dir):
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -69,13 +69,13 @@ class TestMessageSigning:
 
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-                scenario_navigator.review_reject(path=SOL.ROOT_SCREENSHOT_PATH)
+                scenario_navigator.review_reject(path=root_pytest_dir)
         assert e.value.status == ErrorType.USER_CANCEL
 
 
 class TestOffchainMessageSigning:
 
-    def test_ledger_sign_offchain_message_ascii_ok(self, backend, scenario_navigator):
+    def test_ledger_sign_offchain_message_ascii_ok(self, backend, scenario_navigator, root_pytest_dir):
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -83,13 +83,13 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH)
+            scenario_navigator.review_approve(path=root_pytest_dir)
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_very_long_message_ascii_ok(self, backend, scenario_navigator):
+    def test_ledger_sign_offchain_very_long_message_ascii_ok(self, backend, scenario_navigator, root_pytest_dir):
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -97,14 +97,14 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH,
+            scenario_navigator.review_approve(path=root_pytest_dir,
                                               custom_screen_text=r"(Approve|Hold to sign)")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_message_ascii_refused(self, backend, scenario_navigator):
+    def test_ledger_sign_offchain_message_ascii_refused(self, backend, scenario_navigator, root_pytest_dir):
         sol = SolanaClient(backend)
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -113,10 +113,10 @@ class TestOffchainMessageSigning:
 
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-                scenario_navigator.review_reject(path=SOL.ROOT_SCREENSHOT_PATH)
+                scenario_navigator.review_reject(path=root_pytest_dir)
         assert e.value.status == ErrorType.USER_CANCEL
 
-    def test_ledger_sign_offchain_message_ascii_message_too_long(self, backend, scenario_navigator):
+    def test_ledger_sign_offchain_message_ascii_message_too_long(self, backend, scenario_navigator, root_pytest_dir):
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -134,8 +134,8 @@ class TestOffchainMessageSigning:
             assert e.status == ErrorType.SOLANA_INVALID_MESSAGE_SIZE
 
 
-    def test_ledger_sign_offchain_message_ascii_expert_ok(self, backend, scenario_navigator, navigator, test_name):
-        SOL.enable_expert_mode(navigator, backend.firmware, test_name + "_1")
+    def test_ledger_sign_offchain_message_ascii_expert_ok(self, backend, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        navigation_helper.enable_expert_mode(test_name + "_1")
 
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -144,7 +144,7 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH,
+            scenario_navigator.review_approve(path=root_pytest_dir,
                                               test_name=test_name + "_2",
                                               custom_screen_text=r"(Approve|Hold to sign)")
 
@@ -152,8 +152,8 @@ class TestOffchainMessageSigning:
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_message_ascii_expert_refused(self, backend, scenario_navigator, navigator, test_name):
-        SOL.enable_expert_mode(navigator, backend.firmware, test_name + "_1")
+    def test_ledger_sign_offchain_message_ascii_expert_refused(self, backend, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        navigation_helper.enable_expert_mode(test_name + "_1")
 
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -163,13 +163,13 @@ class TestOffchainMessageSigning:
 
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-                scenario_navigator.review_reject(path=SOL.ROOT_SCREENSHOT_PATH,
+                scenario_navigator.review_reject(path=root_pytest_dir,
                                                  test_name=test_name + "_2")
         assert e.value.status == ErrorType.USER_CANCEL
 
 
-    def test_ledger_sign_offchain_message_utf8_ok(self, backend, scenario_navigator, navigator, test_name):
-        SOL.enable_blind_signing(navigator, backend.firmware, test_name + "_1")
+    def test_ledger_sign_offchain_message_utf8_ok(self, backend, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        navigation_helper.enable_blind_signing(test_name + "_1")
 
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -178,14 +178,14 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH, test_name=test_name + "_2")
+            scenario_navigator.review_approve(path=root_pytest_dir, test_name=test_name + "_2")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_very_long_message_utf8_ok(self, backend, scenario_navigator, navigator, test_name):
-        SOL.enable_blind_signing(navigator, backend.firmware, test_name + "_1")
+    def test_ledger_sign_offchain_very_long_message_utf8_ok(self, backend, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        navigation_helper.enable_blind_signing(test_name + "_1")
 
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -197,13 +197,13 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH, test_name=test_name + "_2")
+            scenario_navigator.review_approve(path=root_pytest_dir, test_name=test_name + "_2")
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_message_utf8_message_too_long(self, backend, scenario_navigator):
+    def test_ledger_sign_offchain_message_utf8_message_too_long(self, backend, scenario_navigator, root_pytest_dir):
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -224,8 +224,8 @@ class TestOffchainMessageSigning:
             assert e.status == ErrorType.SOLANA_INVALID_MESSAGE_SIZE
 
 
-    def test_ledger_sign_offchain_message_with_app_domain_utf8_ok(self, backend, scenario_navigator, navigator, test_name):
-        SOL.enable_blind_signing(navigator, backend.firmware, test_name + "_1")
+    def test_ledger_sign_offchain_message_with_app_domain_utf8_ok(self, backend, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        navigation_helper.enable_blind_signing(test_name + "_1")
 
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -234,7 +234,7 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH,
+            scenario_navigator.review_approve(path=root_pytest_dir,
                                               test_name=test_name + "_2",
                                               custom_screen_text=r"(Approve|Hold to sign)")
 
@@ -242,8 +242,8 @@ class TestOffchainMessageSigning:
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_message_utf8_refused(self, backend, scenario_navigator, navigator, test_name):
-        SOL.enable_blind_signing(navigator, backend.firmware, test_name + "_1")
+    def test_ledger_sign_offchain_message_utf8_refused(self, backend, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        navigation_helper.enable_blind_signing(test_name + "_1")
 
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -253,14 +253,14 @@ class TestOffchainMessageSigning:
 
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-                scenario_navigator.review_reject(path=SOL.ROOT_SCREENSHOT_PATH,
+                scenario_navigator.review_reject(path=root_pytest_dir,
                                                  test_name=test_name + "_2")
         assert e.value.status == ErrorType.USER_CANCEL
 
 
-    def test_ledger_sign_offchain_message_utf8_expert_ok(self, backend, scenario_navigator, navigator, test_name):
-        SOL.enable_blind_signing(navigator, backend.firmware, test_name + "_1")
-        SOL.enable_expert_mode(navigator, backend.firmware, test_name + "_2")
+    def test_ledger_sign_offchain_message_utf8_expert_ok(self, backend, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        navigation_helper.enable_blind_signing(test_name + "_1")
+        navigation_helper.enable_expert_mode(test_name + "_2")
 
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -269,7 +269,7 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH,
+            scenario_navigator.review_approve(path=root_pytest_dir,
                                               test_name=test_name + "_3",
                                               custom_screen_text=r"(Approve|Hold to sign)")
 
@@ -277,9 +277,9 @@ class TestOffchainMessageSigning:
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_message_utf8_expert_refused(self, backend, scenario_navigator, navigator, test_name):
-        SOL.enable_blind_signing(navigator, backend.firmware, test_name + "_1")
-        SOL.enable_expert_mode(navigator, backend.firmware, test_name + "_2")
+    def test_ledger_sign_offchain_message_utf8_expert_refused(self, backend, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        navigation_helper.enable_blind_signing(test_name + "_1")
+        navigation_helper.enable_expert_mode(test_name + "_2")
 
         sol = SolanaClient(backend)
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -289,6 +289,6 @@ class TestOffchainMessageSigning:
 
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-                scenario_navigator.review_reject(path=SOL.ROOT_SCREENSHOT_PATH,
+                scenario_navigator.review_reject(path=root_pytest_dir,
                                                  test_name=test_name + "_3")
         assert e.value.status == ErrorType.USER_CANCEL

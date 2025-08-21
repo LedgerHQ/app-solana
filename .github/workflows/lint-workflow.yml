@@ -35,14 +35,13 @@ jobs:
     name: Check misspellings
     runs-on: ubuntu-latest
     steps:
-    - name: Clone
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 0
-    - name: Check misspellings
-      uses: codespell-project/actions-codespell@2391250ab05295bddd51e36a8c6295edb6343b0e
-      with:
-        # Use Config file when the github action supports it
-        builtin: clear,rare
-        check_filenames: true
-        skip: ./libsol/printer_test.c,./tests/Cargo.lock,./tools/apdu_generator/Cargo.lock,./tests/python/apps/solana_utils.py
+      - name: Clone
+        uses: actions/checkout@v4
+
+      - name: Check misspellings
+        uses: codespell-project/actions-codespell@v1
+        with:
+          builtin: clear,rare
+          check_filenames: true
+          path: src/,libsol/,Makefile,README.md,doc/
+          skip: ./libsol/printer_test.c
