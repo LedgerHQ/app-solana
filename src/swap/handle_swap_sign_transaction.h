@@ -3,7 +3,7 @@
 #include "swap_lib_calls.h"
 #include "sol/parser.h"
 
-bool copy_transaction_parameters(create_transaction_parameters_t *sign_transaction_params);
+bool swap_copy_transaction_parameters(create_transaction_parameters_t *sign_transaction_params);
 
 bool check_swap_amount_raw(uint64_t amount);
 

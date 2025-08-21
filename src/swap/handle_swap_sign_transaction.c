@@ -24,7 +24,7 @@ static swap_validated_t G_swap_validated;
 static uint8_t *G_swap_sign_return_value_address;
 
 // Save the data validated during the Exchange app flow
-bool copy_transaction_parameters(create_transaction_parameters_t *params) {
+bool swap_copy_transaction_parameters(create_transaction_parameters_t *params) {
     // Ensure no extraid
     if (params->destination_address_extra_id == NULL) {
         PRINTF("destination_address_extra_id expected\n");
