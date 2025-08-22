@@ -5,9 +5,8 @@ from ragger.firmware import Firmware
 from ragger.backend import BackendInterface
 
 class NavigationHelper:
-    def __init__(self, backend: BackendInterface, firmware: Firmware, navigator: Navigator, scenario_navigator: NavigateWithScenario, test_name: str, root_pytest_dir: str):
+    def __init__(self, backend: BackendInterface, navigator: Navigator, scenario_navigator: NavigateWithScenario, test_name: str, root_pytest_dir: str):
         self._backend = backend
-        self._firmware = firmware
         self._navigator = navigator
         self._scenario_navigator = scenario_navigator
         self._test_name = test_name
@@ -81,7 +80,7 @@ class NavigationHelper:
         return seq
 
     def enable_blind_signing(self, snapshots_name: str):
-        if self._firmware.is_nano:
+        if self._backend.firmware.is_nano:
             nav = self._enable_nano_option_n(1)
         else:
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
@@ -93,7 +92,7 @@ class NavigationHelper:
                                              screen_change_before_first_instruction=False)
 
     def enable_short_public_key(self, snapshots_name: str):
-        if self._firmware.is_nano:
+        if self._backend.firmware.is_nano:
             nav = self._enable_nano_option_n(2)
         else:
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
@@ -106,13 +105,13 @@ class NavigationHelper:
                                              screen_change_before_first_instruction=False)
 
     def enable_expert_mode(self, snapshots_name: str):
-        if self._firmware.is_nano:
+        if self._backend.firmware.is_nano:
             nav = self._enable_nano_option_n(3)
-        elif self._firmware is Firmware.STAX:
+        elif self._backend.firmware is Firmware.STAX:
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
                    NavIns(NavInsID.TOUCH, (348,382)),
                    NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
-        elif self._firmware is Firmware.FLEX:
+        elif self._backend.firmware is Firmware.FLEX:
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
                    NavInsID.USE_CASE_SETTINGS_NEXT,
                    NavIns(NavInsID.TOUCH, (250,150)),
