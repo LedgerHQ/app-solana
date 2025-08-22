@@ -21,6 +21,27 @@ TRANSFER_FEE_EXTENSION = 26
 TRANSFER_CHECKED_WITH_FEE = 1
 TRANSFER_CHECKED = 12
 
+class TestSPL:
+
+    def test_solana_create_account(self, backend, scenario_navigator, root_pytest_dir):
+        # Get the sender public key
+        sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+
+        # Get the associated token addresses for the sender
+        sender_ata = get_associated_token_address(sender_public_key, Pubkey.from_string(SOL.JUP_MINT_ADDRESS_STR))
+
+        create_instruction = create_associated_token_account(
+            payer=sender_ata,
+            owner=Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR),
+            mint=Pubkey.from_string(SOL.JUP_MINT_ADDRESS_STR),
+        )
+        sol = SolanaClient(backend)
+        message_data = sol.craft_tx([create_instruction], sender_public_key)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            scenario_navigator.review_approve(path=root_pytest_dir)
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
 class TestTrustedName:
 
     def test_solana_trusted_name(self, backend, scenario_navigator, root_pytest_dir):
