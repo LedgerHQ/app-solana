@@ -46,6 +46,7 @@ ICON_NANOX = icons/icon_solana_14px.gif
 ICON_NANOSP = icons/icon_solana_14px.gif
 ICON_STAX = icons/icon_solana_32px.gif
 ICON_FLEX = icons/icon_solana_40px.gif
+ICON_APEX_P = icons/icon_solana_32px_apex.png
 
 # Application allowed derivation curves
 CURVE_APP_LOAD_PARAMS = ed25519

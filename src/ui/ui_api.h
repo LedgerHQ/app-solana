@@ -12,6 +12,11 @@
 #define ICON_SIGN_MENU C_home_solana_64px
 #define ICON_WARNING   C_Warning_64px
 #define ICON_REVIEW    C_Review_64px
+#elif defined(TARGET_APEX_P)
+#define ICON_HOME      C_home_solana_48px
+#define ICON_SIGN_MENU C_home_solana_48px
+#define ICON_WARNING   C_Warning_48px
+#define ICON_REVIEW    C_Review_48px
 #endif
 
 void ui_idle(void);
