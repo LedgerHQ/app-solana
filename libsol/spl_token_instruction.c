@@ -679,11 +679,7 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
         unknown_mint = true;
     }
 
-    summary_item_set_token_amount(item,
-                                  "Transfer tokens",
-                                  info->body.amount,
-                                  symbol,
-                                  info->body.decimals);
+    summary_item_set_token_amount(item, "Amount", info->body.amount, symbol, info->body.decimals);
 
     if (print_config->force_full_print || unknown_mint) {
         PRINTF("Mint account print\n");
@@ -718,6 +714,7 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
         }
     }
 
+    transaction_summary_set_transaction_type(TRANSACTION_TYPE_SPL_TRANSFER);
     transaction_summary_set_token_fee_warning(is_token2022_kind &&
                                               !info->is_transfer_checked_with_fee);
     transaction_summary_set_token_hook_warning(is_token2022_kind &&

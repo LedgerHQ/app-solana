@@ -62,6 +62,7 @@ static int parse_delegate_stake_instruction(const Instruction *instruction,
     BAIL_IF(instruction_accounts_iterator_next(&it, NULL));
     BAIL_IF(instruction_accounts_iterator_next(&it, &info->authorized_pubkey));
 
+    transaction_summary_set_transaction_type(TRANSACTION_TYPE_SOL_ACTIVATE_STAKE);
     return 0;
 }
 
@@ -125,6 +126,7 @@ static int parse_stake_withdraw_instruction(Parser *parser,
 
     BAIL_IF(parse_u64(parser, &info->lamports));
 
+    transaction_summary_set_transaction_type(TRANSACTION_TYPE_SOL_WITHDRAW);
     return 0;
 }
 
@@ -182,6 +184,7 @@ static int parse_stake_deactivate_instruction(Parser *parser,
     BAIL_IF(instruction_accounts_iterator_next(&it, NULL));
     BAIL_IF(instruction_accounts_iterator_next(&it, &info->authority));
 
+    transaction_summary_set_transaction_type(TRANSACTION_TYPE_SOL_DEACTIVATE_STAKE);
     return 0;
 }
 
@@ -287,55 +290,90 @@ int parse_stake_instructions(const Instruction *instruction,
 
     switch (info->kind) {
         case StakeDelegate:
+            PRINTF("Instruction StakeDelegate\n");
             return parse_delegate_stake_instruction(instruction, header, &info->delegate_stake);
         case StakeInitialize:
+            PRINTF("Instruction StakeInitialize\n");
             return parse_stake_initialize_instruction(&parser,
                                                       instruction,
                                                       header,
                                                       &info->initialize);
         case StakeInitializeChecked:
+            PRINTF("Instruction StakeInitializeChecked\n");
             return parse_stake_initialize_checked_instruction(&parser,
                                                               instruction,
                                                               header,
                                                               &info->initialize);
         case StakeWithdraw:
+            PRINTF("Instruction StakeWithdraw\n");
             return parse_stake_withdraw_instruction(&parser, instruction, header, &info->withdraw);
         case StakeAuthorize:
+            PRINTF("Instruction StakeAuthorize\n");
             return parse_stake_authorize_instruction(&parser,
                                                      instruction,
                                                      header,
                                                      &info->authorize);
         case StakeAuthorizeChecked:
+            PRINTF("Instruction StakeAuthorizeChecked\n");
             return parse_stake_authorize_checked_instruction(&parser,
                                                              instruction,
                                                              header,
                                                              &info->authorize);
         case StakeDeactivate:
+            PRINTF("Instruction StakeDeactivate\n");
             return parse_stake_deactivate_instruction(&parser,
                                                       instruction,
                                                       header,
                                                       &info->deactivate);
         case StakeSetLockup:
+            PRINTF("Instruction StakeSetLockup\n");
             return parse_stake_set_lockup_instruction(&parser,
                                                       instruction,
                                                       header,
                                                       &info->set_lockup);
         case StakeSetLockupChecked:
+            PRINTF("Instruction StakeSetLockupChecked\n");
             return parse_stake_set_lockup_checked_instruction(&parser,
                                                               instruction,
                                                               header,
                                                               &info->set_lockup);
         case StakeSplit:
+            PRINTF("Instruction StakeSplit\n");
             return parse_stake_split_instruction(&parser, instruction, header, &info->split);
         case StakeMerge:
+            PRINTF("Instruction StakeMerge\n");
             return parse_stake_merge_instruction(instruction, header, &info->merge);
         // Unsupported instructions
         case StakeAuthorizeWithSeed:
         case StakeAuthorizeCheckedWithSeed:
+            PRINTF("Unsupported stake instruction %d\n", info->kind);
+            break;
+        default:
+            PRINTF("unrecognized stake instruction %d\n", info->kind);
             break;
     }
 
     return 1;
+}
+#include "base58.h"
+
+bool _is_known_pubkey(const Pubkey *candidate_pubkey, const char *known_as_str) {
+    uint8_t known_as_data[PUBKEY_LENGTH];
+    int res = base58_decode(known_as_str, strlen(known_as_str), known_as_data, PUBKEY_LENGTH);
+    if (res != PUBKEY_LENGTH) {
+        PRINTF("base58_decode failed\n");
+        return false;
+    }
+
+    // Compare candidate_pubkey with decoded Figment pubkey
+    return memcmp(candidate_pubkey->data, known_as_data, PUBKEY_LENGTH) == 0;
+}
+
+bool is_figment_pubkey(const Pubkey *candidate_pubkey) {
+    return _is_known_pubkey(candidate_pubkey, "26pV97Ce83ZQ6Kz9XT4td8tdoUFPTng8Fb8gPyc53dJx");
+}
+bool is_chorus_one_pubkey(const Pubkey *candidate_pubkey) {
+    return _is_known_pubkey(candidate_pubkey, "CpfvLiiPALdzZTP3fUrALg2TXwEDSAknRh1sn5JCt9Sr");
 }
 
 int print_delegate_stake_info(const char *primary_title,
@@ -354,7 +392,14 @@ int print_delegate_stake_info(const char *primary_title,
     }
 
     item = transaction_summary_general_item();
-    summary_item_set_pubkey(item, "Vote account", info->vote_pubkey);
+
+    if (is_figment_pubkey(info->vote_pubkey)) {
+        summary_item_set_string(item, "Vote account", "Ledger by Figment");
+    } else if (is_chorus_one_pubkey(info->vote_pubkey)) {
+        summary_item_set_string(item, "Vote account", "Ledger by Chorus One");
+    } else {
+        summary_item_set_pubkey(item, "Vote account", info->vote_pubkey);
+    }
 
     return 0;
 }
@@ -364,10 +409,10 @@ static int print_stake_withdraw_info(const StakeWithdrawInfo *info,
     SummaryItem *item;
 
     item = transaction_summary_primary_item();
-    summary_item_set_amount(item, "Stake withdraw", info->lamports);
+    summary_item_set_amount(item, "Amount", info->lamports);
 
     item = transaction_summary_general_item();
-    summary_item_set_pubkey(item, "From", info->account);
+    summary_item_set_pubkey(item, "From stake account", info->account);
 
     item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "To", info->to);
@@ -418,7 +463,7 @@ static int print_stake_deactivate_info(const StakeDeactivateInfo *info,
     SummaryItem *item;
 
     item = transaction_summary_primary_item();
-    summary_item_set_pubkey(item, "Deactivate stake", info->account);
+    summary_item_set_pubkey(item, "Stake account", info->account);
 
     if (print_config_show_authority(print_config, info->authority)) {
         item = transaction_summary_general_item();
@@ -484,7 +529,7 @@ static int print_stake_merge_info(const StakeMergeInfo *info, const PrintConfig 
 int print_stake_info(const StakeInfo *info, const PrintConfig *print_config) {
     switch (info->kind) {
         case StakeDelegate:
-            return print_delegate_stake_info("Delegate from", &info->delegate_stake, print_config);
+            return print_delegate_stake_info("Delegated from", &info->delegate_stake, print_config);
         case StakeInitialize:
         case StakeInitializeChecked:
             return print_stake_initialize_info("Init stake acct", &info->initialize, print_config);

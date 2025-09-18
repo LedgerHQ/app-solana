@@ -262,7 +262,7 @@ static int print_system_transfer_info(const SystemTransferInfo *info,
 
     item = transaction_summary_primary_item();
 
-    summary_item_set_amount(item, "Transfer", info->lamports);
+    summary_item_set_amount(item, "Amount", info->lamports);
 
     if (print_config_show_authority(print_config, info->from)) {
         PRINTF("Printing sender\n");
@@ -271,7 +271,9 @@ static int print_system_transfer_info(const SystemTransferInfo *info,
     }
 
     item = transaction_summary_general_item();
-    summary_item_set_pubkey(item, "Recipient", info->to);
+    summary_item_set_pubkey(item, "To", info->to);
+
+    transaction_summary_set_transaction_type(TRANSACTION_TYPE_SOL_TRANSFER);
 
     return 0;
 }

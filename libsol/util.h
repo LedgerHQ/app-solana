@@ -1,11 +1,15 @@
 #pragma once
 #include <string.h>
+#include "os_print.h"
 
 #define ARRAY_LEN(a) (sizeof(a) / sizeof((a)[0]))
-#define BAIL_IF(x)           \
-    do {                     \
-        int err = x;         \
-        if (err) return err; \
+#define BAIL_IF(x)                       \
+    do {                                 \
+        int err = x;                     \
+        if (err) {                       \
+            PRINTF("BAIL_IF(%s)\n", #x); \
+            return err;                  \
+        }                                \
     } while (0)
 
 #ifndef MIN

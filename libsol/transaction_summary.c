@@ -95,6 +95,7 @@ typedef struct TransactionSummary {
     bool is_token_2022_transfer;
     bool fee_warning;
     bool hook_warning;
+    transaction_type_t transaction_type;
     SummaryItem primary;
     SummaryItem fee_payer;
     SummaryItem nonce_account;
@@ -173,6 +174,14 @@ void transaction_summary_set_is_token_2022_transfer(bool is_token_2022_transfer)
 
 void transaction_summary_get_is_token_2022_transfer(bool *is_token_2022_transfer) {
     *is_token_2022_transfer = G_transaction_summary.is_token_2022_transfer;
+}
+
+void transaction_summary_set_transaction_type(transaction_type_t transaction_type) {
+    G_transaction_summary.transaction_type = transaction_type;
+}
+
+void transaction_summary_get_transaction_type(transaction_type_t *transaction_type) {
+    *transaction_type = G_transaction_summary.transaction_type;
 }
 
 #define FEE_PAYER_TITLE "Fee payer"
