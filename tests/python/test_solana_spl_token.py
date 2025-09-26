@@ -23,7 +23,7 @@ TRANSFER_CHECKED = 12
 
 class TestSPL:
 
-    def test_solana_create_account(self, backend, scenario_navigator, root_pytest_dir):
+    def test_solana_create_account(self, sol, scenario_navigator, root_pytest_dir):
         # Get the sender public key
         sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
 
@@ -35,7 +35,7 @@ class TestSPL:
             owner=Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR),
             mint=Pubkey.from_string(SOL.JUP_MINT_ADDRESS_STR),
         )
-        sol = SolanaClient(backend)
+
         message_data = sol.craft_tx([create_instruction], sender_public_key)
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
@@ -44,7 +44,7 @@ class TestSPL:
 
 class TestTrustedName:
 
-    def test_solana_trusted_name(self, backend, scenario_navigator, root_pytest_dir):
+    def test_solana_trusted_name(self, sol, scenario_navigator, root_pytest_dir):
         # Get the sender public key
         sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
 
@@ -67,7 +67,6 @@ class TestTrustedName:
             )
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
 
@@ -77,7 +76,7 @@ class TestTrustedName:
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
 
-    def test_solana_trusted_name_create(self, backend, scenario_navigator, root_pytest_dir):
+    def test_solana_trusted_name_create(self, sol, scenario_navigator, root_pytest_dir):
         # Get the sender public key
         sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
 
@@ -106,7 +105,6 @@ class TestTrustedName:
             )
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([create_instruction, transfer_instruction], sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
@@ -115,7 +113,7 @@ class TestTrustedName:
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
 
-    def test_solana_trusted_name_ata_input(self, backend, scenario_navigator, root_pytest_dir):
+    def test_solana_trusted_name_ata_input(self, sol, scenario_navigator, root_pytest_dir):
         # Get the sender public key
         sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
 
@@ -138,7 +136,6 @@ class TestTrustedName:
             )
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
 
@@ -164,7 +161,7 @@ class TestToken2022:
     external_signer_2 = Pubkey.from_string("FcheSyMboM2FKxieZPsT7r69s5UunZiK8tNSmSKts92h")
     hook_account = Pubkey.from_string("FcheSyMboM2FKxieZPsT7r69s5UunZiK8tNSmSKts92i")
 
-    def test_transfer_checked_with_fees(self, backend, scenario_navigator, root_pytest_dir):
+    def test_transfer_checked_with_fees(self, sol, scenario_navigator, root_pytest_dir):
         accounts = [
             AccountMeta(pubkey=self.sender_ata, is_signer=False, is_writable=True),
             AccountMeta(pubkey=self.mint_pubkey, is_signer=False, is_writable=False),
@@ -177,7 +174,6 @@ class TestToken2022:
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 100001, 6, 767)
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
@@ -186,7 +182,7 @@ class TestToken2022:
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
 
-    def test_transfer_checked_with_0_fees(self, backend, scenario_navigator, root_pytest_dir):
+    def test_transfer_checked_with_0_fees(self, sol, scenario_navigator, root_pytest_dir):
         accounts = [
             AccountMeta(pubkey=self.sender_ata, is_signer=False, is_writable=True),
             AccountMeta(pubkey=self.mint_pubkey, is_signer=False, is_writable=False),
@@ -199,7 +195,6 @@ class TestToken2022:
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 100001, 6, 0)
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
@@ -208,7 +203,7 @@ class TestToken2022:
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
 
-    def test_token_2022_transfer_checked_no_fees_accept(self, backend, scenario_navigator, navigation_helper, root_pytest_dir):
+    def test_token_2022_transfer_checked_no_fees_accept(self, sol, scenario_navigator, navigation_helper, root_pytest_dir):
         transfer_instruction = transfer_checked(
             TransferCheckedParams(
                 program_id=TOKEN_2022_PROGRAM_ID,
@@ -221,7 +216,6 @@ class TestToken2022:
             )
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
@@ -230,7 +224,7 @@ class TestToken2022:
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
 
-    def test_token_2022_transfer_checked_no_fees_reject(self, backend, scenario_navigator, navigation_helper, root_pytest_dir):
+    def test_token_2022_transfer_checked_no_fees_reject(self, sol, scenario_navigator, navigation_helper, root_pytest_dir):
         transfer_instruction = transfer_checked(
             TransferCheckedParams(
                 program_id=TOKEN_2022_PROGRAM_ID,
@@ -243,7 +237,6 @@ class TestToken2022:
             )
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with pytest.raises(ExceptionRAPDU) as e:
@@ -252,7 +245,7 @@ class TestToken2022:
         assert e.value.status == ErrorType.USER_CANCEL
 
 
-    def test_token_2022_transfer_checked_hook_and_accept_with_fees(self, backend, scenario_navigator, navigation_helper, root_pytest_dir):
+    def test_token_2022_transfer_checked_hook_and_accept_with_fees(self, sol, scenario_navigator, navigation_helper, root_pytest_dir):
         accounts = [
             AccountMeta(pubkey=self.sender_ata, is_signer=False, is_writable=True),
             AccountMeta(pubkey=self.mint_pubkey, is_signer=False, is_writable=False),
@@ -266,7 +259,6 @@ class TestToken2022:
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 108, 6, 77)
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
@@ -275,7 +267,7 @@ class TestToken2022:
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
 
-    def test_token_2022_transfer_checked_hook_and_accept_no_fees(self, backend, scenario_navigator, navigation_helper, root_pytest_dir):
+    def test_token_2022_transfer_checked_hook_and_accept_no_fees(self, sol, scenario_navigator, navigation_helper, root_pytest_dir):
         accounts = [
             AccountMeta(pubkey=self.sender_ata, is_signer=False, is_writable=True),
             AccountMeta(pubkey=self.mint_pubkey, is_signer=False, is_writable=False),
@@ -289,7 +281,6 @@ class TestToken2022:
             data=struct.pack("<BQB", TRANSFER_CHECKED, 108, 6)
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
@@ -298,7 +289,7 @@ class TestToken2022:
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
 
-    def test_token_2022_transfer_checked_hook_and_reject(self, backend, scenario_navigator, navigation_helper, root_pytest_dir):
+    def test_token_2022_transfer_checked_hook_and_reject(self, sol, scenario_navigator, navigation_helper, root_pytest_dir):
         accounts = [
             AccountMeta(pubkey=self.sender_ata, is_signer=False, is_writable=True),
             AccountMeta(pubkey=self.mint_pubkey, is_signer=False, is_writable=False),
@@ -312,7 +303,6 @@ class TestToken2022:
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 108, 6, 77)
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with pytest.raises(ExceptionRAPDU) as e:
@@ -321,7 +311,7 @@ class TestToken2022:
         assert e.value.status == ErrorType.USER_CANCEL
 
 
-    def test_token_2022_transfer_checked_hook_and_multi_signer(self, backend, scenario_navigator, navigation_helper, root_pytest_dir):
+    def test_token_2022_transfer_checked_hook_and_multi_signer(self, sol, scenario_navigator, navigation_helper, root_pytest_dir):
         accounts = [
             AccountMeta(pubkey=self.sender_ata, is_signer=False, is_writable=True),
             AccountMeta(pubkey=self.mint_pubkey, is_signer=False, is_writable=False),
@@ -337,7 +327,6 @@ class TestToken2022:
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 108, 6, 77)
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
@@ -346,7 +335,7 @@ class TestToken2022:
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
 
-    def test_token_2022_transfer_checked_multi_signer_no_hook(self, backend, scenario_navigator, navigation_helper, root_pytest_dir):
+    def test_token_2022_transfer_checked_multi_signer_no_hook(self, sol, scenario_navigator, navigation_helper, root_pytest_dir):
         accounts = [
             AccountMeta(pubkey=self.sender_ata, is_signer=False, is_writable=True),
             AccountMeta(pubkey=self.mint_pubkey, is_signer=False, is_writable=False),
@@ -361,7 +350,6 @@ class TestToken2022:
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 108, 6, 77)
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
@@ -369,7 +357,7 @@ class TestToken2022:
         signature: bytes = sol.get_async_response().data
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
-    def test_token_2022_create(self, backend, scenario_navigator, root_pytest_dir):
+    def test_token_2022_create(self, sol, scenario_navigator, root_pytest_dir):
         create_instruction = create_associated_token_account(
             payer=self.sender_ata,
             owner=self.receiver_pubkey,
@@ -387,7 +375,6 @@ class TestToken2022:
             data=struct.pack("<BBQBQ", TRANSFER_FEE_EXTENSION, TRANSFER_CHECKED_WITH_FEE, 100001, 6, 0)
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([create_instruction, transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
@@ -397,7 +384,7 @@ class TestToken2022:
 
 
 class TestTokenDynamic:
-    def test_dynamic_token_simple(self, backend, scenario_navigator, root_pytest_dir):
+    def test_dynamic_token_simple(self, sol, scenario_navigator, root_pytest_dir):
         # Get the sender public key
         sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
 
@@ -420,7 +407,6 @@ class TestTokenDynamic:
             )
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], sender_public_key)
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
         sol.enroll_ata(SOL.GORK_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
@@ -430,7 +416,7 @@ class TestTokenDynamic:
         signature: bytes = sol.get_async_response().data
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
-    def test_dynamic_token_address_mismatch_address(self, backend, scenario_navigator, root_pytest_dir):
+    def test_dynamic_token_address_mismatch_address(self, sol, scenario_navigator, root_pytest_dir):
         # Get the sender public key
         sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
 
@@ -453,7 +439,6 @@ class TestTokenDynamic:
             )
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], sender_public_key)
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.JUP_MINT_ADDRESS)
         sol.enroll_ata(SOL.GORK_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
@@ -463,7 +448,7 @@ class TestTokenDynamic:
         signature: bytes = sol.get_async_response().data
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
-    def test_dynamic_token_address_mismatch_token_kind(self, backend, scenario_navigator, root_pytest_dir):
+    def test_dynamic_token_address_mismatch_token_kind(self, sol, scenario_navigator, root_pytest_dir):
         # Get the sender public key
         sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
 
@@ -486,7 +471,6 @@ class TestTokenDynamic:
             )
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], sender_public_key)
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=True, mint_address=SOL.GORK_MINT_ADDRESS_STR)
         sol.enroll_ata(SOL.GORK_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
@@ -496,7 +480,7 @@ class TestTokenDynamic:
         signature: bytes = sol.get_async_response().data
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
-    def test_dynamic_token_address_priority(self, backend, scenario_navigator, root_pytest_dir):
+    def test_dynamic_token_address_priority(self, sol, scenario_navigator, root_pytest_dir):
         # Get the sender public key
         sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
 
@@ -519,7 +503,6 @@ class TestTokenDynamic:
             )
         )
 
-        sol = SolanaClient(backend)
         message_data = sol.craft_tx([transfer_instruction], sender_public_key)
         sol.provide_dynamic_token(ticker="JUP_override", magnitude=6, is_token_2022=False, mint_address=SOL.JUP_MINT_ADDRESS_STR)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))

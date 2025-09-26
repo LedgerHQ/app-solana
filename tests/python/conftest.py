@@ -1,6 +1,7 @@
 import pytest
 from ragger.conftest import configuration
 from .navigation_helper import NavigationHelper
+from application_client.solana import SolanaClient
 
 ###########################
 ### CONFIGURATION START ###
@@ -21,3 +22,7 @@ pytest_plugins = ("ragger.conftest.base_conftest", )
 @pytest.fixture(scope="function")
 def navigation_helper(backend, navigator, scenario_navigator, test_name, root_pytest_dir):
     return NavigationHelper(backend=backend, navigator=navigator, scenario_navigator=scenario_navigator, test_name=test_name, root_pytest_dir=root_pytest_dir)
+
+@pytest.fixture(scope="function")
+def sol(backend):
+    return SolanaClient(backend)

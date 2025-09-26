@@ -53,6 +53,13 @@ OWNED_ADDRESS_STR   = "3GJzvStsiYZonWE7WTsmt1BpWXkfcgWMGinaDwNs9HBc"
 OWNED_ADDRESS       = OWNED_ADDRESS_STR.encode('utf-8')
 OWNED_PUBLIC_KEY    = base58.b58decode(OWNED_ADDRESS)
 
+FIGMENT_ADDRESS_STR = "26pV97Ce83ZQ6Kz9XT4td8tdoUFPTng8Fb8gPyc53dJx"
+FIGMENT_ADDRESS     = FIGMENT_ADDRESS_STR.encode('utf-8')
+FIGMENT_PUBLIC_KEY  = base58.b58decode(FIGMENT_ADDRESS)
+
+CHORUS_ONE_ADDRESS_STR = "CpfvLiiPALdzZTP3fUrALg2TXwEDSAknRh1sn5JCt9Sr"
+CHORUS_ONE_ADDRESS     = CHORUS_ONE_ADDRESS_STR.encode('utf-8')
+CHORUS_ONE_PUBLIC_KEY  = base58.b58decode(CHORUS_ONE_ADDRESS)
 
 # --8<-- [start:solana_coin_conf]
 ### Proposed Solana derivation paths for tests ###
