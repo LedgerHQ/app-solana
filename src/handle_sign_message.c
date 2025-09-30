@@ -359,15 +359,21 @@ void handle_sign_message_parse_message(volatile unsigned int *flags, volatile un
             swap_finalize(true);
         }
     } else {
-        if (process_message_body(parser.buffer, parser.buffer_length, &print_config) != 0) {
+        if (process_message_body(parser.buffer, parser.buffer_length, &print_config) == 0) {
+            handle_sign_message_ui(flags);
+        } else {
             // Message not processed, throw if blind signing is not enabled or in swap context
             if (G_called_from_swap) {
                 PRINTF("Refuse to process blind transaction in swap context\n");
                 swap_finalize(false);
             } else if (N_storage.settings.allow_blind_sign != BlindSignEnabled) {
                 PRINTF("Blind signing is not enabled\n");
+                start_blind_sign_error_ui();
                 THROW(ApduReplySdkNotSupported);
             } else {
+                // Blind sign allowed. Prepare UI items content
+                transaction_summary_set_blind_signing(true);
+
                 SummaryItem *item = transaction_summary_primary_item();
                 summary_item_set_string(item, "Unrecognized", "format");
 
@@ -378,16 +384,16 @@ void handle_sign_message_parse_message(volatile unsigned int *flags, volatile un
 
                 item = transaction_summary_general_item();
                 summary_item_set_hash(item, "Message Hash", &G_command.message_hash);
-            }
 
-            // Add fee payer to summary if needed
-            const Pubkey *fee_payer = &header->pubkeys[0];
-            if (print_config_show_authority(&print_config, fee_payer)) {
-                PRINTF("Adding fee payer to displayable info\n");
-                transaction_summary_set_fee_payer_pubkey(fee_payer);
+                // Add fee payer to summary if needed
+                const Pubkey *fee_payer = &header->pubkeys[0];
+                if (print_config_show_authority(&print_config, fee_payer)) {
+                    PRINTF("Adding fee payer to displayable info\n");
+                    transaction_summary_set_fee_payer_pubkey(fee_payer);
+                }
+
+                handle_sign_message_ui(flags);
             }
         }
-
-        handle_sign_message_ui(flags);
     }
 }

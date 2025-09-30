@@ -95,6 +95,7 @@ typedef struct TransactionSummary {
     bool is_token_2022_transfer;
     bool fee_warning;
     bool hook_warning;
+    bool is_blind_signing;
     transaction_type_t transaction_type;
     SummaryItem primary;
     SummaryItem fee_payer;
@@ -182,6 +183,14 @@ void transaction_summary_set_transaction_type(transaction_type_t transaction_typ
 
 void transaction_summary_get_transaction_type(transaction_type_t *transaction_type) {
     *transaction_type = G_transaction_summary.transaction_type;
+}
+
+void transaction_summary_set_blind_signing(bool is_blind_signing) {
+    G_transaction_summary.is_blind_signing = is_blind_signing;
+}
+
+void transaction_summary_get_blind_signing(bool *is_blind_signing) {
+    *is_blind_signing = G_transaction_summary.is_blind_signing;
 }
 
 #define FEE_PAYER_TITLE "Fee payer"
