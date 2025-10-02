@@ -15,7 +15,7 @@
 
 #include "handle_provide_instruction_descriptor.h"
 
-#define MAX_INSTRUCTIONS 4
+#define MAX_INSTRUCTIONS 6
 
 static void debug_print_header(const MessageHeader *header) {
     PRINTF("instructions_length = %d\n", header->instructions_length);
