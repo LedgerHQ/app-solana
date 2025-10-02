@@ -21,6 +21,27 @@ TRANSFER_FEE_EXTENSION = 26
 TRANSFER_CHECKED_WITH_FEE = 1
 TRANSFER_CHECKED = 12
 
+class TestSPL:
+
+    def test_solana_create_account(self, backend, scenario_navigator, root_pytest_dir):
+        # Get the sender public key
+        sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+
+        # Get the associated token addresses for the sender
+        sender_ata = get_associated_token_address(sender_public_key, Pubkey.from_string(SOL.JUP_MINT_ADDRESS_STR))
+
+        create_instruction = create_associated_token_account(
+            payer=sender_ata,
+            owner=Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR),
+            mint=Pubkey.from_string(SOL.JUP_MINT_ADDRESS_STR),
+        )
+        sol = SolanaClient(backend)
+        message_data = sol.craft_tx([create_instruction], sender_public_key)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            scenario_navigator.review_approve(path=root_pytest_dir)
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
 class TestTrustedName:
 
     def test_solana_trusted_name(self, backend, scenario_navigator, root_pytest_dir):
@@ -89,6 +110,39 @@ class TestTrustedName:
         message_data = sol.craft_tx([create_instruction, transfer_instruction], sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            scenario_navigator.review_approve(path=root_pytest_dir)
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+
+    def test_solana_trusted_name_ata_input(self, backend, scenario_navigator, root_pytest_dir):
+        # Get the sender public key
+        sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+
+        # Get the associated token addresses for the sender
+        sender_ata = get_associated_token_address(sender_public_key, Pubkey.from_string(SOL.JUP_MINT_ADDRESS_STR))
+        destination_ata = str(get_associated_token_address(
+            Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR),
+            Pubkey.from_string(SOL.JUP_MINT_ADDRESS_STR)
+        ))
+
+        transfer_instruction = transfer_checked(
+            TransferCheckedParams(
+                program_id=TOKEN_PROGRAM_ID,
+                source=sender_ata,
+                mint=Pubkey.from_string(SOL.JUP_MINT_ADDRESS_STR),
+                dest=Pubkey.from_string(destination_ata),
+                owner=sender_public_key,
+                amount=1,
+                decimals=6
+            )
+        )
+
+        sol = SolanaClient(backend)
+        message_data = sol.craft_tx([transfer_instruction], sender_public_key)
+        sol.enroll_ata(SOL.JUP_MINT_ADDRESS, destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data, user_input_is_ata_or_token_account=True):
             scenario_navigator.review_approve(path=root_pytest_dir)
         signature: bytes = sol.get_async_response().data
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)

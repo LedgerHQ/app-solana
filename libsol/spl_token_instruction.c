@@ -665,6 +665,7 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
                                   bool is_token2022_kind,
                                   bool primary) {
     SummaryItem *item;
+    bool unknown_mint = false;
 
     if (primary) {
         item = transaction_summary_primary_item();
@@ -674,12 +675,37 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
 
     const char *symbol = get_token_symbol(info->mint_account->data, is_token2022_kind);
     PRINTF("symbol = %s\n", symbol);
+    if (strcmp(symbol, "???") == 0) {
+        unknown_mint = true;
+    }
 
     summary_item_set_token_amount(item,
                                   "Transfer tokens",
                                   info->body.amount,
                                   symbol,
                                   info->body.decimals);
+
+    if (print_config->force_full_print || unknown_mint) {
+        PRINTF("Mint account print\n");
+        item = transaction_summary_general_item();
+        summary_item_set_pubkey(item, "Token address", info->mint_account);
+    }
+
+    if (print_config->force_full_print || !print_config->user_input_is_ata_or_token_account) {
+        PRINTF("Wallet account print\n");
+        const char *to_address;
+        if (get_transfer_to_address(&to_address) != 0) {
+            return -1;
+        }
+        item = transaction_summary_general_item();
+        summary_item_set_string(item, "To", to_address);
+    }
+
+    if (print_config->force_full_print || print_config->user_input_is_ata_or_token_account) {
+        PRINTF("ATA account print\n");
+        item = transaction_summary_general_item();
+        summary_item_set_pubkey(item, "To (token account)", info->dest_account);
+    }
 
     item = transaction_summary_general_item();
     if (info->is_transfer_checked_with_fee) {
@@ -691,22 +717,6 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
                                           info->body.decimals);
         }
     }
-
-    const char *to_address;
-    if (get_transfer_to_address(&to_address) != 0) {
-        return -1;
-    }
-    item = transaction_summary_general_item();
-    summary_item_set_string(item, "To", to_address);
-
-    item = transaction_summary_general_item();
-    summary_item_set_pubkey(item, "Token address", info->mint_account);
-
-    item = transaction_summary_general_item();
-    summary_item_set_pubkey(item, "From (token account)", info->src_account);
-
-    item = transaction_summary_general_item();
-    summary_item_set_pubkey(item, "To (token account)", info->dest_account);
 
     transaction_summary_set_token_fee_warning(is_token2022_kind &&
                                               !info->is_transfer_checked_with_fee);

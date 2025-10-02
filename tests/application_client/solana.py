@@ -35,8 +35,10 @@ P1_NON_CONFIRM = 0x00
 P1_CONFIRM = 0x01
 
 P2_NONE = 0x00
-P2_EXTEND = 0x01
-P2_MORE = 0x02
+P2_EXTEND = 0x01 << 0
+P2_MORE = 0x01 << 1
+
+P2_IS_ATA_OR_TOKEN_ACCOUNT = 0x01 << 3
 
 PUBLIC_KEY_LENGTH = 32
 
@@ -425,26 +427,33 @@ class SolanaClient:
         return [header] + message_splited
 
 
-    def send_first_message_batch(self, ins: INS, messages: List[bytes], p1: int) -> RAPDU:
+    def send_first_message_batch(self, ins: INS, messages: List[bytes], p1: int, user_input_is_ata_or_token_account: bool) -> RAPDU:
         self._client.exchange(CLA, ins, p1, P2_MORE, messages[0])
+        p2 = P2_MORE | P2_EXTEND
+        if user_input_is_ata_or_token_account:
+            p2 |= P2_IS_ATA_OR_TOKEN_ACCOUNT
         for m in messages[1:]:
-            self._client.exchange(CLA, ins, p1, P2_MORE | P2_EXTEND, m)
+            self._client.exchange(CLA, ins, p1, p2, m)
 
 
     @contextmanager
     def send_async_sign_request(self,
                                 ins: INS,
                                 derivation_path : bytes,
-                                message: bytes) -> Generator[None, None, None]:
+                                message: bytes,
+                                user_input_is_ata_or_token_account: bool = False) -> Generator[None, None, None]:
         message_splited_prefixed = self.split_and_prefix_message(derivation_path, message)
 
         # Send all chunks with P2_MORE except for the last chunk
         # Send all chunks with P2_EXTEND except for the first chunk
         if len(message_splited_prefixed) > 1:
             final_p2 = P2_EXTEND
-            self.send_first_message_batch(ins, message_splited_prefixed[:-1], P1_CONFIRM)
+            self.send_first_message_batch(ins, message_splited_prefixed[:-1], P1_CONFIRM, user_input_is_ata_or_token_account)
         else:
             final_p2 = 0
+
+        if user_input_is_ata_or_token_account:
+            final_p2 |= P2_IS_ATA_OR_TOKEN_ACCOUNT
 
         with self._client.exchange_async(CLA,
                                          ins,
@@ -457,8 +466,9 @@ class SolanaClient:
     @contextmanager
     def send_async_sign_message(self,
                                 derivation_path : bytes,
-                                message: bytes) -> Generator[None, None, None]:
-        with self.send_async_sign_request(INS.INS_SIGN_MESSAGE, derivation_path, message):
+                                message: bytes,
+                                user_input_is_ata_or_token_account: bool = False) -> Generator[None, None, None]:
+        with self.send_async_sign_request(INS.INS_SIGN_MESSAGE, derivation_path, message, user_input_is_ata_or_token_account):
             yield
 
 

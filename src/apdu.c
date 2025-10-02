@@ -118,21 +118,21 @@ static bool instruction_with_only_derivation_path_in_payload(uint8_t instruction
 // clang-format on
 
 /**
- * Deserialize APDU into ApduCommand structure.
+ * Deserialize APDU into apdu_command_t structure.
  *
  * @param[in] apdu_message
  *   Pointer to raw APDU buffer.
  * @param[in] apdu_message_len
  *   Size of the APDU buffer.
  * @param[out] apdu_command
- *   Pointer to ApduCommand structure.
+ *   Pointer to apdu_command_t structure.
  *
  * @return zero on success, ApduReply error code otherwise.
  *
  */
 int apdu_handle_message(const uint8_t *apdu_message,
                         size_t apdu_message_len,
-                        ApduCommand *apdu_command) {
+                        apdu_command_t *apdu_command) {
     if (apdu_command == NULL || apdu_message == NULL) {
         PRINTF("apdu_handle_message internal error, NULL argument\n");
         return ApduReplySdkInvalidParameter;
@@ -150,7 +150,7 @@ int apdu_handle_message(const uint8_t *apdu_message,
     if (instruction_without_payload(header.instruction)) {
         PRINTF("instruction_without_payload early return\n");
         // return early if no data is expected for the command
-        explicit_bzero(apdu_command, sizeof(ApduCommand));
+        explicit_bzero(apdu_command, sizeof(apdu_command_t));
         apdu_command->state = ApduStatePayloadComplete;
         apdu_command->instruction = header.instruction;
         apdu_command->non_confirm = (header.p1 == P1_NON_CONFIRM);
@@ -169,7 +169,7 @@ int apdu_handle_message(const uint8_t *apdu_message,
 
     if (first_data_chunk) {
         PRINTF("Overwrite any split context we may have\n");
-        explicit_bzero(apdu_command, sizeof(ApduCommand));
+        explicit_bzero(apdu_command, sizeof(apdu_command_t));
         apdu_command->state = ApduStatePayloadInProgress;
         apdu_command->instruction = header.instruction;
         apdu_command->non_confirm = (header.p1 == P1_NON_CONFIRM);
@@ -282,6 +282,8 @@ int apdu_handle_message(const uint8_t *apdu_message,
     if (!(header.p2 & P2_MORE)) {
         PRINTF("Received APDU is complete\n");
         apdu_command->state = ApduStatePayloadComplete;
+
+        apdu_command->user_input_is_ata_or_token_account = (header.p2 & P2_IS_ATA_OR_TOKEN_ACCOUNT);
     }
 
     return 0;

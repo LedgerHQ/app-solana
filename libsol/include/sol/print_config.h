@@ -6,6 +6,8 @@
 typedef struct PrintConfig {
     MessageHeader header;
     bool expert_mode;
+    bool force_full_print;
+    bool user_input_is_ata_or_token_account;
     const Pubkey *signer_pubkey;
 } PrintConfig;
 

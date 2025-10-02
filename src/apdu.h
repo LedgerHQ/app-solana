@@ -67,7 +67,7 @@ typedef struct ApduHeader {
     bool deprecated_host;
 } ApduHeader;
 
-typedef struct ApduCommand {
+typedef struct apdu_command_s {
     ApduState state;
     InstructionCode instruction;
     uint8_t num_derivation_paths;
@@ -78,10 +78,11 @@ typedef struct ApduCommand {
     uint8_t message[MAX_MESSAGE_LENGTH];
     int message_length;
     Hash message_hash;
-} ApduCommand;
+    bool user_input_is_ata_or_token_account;
+} apdu_command_t;
 
-extern ApduCommand G_command;
+extern apdu_command_t G_command;
 
 int apdu_handle_message(const uint8_t *apdu_message,
                         size_t apdu_message_len,
-                        ApduCommand *apdu_command);
+                        apdu_command_t *apdu_command);

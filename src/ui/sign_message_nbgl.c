@@ -129,7 +129,7 @@ static void on_warning_choice(bool cancel) {
 
         nbgl_useCaseReview(operation_type,
                            &content,
-                           &ICON_HOME,
+                           &ICON_SIGN_MENU,
                            "Review transaction",
                            NULL,
 #ifdef SCREEN_SIZE_WALLET

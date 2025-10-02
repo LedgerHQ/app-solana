@@ -34,8 +34,8 @@ APPNAME = "Solana"
 
 # Application version
 APPVERSION_M = 1
-APPVERSION_N = 10
-APPVERSION_P = 0
+APPVERSION_N = 11
+APPVERSION_P = 1
 APPVERSION = "$(APPVERSION_M).$(APPVERSION_N).$(APPVERSION_P)"
 
 # Application source files
@@ -46,8 +46,6 @@ ICON_NANOX = icons/icon_solana_14px.gif
 ICON_NANOSP = icons/icon_solana_14px.gif
 ICON_STAX = icons/icon_solana_32px.gif
 ICON_FLEX = icons/icon_solana_40px.gif
-
-ICON_HOME_NANO = glyphs/home_boilerplate_14px.gif
 
 # Application allowed derivation curves
 CURVE_APP_LOAD_PARAMS = ed25519
