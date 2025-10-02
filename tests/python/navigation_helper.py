@@ -83,8 +83,12 @@ class NavigationHelper:
         if self._backend.firmware.is_nano:
             nav = self._enable_nano_option_n(1)
         else:
+            if self._backend.firmware is Firmware.APEX_P:
+                coordinates = (263,95)
+            else:
+                coordinates = (348,132)
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
-                   NavIns(NavInsID.TOUCH, (348,132)),
+                   NavIns(NavInsID.TOUCH, coordinates),
                    NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
         self._navigator.navigate_and_compare(self._root_pytest_dir,
                                              snapshots_name,
@@ -95,9 +99,13 @@ class NavigationHelper:
         if self._backend.firmware.is_nano:
             nav = self._enable_nano_option_n(2)
         else:
+            if self._backend.firmware is Firmware.APEX_P:
+                coordinates = (263,193)
+            else:
+                coordinates = (348,251)
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
                    NavInsID.USE_CASE_SETTINGS_NEXT,
-                   NavIns(NavInsID.TOUCH, (348,251)),
+                   NavIns(NavInsID.TOUCH, coordinates),
                    NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
         self._navigator.navigate_and_compare(self._root_pytest_dir,
                                              snapshots_name,
@@ -111,10 +119,14 @@ class NavigationHelper:
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
                    NavIns(NavInsID.TOUCH, (348,382)),
                    NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
-        elif self._backend.firmware is Firmware.FLEX:
+        else:
+            if self._backend.firmware is Firmware.APEX_P:
+                coordinates = (262,98)
+            else:
+                coordinates = (250,150)
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
                    NavInsID.USE_CASE_SETTINGS_NEXT,
-                   NavIns(NavInsID.TOUCH, (250,150)),
+                   NavIns(NavInsID.TOUCH, coordinates),
                    NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
         self._navigator.navigate_and_compare(self._root_pytest_dir,
                                              snapshots_name,
