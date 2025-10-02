@@ -42,7 +42,7 @@ static bool check_swap_validity_native(const SummaryItemKind_t kinds[MAX_TRANSAC
                         PRINTF("check_swap_fee failed\n");
                         return false;
                     }
-                } else if (strcmp(G_transaction_summary_title, "Transfer") == 0) {
+                } else if (strcmp(G_transaction_summary_title, "Amount") == 0) {
                     if (!check_swap_amount(G_transaction_summary_text)) {
                         PRINTF("check_swap_amount failed\n");
                         return false;
@@ -50,17 +50,17 @@ static bool check_swap_validity_native(const SummaryItemKind_t kinds[MAX_TRANSAC
                 } else {
                     PRINTF("Refused title '%s', expecting '%s'\n",
                            G_transaction_summary_title,
-                           "Transfer");
+                           "Amount");
                     return false;
                 }
                 amount_ok = true;
                 break;
 
             case SummaryItemPubkey:
-                if (strcmp(G_transaction_summary_title, "Recipient") != 0) {
+                if (strcmp(G_transaction_summary_title, "To") != 0) {
                     PRINTF("Refused title '%s', expecting '%s'\n",
                            G_transaction_summary_title,
-                           "Recipient");
+                           "To");
                     return false;
                 }
                 if (!check_swap_recipient(G_transaction_summary_text)) {
@@ -110,10 +110,10 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
                G_transaction_summary_text);
         switch (kinds[i]) {
             case SummaryItemTokenAmount:
-                if (strcmp(G_transaction_summary_title, "Transfer tokens") != 0) {
+                if (strcmp(G_transaction_summary_title, "Amount") != 0) {
                     PRINTF("Refused title '%s', expecting '%s'\n",
                            G_transaction_summary_title,
-                           "Transfer tokens");
+                           "Amount");
                     return false;
                 }
                 if (!check_swap_amount(G_transaction_summary_text)) {

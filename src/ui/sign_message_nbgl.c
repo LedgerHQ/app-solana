@@ -126,17 +126,74 @@ static void on_warning_choice(bool cancel) {
         content.callback = get_single_action_review_pair;
         content.startIndex = 0;
         content.nbPairs = G_transaction_steps_number;
+        const char *review_title = NULL;
+        // On Nano devices we display only the default "Sign transaction?"
+        // We forward NULL to let NBGL handle it
+        const char *confirmation_text = NULL;
+
+        transaction_type_t transaction_type;
+        transaction_summary_get_transaction_type(&transaction_type);
+        PRINTF("transaction_type = %d\n", transaction_type);
+        switch (transaction_type) {
+            case TRANSACTION_TYPE_SOL_TRANSFER:
+                review_title = "Review transaction to send SOL";
+#ifdef SCREEN_SIZE_WALLET
+                confirmation_text = "Sign transaction to send SOL?";
+#endif
+                break;
+            case TRANSACTION_TYPE_SPL_TRANSFER:
+                review_title = "Review transaction to send tokens";
+#ifdef SCREEN_SIZE_WALLET
+                confirmation_text = "Sign transaction to send tokens?";
+#endif
+                break;
+            case TRANSACTION_TYPE_SOL_STAKING:
+                review_title = "Review transaction to delegate stake";
+#ifdef SCREEN_SIZE_WALLET
+                confirmation_text = "Sign transaction to delegate stake?";
+#endif
+                break;
+            case TRANSACTION_TYPE_SOL_DEACTIVATE_STAKE:
+                review_title = "Review transaction to deactivate stake";
+#ifdef SCREEN_SIZE_WALLET
+                confirmation_text = "Sign transaction to deactivate stake?";
+#endif
+                break;
+            case TRANSACTION_TYPE_SOL_ACTIVATE_STAKE:
+                review_title = "Review transaction to activate stake";
+#ifdef SCREEN_SIZE_WALLET
+                confirmation_text = "Sign transaction to activate stake?";
+#endif
+                break;
+            case TRANSACTION_TYPE_SOL_WITHDRAW:
+                review_title = "Review transaction to withdraw SOL";
+#ifdef SCREEN_SIZE_WALLET
+                confirmation_text = "Sign transaction to withdraw SOL?";
+#endif
+                break;
+            case TRANSACTION_TYPE_BLIND_SIGNING:
+                review_title = "Review transaction";
+#ifdef SCREEN_SIZE_WALLET
+                confirmation_text = "Accept risk and sign transaction?";
+#else
+                confirmation_text = "Accept risk and sign transaction";
+#endif
+                break;
+            case TRANSACTION_TYPE_OTHER:
+            default:
+                review_title = "Review transaction";
+#ifdef SCREEN_SIZE_WALLET
+                confirmation_text = "Sign transaction?";
+#endif
+                break;
+        }
 
         nbgl_useCaseReview(operation_type,
                            &content,
                            &ICON_SIGN_MENU,
-                           "Review transaction",
+                           review_title,
                            NULL,
-#ifdef SCREEN_SIZE_WALLET
-                           "Sign transaction on Solana network?",
-#else
-                           NULL,
-#endif
+                           confirmation_text,
                            review_choice);
     }
 }

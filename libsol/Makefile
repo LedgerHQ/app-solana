@@ -12,13 +12,13 @@ test_files := $(wildcard *_test.c)
 test_exes = $(patsubst %.c,$o/%,$(test_files))
 test_oks = $(addsuffix .ok,$(test_exes))
 mock_files = $(wildcard mock/*.c)
-sdk_files = ${FLEX_SDK}/src/os_printf.c
+sdk_files = ${FLEX_SDK}/src/os_printf.c ${FLEX_SDK}/lib_standard_app/base58.c
 
 all: $(test_oks) $(test_exes) $o/libsol.a
 
-CFLAGS += -Werror -Wall -Wextra -pedantic -Wshadow -Wcast-qual -Wcast-align -Wno-unused-parameter
+CFLAGS += -Werror -Wall -Wextra -pedantic -Wshadow -Wcast-qual -Wcast-align -Wno-unused-parameter -Wno-sign-compare
 CFLAGS += -fPIC
-CFLAGS += -Iinclude -Imock -I${FLEX_SDK}/include -I${FLEX_SDK}/io/include -I${FLEX_SDK}/target/flex/include/
+CFLAGS += -Iinclude -Imock -I${FLEX_SDK}/include -I${FLEX_SDK}/io/include -I${FLEX_SDK}/target/flex/include/ -I${FLEX_SDK}/lib_standard_app/
 CFLAGS += $($(mode)_CFLAGS)
 # CFLAGS += -D PRINTF=mcu_usb_printf -D HAVE_PRINTF
 

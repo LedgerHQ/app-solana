@@ -252,12 +252,13 @@ static int print_create_stake_account_and_delegate(const PrintConfig *print_conf
     const StakeDelegateInfo *sd_info = &infos[2]->stake.delegate_stake;
 
     SummaryItem *item = transaction_summary_primary_item();
-    summary_item_set_pubkey(item, "Delegate from", ca_info->to);
+    summary_item_set_pubkey(item, "Delegated from", ca_info->to);
 
     BAIL_IF(print_system_create_account_info(NULL, ca_info, print_config));
     BAIL_IF(print_stake_initialize_info(NULL, si_info, print_config));
     BAIL_IF(print_delegate_stake_info(NULL, sd_info, print_config));
 
+    transaction_summary_set_transaction_type(TRANSACTION_TYPE_SOL_STAKING);
     return 0;
 }
 
@@ -271,12 +272,13 @@ static int print_create_stake_account_with_seed_and_delegate(const PrintConfig *
     const StakeDelegateInfo *sd_info = &infos[2]->stake.delegate_stake;
 
     SummaryItem *item = transaction_summary_primary_item();
-    summary_item_set_pubkey(item, "Delegate from", cws_info->to);
+    summary_item_set_pubkey(item, "Delegated from", cws_info->to);
 
     BAIL_IF(print_system_create_account_with_seed_info(NULL, cws_info, print_config));
     BAIL_IF(print_stake_initialize_info(NULL, si_info, print_config));
     BAIL_IF(print_delegate_stake_info(NULL, sd_info, print_config));
 
+    transaction_summary_set_transaction_type(TRANSACTION_TYPE_SOL_STAKING);
     return 0;
 }
 
