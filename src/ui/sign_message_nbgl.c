@@ -108,6 +108,8 @@ static void review_choice(bool confirm) {
     }
 }
 
+nbgl_warning_t warning;
+
 static void on_warning_choice(bool cancel) {
     if (cancel) {
         review_choice(false);
@@ -131,70 +133,86 @@ static void on_warning_choice(bool cancel) {
         // We forward NULL to let NBGL handle it
         const char *confirmation_text = NULL;
 
-        transaction_type_t transaction_type;
-        transaction_summary_get_transaction_type(&transaction_type);
-        PRINTF("transaction_type = %d\n", transaction_type);
-        switch (transaction_type) {
-            case TRANSACTION_TYPE_SOL_TRANSFER:
-                review_title = "Review transaction to send SOL";
+        bool is_blind_signing;
+        transaction_summary_get_blind_signing(&is_blind_signing);
+        if (is_blind_signing) {
+            explicit_bzero(&warning, sizeof(nbgl_warning_t));
+            warning.predefinedSet |= SET_BIT(BLIND_SIGNING_WARN);
+            nbgl_useCaseAdvancedReview(TYPE_TRANSACTION,
+                                       &content,
+                                       &ICON_SIGN_MENU,
+                                       "Review transaction",
+                                       NULL,
+                                       "Accept risk and sign transaction?",
+                                       NULL,
+                                       &warning,
+                                       review_choice);
+        } else {
+            transaction_type_t transaction_type;
+            transaction_summary_get_transaction_type(&transaction_type);
+            PRINTF("transaction_type = %d\n", transaction_type);
+            switch (transaction_type) {
+                case TRANSACTION_TYPE_SOL_TRANSFER:
+                    review_title = "Review transaction to send SOL";
 #ifdef SCREEN_SIZE_WALLET
-                confirmation_text = "Sign transaction to send SOL?";
+                    confirmation_text = "Sign transaction to send SOL?";
 #endif
-                break;
-            case TRANSACTION_TYPE_SPL_TRANSFER:
-                review_title = "Review transaction to send tokens";
+                    break;
+                case TRANSACTION_TYPE_SPL_TRANSFER:
+                    review_title = "Review transaction to send tokens";
 #ifdef SCREEN_SIZE_WALLET
-                confirmation_text = "Sign transaction to send tokens?";
+                    confirmation_text = "Sign transaction to send tokens?";
 #endif
-                break;
-            case TRANSACTION_TYPE_SOL_STAKING:
-                review_title = "Review transaction to delegate stake";
+                    break;
+                case TRANSACTION_TYPE_SOL_STAKING:
+                    review_title = "Review transaction to delegate stake";
 #ifdef SCREEN_SIZE_WALLET
-                confirmation_text = "Sign transaction to delegate stake?";
+                    confirmation_text = "Sign transaction to delegate stake?";
 #endif
-                break;
-            case TRANSACTION_TYPE_SOL_DEACTIVATE_STAKE:
-                review_title = "Review transaction to deactivate stake";
+                    break;
+                case TRANSACTION_TYPE_SOL_DEACTIVATE_STAKE:
+                    review_title = "Review transaction to deactivate stake";
 #ifdef SCREEN_SIZE_WALLET
-                confirmation_text = "Sign transaction to deactivate stake?";
+                    confirmation_text = "Sign transaction to deactivate stake?";
 #endif
-                break;
-            case TRANSACTION_TYPE_SOL_ACTIVATE_STAKE:
-                review_title = "Review transaction to activate stake";
+                    break;
+                case TRANSACTION_TYPE_SOL_ACTIVATE_STAKE:
+                    review_title = "Review transaction to activate stake";
 #ifdef SCREEN_SIZE_WALLET
-                confirmation_text = "Sign transaction to activate stake?";
+                    confirmation_text = "Sign transaction to activate stake?";
 #endif
-                break;
-            case TRANSACTION_TYPE_SOL_WITHDRAW:
-                review_title = "Review transaction to withdraw SOL";
+                    break;
+                case TRANSACTION_TYPE_SOL_WITHDRAW:
+                    review_title = "Review transaction to withdraw SOL";
 #ifdef SCREEN_SIZE_WALLET
-                confirmation_text = "Sign transaction to withdraw SOL?";
+                    confirmation_text = "Sign transaction to withdraw SOL?";
 #endif
-                break;
-            case TRANSACTION_TYPE_BLIND_SIGNING:
-                review_title = "Review transaction";
+                    break;
+                case TRANSACTION_TYPE_BLIND_SIGNING:
+                    review_title = "Review transaction";
 #ifdef SCREEN_SIZE_WALLET
-                confirmation_text = "Accept risk and sign transaction?";
+                    confirmation_text = "Accept risk and sign transaction?";
 #else
-                confirmation_text = "Accept risk and sign transaction";
+                    confirmation_text = "Accept risk and sign transaction";
 #endif
-                break;
-            case TRANSACTION_TYPE_OTHER:
-            default:
-                review_title = "Review transaction";
+                    break;
+                case TRANSACTION_TYPE_OTHER:
+                default:
+                    review_title = "Review transaction";
 #ifdef SCREEN_SIZE_WALLET
-                confirmation_text = "Sign transaction?";
+                    confirmation_text = "Sign transaction?";
 #endif
-                break;
-        }
+                    break;
+            }
 
-        nbgl_useCaseReview(operation_type,
-                           &content,
-                           &ICON_SIGN_MENU,
-                           review_title,
-                           NULL,
-                           confirmation_text,
-                           review_choice);
+            nbgl_useCaseReview(operation_type,
+                               &content,
+                               &ICON_SIGN_MENU,
+                               review_title,
+                               NULL,
+                               confirmation_text,
+                               review_choice);
+        }
     }
 }
 
@@ -231,6 +249,7 @@ void start_sign_tx_ui(size_t num_summary_steps) {
         on_warning_choice(false);
     }
 }
+// explicit_bzero(&warning, sizeof(nbgl_warning_t));
 
 void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
     // Set the operation type
@@ -264,4 +283,27 @@ void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
                        NULL,
 #endif
                        review_choice);
+}
+
+#ifdef SCREEN_SIZE_WALLET
+static void ui_error_blind_signing_choice(bool confirm) {
+    if (confirm) {
+        ui_settings();
+    } else {
+        ui_idle();
+    }
+}
+#endif
+
+void start_blind_sign_error_ui(void) {
+#ifdef SCREEN_SIZE_WALLET
+    nbgl_useCaseChoice(&ICON_WARNING,
+                       "This transaction cannot be clear-signed",
+                       "Enable blind signing in the settings to sign this transaction.",
+                       "Go to settings",
+                       "Reject transaction",
+                       ui_error_blind_signing_choice);
+#else
+    nbgl_useCaseAction(&ICON_WARNING, "Blind signing must\nbe enabled in\nsettings", NULL, ui_idle);
+#endif
 }

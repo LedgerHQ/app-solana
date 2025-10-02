@@ -54,6 +54,8 @@ int read_derivation_path(const uint8_t *data_buffer,
 
 uint8_t set_result_sign_message(void);
 
+#define SET_BIT(a) (1 << a)
+
 #endif  //_UTILS_H_
 
 // Outdated ?

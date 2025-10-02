@@ -97,7 +97,7 @@ static void settings_controls_callback(int token, uint8_t index, int page) {
     }
 }
 
-void ui_idle(void) {
+static void ui_main_menu(uint8_t page) {
     G_switches[BLIND_SIGNING_IDX].text = "Blind signing";
     G_switches[BLIND_SIGNING_IDX].subText = "Enable blind signing";
     G_switches[BLIND_SIGNING_IDX].token = BLIND_SIGNING_TOKEN;
@@ -137,9 +137,19 @@ void ui_idle(void) {
     nbgl_useCaseHomeAndSettings(APPNAME,
                                 &ICON_HOME,
                                 NULL,
-                                INIT_HOME_PAGE,
+                                page,
                                 &settingContents,
                                 &infoList,
                                 NULL,
                                 quit_app_callback);
+}
+
+void ui_idle(void) {
+    ui_main_menu(INIT_HOME_PAGE);
+}
+/**
+ * Go to settings screen
+ */
+void ui_settings(void) {
+    ui_main_menu(0);
 }

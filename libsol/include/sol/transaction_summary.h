@@ -109,6 +109,8 @@ void transaction_summary_set_is_token_2022_transfer(bool is_token_2022_transfer)
 void transaction_summary_get_is_token_2022_transfer(bool *is_token_2022_transfer);
 void transaction_summary_set_transaction_type(transaction_type_t transaction_type);
 void transaction_summary_get_transaction_type(transaction_type_t *transaction_type);
+void transaction_summary_set_blind_signing(bool is_blind_signing);
+void transaction_summary_get_blind_signing(bool *is_blind_signing);
 void summary_item_set_offchain_message_application_domain(
     SummaryItem *item,
     const char *title,
