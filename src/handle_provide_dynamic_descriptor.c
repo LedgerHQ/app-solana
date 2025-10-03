@@ -47,6 +47,18 @@ typedef enum extension_code_value_e {
     GROUP = 0X0E,
     MEMBER_POINTER = 0X0F,
     MEMBER = 0X10,
+    TRANSFER_FEE_AMOUNT = 0x11,
+    TRANSFER_HOOK_ACCOUNT = 0x12,
+    CONFIDENTIAL_TRANSFER_ACCOUNT = 0x13,
+    CONFIDENTIAL_TRANSFER_FEE_ACCOUNT = 0x14,
+    CONFIDENTIAL_TRANSFER_FEE_CONFIG = 0x15,
+    CONFIDENTIAL_TRANSFER_MINT = 0x16,
+    CONFIDENTIAL_MINT_BURN = 0x17,
+    SCALED_UI_AMOUNT = 0x18,
+    PAUSABLE = 0x19,
+    PAUSABLE_ACCOUNT = 0x1A,
+    UNPARSABLE_EXTENSION = 0x1B,
+    UNINITIALIZED = 0x1C,
     // This works currently as all previous enum values are set and contiguous
     EXTENSION_CODE_VALUE_COUNT,
 } extension_code_value_t;
@@ -129,8 +141,8 @@ void handle_provide_dynamic_descriptor(void) {
 
     for (uint8_t i = 0; i < tlv_TUID_data.extensions.size; ++i) {
         if (tlv_TUID_data.extensions.ptr[i] >= EXTENSION_CODE_VALUE_COUNT) {
-            PRINTF("Unknown extension %d\n", tlv_TUID_data.extensions.ptr[i]);
-            THROW(ApduReplySolanaInvalidDynamicToken);
+            PRINTF("Warning: Unknown extension %d\n", tlv_TUID_data.extensions.ptr[i]);
+            // This is not an error
         }
     }
 
