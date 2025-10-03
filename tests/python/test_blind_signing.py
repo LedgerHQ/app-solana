@@ -96,7 +96,8 @@ def test_blind_signing_enabled_reject(sol, backend, scenario_navigator, navigato
                                                       text=pattern,
                                                       path=root_pytest_dir,
                                                       test_case_name=test_name + "_choice",
-                                                      screen_change_before_first_instruction=False)
+                                                      screen_change_before_first_instruction=False,
+                                                      screen_change_after_last_instruction=False)
     assert e.value.status == ErrorType.USER_CANCEL
 
 def test_blind_signing_enabled_accept(sol, backend, scenario_navigator, navigator, navigation_helper, root_pytest_dir, test_name):
