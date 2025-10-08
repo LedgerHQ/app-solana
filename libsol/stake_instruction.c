@@ -365,7 +365,7 @@ bool _is_known_pubkey(const Pubkey *candidate_pubkey, const char *known_as_str) 
         return false;
     }
 
-    // Compare candidate_pubkey with decoded Figment pubkey
+    // Compare candidate_pubkey against known decoded public key
     return memcmp(candidate_pubkey->data, known_as_data, PUBKEY_LENGTH) == 0;
 }
 

@@ -1,6 +1,7 @@
 #include "os.h"
 #include "token_info.h"
 #include "util.h"
+#include "macros.h"
 
 const TokenInfo TOKEN_REGISTRY[] = {
     // So11111111111111111111111111111111111111112
@@ -842,7 +843,7 @@ const uint8_t *get_hardcoded_token_mint_address(const char *ticker, bool *is_tok
     // No 2022 tokens are hardcoded in the application and will ever be
     *is_token_2022_kind = false;
 
-    for (size_t i = 0; i < sizeof(TOKEN_REGISTRY) / sizeof(TOKEN_REGISTRY[0]); i++) {
+    for (size_t i = 0; i < ARRAY_LENGTH(TOKEN_REGISTRY); i++) {
         if (strcmp(ticker, TOKEN_REGISTRY[i].symbol) == 0) {
             return TOKEN_REGISTRY[i].mint_address.data;
         }
