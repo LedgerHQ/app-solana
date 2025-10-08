@@ -249,7 +249,6 @@ void start_sign_tx_ui(size_t num_summary_steps) {
         on_warning_choice(false);
     }
 }
-// explicit_bzero(&warning, sizeof(nbgl_warning_t));
 
 void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
     // Set the operation type
