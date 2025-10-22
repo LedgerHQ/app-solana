@@ -8,10 +8,10 @@
 #include "sol/printer.h"
 
 // Helper to get our public key in base58 format for a given derivation path
-static int derive_public_key(const uint8_t *buffer,
-                             uint16_t buffer_length,
-                             uint8_t public_key[PUBKEY_LENGTH],
-                             char public_key_str[BASE58_PUBKEY_LENGTH]) {
+int derive_public_key(const uint8_t *buffer,
+                      uint16_t buffer_length,
+                      uint8_t public_key[PUBKEY_LENGTH],
+                      char public_key_str[BASE58_PUBKEY_LENGTH]) {
     uint32_t derivation_path[MAX_BIP32_PATH_LENGTH];
     uint32_t path_length;
     int ret;

@@ -1,3 +1,4 @@
+#include "os.h"
 #include "common_byte_strings.h"
 #include "instruction.h"
 #include "sol/parser.h"
@@ -261,15 +262,18 @@ static int print_system_transfer_info(const SystemTransferInfo *info,
 
     item = transaction_summary_primary_item();
 
-    summary_item_set_amount(item, "Transfer", info->lamports);
+    summary_item_set_amount(item, "Amount", info->lamports);
 
     if (print_config_show_authority(print_config, info->from)) {
+        PRINTF("Printing sender\n");
         item = transaction_summary_general_item();
         summary_item_set_pubkey(item, "Sender", info->from);
     }
 
     item = transaction_summary_general_item();
-    summary_item_set_pubkey(item, "Recipient", info->to);
+    summary_item_set_pubkey(item, "To", info->to);
+
+    transaction_summary_set_transaction_type(TRANSACTION_TYPE_SOL_TRANSFER);
 
     return 0;
 }
@@ -375,34 +379,45 @@ static int print_system_assign_info(const SystemAssignInfo *info, const PrintCon
 int print_system_info(const SystemInfo *info, const PrintConfig *print_config) {
     switch (info->kind) {
         case SystemTransfer:
+            PRINTF("Printing system info SystemTransfer\n");
             return print_system_transfer_info(&info->transfer, print_config);
         case SystemAdvanceNonceAccount:
+            PRINTF("Printing system info SystemAdvanceNonceAccount\n");
             return print_system_advance_nonce_account(&info->advance_nonce, print_config);
         case SystemCreateAccount:
+            PRINTF("Printing system info SystemCreateAccount\n");
             return print_system_create_account_info(CREATE_ACCOUNT_TITLE,
                                                     &info->create_account,
                                                     print_config);
         case SystemCreateAccountWithSeed:
+            PRINTF("Printing system info SystemCreateAccountWithSeed\n");
             return print_system_create_account_with_seed_info(CREATE_ACCOUNT_TITLE,
                                                               &info->create_account_with_seed,
                                                               print_config);
         case SystemInitializeNonceAccount:
+            PRINTF("Printing system info SystemInitializeNonceAccount\n");
             return print_system_initialize_nonce_info("Init nonce acct",
                                                       &info->initialize_nonce,
                                                       print_config);
         case SystemWithdrawNonceAccount:
+            PRINTF("Printing system info SystemWithdrawNonceAccount\n");
             return print_system_withdraw_nonce_info(&info->withdraw_nonce, print_config);
         case SystemAuthorizeNonceAccount:
+            PRINTF("Printing system info SystemAuthorizeNonceAccount\n");
             return print_system_authorize_nonce_info(&info->authorize_nonce, print_config);
         case SystemAssign:
+            PRINTF("Printing system info SystemAssign\n");
             return print_system_assign_info(&info->assign, print_config);
         case SystemAllocate:
+            PRINTF("Printing system info SystemAllocate\n");
             return print_system_allocate_info(&info->allocate, print_config);
         case SystemAllocateWithSeed:
+            PRINTF("Printing system info SystemAllocateWithSeed\n");
             return print_system_allocate_with_seed_info("Allocate acct",
                                                         &info->allocate_with_seed,
                                                         print_config);
         case SystemAssignWithSeed:
+            PRINTF("Printing system info SystemAssignWithSeed\n");
             break;
     }
 

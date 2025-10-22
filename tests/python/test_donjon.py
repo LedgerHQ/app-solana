@@ -61,7 +61,7 @@
 #                                  challenge=challenge)
 
 #         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-#             scenario_navigator.review_approve(path=SOL.ROOT_SCREENSHOT_PATH)
+#             scenario_navigator.review_approve(path=root_pytest_dir)
 
 #         signature: bytes = sol.get_async_response().data
 #         verify_signature(SOL.OWNED_PUBLIC_KEY, message, signature)

@@ -66,6 +66,18 @@ enum DisplayFlags {
 int transaction_summary_display_item(size_t item_index, enum DisplayFlags flags);
 int transaction_summary_finalize(enum SummaryItemKind *item_kinds, size_t *item_kinds_len);
 
+typedef enum transaction_type_e {
+    // Default
+    TRANSACTION_TYPE_OTHER = 0,
+    TRANSACTION_TYPE_SOL_TRANSFER,
+    TRANSACTION_TYPE_SPL_TRANSFER,
+    TRANSACTION_TYPE_SOL_STAKING,
+    TRANSACTION_TYPE_SOL_DEACTIVATE_STAKE,
+    TRANSACTION_TYPE_SOL_ACTIVATE_STAKE,
+    TRANSACTION_TYPE_SOL_WITHDRAW,
+    TRANSACTION_TYPE_BLIND_SIGNING,
+} transaction_type_t;
+
 // Get a pointer to the requested SummaryItem. NULL if it has already been set
 SummaryItem *transaction_summary_primary_item();
 SummaryItem *transaction_summary_fee_payer_item();
@@ -95,6 +107,10 @@ void transaction_summary_set_token_hook_warning(bool hook_warning);
 void transaction_summary_get_token_warnings(bool *fee_warning, bool *hook_warning);
 void transaction_summary_set_is_token_2022_transfer(bool is_token_2022_transfer);
 void transaction_summary_get_is_token_2022_transfer(bool *is_token_2022_transfer);
+void transaction_summary_set_transaction_type(transaction_type_t transaction_type);
+void transaction_summary_get_transaction_type(transaction_type_t *transaction_type);
+void transaction_summary_set_blind_signing(bool is_blind_signing);
+void transaction_summary_get_blind_signing(bool *is_blind_signing);
 void summary_item_set_offchain_message_application_domain(
     SummaryItem *item,
     const char *title,

@@ -1,6 +1,7 @@
 #include "common_byte_strings.h"
 #include "util.h"
 #include "token_info.h"
+#include "test_utils.h"
 #include <assert.h>
 #include <stdio.h>
 
@@ -30,9 +31,9 @@ void test_get_hardcoded_token_symbol_SOL() {
 }
 
 int main() {
-    test_get_hardcoded_token_symbol_unknown();
-    test_get_hardcoded_token_symbol_SOL();
-    test_get_hardcoded_token_symbol_USDC();
+    RUN_TEST(test_get_hardcoded_token_symbol_unknown);
+    RUN_TEST(test_get_hardcoded_token_symbol_SOL);
+    RUN_TEST(test_get_hardcoded_token_symbol_USDC);
 
     printf("passed\n");
     return 0;

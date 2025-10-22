@@ -1,3 +1,4 @@
+#include "os.h"
 #include "sol/parser.h"
 #include "sol/printer.h"
 #include "sol/transaction_summary.h"
@@ -94,6 +95,8 @@ typedef struct TransactionSummary {
     bool is_token_2022_transfer;
     bool fee_warning;
     bool hook_warning;
+    bool is_blind_signing;
+    transaction_type_t transaction_type;
     SummaryItem primary;
     SummaryItem fee_payer;
     SummaryItem nonce_account;
@@ -172,6 +175,22 @@ void transaction_summary_set_is_token_2022_transfer(bool is_token_2022_transfer)
 
 void transaction_summary_get_is_token_2022_transfer(bool *is_token_2022_transfer) {
     *is_token_2022_transfer = G_transaction_summary.is_token_2022_transfer;
+}
+
+void transaction_summary_set_transaction_type(transaction_type_t transaction_type) {
+    G_transaction_summary.transaction_type = transaction_type;
+}
+
+void transaction_summary_get_transaction_type(transaction_type_t *transaction_type) {
+    *transaction_type = G_transaction_summary.transaction_type;
+}
+
+void transaction_summary_set_blind_signing(bool is_blind_signing) {
+    G_transaction_summary.is_blind_signing = is_blind_signing;
+}
+
+void transaction_summary_get_blind_signing(bool *is_blind_signing) {
+    *is_blind_signing = G_transaction_summary.is_blind_signing;
 }
 
 #define FEE_PAYER_TITLE "Fee payer"
@@ -320,6 +339,7 @@ int transaction_summary_finalize(enum SummaryItemKind *item_kinds, size_t *item_
     size_t index = 0;
 
     if (summary->primary.kind == SummaryItemNone) {
+        PRINTF("Error transaction summary is unset\n");
         return 1;
     }
 

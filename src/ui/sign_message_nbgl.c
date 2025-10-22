@@ -1,5 +1,3 @@
-#ifdef HAVE_NBGL
-
 #include "io_utils.h"
 #include "sol/parser.h"
 #include "sol/printer.h"
@@ -11,7 +9,6 @@
 #include "utils.h"
 #include "ui_api.h"
 
-#include "nbgl_page.h"
 #include "nbgl_use_case.h"
 
 #include "handle_sign_message.h"
@@ -56,6 +53,7 @@ static inline void populate_displayed_slot_non_ascii(const size_t slot, const ui
 // current_pair will point at values stored in displayed_slots[]
 // this will enable displaying at most sizeof(displayed_slots) values simultaneously
 static nbgl_contentTagValue_t *get_single_action_review_pair(uint8_t index) {
+    PRINTF("get_single_action_review_pair index = %d\n", index);
     uint8_t slot = index % ARRAY_COUNT(displayed_slots);
     // Final step is special for ASCII messages
     if (index == G_transaction_steps_number - 1 && G_last_step_is_ascii) {
@@ -110,6 +108,8 @@ static void review_choice(bool confirm) {
     }
 }
 
+nbgl_warning_t warning;
+
 static void on_warning_choice(bool cancel) {
     if (cancel) {
         review_choice(false);
@@ -128,14 +128,91 @@ static void on_warning_choice(bool cancel) {
         content.callback = get_single_action_review_pair;
         content.startIndex = 0;
         content.nbPairs = G_transaction_steps_number;
+        const char *review_title = NULL;
+        // On Nano devices we display only the default "Sign transaction?"
+        // We forward NULL to let NBGL handle it
+        const char *confirmation_text = NULL;
 
-        nbgl_useCaseReview(operation_type,
-                           &content,
-                           &C_icon_solana_64x64,
-                           "Review transaction",
-                           NULL,
-                           "Sign transaction on Solana network?",
-                           review_choice);
+        bool is_blind_signing;
+        transaction_summary_get_blind_signing(&is_blind_signing);
+        if (is_blind_signing) {
+            explicit_bzero(&warning, sizeof(nbgl_warning_t));
+            warning.predefinedSet |= SET_BIT(BLIND_SIGNING_WARN);
+            nbgl_useCaseAdvancedReview(TYPE_TRANSACTION,
+                                       &content,
+                                       &ICON_SIGN_MENU,
+                                       "Review transaction",
+                                       NULL,
+                                       "Accept risk and sign transaction?",
+                                       NULL,
+                                       &warning,
+                                       review_choice);
+        } else {
+            transaction_type_t transaction_type;
+            transaction_summary_get_transaction_type(&transaction_type);
+            PRINTF("transaction_type = %d\n", transaction_type);
+            switch (transaction_type) {
+                case TRANSACTION_TYPE_SOL_TRANSFER:
+                    review_title = "Review transaction to send SOL";
+#ifdef SCREEN_SIZE_WALLET
+                    confirmation_text = "Sign transaction to send SOL?";
+#endif
+                    break;
+                case TRANSACTION_TYPE_SPL_TRANSFER:
+                    review_title = "Review transaction to send tokens";
+#ifdef SCREEN_SIZE_WALLET
+                    confirmation_text = "Sign transaction to send tokens?";
+#endif
+                    break;
+                case TRANSACTION_TYPE_SOL_STAKING:
+                    review_title = "Review transaction to delegate stake";
+#ifdef SCREEN_SIZE_WALLET
+                    confirmation_text = "Sign transaction to delegate stake?";
+#endif
+                    break;
+                case TRANSACTION_TYPE_SOL_DEACTIVATE_STAKE:
+                    review_title = "Review transaction to deactivate stake";
+#ifdef SCREEN_SIZE_WALLET
+                    confirmation_text = "Sign transaction to deactivate stake?";
+#endif
+                    break;
+                case TRANSACTION_TYPE_SOL_ACTIVATE_STAKE:
+                    review_title = "Review transaction to activate stake";
+#ifdef SCREEN_SIZE_WALLET
+                    confirmation_text = "Sign transaction to activate stake?";
+#endif
+                    break;
+                case TRANSACTION_TYPE_SOL_WITHDRAW:
+                    review_title = "Review transaction to withdraw SOL";
+#ifdef SCREEN_SIZE_WALLET
+                    confirmation_text = "Sign transaction to withdraw SOL?";
+#endif
+                    break;
+                case TRANSACTION_TYPE_BLIND_SIGNING:
+                    review_title = "Review transaction";
+#ifdef SCREEN_SIZE_WALLET
+                    confirmation_text = "Accept risk and sign transaction?";
+#else
+                    confirmation_text = "Accept risk and sign transaction";
+#endif
+                    break;
+                case TRANSACTION_TYPE_OTHER:
+                default:
+                    review_title = "Review transaction";
+#ifdef SCREEN_SIZE_WALLET
+                    confirmation_text = "Sign transaction?";
+#endif
+                    break;
+            }
+
+            nbgl_useCaseReview(operation_type,
+                               &content,
+                               &ICON_SIGN_MENU,
+                               review_title,
+                               NULL,
+                               confirmation_text,
+                               review_choice);
+        }
     }
 }
 
@@ -162,7 +239,7 @@ void start_sign_tx_ui(size_t num_summary_steps) {
     }
 
     if (warning_title != NULL) {
-        nbgl_useCaseChoice(&C_Warning_64px,
+        nbgl_useCaseChoice(&ICON_WARNING,
                            warning_title,
                            warning_text,
                            "Back to safety",
@@ -196,10 +273,36 @@ void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
     // Start review
     nbgl_useCaseReview(operation_type,
                        &content,
-                       &C_Review_64px,
+                       &ICON_REVIEW,
                        "Review message",
                        NULL,
+#ifdef SCREEN_SIZE_WALLET
                        "Sign message?",
+#else
+                       NULL,
+#endif
                        review_choice);
 }
+
+#ifdef SCREEN_SIZE_WALLET
+static void ui_error_blind_signing_choice(bool confirm) {
+    if (confirm) {
+        ui_settings();
+    } else {
+        ui_idle();
+    }
+}
 #endif
+
+void start_blind_sign_error_ui(void) {
+#ifdef SCREEN_SIZE_WALLET
+    nbgl_useCaseChoice(&ICON_WARNING,
+                       "This transaction cannot be clear-signed",
+                       "Enable blind signing in the settings to sign this transaction.",
+                       "Go to settings",
+                       "Reject transaction",
+                       ui_error_blind_signing_choice);
+#else
+    nbgl_useCaseAction(&ICON_WARNING, "Blind signing must\nbe enabled in\nsettings", NULL, ui_idle);
+#endif
+}

@@ -26,8 +26,6 @@ ifeq ($(BOLOS_SDK),)
 $(error Environment variable BOLOS_SDK is not set)
 endif
 
-include $(BOLOS_SDK)/Makefile.defines
-
 ########################################
 #        Mandatory configuration       #
 ########################################
@@ -36,19 +34,19 @@ APPNAME = "Solana"
 
 # Application version
 APPVERSION_M = 1
-APPVERSION_N = 9
-APPVERSION_P = 2
+APPVERSION_N = 12
+APPVERSION_P = 0
 APPVERSION = "$(APPVERSION_M).$(APPVERSION_N).$(APPVERSION_P)"
 
 # Application source files
 APP_SOURCE_PATH += src
 
 # Application icons
-ICON_NANOS = icons/nanos_app_solana.gif
-ICON_NANOX = icons/nanox_app_solana.gif
-ICON_NANOSP = icons/nanox_app_solana.gif
-ICON_STAX = icons/stax_app_solana.gif
-ICON_FLEX = icons/flex_app_solana.gif
+ICON_NANOX = icons/icon_solana_14px.gif
+ICON_NANOSP = icons/icon_solana_14px.gif
+ICON_STAX = icons/icon_solana_32px.gif
+ICON_FLEX = icons/icon_solana_40px.gif
+ICON_APEX_P = icons/icon_solana_32px_apex.png
 
 # Application allowed derivation curves
 CURVE_APP_LOAD_PARAMS = ed25519
@@ -62,13 +60,6 @@ VARIANT_VALUES = solana
 
 # Enabling DEBUG flag will enable PRINTF and disable optimizations
 # DEBUG = 1
-
-########################################
-#     Application custom permissions   #
-########################################
-ifeq ($(TARGET_NAME),$(filter $(TARGET_NAME),TARGET_NANOX TARGET_STAX TARGET_FLEX))
-HAVE_APPLICATION_FLAG_BOLOS_SETTINGS = 1
-endif
 
 # --8<-- [start:variables]
 ########################################
@@ -85,6 +76,11 @@ ENABLE_NBGL_QRCODE = 1
 #            Swap features             #
 ########################################
 ENABLE_SWAP = 1
+
+########################################
+#             UI features              #
+########################################
+ENABLE_NBGL_FOR_NANO_DEVICES = 1
 # --8<-- [end:variables]
 
 ########################################
@@ -92,7 +88,7 @@ ENABLE_SWAP = 1
 ########################################
 # These advanced settings allow to disable some feature that are by
 # default enabled in the SDK `Makefile.standard_app`.
-DISABLE_STANDARD_APP_FILES = 1
+# DISABLE_STANDARD_APP_FILES = 1
 
 # Allow usage of function from lib_standard_app/crypto_helpers.c
 APP_SOURCE_FILES += ${BOLOS_SDK}/lib_standard_app/crypto_helpers.c

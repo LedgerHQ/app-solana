@@ -1,6 +1,7 @@
 #include "common_byte_strings.h"
 #include "instruction.h"
 #include "stake_instruction.c"
+#include "test_utils.h"
 #include <stdio.h>
 #include <assert.h>
 
@@ -388,11 +389,11 @@ void test_parse_stake_lockup_checked_args() {
 }
 
 int main() {
-    test_parse_delegate_stake_instructions();
-    test_parse_stake_initialize_instruction();
-    test_parse_stake_instruction_kind();
-    test_parse_stake_authorize_enum();
-    test_parse_stake_lockup_args();
+    RUN_TEST(test_parse_delegate_stake_instructions);
+    RUN_TEST(test_parse_stake_initialize_instruction);
+    RUN_TEST(test_parse_stake_instruction_kind);
+    RUN_TEST(test_parse_stake_authorize_enum);
+    RUN_TEST(test_parse_stake_lockup_args);
 
     printf("passed\n");
     return 0;

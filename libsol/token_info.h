@@ -10,3 +10,5 @@ typedef struct TokenInfo {
 extern TokenInfo const TOKEN_REGISTRY[];
 
 const char *get_hardcoded_token_symbol(const uint8_t *mint_address);
+
+const uint8_t *get_hardcoded_token_mint_address(const char *ticker, bool *is_token_2022_kind);

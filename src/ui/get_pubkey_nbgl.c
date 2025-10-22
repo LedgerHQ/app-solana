@@ -15,8 +15,6 @@
  *  limitations under the License.
  *****************************************************************************/
 
-#ifdef HAVE_NBGL
-
 #include "handle_get_pubkey.h"
 #include "io_utils.h"
 #include "sol/printer.h"
@@ -38,10 +36,8 @@ static void review_choice(bool confirm) {
 void ui_get_public_key(void) {
     nbgl_useCaseAddressReview(G_publicKeyStr,
                               NULL,
-                              &C_icon_solana_64x64,
+                              &ICON_HOME,
                               "Verify Solana address",
                               NULL,
                               review_choice);
 }
-
-#endif

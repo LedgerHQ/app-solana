@@ -1,4 +1,5 @@
 #include "vote_instruction.c"
+#include "test_utils.h"
 #include <assert.h>
 #include <stdio.h>
 
@@ -97,8 +98,8 @@ void test_parse_vote_authorize_enum() {
 }
 
 int main() {
-    test_parse_vote_instruction_kind();
-    test_parse_vote_authorize_enum();
+    RUN_TEST(test_parse_vote_instruction_kind);
+    RUN_TEST(test_parse_vote_authorize_enum);
 
     printf("passed\n");
     return 0;

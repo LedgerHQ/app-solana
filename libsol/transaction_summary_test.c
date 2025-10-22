@@ -1,6 +1,7 @@
 #include "common_byte_strings.h"
 #include "sol/transaction_summary.h"
 #include "transaction_summary.c"
+#include "test_utils.h"
 #include <assert.h>
 #include <stdio.h>
 
@@ -375,16 +376,16 @@ void test_repro_unrecognized_format_reverse_nav_hash_corruption_bug() {
 }
 
 int main() {
-    test_summary_item_setters();
-    test_summary_item_as_unused();
+    RUN_TEST(test_summary_item_setters);
+    RUN_TEST(test_summary_item_as_unused);
 
-    test_transaction_summary_reset();
-    test_transaction_summary_item_getters();
-    test_transaction_summary_update_display_for_item();
-    test_transaction_summary_display_item();
-    test_transaction_summary_finalize();
+    RUN_TEST(test_transaction_summary_reset);
+    RUN_TEST(test_transaction_summary_item_getters);
+    RUN_TEST(test_transaction_summary_update_display_for_item);
+    RUN_TEST(test_transaction_summary_display_item);
+    RUN_TEST(test_transaction_summary_finalize);
 
-    test_repro_unrecognized_format_reverse_nav_hash_corruption_bug();
+    RUN_TEST(test_repro_unrecognized_format_reverse_nav_hash_corruption_bug);
 
     printf("passed\n");
     return 0;

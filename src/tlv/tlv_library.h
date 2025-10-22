@@ -172,7 +172,7 @@ TAG_LIST(X) \
 // clang-format on
 
 /**
- * Get uint from tlv data
+ * Get a uint from tlv data
  *
  * This function extracts an unsigned N-bit integer from the TLV data.
  * The length of the data must not exceed the requested format.
@@ -188,6 +188,19 @@ bool get_uint64_t_from_tlv_data(const tlv_data_t *data, uint64_t *value);
 bool get_uint32_t_from_tlv_data(const tlv_data_t *data, uint32_t *value);
 bool get_uint16_t_from_tlv_data(const tlv_data_t *data, uint16_t *value);
 bool get_uint8_t_from_tlv_data(const tlv_data_t *data, uint8_t *value);
+
+/**
+ * Get a boolean from tlv data
+ *
+ * This function extracts a 1 byte boolean from the TLV data.
+ *
+ * The function will fail if the value is not 0 or 1.
+ *
+ * @param[in] data The TLV data containing the value to be extracted
+ * @param[out] value Pointer to a boolean where the result will be stored
+ * @return True if the extraction was successful, false otherwise (invalid length or data)
+ */
+bool get_bool_from_tlv_data(const tlv_data_t *data, bool *value);
 
 /**
  * Get a buffer_t from tlv data

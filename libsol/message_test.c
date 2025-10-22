@@ -4,6 +4,7 @@
 #include "sol/transaction_summary.h"
 #include "message.c"
 #include "util.h"
+#include "test_utils.h"
 #include <assert.h>
 #include <stdio.h>
 
@@ -78,7 +79,7 @@ void test_process_message_body_too_many_ix_fail() {
 
 void test_process_message_body_data_too_short_fail() {
     PrintConfig print_config = { .header = {false, 0, {0, 0, 0, 0}, NULL, NULL, 1}, .expert_mode = true };
-    assert(process_message_body(NULL, 0, &print_config) == 1);
+    assert(process_message_body(NULL, 0, &print_config) == -1);
 }
 
 void test_process_message_body_data_too_long_fail() {
@@ -99,7 +100,7 @@ void test_process_message_body_data_too_long_fail() {
 void test_process_message_body_bad_ix_account_index_fail() {
     PrintConfig print_config = { .header = {false, 0, {0, 0, 0, 1}, NULL, NULL, 1}, .expert_mode = true };
     uint8_t msg_body[] = {1, 0, 0};
-    assert(process_message_body(msg_body, ARRAY_LEN(msg_body), &print_config) == 1);
+    assert(process_message_body(msg_body, ARRAY_LEN(msg_body), &print_config) == -1);
 }
 
 void test_process_message_body_unknown_ix_enum_fail() {
@@ -113,7 +114,7 @@ void test_process_message_body_unknown_ix_enum_fail() {
     uint8_t msg_body[] = {
         2, 2, 0, 1, 12, 255, 255, 255, 255, 42, 0, 0, 0, 0, 0, 0, 0,
     };
-    assert(process_message_body(msg_body, ARRAY_LEN(msg_body), &print_config) == 1);
+    assert(process_message_body(msg_body, ARRAY_LEN(msg_body), &print_config) == -1);
 }
 
 void test_process_message_body_ix_with_unknown_program_id_fail() {
@@ -127,7 +128,7 @@ void test_process_message_body_ix_with_unknown_program_id_fail() {
     uint8_t msg_body[] = {
         2, 2, 0, 1, 12, 2, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0,
     };
-    assert(process_message_body(msg_body, ARRAY_LEN(msg_body), &print_config) == 1);
+    assert(process_message_body(msg_body, ARRAY_LEN(msg_body), &print_config) == -1);
 }
 
 static void process_message_body_and_sanity_check(const uint8_t* message, size_t message_length, size_t expected_fields) {
@@ -219,7 +220,7 @@ void test_process_message_body_transfer_with_request_units(){
     assert(parse_message_header(&parser, &print_config.header) == 0);
 
     transaction_summary_reset();
-    assert(process_message_body(parser.buffer, parser.buffer_length, &print_config) == 1);
+    assert(process_message_body(parser.buffer, parser.buffer_length, &print_config) == -1);
 
 }
 
@@ -1681,7 +1682,7 @@ void test_process_message_body_spl_token_transfer() {
                 42, 0, 0, 0, 0, 0, 0, 0,
                 9
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 7);
+    process_message_body_and_sanity_check(message, sizeof(message), 6);
 }
 
 void test_process_message_body_spl_token_approve() {
@@ -1916,7 +1917,7 @@ void test_process_message_body_spl_associated_token_create_with_transfer() {
                 0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x09
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 11);
+    process_message_body_and_sanity_check(message, sizeof(message), 7);
 }
 
 void test_process_message_body_spl_associated_token_create_with_transfer_and_assert_owner() {
@@ -1955,83 +1956,83 @@ void test_process_message_body_spl_associated_token_create_with_transfer_and_ass
                     0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                     0x09
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 11);
+    process_message_body_and_sanity_check(message, sizeof(message), 7);
 }
 
 /* clang-format on */
 
 int main() {
-    test_process_message_body_spl_associated_token_create_with_transfer_and_assert_owner();
-    test_process_message_body_spl_associated_token_create_with_transfer();
-    test_process_message_body_spl_associated_token_create();
-    test_process_message_body_spl_token_create_token();
-    test_process_message_body_spl_token_create_account();
-    test_process_message_body_spl_token_create_account2();
-    test_process_message_body_spl_token_create_multisig();
-    test_process_message_body_spl_token_transfer();
-    test_process_message_body_spl_token_approve();
-    test_process_message_body_spl_token_revoke();
-    test_process_message_body_spl_token_set_authority();
-    test_process_message_body_spl_token_mint_to();
-    test_process_message_body_spl_token_burn();
-    test_process_message_body_spl_token_close_account();
-    test_process_message_body_spl_token_freeze_account();
-    test_process_message_body_spl_token_thaw_account();
-    test_process_message_body_ok();
-    test_process_message_body_too_few_ix_fail();
-    test_process_message_body_too_many_ix_fail();
-    test_process_message_body_data_too_short_fail();
-    test_process_message_body_data_too_long_fail();
-    test_process_message_body_bad_ix_account_index_fail();
-    test_process_message_body_unknown_ix_enum_fail();
-    test_process_message_body_ix_with_unknown_program_id_fail();
-    test_process_message_body_xfer_w_nonce_ok();
-    test_process_message_body_nonced_stake_create_with_seed();
-    test_process_message_body_create_stake_account();
-    test_process_message_body_create_stake_account_no_lockup();
-    test_process_message_body_nonced_stake_create_with_seed_checked();
-    test_process_message_body_create_stake_account_checked();
-    test_process_message_body_create_nonce_account_with_seed();
-    test_process_message_body_create_nonce_account();
-    test_process_message_body_create_vote_account_with_seed();
-    test_process_message_body_create_vote_account();
-    test_process_message_body_nonce_withdraw();
-    test_process_message_body_stake_withdraw();
-    test_process_message_body_vote_withdraw();
-    test_process_message_body_system_nonce_authorize();
-    test_process_message_body_stake_authorize_staker();
-    test_process_message_body_stake_authorize_withdrawer();
-    test_process_message_body_stake_authorize_withdrawer_with_custodian();
-    test_process_message_body_stake_authorize_both();
-    test_process_message_body_stake_authorize_staker_checked();
-    test_process_message_body_stake_authorize_withdrawer_checked();
-    test_process_message_body_stake_authorize_withdrawer_with_custodian_checked();
-    test_process_message_body_stake_authorize_both_checked();
-    test_process_message_body_vote_authorize_voter();
-    test_process_message_body_vote_authorize_withdrawer();
-    test_process_message_body_vote_authorize_both();
-    test_process_message_body_vote_authorize_voter_checked();
-    test_process_message_body_vote_authorize_withdrawer_checked();
-    test_process_message_body_vote_authorize_both_checked();
-    test_process_message_body_vote_update_commission();
-    test_process_message_body_vote_update_node_v1_0_7();
-    test_process_message_body_vote_update_node_v1_0_8();
-    test_process_message_body_stake_delegate();
-    test_process_message_body_stake_delegate_with_nonce();
-    test_process_message_body_create_stake_account_and_delegate();
-    test_process_message_body_create_stake_with_seed_account_and_delegate();
-    test_process_message_body_stake_deactivate();
-    test_process_message_body_stake_set_lockup();
-    test_process_message_body_stake_set_lockup_checked();
-    test_process_message_body_stake_split_with_nonce_v1_1();
-    test_process_message_body_stake_split_with_nonce_v1_2();
-    test_process_message_body_stake_split_with_seed_v1_1();
-    test_process_message_body_stake_split_with_seed_v1_2();
-    test_process_message_body_stake_merge();
-    test_process_message_body_transfer_with_compute_budget_limit();
-    test_process_message_body_transfer_with_compute_budget_limit_and_unit_price();
-    test_process_message_body_transfer_with_request_units();
-    test_process_message_body_transfer_with_heap_frame();
+    RUN_TEST(test_process_message_body_spl_associated_token_create_with_transfer_and_assert_owner);
+    RUN_TEST(test_process_message_body_spl_associated_token_create_with_transfer);
+    RUN_TEST(test_process_message_body_spl_associated_token_create);
+    RUN_TEST(test_process_message_body_spl_token_create_token);
+    RUN_TEST(test_process_message_body_spl_token_create_account);
+    RUN_TEST(test_process_message_body_spl_token_create_account2);
+    RUN_TEST(test_process_message_body_spl_token_create_multisig);
+    RUN_TEST(test_process_message_body_spl_token_transfer);
+    RUN_TEST(test_process_message_body_spl_token_approve);
+    RUN_TEST(test_process_message_body_spl_token_revoke);
+    RUN_TEST(test_process_message_body_spl_token_set_authority);
+    RUN_TEST(test_process_message_body_spl_token_mint_to);
+    RUN_TEST(test_process_message_body_spl_token_burn);
+    RUN_TEST(test_process_message_body_spl_token_close_account);
+    RUN_TEST(test_process_message_body_spl_token_freeze_account);
+    RUN_TEST(test_process_message_body_spl_token_thaw_account);
+    RUN_TEST(test_process_message_body_ok);
+    RUN_TEST(test_process_message_body_too_few_ix_fail);
+    RUN_TEST(test_process_message_body_too_many_ix_fail);
+    RUN_TEST(test_process_message_body_data_too_short_fail);
+    RUN_TEST(test_process_message_body_data_too_long_fail);
+    RUN_TEST(test_process_message_body_bad_ix_account_index_fail);
+    RUN_TEST(test_process_message_body_unknown_ix_enum_fail);
+    RUN_TEST(test_process_message_body_ix_with_unknown_program_id_fail);
+    RUN_TEST(test_process_message_body_xfer_w_nonce_ok);
+    RUN_TEST(test_process_message_body_nonced_stake_create_with_seed);
+    RUN_TEST(test_process_message_body_create_stake_account);
+    RUN_TEST(test_process_message_body_create_stake_account_no_lockup);
+    RUN_TEST(test_process_message_body_nonced_stake_create_with_seed_checked);
+    RUN_TEST(test_process_message_body_create_stake_account_checked);
+    RUN_TEST(test_process_message_body_create_nonce_account_with_seed);
+    RUN_TEST(test_process_message_body_create_nonce_account);
+    RUN_TEST(test_process_message_body_create_vote_account_with_seed);
+    RUN_TEST(test_process_message_body_create_vote_account);
+    RUN_TEST(test_process_message_body_nonce_withdraw);
+    RUN_TEST(test_process_message_body_stake_withdraw);
+    RUN_TEST(test_process_message_body_vote_withdraw);
+    RUN_TEST(test_process_message_body_system_nonce_authorize);
+    RUN_TEST(test_process_message_body_stake_authorize_staker);
+    RUN_TEST(test_process_message_body_stake_authorize_withdrawer);
+    RUN_TEST(test_process_message_body_stake_authorize_withdrawer_with_custodian);
+    RUN_TEST(test_process_message_body_stake_authorize_both);
+    RUN_TEST(test_process_message_body_stake_authorize_staker_checked);
+    RUN_TEST(test_process_message_body_stake_authorize_withdrawer_checked);
+    RUN_TEST(test_process_message_body_stake_authorize_withdrawer_with_custodian_checked);
+    RUN_TEST(test_process_message_body_stake_authorize_both_checked);
+    RUN_TEST(test_process_message_body_vote_authorize_voter);
+    RUN_TEST(test_process_message_body_vote_authorize_withdrawer);
+    RUN_TEST(test_process_message_body_vote_authorize_both);
+    RUN_TEST(test_process_message_body_vote_authorize_voter_checked);
+    RUN_TEST(test_process_message_body_vote_authorize_withdrawer_checked);
+    RUN_TEST(test_process_message_body_vote_authorize_both_checked);
+    RUN_TEST(test_process_message_body_vote_update_commission);
+    RUN_TEST(test_process_message_body_vote_update_node_v1_0_7);
+    RUN_TEST(test_process_message_body_vote_update_node_v1_0_8);
+    RUN_TEST(test_process_message_body_stake_delegate);
+    RUN_TEST(test_process_message_body_stake_delegate_with_nonce);
+    RUN_TEST(test_process_message_body_create_stake_account_and_delegate);
+    RUN_TEST(test_process_message_body_create_stake_with_seed_account_and_delegate);
+    RUN_TEST(test_process_message_body_stake_deactivate);
+    RUN_TEST(test_process_message_body_stake_set_lockup);
+    RUN_TEST(test_process_message_body_stake_set_lockup_checked);
+    RUN_TEST(test_process_message_body_stake_split_with_nonce_v1_1);
+    RUN_TEST(test_process_message_body_stake_split_with_nonce_v1_2);
+    RUN_TEST(test_process_message_body_stake_split_with_seed_v1_1);
+    RUN_TEST(test_process_message_body_stake_split_with_seed_v1_2);
+    RUN_TEST(test_process_message_body_stake_merge);
+    RUN_TEST(test_process_message_body_transfer_with_compute_budget_limit);
+    RUN_TEST(test_process_message_body_transfer_with_compute_budget_limit_and_unit_price);
+    RUN_TEST(test_process_message_body_transfer_with_request_units);
+    RUN_TEST(test_process_message_body_transfer_with_heap_frame);
 
     printf("passed\n");
     return 0;

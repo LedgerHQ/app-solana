@@ -1,3 +1,4 @@
+#include "os.h"
 #include "common_byte_strings.h"
 #include "instruction.h"
 #include "sol/parser.h"
@@ -9,6 +10,7 @@
 #include "sol/parser.h"
 #include "ed25519_helpers.h"
 #include "trusted_info.h"
+#include "dynamic_token_info.h"
 
 #include "spl_token_instruction.h"
 
@@ -239,11 +241,11 @@ static int parse_transfer_spl_token_instruction(Parser *parser,
         BAIL_IF(parse_spl_token_sign(&it, &info->sign));
     }
 
-    if (!check_ata_agaisnt_trusted_info(info->src_account->data,
+    if (!check_ata_against_trusted_info(info->src_account->data,
                                         info->mint_account->data,
                                         info->dest_account->data,
                                         is_token2022_kind)) {
-        PRINTF("check_ata_agaisnt_trusted_info failed\n");
+        PRINTF("check_ata_against_trusted_info failed\n");
         return -1;
     }
 
@@ -658,21 +660,12 @@ static int print_spl_token_initialize_multisig_info(const char *primary_title,
     return 0;
 }
 
-const char *get_token_symbol(const uint8_t *mint_address, bool is_token_2022_kind) {
-    const char *ret;
-    ret = get_dynamic_token_symbol(mint_address, is_token_2022_kind);
-    if (ret == NULL) {
-        PRINTF("No dynamic token info received, fallback on hardcoded list\n");
-        ret = get_hardcoded_token_symbol(mint_address);
-    }
-    return ret;
-}
-
 int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
                                   const PrintConfig *print_config,
                                   bool is_token2022_kind,
                                   bool primary) {
     SummaryItem *item;
+    bool unknown_mint = false;
 
     if (primary) {
         item = transaction_summary_primary_item();
@@ -681,12 +674,34 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
     }
 
     const char *symbol = get_token_symbol(info->mint_account->data, is_token2022_kind);
+    PRINTF("symbol = %s\n", symbol);
+    if (strcmp(symbol, "???") == 0) {
+        unknown_mint = true;
+    }
 
-    summary_item_set_token_amount(item,
-                                  "Transfer tokens",
-                                  info->body.amount,
-                                  symbol,
-                                  info->body.decimals);
+    summary_item_set_token_amount(item, "Amount", info->body.amount, symbol, info->body.decimals);
+
+    if (print_config->force_full_print || unknown_mint) {
+        PRINTF("Mint account print\n");
+        item = transaction_summary_general_item();
+        summary_item_set_pubkey(item, "Token address", info->mint_account);
+    }
+
+    if (print_config->force_full_print || !print_config->user_input_is_ata_or_token_account) {
+        PRINTF("Wallet account print\n");
+        const char *to_address;
+        if (get_transfer_to_address(&to_address) != 0) {
+            return -1;
+        }
+        item = transaction_summary_general_item();
+        summary_item_set_string(item, "To", to_address);
+    }
+
+    if (print_config->force_full_print || print_config->user_input_is_ata_or_token_account) {
+        PRINTF("ATA account print\n");
+        item = transaction_summary_general_item();
+        summary_item_set_pubkey(item, "To (token account)", info->dest_account);
+    }
 
     item = transaction_summary_general_item();
     if (info->is_transfer_checked_with_fee) {
@@ -699,22 +714,7 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
         }
     }
 
-    char *to_address;
-    if (get_transfer_to_address(&to_address) != 0) {
-        return -1;
-    }
-    item = transaction_summary_general_item();
-    summary_item_set_string(item, "To", to_address);
-
-    item = transaction_summary_general_item();
-    summary_item_set_pubkey(item, "Token address", info->mint_account);
-
-    item = transaction_summary_general_item();
-    summary_item_set_pubkey(item, "From (token account)", info->src_account);
-
-    item = transaction_summary_general_item();
-    summary_item_set_pubkey(item, "To (token account)", info->dest_account);
-
+    transaction_summary_set_transaction_type(TRANSACTION_TYPE_SPL_TRANSFER);
     transaction_summary_set_token_fee_warning(is_token2022_kind &&
                                               !info->is_transfer_checked_with_fee);
     transaction_summary_set_token_hook_warning(is_token2022_kind &&

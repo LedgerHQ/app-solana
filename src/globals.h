@@ -2,8 +2,7 @@
 #include "ux.h"
 #include "os_io_seproxyhal.h"
 
-#ifndef _GLOBALS_H_
-#define _GLOBALS_H_
+#pragma once
 
 #define CLA 0xE0
 
@@ -19,8 +18,10 @@
 #define P1_CONFIRM     0x01
 #define P1_NON_CONFIRM 0x00
 
-#define P2_EXTEND 0x01
-#define P2_MORE   0x02
+#define P2_NONE                    0x00
+#define P2_EXTEND                  (0x01 << 0)
+#define P2_MORE                    (0x01 << 1)
+#define P2_IS_ATA_OR_TOKEN_ACCOUNT (0x01 << 3)
 
 #define ROUND_TO_NEXT(x, next) (((x) == 0) ? 0 : ((((x - 1) / (next)) + 1) * (next)))
 
@@ -61,6 +62,7 @@ typedef enum InstructionCode {
     InsGetPubkey = 0x05,
     InsSignMessage = 0x06,
     InsSignOffchainMessage = 0x07,
+    InsTrustedInfoProvideInstructionDescriptor = 0x16,
     InsTrustedInfoGetChallenge = 0x20,
     InsTrustedInfoProvideInfo = 0x21,
     InsTrustedInfoProvideDynamicDescriptor = 0x22,
@@ -101,4 +103,3 @@ typedef struct internalStorage_t {
 
 extern const internalStorage_t N_storage_real;
 #define N_storage (*(volatile internalStorage_t *) PIC(&N_storage_real))
-#endif

@@ -1,6 +1,7 @@
 #include "common_byte_strings.h"
 #include "instruction.h"
 #include "spl_token_instruction.c"
+#include "test_utils.h"
 #include <stdio.h>
 #include <assert.h>
 
@@ -1035,22 +1036,22 @@ void test_print_m_of_n_string() {
 }
 
 int main() {
-    test_print_m_of_n_string();
-    test_parse_spl_token_sign();
-    test_parse_spl_token_instruction_kind();
-    test_parse_spl_token_create_token();
-    test_parse_spl_token_create_account();
-    test_parse_spl_token_create_account2();
-    test_parse_spl_token_create_multisig();
-    test_parse_spl_token_transfer();
-    test_parse_spl_token_approve();
-    test_parse_spl_token_revoke();
-    test_parse_spl_token_set_authority();
-    test_parse_spl_token_mint_to();
-    test_parse_spl_token_burn();
-    test_parse_spl_token_close_account();
-    test_parse_spl_token_freeze_account();
-    test_parse_spl_token_thaw_account();
+    RUN_TEST(test_print_m_of_n_string);
+    RUN_TEST(test_parse_spl_token_sign);
+    RUN_TEST(test_parse_spl_token_instruction_kind);
+    RUN_TEST(test_parse_spl_token_create_token);
+    RUN_TEST(test_parse_spl_token_create_account);
+    RUN_TEST(test_parse_spl_token_create_account2);
+    RUN_TEST(test_parse_spl_token_create_multisig);
+    RUN_TEST(test_parse_spl_token_transfer);
+    RUN_TEST(test_parse_spl_token_approve);
+    RUN_TEST(test_parse_spl_token_revoke);
+    RUN_TEST(test_parse_spl_token_set_authority);
+    RUN_TEST(test_parse_spl_token_mint_to);
+    RUN_TEST(test_parse_spl_token_burn);
+    RUN_TEST(test_parse_spl_token_close_account);
+    RUN_TEST(test_parse_spl_token_freeze_account);
+    RUN_TEST(test_parse_spl_token_thaw_account);
 
     printf("passed\n");
     return 0;

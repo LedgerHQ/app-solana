@@ -1,5 +1,7 @@
+#include "os.h"
 #include "token_info.h"
 #include "util.h"
+#include "macros.h"
 
 const TokenInfo TOKEN_REGISTRY[] = {
     // So11111111111111111111111111111111111111112
@@ -813,12 +815,40 @@ const TokenInfo TOKEN_REGISTRY[] = {
      "ZBCN"}};
 
 const char *get_hardcoded_token_symbol(const uint8_t *mint_address) {
+    if (mint_address == NULL) {
+        PRINTF("get_hardcoded_token_symbol received NULL mint_address\n");
+        return NULL;
+    }
+
     for (size_t i = 0; i < ARRAY_LEN(TOKEN_REGISTRY); i++) {
         const TokenInfo *info = &TOKEN_REGISTRY[i];
 
         if (memcmp(&(info->mint_address), mint_address, PUBKEY_SIZE) == 0) {
+            PRINTF("symbol %s, for mint_address %.*H\n", info->symbol, PUBKEY_SIZE, mint_address);
             return info->symbol;
         }
     }
+    PRINTF("get_hardcoded_token_symbol could not find symbol for mint %.*H\n",
+           PUBKEY_SIZE,
+           mint_address);
     return "???";
+}
+
+const uint8_t *get_hardcoded_token_mint_address(const char *ticker, bool *is_token_2022_kind) {
+    if (ticker == NULL || is_token_2022_kind == NULL) {
+        PRINTF("get_hardcoded_token_mint_address received NULL parameter\n");
+        return NULL;
+    }
+
+    // No 2022 tokens are hardcoded in the application and will ever be
+    *is_token_2022_kind = false;
+
+    for (size_t i = 0; i < ARRAY_LENGTH(TOKEN_REGISTRY); i++) {
+        if (strcmp(ticker, TOKEN_REGISTRY[i].symbol) == 0) {
+            return TOKEN_REGISTRY[i].mint_address.data;
+        }
+    }
+
+    PRINTF("get_hardcoded_token_mint_address could not find ticker: %s\n", ticker);
+    return NULL;
 }
