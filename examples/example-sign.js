@@ -135,7 +135,7 @@ class OffchainMessage {
     offset = buffer.writeUInt16LE(this.message.length, offset);
     return Buffer.concat([
       Buffer.from([255]),
-      Buffer.from("solana offchain"),
+      Buffer.from("rialo offchain"),
       buffer,
       this.message,
     ]);

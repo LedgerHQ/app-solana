@@ -160,7 +160,7 @@ PACKET_DATA_SIZE: int = 1280 - 40 - 8
 U16_MAX = 2^16-1
 
 
-SIGNING_DOMAIN: bytes = b"\xffsolana offchain"
+SIGNING_DOMAIN: bytes = b"\xff\xffrialo offchain"
 # // Header Length = Signing Domain (16) + Header Version (1)
 BASE_HEADER_LEN: int = len(SIGNING_DOMAIN) + 1;
 
