@@ -8,7 +8,7 @@ from ragger.navigator import Navigator, NavIns, NavInsID, NavigateWithScenario
 from solders.pubkey import Pubkey
 from solders.instruction import Instruction, AccountMeta
 
-from application_client import solana_utils as SOL
+from application_client import solana_utils as RLO
 from application_client.solana import SolanaClient, ErrorType
 from application_client.solana_cmd_builder import verify_signature, PROGRAM_ID_SYSTEM
 
@@ -28,7 +28,7 @@ class SystemInstruction(IntEnum):
 
 
 import time
-payer_pubkey = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+payer_pubkey = Pubkey.from_string(RLO.OWNED_ADDRESS_STR)
 
 def _craft_blind_signing(sol):
     # Craft an unrecognized TX
@@ -46,7 +46,7 @@ def _craft_blind_signing(sol):
 class TestBlindSigning:
     def _check_blind_signing_rejection(self, sol, message_data):
         with pytest.raises(ExceptionRAPDU) as e:
-            with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, message_data):
                 pass
         assert e.value.status == ErrorType.SDK_NOT_SUPPORTED
 
@@ -90,7 +90,7 @@ def test_blind_signing_enabled_reject(sol, backend, scenario_navigator, navigato
         validation_instructions = [NavInsID.USE_CASE_CHOICE_CONFIRM]
 
     with pytest.raises(ExceptionRAPDU) as e:
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, message_data):
             navigator.navigate_until_text_and_compare(navigate_instruction=navigate_instruction,
                                                       validation_instructions=validation_instructions,
                                                       text=pattern,
@@ -117,7 +117,7 @@ def test_blind_signing_enabled_accept(sol, backend, scenario_navigator, navigato
     navigation_helper.enable_blind_signing(test_name + "_enable_bs")
     message_data = _craft_blind_signing(sol)
 
-    with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+    with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, message_data):
         navigator.navigate_until_text_and_compare(navigate_instruction=None,
                                                   validation_instructions=warning_validation_instructions,
                                                   text=warning_pattern,
@@ -139,7 +139,7 @@ def test_blind_signing_enabled_navigate_warnings(sol, backend, scenario_navigato
     message_data = _craft_blind_signing(sol)
 
     with pytest.raises(ExceptionRAPDU) as e:
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, message_data):
             navigator.navigate_until_text_and_compare(navigate_instruction=NavInsID.USE_CASE_HOME_SETTINGS,
                                                       validation_instructions=[NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT],
                                                       text="Learn more",

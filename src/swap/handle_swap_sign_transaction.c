@@ -41,9 +41,9 @@ bool swap_copy_transaction_parameters(create_transaction_parameters_t *params) {
     memset(&swap_validated, 0, sizeof(swap_validated));
 
     // Parse config and save decimals and ticker
-    // If there is no coin_configuration, consider that we are doing a SOL swap
+    // If there is no coin_configuration, consider that we are doing a RLO swap
     if (params->coin_configuration == NULL) {
-        memcpy(swap_validated.ticker, "SOL", sizeof("SOL"));
+        memcpy(swap_validated.ticker, "RLO", sizeof("RLO"));
         swap_validated.decimals = SOL_DECIMALS;
     } else {
         if (!swap_parse_config(params->coin_configuration,
@@ -178,7 +178,7 @@ bool check_swap_fee(const char *text) {
         return true;
     } else {
         // Check that we are paying LESS than promised
-        // Expected format is 'X.Y SOL' anything else is an error
+        // Expected format is 'X.Y RLO' anything else is an error
         uint8_t pos = 0;
         char current_text;
         char current_validated;
@@ -265,5 +265,5 @@ void __attribute__((noreturn)) finalize_exchange_sign_transaction(bool is_succes
 }
 
 bool is_token_transaction() {
-    return (memcmp(G_swap_validated.ticker, "SOL", sizeof("SOL")) != 0);
+    return (memcmp(G_swap_validated.ticker, "RLO", sizeof("RLO")) != 0);
 }

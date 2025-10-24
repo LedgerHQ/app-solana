@@ -1,5 +1,5 @@
 # ****************************************************************************
-#    Ledger App Solana
+#    Ledger App Rialo
 #    (c) 2024 Ledger SAS.
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +30,7 @@ endif
 #        Mandatory configuration       #
 ########################################
 # Application name
-APPNAME = "Solana"
+APPNAME = "Rialo"
 
 # Application version
 APPVERSION_M = 1
@@ -42,17 +42,17 @@ APPVERSION = "$(APPVERSION_M).$(APPVERSION_N).$(APPVERSION_P)"
 APP_SOURCE_PATH += src
 
 # Application icons
-ICON_NANOX = icons/icon_solana_14px.gif
-ICON_NANOSP = icons/icon_solana_14px.gif
-ICON_STAX = icons/icon_solana_32px.gif
-ICON_FLEX = icons/icon_solana_40px.gif
-ICON_APEX_P = icons/icon_solana_32px_apex.png
+ICON_NANOX = icons/icon_rialo_14px.gif
+ICON_NANOSP = icons/icon_rialo_14px.gif
+ICON_STAX = icons/icon_rialo_32px.gif
+ICON_FLEX = icons/icon_rialo_40px.gif
+ICON_APEX_P = icons/icon_rialo_32px_apex.png
 
 # Application allowed derivation curves
 CURVE_APP_LOAD_PARAMS = ed25519
 
 # Application allowed derivation paths.
-PATH_APP_LOAD_PARAMS = "44'/501'"   # purpose=coin(44) / coin_type=Solana(501)
+PATH_APP_LOAD_PARAMS = "44'/501'"   # purpose=coin(44) / coin_type=Rialo(501)
 
 # Setting to allow building variant applications
 VARIANT_PARAM = COIN
@@ -99,7 +99,7 @@ CFLAGS           += -I${BOLOS_SDK}/lib_standard_app/
 WITH_U2F?=0
 ifneq ($(WITH_U2F),0)
     DEFINES         += HAVE_U2F HAVE_IO_U2F
-    DEFINES         += U2F_PROXY_MAGIC=\"~SOL\"
+    DEFINES         += U2F_PROXY_MAGIC=\"~RLO\"
 		SDK_SOURCE_PATH += lib_u2f
 endif
 

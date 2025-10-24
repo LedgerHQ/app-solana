@@ -19,7 +19,7 @@ void swap_handle_get_printable_amount(get_printable_amount_parameters_t *params)
 
     // Fees are displayed normally
     if (params->is_fee || params->coin_configuration == NULL) {
-        PRINTF("Defaulting to native SOL amount\n");
+        PRINTF("Defaulting to native RLO amount\n");
         if (print_amount(amount, params->printable_amount, sizeof(params->printable_amount)) != 0) {
             PRINTF("print_amount failed\n");
             return;

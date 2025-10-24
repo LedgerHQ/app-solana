@@ -1,9 +1,9 @@
 import pytest
 from ragger.error import ExceptionRAPDU
 
-from application_client.solana import SolanaClient, ErrorType
-from application_client.solana_cmd_builder import SystemInstructionTransfer, Message, verify_signature, OffchainMessage
-from application_client import solana_utils as SOL
+from application_client.rialo import RialoClient, ErrorType
+from application_client.rialo_cmd_builder import SystemInstructionTransfer, Message, verify_signature, OffchainMessage
+from application_client import rialo_utils as RLO
 
 import random
 import string
@@ -11,9 +11,9 @@ import string
 class TestGetPublicKey:
 
     def test_solana_get_public_key_ok(self, sol, scenario_navigator, root_pytest_dir):
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
-        with sol.send_public_key_with_confirm(SOL.SOL_PACKED_DERIVATION_PATH):
+        with sol.send_public_key_with_confirm(RLO.RLO_PACKED_DERIVATION_PATH):
             scenario_navigator.address_review_approve(path=root_pytest_dir)
 
         assert sol.get_async_response().data == from_public_key
@@ -21,7 +21,7 @@ class TestGetPublicKey:
 
     def test_solana_get_public_key_refused(self, sol, scenario_navigator, root_pytest_dir):
         with pytest.raises(ExceptionRAPDU) as e:
-            with sol.send_public_key_with_confirm(SOL.SOL_PACKED_DERIVATION_PATH):
+            with sol.send_public_key_with_confirm(RLO.RLO_PACKED_DERIVATION_PATH):
                 scenario_navigator.address_review_reject(path=root_pytest_dir)
         assert e.value.status == ErrorType.USER_CANCEL
 
@@ -29,13 +29,13 @@ class TestGetPublicKey:
 class TestMessageSigning:
 
     def test_solana_simple_transfer_ok_1(self, sol, scenario_navigator, root_pytest_dir):
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
         # Create instruction
-        instruction: SystemInstructionTransfer = SystemInstructionTransfer(from_public_key, SOL.FOREIGN_PUBLIC_KEY, SOL.AMOUNT)
+        instruction: SystemInstructionTransfer = SystemInstructionTransfer(from_public_key, RLO.FOREIGN_PUBLIC_KEY, RLO.AMOUNT)
         message: bytes = Message([instruction]).serialize()
 
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+        with sol.send_async_sign_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
             scenario_navigator.review_approve(path=root_pytest_dir)
 
         signature: bytes = sol.get_async_response().data
@@ -43,13 +43,13 @@ class TestMessageSigning:
 
 
     def test_solana_simple_transfer_ok_2(self, sol, scenario_navigator, root_pytest_dir):
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH_2)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH_2)
 
         # Create instruction
-        instruction: SystemInstructionTransfer = SystemInstructionTransfer(from_public_key, SOL.FOREIGN_PUBLIC_KEY_2, SOL.AMOUNT_2)
+        instruction: SystemInstructionTransfer = SystemInstructionTransfer(from_public_key, RLO.FOREIGN_PUBLIC_KEY_2, RLO.AMOUNT_2)
         message: bytes = Message([instruction]).serialize()
 
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH_2, message):
+        with sol.send_async_sign_message(RLO.RLO_PACKED_DERIVATION_PATH_2, message):
             scenario_navigator.review_approve(path=root_pytest_dir)
 
         signature: bytes = sol.get_async_response().data
@@ -57,13 +57,13 @@ class TestMessageSigning:
 
 
     def test_solana_simple_transfer_refused(self, sol, scenario_navigator, root_pytest_dir):
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
-        instruction: SystemInstructionTransfer = SystemInstructionTransfer(from_public_key, SOL.FOREIGN_PUBLIC_KEY, SOL.AMOUNT)
+        instruction: SystemInstructionTransfer = SystemInstructionTransfer(from_public_key, RLO.FOREIGN_PUBLIC_KEY, RLO.AMOUNT)
         message: bytes = Message([instruction]).serialize()
 
         with pytest.raises(ExceptionRAPDU) as e:
-            with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+            with sol.send_async_sign_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
                 scenario_navigator.review_reject(path=root_pytest_dir)
         assert e.value.status == ErrorType.USER_CANCEL
 
@@ -71,12 +71,12 @@ class TestMessageSigning:
 class TestOffchainMessageSigning:
 
     def test_ledger_sign_offchain_message_ascii_ok(self, sol, scenario_navigator, root_pytest_dir):
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
         offchain_message: OffchainMessage = OffchainMessage(0, b"Test message", from_public_key)
         message: bytes = offchain_message.serialize()
 
-        with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+        with sol.send_async_sign_offchain_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
             scenario_navigator.review_approve(path=root_pytest_dir)
 
         signature: bytes = sol.get_async_response().data
@@ -84,12 +84,12 @@ class TestOffchainMessageSigning:
 
 
     def test_ledger_sign_offchain_very_long_message_ascii_ok(self, sol, scenario_navigator, root_pytest_dir):
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
-        offchain_message: OffchainMessage = OffchainMessage(0, SOL.LONG_VALID_ASCII, from_public_key)
+        offchain_message: OffchainMessage = OffchainMessage(0, RLO.LONG_VALID_ASCII, from_public_key)
         message: bytes = offchain_message.serialize()
 
-        with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+        with sol.send_async_sign_offchain_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
             scenario_navigator.review_approve(path=root_pytest_dir,
                                               custom_screen_text=r"(Sign message|Hold to sign)")
 
@@ -99,17 +99,17 @@ class TestOffchainMessageSigning:
 
     def test_ledger_sign_offchain_message_ascii_refused(self, sol, scenario_navigator, root_pytest_dir):
 
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
         offchain_message: OffchainMessage = OffchainMessage(0, b"Test message", from_public_key)
         message: bytes = offchain_message.serialize()
 
         with pytest.raises(ExceptionRAPDU) as e:
-            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+            with sol.send_async_sign_offchain_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
                 scenario_navigator.review_reject(path=root_pytest_dir)
         assert e.value.status == ErrorType.USER_CANCEL
 
     def test_ledger_sign_offchain_message_ascii_message_too_long(self, sol, scenario_navigator, root_pytest_dir):
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
         INVALID_LONG_MESSAGE = ''.join(random.choices(string.ascii_letters, k=32*1024))
         INVALID_LONG_MESSAGE = INVALID_LONG_MESSAGE.encode("ascii")
@@ -118,7 +118,7 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         try:
-            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+            with sol.send_async_sign_offchain_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
                 pass
             assert False, "Ledger accepted too long message"
         except ExceptionRAPDU as e:
@@ -128,12 +128,12 @@ class TestOffchainMessageSigning:
     def test_ledger_sign_offchain_message_ascii_expert_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_expert_mode(test_name + "_1")
 
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
         offchain_message: OffchainMessage = OffchainMessage(0, b"Test message", from_public_key)
         message: bytes = offchain_message.serialize()
 
-        with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+        with sol.send_async_sign_offchain_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
             scenario_navigator.review_approve(path=root_pytest_dir,
                                               test_name=test_name + "_2",
                                               custom_screen_text=r"(Sign message|Hold to sign)")
@@ -145,13 +145,13 @@ class TestOffchainMessageSigning:
     def test_ledger_sign_offchain_message_ascii_expert_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_expert_mode(test_name + "_1")
 
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
         offchain_message: OffchainMessage = OffchainMessage(0, b"Test message",from_public_key)
         message: bytes = offchain_message.serialize()
 
         with pytest.raises(ExceptionRAPDU) as e:
-            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+            with sol.send_async_sign_offchain_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
                 scenario_navigator.review_reject(path=root_pytest_dir,
                                                  test_name=test_name + "_2")
         assert e.value.status == ErrorType.USER_CANCEL
@@ -160,12 +160,12 @@ class TestOffchainMessageSigning:
     def test_ledger_sign_offchain_message_utf8_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_blind_signing(test_name + "_1")
 
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
         offchain_message: OffchainMessage = OffchainMessage(0, bytes("Тестовое сообщение", 'utf-8'), from_public_key)
         message: bytes = offchain_message.serialize()
 
-        with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+        with sol.send_async_sign_offchain_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
             scenario_navigator.review_approve(path=root_pytest_dir, test_name=test_name + "_2")
 
         signature: bytes = sol.get_async_response().data
@@ -175,15 +175,15 @@ class TestOffchainMessageSigning:
     def test_ledger_sign_offchain_very_long_message_utf8_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_blind_signing(test_name + "_1")
 
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
         # Decode to a UTF-8 string, ignoring invalid characters
-        VALID_LONG_MESSAGE = SOL.LONG_VALID_UTF8.encode("utf-8")
+        VALID_LONG_MESSAGE = RLO.LONG_VALID_UTF8.encode("utf-8")
 
         offchain_message: OffchainMessage = OffchainMessage(0, VALID_LONG_MESSAGE, from_public_key)
         message: bytes = offchain_message.serialize()
 
-        with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+        with sol.send_async_sign_offchain_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
             scenario_navigator.review_approve(path=root_pytest_dir, test_name=test_name + "_2")
 
         signature: bytes = sol.get_async_response().data
@@ -191,7 +191,7 @@ class TestOffchainMessageSigning:
 
 
     def test_ledger_sign_offchain_message_utf8_message_too_long(self, sol, scenario_navigator, root_pytest_dir):
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
         # Generate 2048 random bytes
         random_bytes = bytes(random.randint(0, 255) for _ in range(32*1024))
@@ -203,7 +203,7 @@ class TestOffchainMessageSigning:
         message: bytes = offchain_message.serialize()
 
         try:
-            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+            with sol.send_async_sign_offchain_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
                 pass
             assert False, "Ledger accepted too long message"
         except ExceptionRAPDU as e:
@@ -213,12 +213,12 @@ class TestOffchainMessageSigning:
     def test_ledger_sign_offchain_message_with_app_domain_utf8_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_blind_signing(test_name + "_1")
 
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
         offchain_message: OffchainMessage = OffchainMessage(0, bytes("Tęśtową wiądómóścią", 'utf-8'), from_public_key, b"My Candy App")
         message: bytes = offchain_message.serialize()
 
-        with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+        with sol.send_async_sign_offchain_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
             scenario_navigator.review_approve(path=root_pytest_dir,
                                               test_name=test_name + "_2",
                                               custom_screen_text=r"(Sign message|Hold to sign)")
@@ -230,13 +230,13 @@ class TestOffchainMessageSigning:
     def test_ledger_sign_offchain_message_utf8_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_blind_signing(test_name + "_1")
 
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
         offchain_message: OffchainMessage = OffchainMessage(0, bytes("Тестовое сообщение", 'utf-8'), from_public_key)
         message: bytes = offchain_message.serialize()
 
         with pytest.raises(ExceptionRAPDU) as e:
-            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+            with sol.send_async_sign_offchain_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
                 scenario_navigator.review_reject(path=root_pytest_dir,
                                                  test_name=test_name + "_2")
         assert e.value.status == ErrorType.USER_CANCEL
@@ -246,12 +246,12 @@ class TestOffchainMessageSigning:
         navigation_helper.enable_blind_signing(test_name + "_1")
         navigation_helper.enable_expert_mode(test_name + "_2")
 
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
         offchain_message: OffchainMessage = OffchainMessage(0, bytes("Тестовое сообщение", 'utf-8'), from_public_key)
         message: bytes = offchain_message.serialize()
 
-        with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+        with sol.send_async_sign_offchain_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
             scenario_navigator.review_approve(path=root_pytest_dir,
                                               test_name=test_name + "_3",
                                               custom_screen_text=r"(Sign message|Hold to sign)")
@@ -264,13 +264,13 @@ class TestOffchainMessageSigning:
         navigation_helper.enable_blind_signing(test_name + "_1")
         navigation_helper.enable_expert_mode(test_name + "_2")
 
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        from_public_key = sol.get_public_key(RLO.RLO_PACKED_DERIVATION_PATH)
 
         offchain_message: OffchainMessage = OffchainMessage(0, bytes("Тестовое сообщение", 'utf-8'),from_public_key)
         message: bytes = offchain_message.serialize()
 
         with pytest.raises(ExceptionRAPDU) as e:
-            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+            with sol.send_async_sign_offchain_message(RLO.RLO_PACKED_DERIVATION_PATH, message):
                 scenario_navigator.review_reject(path=root_pytest_dir,
                                                  test_name=test_name + "_3")
         assert e.value.status == ErrorType.USER_CANCEL

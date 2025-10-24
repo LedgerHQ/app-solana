@@ -153,9 +153,9 @@ static void on_warning_choice(bool cancel) {
             PRINTF("transaction_type = %d\n", transaction_type);
             switch (transaction_type) {
                 case TRANSACTION_TYPE_SOL_TRANSFER:
-                    review_title = "Review transaction to send SOL";
+                    review_title = "Review transaction to send RLO";
 #ifdef SCREEN_SIZE_WALLET
-                    confirmation_text = "Sign transaction to send SOL?";
+                    confirmation_text = "Sign transaction to send RLO?";
 #endif
                     break;
                 case TRANSACTION_TYPE_SPL_TRANSFER:
@@ -183,9 +183,9 @@ static void on_warning_choice(bool cancel) {
 #endif
                     break;
                 case TRANSACTION_TYPE_SOL_WITHDRAW:
-                    review_title = "Review transaction to withdraw SOL";
+                    review_title = "Review transaction to withdraw RLO";
 #ifdef SCREEN_SIZE_WALLET
-                    confirmation_text = "Sign transaction to withdraw SOL?";
+                    confirmation_text = "Sign transaction to withdraw RLO?";
 #endif
                     break;
                 case TRANSACTION_TYPE_BLIND_SIGNING:

@@ -28,14 +28,14 @@ fn main() {
     let recipient = Keypair::new();
     //println!("Recipient Public Key: {}", recipient.pubkey());
 
-    // Create a SOL transfer instruction
+    // Create a RLO transfer instruction
     println!("############################");
-    println!("#       SOL Transfer       #");
+    println!("#       RLO Transfer       #");
     println!("############################");
     let transfer_instruction = system_instruction::transfer(
         &sender_pubkey,
         &recipient.pubkey(),
-        1_000_000, // Transfer 1,000,000 lamports (0.001 SOL)
+        1_000_000, // Transfer 1,000,000 lamports (0.001 RLO)
     );
     let message = Message::new(&[transfer_instruction], Some(&sender_pubkey));
     println!("Message: {}", hex::encode(message.serialize()));

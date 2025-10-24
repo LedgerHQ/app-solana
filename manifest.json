@@ -1,0 +1,10 @@
+{
+  "id": "rialo",
+  "name": "Rialo",
+  "version": "1.0.0",
+  "currencyId": "rialo",
+  "managerAppName": "Rialo",
+  "binary": "./bin/app.elf",
+  "icon": "./icons/icon_rialo_14px.gif",
+  "homepageUrl": "https://rialo.org"
+}

@@ -7,7 +7,7 @@ from ragger.error import ExceptionRAPDU
 from solders.pubkey import Pubkey
 from solders.instruction import Instruction, AccountMeta
 
-from application_client import solana_utils as SOL
+from application_client import solana_utils as RLO
 from application_client.solana import SolanaClient, ErrorType
 from application_client.solana_cmd_builder import verify_signature, PROGRAM_ID_SYSTEM
 
@@ -55,25 +55,25 @@ class SystemInstruction(IntEnum):
 
 class TestStaking:
     # Reuse same values for all tests
-    payer_pubkey = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+    payer_pubkey = Pubkey.from_string(RLO.OWNED_ADDRESS_STR)
     stake_account = Pubkey.create_with_seed(payer_pubkey, seed="stake123", program_id=STAKE_PROGRAM_ID)
 
     def _send_and_validate_message(self, sol, transactions, scenario_navigator, root_pytest_dir, valid=True):
         message_data = sol.craft_tx(transactions, self.payer_pubkey)
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, message_data):
             if valid:
                 scenario_navigator.review_approve(path=root_pytest_dir)
             else:
                 pass
         signature: bytes = sol.get_async_response().data
-        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+        verify_signature(RLO.OWNED_PUBLIC_KEY, message_data, signature)
 
     @pytest.mark.parametrize("is_checked", ["checked", "unchecked"])
     def test_stake_initialize(self, sol, scenario_navigator, root_pytest_dir, is_checked, test_name):
         scenario_navigator.test_name = test_name + "_" + is_checked
-        custodian_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
-        authority_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
-        withdraw_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR)
+        custodian_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_STR)
+        authority_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_STR)
+        withdraw_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_2_STR)
 
         instruction = StakeInstruction.StakeInitializeChecked if is_checked == "checked" else StakeInstruction.StakeInitialize
 
@@ -101,8 +101,8 @@ class TestStaking:
     @pytest.mark.parametrize("is_checked", ["checked", "unchecked"])
     def test_stake_authorize(self, sol, scenario_navigator, root_pytest_dir, stake_authorize, custodian, is_checked, test_name):
         scenario_navigator.test_name = test_name + "_" + stake_authorize + "_" + custodian + "_" + is_checked
-        authority_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
-        custodian_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR)
+        authority_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_STR)
+        custodian_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_2_STR)
 
         stake_authorize = StakeAuthorize.StakeAuthorizeStaker if stake_authorize == "StakeAuthorizeStaker" else StakeAuthorize.StakeAuthorizeWithdrawer
         with_custodian = custodian == "with_custodian"
@@ -134,7 +134,7 @@ class TestStaking:
 
     def _test_stake_delegate(self, sol, scenario_navigator, root_pytest_dir, vote_account):
         vote_account_pubkey = Pubkey.from_string(vote_account)
-        authorized_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR)
+        authorized_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_2_STR)
 
         tx = Instruction(
             program_id=STAKE_PROGRAM_ID,
@@ -152,17 +152,17 @@ class TestStaking:
         self._send_and_validate_message(sol, [tx], scenario_navigator, root_pytest_dir)
 
     def test_stake_delegate_unknown(self, sol, scenario_navigator, root_pytest_dir):
-        self._test_stake_delegate(sol, scenario_navigator, root_pytest_dir, SOL.FOREIGN_ADDRESS_STR)
+        self._test_stake_delegate(sol, scenario_navigator, root_pytest_dir, RLO.FOREIGN_ADDRESS_STR)
 
     def test_stake_delegate_figment(self, sol, scenario_navigator, root_pytest_dir):
-        self._test_stake_delegate(sol, scenario_navigator, root_pytest_dir, SOL.FIGMENT_ADDRESS_STR)
+        self._test_stake_delegate(sol, scenario_navigator, root_pytest_dir, RLO.FIGMENT_ADDRESS_STR)
 
     def test_stake_delegate_chorus_one(self, sol, scenario_navigator, root_pytest_dir):
-        self._test_stake_delegate(sol, scenario_navigator, root_pytest_dir, SOL.CHORUS_ONE_ADDRESS_STR)
+        self._test_stake_delegate(sol, scenario_navigator, root_pytest_dir, RLO.CHORUS_ONE_ADDRESS_STR)
 
     def test_stake_split(self, sol, scenario_navigator, root_pytest_dir):
-        split_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
-        authority_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR)
+        split_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_STR)
+        authority_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_2_STR)
         amount = 123456789
 
         tx = Instruction(
@@ -177,8 +177,8 @@ class TestStaking:
         self._send_and_validate_message(sol, [tx], scenario_navigator, root_pytest_dir)
 
     def test_stake_withdraw(self, sol, scenario_navigator, root_pytest_dir):
-        to_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
-        authority_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR)
+        to_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_STR)
+        authority_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_2_STR)
         amount = 123456789
 
         tx = Instruction(
@@ -195,7 +195,7 @@ class TestStaking:
         self._send_and_validate_message(sol, [tx], scenario_navigator, root_pytest_dir)
 
     def test_stake_deactivate(self, sol, scenario_navigator, root_pytest_dir):
-        authority_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR)
+        authority_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_2_STR)
 
         tx = Instruction(
             program_id=STAKE_PROGRAM_ID,
@@ -212,8 +212,8 @@ class TestStaking:
     @pytest.mark.parametrize("options", ["with_options", "without_options"])
     def test_stake_set_lockup(self, sol, scenario_navigator, root_pytest_dir, is_checked, options, test_name):
         scenario_navigator.test_name = test_name + "_" + is_checked + "_" + options
-        authority_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR)
-        custodian_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
+        authority_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_2_STR)
+        custodian_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_STR)
 
         instruction = StakeInstruction.StakeSetLockupChecked if is_checked == "checked" else StakeInstruction.StakeSetLockup
 
@@ -237,8 +237,8 @@ class TestStaking:
         self._send_and_validate_message(sol, [tx], scenario_navigator, root_pytest_dir)
 
     def test_stake_merge(self, sol, scenario_navigator, root_pytest_dir):
-        to_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
-        authority_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR)
+        to_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_STR)
+        authority_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_2_STR)
 
         tx = Instruction(
             program_id=STAKE_PROGRAM_ID,
@@ -255,7 +255,7 @@ class TestStaking:
 
     @pytest.mark.parametrize("instruction", ["StakeAuthorizeWithSeed", "StakeAuthorizeCheckedWithSeed"])
     def test_stake_unsupported(self, sol, scenario_navigator, root_pytest_dir, instruction):
-        authority_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR)
+        authority_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_2_STR)
 
         stake_instruction = StakeInstruction.StakeAuthorizeWithSeed if instruction == "StakeAuthorizeWithSeed" else StakeInstruction.StakeAuthorizeCheckedWithSeed
         tx = Instruction(
@@ -280,7 +280,7 @@ class TestStaking:
             data=struct.pack("<IQ", SystemInstruction.SystemCreateAccount, 123456789),
         )
 
-        custodian_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
+        custodian_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_STR)
         stake_initialize = Instruction(
             program_id=STAKE_PROGRAM_ID,
             accounts=[
@@ -290,8 +290,8 @@ class TestStaking:
             data=struct.pack("<I", StakeInstruction.StakeInitialize) + bytes(self.payer_pubkey) + bytes(self.payer_pubkey) + struct.pack("<QQ", 0, 0) + bytes(custodian_pubkey),
         )
 
-        vote_account_pubkey = Pubkey.from_string(SOL.FIGMENT_ADDRESS_STR)
-        authorized_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR)
+        vote_account_pubkey = Pubkey.from_string(RLO.FIGMENT_ADDRESS_STR)
+        authorized_pubkey = Pubkey.from_string(RLO.FOREIGN_ADDRESS_2_STR)
         stake_delegate = Instruction(
             program_id=STAKE_PROGRAM_ID,
             accounts=[

@@ -7,17 +7,17 @@ void test_print_amount() {
     char printed[24];
 
     print_amount(0, printed, sizeof(printed));
-    assert_string_equal(printed, "0 SOL");
+    assert_string_equal(printed, "0 RLO");
     print_amount(1, printed, sizeof(printed));
-    assert_string_equal(printed, "0.000000001 SOL");
+    assert_string_equal(printed, "0.000000001 RLO");
     print_amount(1000000000, printed, sizeof(printed));
-    assert_string_equal(printed, "1 SOL");
+    assert_string_equal(printed, "1 RLO");
     print_amount(10000000000000001, printed, sizeof(printed));
-    assert_string_equal(printed, "10000000.000000001 SOL");
+    assert_string_equal(printed, "10000000.000000001 RLO");
     print_amount(10000000001, printed, sizeof(printed));
-    assert_string_equal(printed, "10.000000001 SOL");
+    assert_string_equal(printed, "10.000000001 RLO");
     print_amount(10000000100000000, printed, sizeof(printed));
-    assert_string_equal(printed, "10000000.1 SOL");
+    assert_string_equal(printed, "10000000.1 RLO");
 }
 
 void test_print_token_amount() {

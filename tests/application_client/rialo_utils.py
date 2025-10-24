@@ -70,7 +70,7 @@ SOL_PACKED_DERIVATION_PATH_2    = pack_derivation_path("m/44'/501'/0'/0'")
 ### Package this currency configuration in exchange format ###
 
 # Simple native currency configuration: Ticker + Appname
-SOL_CONF = create_currency_config("SOL", "Solana")
+SOL_CONF = create_currency_config("RLO", "Solana")
 
 # Standard coin configuration for a token: Ticker + Appname + (Ticker + decimal)
 JUP_CONF = create_currency_config("JUP", "Solana", ("JUP", 6))

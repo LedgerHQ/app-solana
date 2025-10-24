@@ -78,7 +78,7 @@ static bool check_swap_validity_native(const SummaryItemKind_t kinds[MAX_TRANSAC
     return amount_ok && recipient_ok;
 }
 
-// Accept token amount + SOL recipient + mint + from + ATA recipient (+ fees)
+// Accept token amount + RLO recipient + mint + from + ATA recipient (+ fees)
 static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACTION_SUMMARY_ITEMS],
                                       size_t num_summary_steps,
                                       bool is_token_2022) {
@@ -192,7 +192,7 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
                 }
                 if (strcmp(g_trusted_info.encoded_owner_address, G_transaction_summary_text) != 0) {
                     // This case should never happen because this is already checked at TX parsing
-                    PRINTF("Dest SOL address does not match with SOL address in descriptor\n");
+                    PRINTF("Dest RLO address does not match with RLO address in descriptor\n");
                     return false;
                 }
                 if (!check_swap_recipient(G_transaction_summary_text)) {

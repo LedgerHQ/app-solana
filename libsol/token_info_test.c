@@ -27,7 +27,7 @@ void test_get_hardcoded_token_symbol_SOL() {
                       0x3b, 0x55, 0x98, 0xa0, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x01}};
     const char *symbol = get_hardcoded_token_symbol(pubkey.data);
 
-    assert_string_equal(symbol, "SOL");
+    assert_string_equal(symbol, "RLO");
 }
 
 int main() {

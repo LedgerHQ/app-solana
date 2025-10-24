@@ -1,4 +1,4 @@
-# Solana application : Common Technical Specifications
+# Rialo application : Common Technical Specifications
 
 ## 1.4.0
 
@@ -10,17 +10,17 @@
 
 ## 1.3.0
 
-- Add SIGN SOLANA OFF-CHAIN MESSAGE
-- Add compatibility with the Exchange Application to SWAP, FUND, or SELL SOL tokens
+- Add SIGN RIALO OFF-CHAIN MESSAGE
+- Add compatibility with the Exchange Application to SWAP, FUND, or SELL RLO tokens
 
 ## About
 
-This application describes the APDU messages interface to communicate with the Solana application.
+This application describes the APDU messages interface to communicate with the Rialo application.
 
 The application covers the following functionalities :
 
 - Retrieve an address given an account number
-- Sign Solana transaction
+- Sign Rialo transaction
 - Sign off-chain message
 
 The application interface can be accessed over HID or BLE
@@ -57,7 +57,7 @@ _None_
 
 #### Description
 
-_This command returns a Solana pubkey for the given BIP 32 path_
+_This command returns a Rialo pubkey for the given BIP 32 path_
 
 ##### Command
 
@@ -80,11 +80,11 @@ _This command returns a Solana pubkey for the given BIP 32 path_
 | ------------- | :------: |
 | Pubkey        |    32    |
 
-### SIGN SOLANA TRANSACTION
+### SIGN RIALO TRANSACTION
 
 #### Description
 
-_This command signs a Solana Transaction after having the user validate the transaction-specific parameters:_
+_This command signs a Rialo Transaction after having the user validate the transaction-specific parameters:_
 
 ##### Command
 
@@ -109,11 +109,11 @@ _This command signs a Solana Transaction after having the user validate the tran
 | ------------- | :------: |
 | Signature     |    64    |
 
-### SIGN SOLANA OFF-CHAIN MESSAGE
+### SIGN RIALO OFF-CHAIN MESSAGE
 
 #### Description
 
-_This command signs a Solana Off-Chain Message after having the user validate the text of ASCII encoded messages, or hash of UTF-8 encoded messages:_
+_This command signs a Rialo Off-Chain Message after having the user validate the text of ASCII encoded messages, or hash of UTF-8 encoded messages:_
 
 ##### Command
 
@@ -164,7 +164,7 @@ N/A
 
 #### Description
 
-_This command provides a [Solana Trusted Name TLV descriptor](https://ledgerhq.atlassian.net/wiki/spaces/BE/pages/5123145859/Solana+token+account+ownership)
+_This command provides a [Rialo Trusted Name TLV descriptor](https://ledgerhq.atlassian.net/wiki/spaces/BE/pages/5123145859/Rialo+token+account+ownership)
 
 ##### Command
 

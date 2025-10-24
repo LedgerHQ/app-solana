@@ -8,7 +8,7 @@ from application_client.solana import SolanaClient, ErrorType
 from application_client.solana_cmd_builder import SystemInstructionTransfer, ComputeBudgetInstructionSetComputeUnitLimit, ComputeBudgetInstructionSetComputeUnitPrice, verify_signature
 from application_client.solana_cmd_builder import Message as MessageCustom
 from application_client.solana_utils import sol_to_lamports, lamports_to_bytes
-from application_client import solana_utils as SOL
+from application_client import solana_utils as RLO
 
 from . import cal_helper as cal
 
@@ -19,8 +19,8 @@ from solders.instruction import Instruction, AccountMeta
 
 # A bit hacky but way less hassle than actually writing an actual address decoder
 SOLANA_ADDRESS_DECODER = {
-    SOL.FOREIGN_ADDRESS: SOL.FOREIGN_PUBLIC_KEY,
-    SOL.FOREIGN_ADDRESS_2: SOL.FOREIGN_PUBLIC_KEY_2,
+    RLO.FOREIGN_ADDRESS: RLO.FOREIGN_PUBLIC_KEY,
+    RLO.FOREIGN_ADDRESS_2: RLO.FOREIGN_PUBLIC_KEY_2,
 }
 
 FEES = sol_to_lamports(0.002123)
@@ -36,32 +36,32 @@ TRANSFER_CHECKED = 12
 # ExchangeTestRunner implementation for Solana
 class GenericSolanaTests(ExchangeTestRunner):
     currency_configuration = cal.SOL_CURRENCY_CONFIGURATION
-    valid_destination_1 = SOL.FOREIGN_ADDRESS
-    valid_destination_2 = SOL.FOREIGN_ADDRESS_2
-    valid_refund = SOL.OWNED_ADDRESS
-    valid_send_amount_1 = SOL.AMOUNT
-    valid_send_amount_2 = SOL.AMOUNT_2
+    valid_destination_1 = RLO.FOREIGN_ADDRESS
+    valid_destination_2 = RLO.FOREIGN_ADDRESS_2
+    valid_refund = RLO.OWNED_ADDRESS
+    valid_send_amount_1 = RLO.AMOUNT
+    valid_send_amount_2 = RLO.AMOUNT_2
     valid_fees_1 = FEES
     valid_fees_2 = FEES_2
-    fake_refund = SOL.FOREIGN_ADDRESS
-    fake_payout = SOL.FOREIGN_ADDRESS
+    fake_refund = RLO.FOREIGN_ADDRESS
+    fake_payout = RLO.FOREIGN_ADDRESS
     signature_refusal_error_code = ErrorType.SOLANA_SUMMARY_FINALIZE_FAILED
 
     partner_name = "Partner name"
     fund_user_id = "Daft Punk"
     fund_account_name = "Account 0"
 
-    sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+    sender_public_key = Pubkey.from_string(RLO.OWNED_ADDRESS_STR)
 
     def perform_final_tx(self, destination, send_amount, fees, memo):
         decoded_destination = SOLANA_ADDRESS_DECODER[destination]
-        instruction: SystemInstructionTransfer = SystemInstructionTransfer(SOL.OWNED_PUBLIC_KEY, decoded_destination, send_amount)
+        instruction: SystemInstructionTransfer = SystemInstructionTransfer(RLO.OWNED_PUBLIC_KEY, decoded_destination, send_amount)
         message: bytes = MessageCustom([instruction]).serialize()
         sol = SolanaClient(self.backend)
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, message):
             pass
         signature: bytes = sol.get_async_response().data
-        verify_signature(SOL.OWNED_PUBLIC_KEY, message, signature)
+        verify_signature(RLO.OWNED_PUBLIC_KEY, message, signature)
 
 
 # Use a class to reuse the same Speculos instance
@@ -77,13 +77,13 @@ class SolanaPriorityFeesTests(GenericSolanaTests):
         decoded_destination = SOLANA_ADDRESS_DECODER[destination]
         computeUnitLimit: ComputeBudgetInstructionSetComputeUnitLimit = ComputeBudgetInstructionSetComputeUnitLimit(300)
         computeUnitPrice: ComputeBudgetInstructionSetComputeUnitPrice = ComputeBudgetInstructionSetComputeUnitPrice(20000)
-        instruction: SystemInstructionTransfer = SystemInstructionTransfer(SOL.OWNED_PUBLIC_KEY, decoded_destination, send_amount)
+        instruction: SystemInstructionTransfer = SystemInstructionTransfer(RLO.OWNED_PUBLIC_KEY, decoded_destination, send_amount)
         message: bytes = MessageCustom([computeUnitLimit, computeUnitPrice, instruction]).serialize()
         sol = SolanaClient(self.backend)
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, message):
             pass
         signature: bytes = sol.get_async_response().data
-        verify_signature(SOL.OWNED_PUBLIC_KEY, message, signature)
+        verify_signature(RLO.OWNED_PUBLIC_KEY, message, signature)
 
 
 # Use a class to reuse the same Speculos instance
@@ -98,43 +98,43 @@ class SPLTokenTests(GenericSolanaTests):
     valid_destination_1 = "JA2zDGUjCJePxBWbW895rMPUSBPPU15Q5UbqspezSzwF"
     valid_destination_2 = str(
         get_associated_token_address(
-            Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR),
-            Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR)
+            Pubkey.from_string(RLO.FOREIGN_ADDRESS_2_STR),
+            Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR)
         )
     )
-    valid_refund = SOL.OWNED_ADDRESS
+    valid_refund = RLO.OWNED_ADDRESS
 
-    valid_send_amount_1 = SOL.AMOUNT
-    valid_send_amount_2 = SOL.AMOUNT_2
+    valid_send_amount_1 = RLO.AMOUNT
+    valid_send_amount_2 = RLO.AMOUNT_2
     valid_fees_1 = FEES
     valid_fees_2 = FEES_2
-    fake_refund = SOL.FOREIGN_ADDRESS_STR
-    fake_payout = SOL.FOREIGN_ADDRESS_STR
+    fake_refund = RLO.FOREIGN_ADDRESS_STR
+    fake_payout = RLO.FOREIGN_ADDRESS_STR
     signature_refusal_error_code = ErrorType.SOLANA_SUMMARY_FINALIZE_FAILED
 
     def perform_final_tx(self, destination, send_amount, fees, memo):
         destination_ata = str(
             get_associated_token_address(
                 Pubkey.from_string(destination),
-                Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR)
+                Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR)
             )
         )
 
         # Get the associated token addresses for the sender
-        sender_ata = get_associated_token_address(self.sender_public_key, Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR))
+        sender_ata = get_associated_token_address(self.sender_public_key, Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR))
 
         # Create the transaction
 
         create_instruction = create_associated_token_account(
             payer=sender_ata,
             owner=Pubkey.from_string(destination),
-            mint=Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR),
+            mint=Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR),
         )
         transfer_instruction = transfer_checked(
             TransferCheckedParams(
                 program_id=TOKEN_PROGRAM_ID,
                 source=sender_ata,
-                mint=Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR),
+                mint=Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR),
                 dest=Pubkey.from_string(destination_ata),
                 owner=self.sender_public_key,
                 amount=send_amount,
@@ -144,11 +144,11 @@ class SPLTokenTests(GenericSolanaTests):
 
         sol = SolanaClient(self.backend)
         message_data = sol.craft_tx([create_instruction, transfer_instruction], self.sender_public_key)
-        sol.enroll_ata(SOL.USDC_MINT_ADDRESS, destination_ata.encode('utf-8'), destination.encode('utf-8'))
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+        sol.enroll_ata(RLO.USDC_MINT_ADDRESS, destination_ata.encode('utf-8'), destination.encode('utf-8'))
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, message_data):
             pass
         signature: bytes = sol.get_async_response().data
-        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+        verify_signature(RLO.OWNED_PUBLIC_KEY, message_data, signature)
 
 # Use a class to reuse the same Speculos instance
 class TestsSPLToken:
@@ -162,7 +162,7 @@ class SPLToken2022Tests(SPLTokenTests):
         destination_ata = str(
             get_associated_token_address(
                 Pubkey.from_string(destination),
-                Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR),
+                Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR),
                 token_program_id=TOKEN_2022_PROGRAM_ID,
             )
         )
@@ -171,13 +171,13 @@ class SPLToken2022Tests(SPLTokenTests):
         # Get the associated token addresses for the sender
         sender_ata = get_associated_token_address(
             self.sender_public_key,
-            Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR),
+            Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR),
             token_program_id=TOKEN_2022_PROGRAM_ID,
         )
 
         accounts = [
             AccountMeta(pubkey=sender_ata, is_signer=False, is_writable=True),
-            AccountMeta(pubkey=Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR), is_signer=False, is_writable=False),
+            AccountMeta(pubkey=Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR), is_signer=False, is_writable=False),
             AccountMeta(pubkey=Pubkey.from_string(destination_ata), is_signer=False, is_writable=True),
             AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=False),
         ]
@@ -189,17 +189,17 @@ class SPLToken2022Tests(SPLTokenTests):
 
         sol = SolanaClient(self.backend)
         message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
-        sol.enroll_ata(SOL.USDC_MINT_ADDRESS, destination_ata.encode('utf-8'), destination.encode('utf-8'))
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+        sol.enroll_ata(RLO.USDC_MINT_ADDRESS, destination_ata.encode('utf-8'), destination.encode('utf-8'))
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, message_data):
             pass
         signature: bytes = sol.get_async_response().data
-        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+        verify_signature(RLO.OWNED_PUBLIC_KEY, message_data, signature)
 
     def perform_final_tx_with_transfer_fees(self, destination, send_amount, fees, memo):
         destination_ata = str(
             get_associated_token_address(
                 Pubkey.from_string(destination),
-                Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR),
+                Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR),
                 token_program_id=TOKEN_2022_PROGRAM_ID,
             )
         )
@@ -208,13 +208,13 @@ class SPLToken2022Tests(SPLTokenTests):
         # Get the associated token addresses for the sender
         sender_ata = get_associated_token_address(
             self.sender_public_key,
-            Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR),
+            Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR),
             token_program_id=TOKEN_2022_PROGRAM_ID,
         )
 
         accounts = [
             AccountMeta(pubkey=sender_ata, is_signer=False, is_writable=True),
-            AccountMeta(pubkey=Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR), is_signer=False, is_writable=False),
+            AccountMeta(pubkey=Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR), is_signer=False, is_writable=False),
             AccountMeta(pubkey=Pubkey.from_string(destination_ata), is_signer=False, is_writable=True),
             AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=False),
         ]
@@ -226,17 +226,17 @@ class SPLToken2022Tests(SPLTokenTests):
 
         sol = SolanaClient(self.backend)
         message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
-        sol.enroll_ata(SOL.USDC_MINT_ADDRESS, destination_ata.encode('utf-8'), destination.encode('utf-8'))
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+        sol.enroll_ata(RLO.USDC_MINT_ADDRESS, destination_ata.encode('utf-8'), destination.encode('utf-8'))
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, message_data):
             pass
         signature: bytes = sol.get_async_response().data
-        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+        verify_signature(RLO.OWNED_PUBLIC_KEY, message_data, signature)
 
     def perform_final_tx_with_unknown_transfer_fees(self, destination, send_amount, fees, memo):
         destination_ata = str(
             get_associated_token_address(
                 Pubkey.from_string(destination),
-                Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR),
+                Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR),
                 token_program_id=TOKEN_2022_PROGRAM_ID,
             )
         )
@@ -245,7 +245,7 @@ class SPLToken2022Tests(SPLTokenTests):
         # Get the associated token addresses for the sender
         sender_ata = get_associated_token_address(
             self.sender_public_key,
-            Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR),
+            Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR),
             token_program_id=TOKEN_2022_PROGRAM_ID,
         )
 
@@ -254,7 +254,7 @@ class SPLToken2022Tests(SPLTokenTests):
             TransferCheckedParams(
                 program_id=TOKEN_2022_PROGRAM_ID,
                 source=sender_ata,
-                mint=Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR),
+                mint=Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR),
                 dest=Pubkey.from_string(destination_ata),
                 owner=self.sender_public_key,
                 amount=send_amount,
@@ -264,30 +264,30 @@ class SPLToken2022Tests(SPLTokenTests):
 
         sol = SolanaClient(self.backend)
         message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
-        sol.enroll_ata(SOL.USDC_MINT_ADDRESS, destination_ata.encode('utf-8'), destination.encode('utf-8'))
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+        sol.enroll_ata(RLO.USDC_MINT_ADDRESS, destination_ata.encode('utf-8'), destination.encode('utf-8'))
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, message_data):
             pass
         signature: bytes = sol.get_async_response().data
-        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+        verify_signature(RLO.OWNED_PUBLIC_KEY, message_data, signature)
 
     def perform_final_tx_with_transfer_hook(self, destination, send_amount, fees, memo):
         destination_ata = str(
             get_associated_token_address(
                 Pubkey.from_string(destination),
-                Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR),
+                Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR),
                 token_program_id=TOKEN_2022_PROGRAM_ID,
             )
         )
         sender_ata = get_associated_token_address(
             self.sender_public_key,
-            Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR),
+            Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR),
             token_program_id=TOKEN_2022_PROGRAM_ID,
         )
         hook_account = Pubkey.from_string("FcheSyMboM2FKxieZPsT7r69s5UunZiK8tNSmSKts92i")
 
         accounts = [
             AccountMeta(pubkey=sender_ata, is_signer=False, is_writable=True),
-            AccountMeta(pubkey=Pubkey.from_string(SOL.USDC_MINT_ADDRESS_STR), is_signer=False, is_writable=False),
+            AccountMeta(pubkey=Pubkey.from_string(RLO.USDC_MINT_ADDRESS_STR), is_signer=False, is_writable=False),
             AccountMeta(pubkey=Pubkey.from_string(destination_ata), is_signer=False, is_writable=True),
             AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=False),
             AccountMeta(pubkey=hook_account, is_signer=False, is_writable=True),
@@ -300,11 +300,11 @@ class SPLToken2022Tests(SPLTokenTests):
 
         sol = SolanaClient(self.backend)
         message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
-        sol.enroll_ata(SOL.USDC_MINT_ADDRESS, destination_ata.encode('utf-8'), destination.encode('utf-8'))
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+        sol.enroll_ata(RLO.USDC_MINT_ADDRESS, destination_ata.encode('utf-8'), destination.encode('utf-8'))
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, message_data):
             pass
         signature: bytes = sol.get_async_response().data
-        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+        verify_signature(RLO.OWNED_PUBLIC_KEY, message_data, signature)
 
 # Use a class to reuse the same Speculos instance
 class TestsSPLToken2022:
@@ -493,26 +493,26 @@ class SolanaDescriptorTests(SPLTokenTests):
                                            recipient_ata_index=3)
 
         message_data = sol.craft_tx(instructions_list, self.sender_public_key)
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, message_data):
             pass
         signature: bytes = sol.get_async_response().data
-        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+        verify_signature(RLO.OWNED_PUBLIC_KEY, message_data, signature)
 
     def perform_final_tx(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
-        self._perform_final_lifi_transaction(sol, destination, send_amount, False, SOL.GORK_MINT_ADDRESS_STR)
+        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=RLO.GORK_MINT_ADDRESS)
+        self._perform_final_lifi_transaction(sol, destination, send_amount, False, RLO.GORK_MINT_ADDRESS_STR)
 
     # Variant of above pretending GORK is a token 2022. Not an issue for the application
     def perform_final_tx_2022(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=True, mint_address=SOL.GORK_MINT_ADDRESS)
-        self._perform_final_lifi_transaction(sol, destination, send_amount, True, SOL.GORK_MINT_ADDRESS_STR)
+        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=True, mint_address=RLO.GORK_MINT_ADDRESS)
+        self._perform_final_lifi_transaction(sol, destination, send_amount, True, RLO.GORK_MINT_ADDRESS_STR)
 
     # Variant of above relying on application side hardcoded token list
     def perform_final_tx_hardcoded_token(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        self._perform_final_lifi_transaction(sol, destination, send_amount, False, SOL.USDC_MINT_ADDRESS_STR)
+        self._perform_final_lifi_transaction(sol, destination, send_amount, False, RLO.USDC_MINT_ADDRESS_STR)
 
     def perform_final_tx_bad_structure_type(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
@@ -561,7 +561,7 @@ class SolanaDescriptorTests(SPLTokenTests):
         )
 
         sol = SolanaClient(self.backend)
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
             pass
 
     def perform_final_tx_mismatch_descriptor_count(self, destination, send_amount, fees, memo):
@@ -574,7 +574,7 @@ class SolanaDescriptorTests(SPLTokenTests):
         sol = SolanaClient(self.backend)
         sol.provide_instruction_descriptor(program_id=self.decoded_custom_program_id_string)
         sol.provide_instruction_descriptor(program_id=self.decoded_custom_program_id_string)
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
             pass
 
     def perform_final_tx_mismatch_program_id(self, destination, send_amount, fees, memo):
@@ -587,7 +587,7 @@ class SolanaDescriptorTests(SPLTokenTests):
         sol = SolanaClient(self.backend)
         # Random wrong program id
         sol.provide_instruction_descriptor(program_id=base58.b58decode("EHsACWBhgmw8iq5dmUZzTA1esRqcTognhKNHUkPi4q4g"))
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
             pass
 
     def _perform_final_tx_discriminator_issue(self, final_discriminator):
@@ -599,7 +599,7 @@ class SolanaDescriptorTests(SPLTokenTests):
 
         sol = SolanaClient(self.backend)
         sol.provide_instruction_descriptor(program_id=self.decoded_custom_program_id_string, discriminator=final_discriminator)
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
             pass
 
     def perform_final_tx_mismatch_discriminator_too_small(self, destination, send_amount, fees, memo):
@@ -617,7 +617,7 @@ class SolanaDescriptorTests(SPLTokenTests):
 
         sol = SolanaClient(self.backend)
         sol.provide_instruction_descriptor(program_id=self.decoded_custom_program_id_string, amount_size=amount_size, amount_offset=amount_offset, amount_rules_negative_offset=amount_rules_negative_offset)
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
             pass
 
     def perform_final_tx_amount_size_too_big(self, destination, send_amount, fees, memo):
@@ -649,7 +649,7 @@ class SolanaDescriptorTests(SPLTokenTests):
         elif field_to_check == "recipient_ata_index":
             sol.provide_instruction_descriptor(program_id=self.decoded_custom_program_id_string, recipient_ata_index=index)
 
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
+        with sol.send_async_sign_message(RLO.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
             pass
 
     def perform_final_tx_index_issue_oob_asset_account_index(self, destination, send_amount, fees, memo):
@@ -678,17 +678,17 @@ class SolanaDescriptorTests(SPLTokenTests):
 
     def perform_final_tx_no_token_info(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        self._perform_final_lifi_transaction(sol, destination, send_amount, False, SOL.GORK_MINT_ADDRESS_STR)
+        self._perform_final_lifi_transaction(sol, destination, send_amount, False, RLO.GORK_MINT_ADDRESS_STR)
 
     def perform_final_tx_mismatch_token_2022(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=True, mint_address=SOL.GORK_MINT_ADDRESS)
-        self._perform_final_lifi_transaction(sol, destination, send_amount, False, SOL.GORK_MINT_ADDRESS_STR)
+        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=True, mint_address=RLO.GORK_MINT_ADDRESS)
+        self._perform_final_lifi_transaction(sol, destination, send_amount, False, RLO.GORK_MINT_ADDRESS_STR)
 
     def perform_final_tx_mismatch_token_2022_variant(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
-        self._perform_final_lifi_transaction(sol, destination, send_amount, True, SOL.GORK_MINT_ADDRESS_STR)
+        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=RLO.GORK_MINT_ADDRESS)
+        self._perform_final_lifi_transaction(sol, destination, send_amount, True, RLO.GORK_MINT_ADDRESS_STR)
 
 # Use a class to reuse the same Speculos instance
 class TestsSolanaDescriptor:

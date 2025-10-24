@@ -124,7 +124,7 @@ typedef enum Token_TokenInstruction_Tag {
     /**
      * Initializes a new account to hold tokens.  If this account is associated
      * with the native mint then the token balance of the initialized account
-     * will be equal to the amount of SOL in the account. If this account is
+     * will be equal to the amount of RLO in the account. If this account is
      * associated with another mint, that mint must be initialized before this
      * command can succeed.
      *
@@ -167,7 +167,7 @@ typedef enum Token_TokenInstruction_Tag {
     /**
      * Transfers tokens from one account to another either directly or via a
      * delegate.  If this account is associated with the native mint then equal
-     * amounts of SOL and Tokens will be transferred to the destination
+     * amounts of RLO and Tokens will be transferred to the destination
      * account.
      *
      * Accounts expected by this instruction:
@@ -269,7 +269,7 @@ typedef enum Token_TokenInstruction_Tag {
      */
     Token_TokenInstruction_Burn = 8,
     /**
-     * Close an account by transferring all its SOL to the destination account.
+     * Close an account by transferring all its RLO to the destination account.
      * Non-native accounts may only be closed if its token amount is zero.
      *
      * Accounts expected by this instruction:
@@ -324,7 +324,7 @@ typedef enum Token_TokenInstruction_Tag {
     /**
      * Transfers tokens from one account to another either directly or via a
      * delegate.  If this account is associated with the native mint then equal
-     * amounts of SOL and Tokens will be transferred to the destination
+     * amounts of RLO and Tokens will be transferred to the destination
      * account.
      *
      * This instruction differs from Transfer in that the token mint and
@@ -446,9 +446,9 @@ typedef enum Token_TokenInstruction_Tag {
     Token_TokenInstruction_InitializeAccount2 = 16,
 
     /**
-     * Given a wrapped / native token account (a token account containing SOL)
+     * Given a wrapped / native token account (a token account containing RLO)
      * updates its amount field based on the account's underlying `lamports`.
-     * This is useful if a non-wrapped SOL account uses `system_instruction::transfer`
+     * This is useful if a non-wrapped RLO account uses `system_instruction::transfer`
      * to move lamports to a wrapped token account, and needs to have its token
      * `amount` field updated.
      *
@@ -804,7 +804,7 @@ typedef struct Token_Account {
     /**
      * If is_some, this is a native token, and the value logs the rent-exempt reserve. An Account
      * is required to be rent-exempt, so the value is used by the Processor to ensure that wrapped
-     * SOL accounts do not drop below this threshold.
+     * RLO accounts do not drop below this threshold.
      */
     struct Token_COption_u64 is_native;
     /**

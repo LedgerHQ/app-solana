@@ -1,14 +1,14 @@
 [![Build Status](https://travis-ci.org/solana-labs/ledger-app-solana.svg?branch=master)](https://travis-ci.org/solana-labs/ledger-app-solana)
 
-# Solana app for Ledger Wallet
+# Rialo app for Ledger Wallet
 
 ## Overview
 
-This app adds support for the Solana native token to Ledger Nano S hardware wallet.
+This app adds support for the Rialo native token to Ledger Nano S hardware wallet.
 
 Current Features:
 - Pubkey queries
-- Parse, display and sign all Solana CLI generated transaction formats
+- Parse, display and sign all Rialo CLI generated transaction formats
 - Blind sign arbitrary transactions (Enabled via settings)
 
 ## Prerequisites

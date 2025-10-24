@@ -239,7 +239,7 @@ void test_process_system_transfer() {
     assert(num_kinds == 4);
 
     transaction_summary_display_item(0, DisplayFlagNone);
-    assert_string_equal(G_transaction_summary_text, "0.000000042 SOL");
+    assert_string_equal(G_transaction_summary_text, "0.000000042 RLO");
 }
 
 void test_parse_system_instruction_kind() {

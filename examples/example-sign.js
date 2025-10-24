@@ -7,7 +7,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "solana",
+  "author": "rialo",
   "license": "ISC",
   "dependencies": {
     "@ledgerhq/hw-transport-node-hid": "5.17.0",
@@ -212,7 +212,7 @@ function solanaDerivationPath(account, change) {
   var offset = 0;
   offset = derivation_path.writeUInt8(length, offset);
   offset = derivation_path.writeUInt32BE(_harden(44), offset); // Using BIP44
-  offset = derivation_path.writeUInt32BE(_harden(501), offset); // Solana's BIP44 path
+  offset = derivation_path.writeUInt32BE(_harden(501), offset); // Rialo's BIP44 path
 
   if (length > 2) {
     offset = derivation_path.writeUInt32BE(_harden(account), offset);
@@ -297,7 +297,7 @@ async function solanaLedgerSignOffchainMessage(
   const to_pubkey_string = bs58.encode(to_pubkey_bytes);
   console.log("To pubkey:", to_pubkey_string);
 
-  // create SOL transfer instruction
+  // create RLO transfer instruction
   const from_pubkey = new solana.PublicKey(from_pubkey_string);
   const to_pubkey = new solana.PublicKey(to_pubkey_string);
   const ix = solana.SystemProgram.transfer({

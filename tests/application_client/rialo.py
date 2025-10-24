@@ -7,7 +7,7 @@ from ragger.firmware import Firmware
 from ragger.error import ExceptionRAPDU
 
 from .tlv import format_tlv
-from .solana_keychain import Key, sign_data
+from .rialo_keychain import Key, sign_data
 
 from solders.hash import Hash
 from solders.message import Message

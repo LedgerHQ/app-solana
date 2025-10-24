@@ -63,7 +63,7 @@ int print_token_amount(uint64_t amount,
 }
 
 int print_amount(uint64_t amount, char *out, size_t out_length) {
-    return print_token_amount(amount, "SOL", SOL_DECIMALS, out, out_length);
+    return print_token_amount(amount, "RLO", SOL_DECIMALS, out, out_length);
 }
 
 int print_sized_string(const SizedString *string, char *out, size_t out_length) {
