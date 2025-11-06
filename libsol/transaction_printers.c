@@ -637,7 +637,7 @@ InstructionInfo *const *preprocess_compute_budget_instructions(
 static int print_transaction_nonce_processed(const PrintConfig *print_config,
                                              InstructionInfo *const *infos,
                                              size_t infos_length) {
-    int print_ret = 0;
+    int print_ret = -1;
     uint32_t transaction_max_fee = 0;
 
     // Extract compute budget from infos but don't print yet
@@ -649,6 +649,9 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
     }
 
     PRINTF("infos_length = %d\n", infos_length);
+    for (uint8_t i = 0; i < infos_length; ++i) {
+        PRINTF("infos[%d]->kind = %d\n", i, infos[i]->kind);
+    }
     switch (infos_length) {
         case 1:
             switch (infos[0]->kind) {
@@ -746,6 +749,9 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
                 print_ret = print_spl_associated_token_account_create_with_transfer(print_config,
                                                                                     infos,
                                                                                     infos_length);
+            } else {
+                PRINTF("Unrecognized info pattern\n");
+                return -1;
             }
             break;
 
@@ -768,18 +774,25 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
             } else if (is_stake_split_with_seed_v1_3(infos, infos_length)) {
                 PRINTF("Handle with print_prefunded_split_with_seed\n");
                 print_ret = print_prefunded_split_with_seed(print_config, infos, infos_length);
+            } else {
+                PRINTF("Unrecognized info pattern\n");
+                return -1;
             }
             break;
+
         case 4:
             if (is_stake_split_v1_3(infos, infos_length)) {
                 PRINTF("Handle with print_prefunded_split\n");
                 print_ret = print_prefunded_split(print_config, infos, infos_length);
+            } else {
+                PRINTF("Unrecognized info pattern\n");
+                return -1;
             }
             break;
 
         default:
             PRINTF("Unsupported infos_length %d\n", infos_length);
-            break;
+            return -1;
     }
 
     if (print_ret != 0) {

@@ -12,6 +12,7 @@
 
 enum ProgramId instruction_program_id(const Instruction *instruction, const MessageHeader *header) {
     const Pubkey *program_id = &header->pubkeys[instruction->program_id_index];
+    PRINTF("program_id = %.*H\n", PUBKEY_SIZE, program_id);
     if (memcmp(program_id, &system_program_id, PUBKEY_SIZE) == 0) {
         PRINTF("ProgramIdSystem\n");
         return ProgramIdSystem;
@@ -41,6 +42,7 @@ enum ProgramId instruction_program_id(const Instruction *instruction, const Mess
         return ProgramIdComputeBudget;
     }
 
+    PRINTF("ProgramIdUnknown\n");
     return ProgramIdUnknown;
 }
 
