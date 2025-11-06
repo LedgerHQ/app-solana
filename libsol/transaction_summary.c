@@ -342,6 +342,7 @@ int transaction_summary_finalize(enum SummaryItemKind *item_kinds, size_t *item_
         PRINTF("Error transaction summary is unset\n");
         return 1;
     }
+    PRINTF("summary->primary.kind = %d\n", summary->primary.kind);
 
     SET_IF_USED(summary->primary, item_kinds, index);
 

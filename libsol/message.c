@@ -199,7 +199,12 @@ int process_message_body(const uint8_t *message_body,
         PRINTF("generate_extension_warning\n");
         BAIL_IF(print_spl_token_extension_warning());
     }
-    return print_transaction(print_config, display_instruction_info, display_instruction_count);
+    if (print_transaction(print_config, display_instruction_info, display_instruction_count) != 0) {
+        PRINTF("print_transaction failed\n");
+        return -1;
+    }
+
+    return 0;
 }
 
 int process_message_body_with_descriptor(const uint8_t *message_body,
