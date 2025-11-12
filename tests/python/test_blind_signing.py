@@ -25,23 +25,27 @@ class SystemInstruction(IntEnum):
     SystemAllocateWithSeed = 9
     SystemAssignWithSeed = 10
 
-
-
-import time
+STAKE_PROGRAM_ID = Pubkey.from_string("Stake11111111111111111111111111111111111111")
 payer_pubkey = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+stake_account = Pubkey.create_with_seed(payer_pubkey, seed="stake123", program_id=STAKE_PROGRAM_ID)
 
-def _craft_blind_signing(sol):
-    # Craft an unrecognized TX
-    tx = Instruction(
+def _craft_blind_signing(sol, instruction_number=1):
+    # If only one instruction, remove an account to create a faulty ins
+    # Else duplicate the instruction to create an unknown pattern
+    accounts=[
+        AccountMeta(pubkey=payer_pubkey, is_signer=False, is_writable=False),
+    ]
+    if instruction_number > 1:
+        accounts.append(AccountMeta(pubkey=stake_account, is_signer=False, is_writable=True))
+
+    # Craft an unrecognized TX with N instructions
+    ins = Instruction(
         program_id=Pubkey.from_string(PROGRAM_ID_SYSTEM),
-        accounts=[
-            AccountMeta(pubkey=payer_pubkey, is_signer=False, is_writable=False),
-            # No account to create
-            # AccountMeta(pubkey=stake_account, is_signer=False, is_writable=True),
-        ],
+        accounts=accounts,
         data=struct.pack("<IQ", SystemInstruction.SystemCreateAccount, 123456789),
     )
-    return sol.craft_tx([tx], payer_pubkey)
+    tx = [ins] * instruction_number
+    return sol.craft_tx(tx, payer_pubkey)
 
 class TestBlindSigning:
     def _check_blind_signing_rejection(self, sol, message_data):
@@ -77,7 +81,6 @@ class TestBlindSigning:
 
 def test_blind_signing_enabled_reject(sol, backend, scenario_navigator, navigator, navigation_helper, root_pytest_dir, test_name):
     navigation_helper.enable_blind_signing(test_name + "_enable_bs")
-    message_data = _craft_blind_signing(sol)
 
     if backend.device.is_nano:
         navigate_instruction = NavInsID.RIGHT_CLICK
@@ -89,16 +92,17 @@ def test_blind_signing_enabled_reject(sol, backend, scenario_navigator, navigato
         pattern = "Back to safety"
         validation_instructions = [NavInsID.USE_CASE_CHOICE_CONFIRM]
 
-    with pytest.raises(ExceptionRAPDU) as e:
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
-            navigator.navigate_until_text_and_compare(navigate_instruction=navigate_instruction,
-                                                      validation_instructions=validation_instructions,
-                                                      text=pattern,
-                                                      path=root_pytest_dir,
-                                                      test_case_name=test_name + "_choice",
-                                                      screen_change_before_first_instruction=False,
-                                                      screen_change_after_last_instruction=False)
-    assert e.value.status == ErrorType.USER_CANCEL
+    for instruction_number in [1, 2, 3, 4]:
+        message_data = _craft_blind_signing(sol, instruction_number=instruction_number)
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+                navigator.navigate_until_text_and_compare(navigate_instruction=navigate_instruction,
+                                                        validation_instructions=validation_instructions,
+                                                        text=pattern,
+                                                        path=root_pytest_dir,
+                                                        test_case_name=test_name +  "_choice_" + str(instruction_number) + "_ins",
+                                                        screen_change_before_first_instruction=False)
+        assert e.value.status == ErrorType.USER_CANCEL
 
 def test_blind_signing_enabled_accept(sol, backend, scenario_navigator, navigator, navigation_helper, root_pytest_dir, test_name):
     if backend.device.is_nano:
