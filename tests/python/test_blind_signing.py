@@ -95,9 +95,7 @@ def test_blind_signing_enabled_reject(sol, backend, scenario_navigator, navigato
                                                       validation_instructions=validation_instructions,
                                                       text=pattern,
                                                       path=root_pytest_dir,
-                                                      test_case_name=test_name + "_choice",
-                                                      screen_change_before_first_instruction=False,
-                                                      screen_change_after_last_instruction=False)
+                                                      test_case_name=test_name + "_choice")
     assert e.value.status == ErrorType.USER_CANCEL
 
 def test_blind_signing_enabled_accept(sol, backend, scenario_navigator, navigator, navigation_helper, root_pytest_dir, test_name):
@@ -122,8 +120,7 @@ def test_blind_signing_enabled_accept(sol, backend, scenario_navigator, navigato
                                                   validation_instructions=warning_validation_instructions,
                                                   text=warning_pattern,
                                                   path=root_pytest_dir,
-                                                  test_case_name=test_name + "_choice",
-                                                  screen_change_before_first_instruction=False)
+                                                  test_case_name=test_name + "_choice")
         navigator.navigate_until_text_and_compare(navigate_instruction=navigate_instruction,
                                                   validation_instructions=approve_validation_instructions,
                                                   text=approve_pattern,
@@ -144,8 +141,7 @@ def test_blind_signing_enabled_navigate_warnings(sol, backend, scenario_navigato
                                                       validation_instructions=[NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT],
                                                       text="Learn more",
                                                       path=root_pytest_dir,
-                                                      test_case_name=test_name + "_warning_info",
-                                                      screen_change_before_first_instruction=False)
+                                                      test_case_name=test_name + "_warning_info")
             navigator.navigate_until_text_and_compare(navigate_instruction=None,
                                                       validation_instructions=[NavInsID.USE_CASE_CHOICE_REJECT],
                                                       text="Continue anyway",
