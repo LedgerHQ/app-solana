@@ -288,10 +288,9 @@ static int handle_provide_instruction_descriptor_internal(void) {
     // Verify that the signature field of the TLV is the signature of the TLV hash by the key
     // loaded by the PKI
     check_signature_with_pki_status_t err;
-    err = check_signature_with_pki(hash,
-                                   CERTIFICATE_PUBLIC_KEY_USAGE_SWAP_TEMPLATE,
-                                   CX_CURVE_SECP256K1,
-                                   tlv_extracted.signature);
+    uint8_t expected_key_usage = CERTIFICATE_PUBLIC_KEY_USAGE_SWAP_TEMPLATE;
+    cx_curve_t curve = CX_CURVE_SECP256K1;
+    err = check_signature_with_pki(hash, &expected_key_usage, &curve, tlv_extracted.signature);
     if (err != CHECK_SIGNATURE_WITH_PKI_SUCCESS) {
         PRINTF("Failed to verify signature of instruction descriptor\n");
         return ApduReplySolanaInvalidInstructionDescriptor;
