@@ -1,9 +1,11 @@
 import pytest
 import struct
 import base58
+from hashlib import sha256
 from ragger.error import ExceptionRAPDU
 
-from ledger_app_clients.exchange.test_runner import ExchangeTestRunner, ALL_TESTS_EXCEPT_MEMO_THORSWAP_AND_FEES
+from ledger_app_clients.exchange.test_runner import ExchangeTestRunner, ALL_TESTS_EXCEPT_MEMO_THORSWAP_AND_FEES, THORSWAP_TESTS
+from ledger_app_clients.exchange.client import PayinExtraDataID
 from application_client.solana import SolanaClient, ErrorType
 from application_client.solana_cmd_builder import SystemInstructionTransfer, ComputeBudgetInstructionSetComputeUnitLimit, ComputeBudgetInstructionSetComputeUnitPrice, verify_signature
 from application_client.solana_cmd_builder import Message as MessageCustom
@@ -336,13 +338,19 @@ class TestsSPLToken2022:
 class SolanaDescriptorTests(SPLTokenTests):
     currency_configuration = cal.GORK_CURRENCY_CONFIGURATION
 
+    template_id_1 = 123456
+    template_id_2 = 654321
+    valid_payin_extra_data_1 = PayinExtraDataID.SOL_TEMPLATE.to_bytes(1, byteorder='big') + template_id_1.to_bytes(8, byteorder='big')
+    valid_payin_extra_data_2 = PayinExtraDataID.SOL_TEMPLATE.to_bytes(1, byteorder='big') + template_id_2.to_bytes(8, byteorder='big')
+    invalid_payin_extra_data = PayinExtraDataID.EVM_CALLDATA.to_bytes(1, byteorder='big') + template_id_1.to_bytes(32, byteorder='big')
+
     # Previously used amount does not fit on 4 bytes while we want to test the 4 bytes descriptor
     valid_send_amount_2 = sol_to_lamports(0.000001234)
     custom_program_id_string = "3KS2k14CmtnuVv2fvYcvdrNgC94Y11WETBpMUGgXyWZL"
     custom_program_id = Pubkey.from_string(custom_program_id_string)
     decoded_custom_program_id_string = base58.b58decode(custom_program_id_string)
 
-    def _perform_final_lifi_transaction(self, sol, destination, send_amount, is_token_2022, mint_address_str):
+    def _perform_final_lifi_transaction(self, sol, destination, send_amount, is_token_2022, mint_address_str, memo):
         mint_pubkey = Pubkey.from_string(mint_address_str)
         receiver_pubkey = Pubkey.from_string(destination)
         if is_token_2022:
@@ -352,6 +360,17 @@ class SolanaDescriptorTests(SPLTokenTests):
         destination_ata_pubkey = get_associated_token_address(receiver_pubkey, mint_pubkey, token_program_id=token_program_id)
         dummy_storage_account = Pubkey.from_string("EHsACWBhgmw8iq5dmUZzTA1esRqcTognhKNHUkPi4q4g")
         sender_ata = get_associated_token_address(self.sender_public_key, mint_pubkey, token_program_id=token_program_id)
+
+        if memo == self.valid_payin_extra_data_1:
+            template_id = self.template_id_1
+        elif memo == self.valid_payin_extra_data_2:
+            template_id = self.template_id_2
+        elif memo == self.invalid_payin_extra_data:
+            template_id = self.template_id_1
+        else:
+            # Perform a regular tx instead
+            base_class = SPLTokenTests(self.backend, self.exchange_navigation_helper)
+            return base_class.perform_final_tx(destination, send_amount, 0, memo)
 
         instructions_list = []
 
@@ -371,7 +390,7 @@ class SolanaDescriptorTests(SPLTokenTests):
             ],
             data=struct.pack("<QQ", discriminator_8_bytes, send_amount),
         ))
-        sol.provide_instruction_descriptor(template_id=2**64-1,
+        sol.provide_instruction_descriptor(template_id=template_id,
                                            discriminator=discriminator_8_bytes.to_bytes(8, byteorder='little'),
                                            program_id=self.decoded_custom_program_id_string,
                                            amount_size=8,
@@ -388,7 +407,7 @@ class SolanaDescriptorTests(SPLTokenTests):
             accounts=[AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True)],
             data=struct.pack("<B", discriminator_1_bytes),
         ))
-        sol.provide_instruction_descriptor(template_id=2**64-1,
+        sol.provide_instruction_descriptor(template_id=template_id,
                                            discriminator=discriminator_1_bytes.to_bytes(1, byteorder='little'),
                                            program_id=self.decoded_custom_program_id_string)
 
@@ -399,7 +418,7 @@ class SolanaDescriptorTests(SPLTokenTests):
             accounts=[AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True)],
             data=struct.pack("<L", discriminator_4_bytes),
         ))
-        sol.provide_instruction_descriptor(template_id=2**64-1,
+        sol.provide_instruction_descriptor(template_id=template_id,
                                            discriminator=discriminator_4_bytes.to_bytes(4, byteorder='little'),
                                            program_id=self.decoded_custom_program_id_string)
 
@@ -409,7 +428,7 @@ class SolanaDescriptorTests(SPLTokenTests):
             accounts=[AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True)],
             data=struct.pack("<L", send_amount),
         ))
-        sol.provide_instruction_descriptor(template_id=2**64-1,
+        sol.provide_instruction_descriptor(template_id=template_id,
                                            program_id=self.decoded_custom_program_id_string,
                                            amount_size=4,
                                            amount_offset=0,
@@ -422,7 +441,7 @@ class SolanaDescriptorTests(SPLTokenTests):
             accounts=[AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True)],
             data=struct.pack("<QQQ", 0, 0, send_amount),
         ))
-        sol.provide_instruction_descriptor(template_id=2**64-1,
+        sol.provide_instruction_descriptor(template_id=template_id,
                                            program_id=self.decoded_custom_program_id_string,
                                            amount_size=8,
                                            amount_offset=8 * 2,
@@ -435,7 +454,7 @@ class SolanaDescriptorTests(SPLTokenTests):
             accounts=[AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True)],
             data=struct.pack(">Q", send_amount),
         ))
-        sol.provide_instruction_descriptor(template_id=2**64-1,
+        sol.provide_instruction_descriptor(template_id=template_id,
                                            program_id=self.decoded_custom_program_id_string,
                                            amount_size=8,
                                            amount_offset=0,
@@ -448,7 +467,7 @@ class SolanaDescriptorTests(SPLTokenTests):
             accounts=[AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True)],
             data=struct.pack(">QLQQQ", 0, send_amount, 0, 0, 0),
         ))
-        sol.provide_instruction_descriptor(template_id=2**64-1,
+        sol.provide_instruction_descriptor(template_id=template_id,
                                            program_id=self.decoded_custom_program_id_string,
                                            amount_size=4,
                                            amount_offset=8*3 + 4,
@@ -467,7 +486,7 @@ class SolanaDescriptorTests(SPLTokenTests):
                 ],
                 data=struct.pack("QQQ", 0, 0, 0),
             ))
-            sol.provide_instruction_descriptor(template_id=2**64-1,
+            sol.provide_instruction_descriptor(template_id=template_id,
                                                program_id=self.decoded_custom_program_id_string)
 
         # Other order of accounts
@@ -485,7 +504,7 @@ class SolanaDescriptorTests(SPLTokenTests):
             ],
             data=struct.pack("B", 0),
         ))
-        sol.provide_instruction_descriptor(template_id=2**64-1,
+        sol.provide_instruction_descriptor(template_id=template_id,
                                            program_id=self.decoded_custom_program_id_string,
                                            asset_account_index=2,
                                            asset_ata_index=5,
@@ -501,57 +520,57 @@ class SolanaDescriptorTests(SPLTokenTests):
     def perform_final_tx(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
-        self._perform_final_lifi_transaction(sol, destination, send_amount, False, SOL.GORK_MINT_ADDRESS_STR)
+        self._perform_final_lifi_transaction(sol, destination, send_amount, False, SOL.GORK_MINT_ADDRESS_STR, memo)
 
     # Variant of above pretending GORK is a token 2022. Not an issue for the application
     def perform_final_tx_2022(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=True, mint_address=SOL.GORK_MINT_ADDRESS)
-        self._perform_final_lifi_transaction(sol, destination, send_amount, True, SOL.GORK_MINT_ADDRESS_STR)
+        self._perform_final_lifi_transaction(sol, destination, send_amount, True, SOL.GORK_MINT_ADDRESS_STR, memo)
 
     # Variant of above relying on application side hardcoded token list
     def perform_final_tx_hardcoded_token(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        self._perform_final_lifi_transaction(sol, destination, send_amount, False, SOL.USDC_MINT_ADDRESS_STR)
+        self._perform_final_lifi_transaction(sol, destination, send_amount, False, SOL.USDC_MINT_ADDRESS_STR, memo)
 
     def perform_final_tx_bad_structure_type(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        sol.provide_instruction_descriptor(structure_type=0x00)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, structure_type=0x00)
 
     def perform_final_tx_bad_version(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        sol.provide_instruction_descriptor(version=0x02)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, version=0x02)
 
     def perform_final_tx_bad_chain_id(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        sol.provide_instruction_descriptor(chain_id=800)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, chain_id=800)
 
     def perform_final_tx_bad_size_program_id_too_small(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        sol.provide_instruction_descriptor(program_id=bytes.fromhex("00" * 31))
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, program_id=bytes.fromhex("00" * 31))
 
     def perform_final_tx_bad_size_program_id_too_big(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        sol.provide_instruction_descriptor(program_id=bytes.fromhex("00" * 33))
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, program_id=bytes.fromhex("00" * 33))
 
     def perform_final_tx_discriminator_too_big(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        sol.provide_instruction_descriptor(discriminator=bytes.fromhex("00" * 9))
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, discriminator=bytes.fromhex("00" * 9))
 
     def perform_final_tx_too_many_descriptors(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
         for x in range(11):
-            sol.provide_instruction_descriptor()
+            sol.provide_instruction_descriptor(template_id=self.template_id_1)
 
     def perform_final_tx_mismatch_template(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        sol.provide_instruction_descriptor(template_id=1)
-        sol.provide_instruction_descriptor(template_id=2)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1 - 1)
 
     def perform_final_tx_mismatch_network(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        sol.provide_instruction_descriptor(chain_id=900)
-        sol.provide_instruction_descriptor(chain_id=901)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, chain_id=900)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, chain_id=901)
 
     def perform_final_tx_no_descriptor(self, destination, send_amount, fees, memo):
         instruction = Instruction(
@@ -572,8 +591,8 @@ class SolanaDescriptorTests(SPLTokenTests):
         )
 
         sol = SolanaClient(self.backend)
-        sol.provide_instruction_descriptor(program_id=self.decoded_custom_program_id_string)
-        sol.provide_instruction_descriptor(program_id=self.decoded_custom_program_id_string)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, program_id=self.decoded_custom_program_id_string)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, program_id=self.decoded_custom_program_id_string)
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
             pass
 
@@ -586,7 +605,7 @@ class SolanaDescriptorTests(SPLTokenTests):
 
         sol = SolanaClient(self.backend)
         # Random wrong program id
-        sol.provide_instruction_descriptor(program_id=base58.b58decode("EHsACWBhgmw8iq5dmUZzTA1esRqcTognhKNHUkPi4q4g"))
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, program_id=base58.b58decode("EHsACWBhgmw8iq5dmUZzTA1esRqcTognhKNHUkPi4q4g"))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
             pass
 
@@ -598,7 +617,7 @@ class SolanaDescriptorTests(SPLTokenTests):
         )
 
         sol = SolanaClient(self.backend)
-        sol.provide_instruction_descriptor(program_id=self.decoded_custom_program_id_string, discriminator=final_discriminator)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, program_id=self.decoded_custom_program_id_string, discriminator=final_discriminator)
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
             pass
 
@@ -616,7 +635,7 @@ class SolanaDescriptorTests(SPLTokenTests):
         )
 
         sol = SolanaClient(self.backend)
-        sol.provide_instruction_descriptor(program_id=self.decoded_custom_program_id_string, amount_size=amount_size, amount_offset=amount_offset, amount_rules_negative_offset=amount_rules_negative_offset)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, program_id=self.decoded_custom_program_id_string, amount_size=amount_size, amount_offset=amount_offset, amount_rules_negative_offset=amount_rules_negative_offset)
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
             pass
 
@@ -641,13 +660,13 @@ class SolanaDescriptorTests(SPLTokenTests):
 
         sol = SolanaClient(self.backend)
         if field_to_check == "asset_account_index":
-            sol.provide_instruction_descriptor(program_id=self.decoded_custom_program_id_string, asset_account_index=index)
+            sol.provide_instruction_descriptor(template_id=self.template_id_1, program_id=self.decoded_custom_program_id_string, asset_account_index=index)
         elif field_to_check == "asset_ata_index":
-            sol.provide_instruction_descriptor(program_id=self.decoded_custom_program_id_string, asset_ata_index=index)
+            sol.provide_instruction_descriptor(template_id=self.template_id_1, program_id=self.decoded_custom_program_id_string, asset_ata_index=index)
         elif field_to_check == "recipient_account_index":
-            sol.provide_instruction_descriptor(program_id=self.decoded_custom_program_id_string, recipient_account_index=index)
+            sol.provide_instruction_descriptor(template_id=self.template_id_1, program_id=self.decoded_custom_program_id_string, recipient_account_index=index)
         elif field_to_check == "recipient_ata_index":
-            sol.provide_instruction_descriptor(program_id=self.decoded_custom_program_id_string, recipient_ata_index=index)
+            sol.provide_instruction_descriptor(template_id=self.template_id_1, program_id=self.decoded_custom_program_id_string, recipient_ata_index=index)
 
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
             pass
@@ -678,35 +697,35 @@ class SolanaDescriptorTests(SPLTokenTests):
 
     def perform_final_tx_no_token_info(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        self._perform_final_lifi_transaction(sol, destination, send_amount, False, SOL.GORK_MINT_ADDRESS_STR)
+        self._perform_final_lifi_transaction(sol, destination, send_amount, False, SOL.GORK_MINT_ADDRESS_STR, memo)
 
     def perform_final_tx_mismatch_token_2022(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=True, mint_address=SOL.GORK_MINT_ADDRESS)
-        self._perform_final_lifi_transaction(sol, destination, send_amount, False, SOL.GORK_MINT_ADDRESS_STR)
+        self._perform_final_lifi_transaction(sol, destination, send_amount, False, SOL.GORK_MINT_ADDRESS_STR, memo)
 
     def perform_final_tx_mismatch_token_2022_variant(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
-        self._perform_final_lifi_transaction(sol, destination, send_amount, True, SOL.GORK_MINT_ADDRESS_STR)
+        self._perform_final_lifi_transaction(sol, destination, send_amount, True, SOL.GORK_MINT_ADDRESS_STR, memo)
 
 # Use a class to reuse the same Speculos instance
 class TestsSolanaDescriptor:
-    @pytest.mark.parametrize('test_to_run', ALL_TESTS_EXCEPT_MEMO_THORSWAP_AND_FEES)
-    def test_solana_descriptor(self, backend, exchange_navigation_helper, test_to_run):
+    @pytest.mark.parametrize('test_to_run', THORSWAP_TESTS)
+    def test_lifi(self, backend, exchange_navigation_helper, test_to_run):
         SolanaDescriptorTests(backend, exchange_navigation_helper).run_test(test_to_run)
 
     # Let's only test the main valid case for edge token cases, no need to check amount mismatch and so on
-    def test_solana_descriptor_2022(self, backend, exchange_navigation_helper):
+    def test_lifi_2022(self, backend, exchange_navigation_helper):
         test_class = SolanaDescriptorTests(backend, exchange_navigation_helper)
         test_class.perform_final_tx = test_class.perform_final_tx_2022
-        test_class.run_test("swap_valid_1")
+        test_class.run_test("thorswap_valid_1")
 
-    def test_solana_descriptor_hardcoded_token(self, backend, exchange_navigation_helper):
+    def test_lifi_hardcoded_token(self, backend, exchange_navigation_helper):
         test_class = SolanaDescriptorTests(backend, exchange_navigation_helper)
         test_class.currency_configuration = cal.SOL_USDC_CURRENCY_CONFIGURATION
         test_class.perform_final_tx = test_class.perform_final_tx_hardcoded_token
-        test_class.run_test("swap_valid_1")
+        test_class.run_test("thorswap_valid_1")
 
     # Errors detected at discriminator reception
     @pytest.mark.parametrize('fault_test_to_run', [
@@ -717,14 +736,13 @@ class TestsSolanaDescriptor:
         "perform_final_tx_bad_size_program_id_too_big",
         "perform_final_tx_discriminator_too_big",
         "perform_final_tx_too_many_descriptors",
-        "perform_final_tx_mismatch_template",
         "perform_final_tx_mismatch_network",
     ])
     def test_lifi_bad_descriptor(self, backend, exchange_navigation_helper, fault_test_to_run):
         with pytest.raises(ExceptionRAPDU) as e:
             test_class = SolanaDescriptorTests(backend, exchange_navigation_helper)
             test_class.perform_final_tx = getattr(test_class, fault_test_to_run)
-            test_class.run_test("swap_valid_1")
+            test_class.run_test("thorswap_valid_1")
         assert e.value.status == ErrorType.INVALID_INSTRUCTION_DESCRIPTOR
 
     # Errors detected at tx reception and discriminator usage
@@ -747,6 +765,7 @@ class TestsSolanaDescriptor:
         "perform_final_tx_index_issue_mismatch_recipient_account_index",
         "perform_final_tx_index_issue_mismatch_recipient_ata_index",
         "perform_final_tx_no_token_info",
+        "perform_final_tx_mismatch_template",
         "perform_final_tx_mismatch_token_2022",
         "perform_final_tx_mismatch_token_2022_variant",
     ])
@@ -754,5 +773,5 @@ class TestsSolanaDescriptor:
         with pytest.raises(ExceptionRAPDU) as e:
             test_class = SolanaDescriptorTests(backend, exchange_navigation_helper)
             test_class.perform_final_tx = getattr(test_class, fault_test_to_run)
-            test_class.run_test("swap_valid_1")
+            test_class.run_test("thorswap_valid_1")
         assert e.value.status == ErrorType.SOLANA_SUMMARY_FINALIZE_FAILED
