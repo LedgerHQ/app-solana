@@ -2,8 +2,13 @@
 
 #include "swap_lib_calls.h"
 #include "sol/parser.h"
+#include "swap_common.h"
 
 bool swap_copy_transaction_parameters(create_transaction_parameters_t *sign_transaction_params);
+
+swap_mode_t get_swap_mode(void);
+
+bool check_template_id(uint64_t template_id);
 
 bool check_swap_amount_raw(uint64_t amount);
 

@@ -6,6 +6,7 @@
 #include "globals.h"
 #include "utils.h"
 #include "handle_get_challenge.h"
+#include "handle_sign_message.h"
 #include "base58.h"
 #include "trusted_info.h"
 #include "tlv_use_case_trusted_name.h"
@@ -278,6 +279,13 @@ static int handle_provide_instruction_descriptor_internal(void) {
     if (tlv_extracted.version == 0 || tlv_extracted.version > 1) {
         PRINTF("Error: unsupported struct version %d\n", tlv_extracted.version);
         return ApduReplySolanaInvalidInstructionDescriptor;
+    }
+
+    // Check that the template ID matches the expected one
+    if (!check_template_id(tlv_extracted.template_id)) {
+        PRINTF("Error: unexpected template ID\n");
+        debug_print_u64("tlv_extracted.template_id", tlv_extracted.template_id);
+        swap_finalize(false);
     }
 
     // Finalize hash object filled by the parser

@@ -1,6 +1,8 @@
 #include "io_utils.h"
 #include "utils.h"
 #include "handle_swap_sign_transaction.h"
+#include "swap_common.h"
+#include "handle_provide_instruction_descriptor.h"
 
 #include "sol/parser.h"
 #include "sol/printer.h"
@@ -219,6 +221,16 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
 
 static bool check_swap_validity(const SummaryItemKind_t kinds[MAX_TRANSACTION_SUMMARY_ITEMS],
                                 size_t num_summary_steps) {
+    // Check if we're in error mode due to invalid swap protocol
+    swap_mode_t swap_mode = get_swap_mode();
+    if (swap_mode == SWAP_MODE_ERROR) {
+        PRINTF("Swap mode error - invalid or unknown swap protocol\n");
+        return false;
+    } else if (swap_mode == SWAP_MODE_CROSSCHAIN) {
+        PRINTF("Error, this function is for standard swap checking\n");
+        return false;
+    }
+
     if (is_token_transaction()) {
         bool is_token_2022;
         transaction_summary_get_is_token_2022_transfer(&is_token_2022);
@@ -242,7 +254,7 @@ static bool check_swap_validity(const SummaryItemKind_t kinds[MAX_TRANSACTION_SU
     }
 }
 
-static void swap_finalize(bool is_valid) {
+void __attribute__((noreturn)) swap_finalize(bool is_valid) {
     if (G_swap_response_ready) {
         // Safety against trying to make the app sign multiple TX
         // This code should never be triggered as the app is supposed to exit after
@@ -262,6 +274,9 @@ static void swap_finalize(bool is_valid) {
         PRINTF("Refuse to sign an incorrect Swap transaction\n");
         sendResponse(0, ApduReplySolanaSummaryFinalizeFailed, false);
     }
+
+    // Unreachable, sendResponse should have went back to lib caller Exchange
+    os_sched_exit(-1);
 }
 
 // --8<-- [start:handle_sign_message_ui]

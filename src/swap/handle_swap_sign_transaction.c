@@ -11,6 +11,8 @@
 
 typedef struct swap_validated_s {
     bool initialized;
+    swap_mode_t swap_mode;
+    uint64_t template_id;
     uint8_t decimals;
     char ticker[MAX_SWAP_TOKEN_LENGTH];
     uint64_t amount;
@@ -25,20 +27,36 @@ static uint8_t *G_swap_sign_return_value_address;
 
 // Save the data validated during the Exchange app flow
 bool swap_copy_transaction_parameters(create_transaction_parameters_t *params) {
-    // Ensure no extraid
-    if (params->destination_address_extra_id == NULL) {
-        PRINTF("destination_address_extra_id expected\n");
-        return false;
-    } else if (params->destination_address_extra_id[0] != '\0') {
-        PRINTF("destination_address_extra_id expected empty, not '%s'\n",
-               params->destination_address_extra_id);
-        return false;
-    }
-
     // first copy parameters to stack, and then to global data.
     // We need this "trick" as the input data position can overlap with app globals
     swap_validated_t swap_validated;
     memset(&swap_validated, 0, sizeof(swap_validated));
+
+    // if destination_address_extra_id is given, we use the first byte to determine if we use the
+    // normal swap protocol, or the one for cross-chain swaps (LiFi template)
+    if (params->destination_address_extra_id != NULL) {
+        switch (params->destination_address_extra_id[0]) {
+            case EXTRA_ID_TYPE_NATIVE:
+                swap_validated.swap_mode = SWAP_MODE_STANDARD;
+                PRINTF("Standard swap\n");
+                break;
+            case EXTRA_ID_TYPE_SOLANA_TEMPLATE:
+                swap_validated.swap_mode = SWAP_MODE_CROSSCHAIN;
+                // Read 8 bytes as big endian uint64_t
+                swap_validated.template_id = U8BE(
+                    (uint8_t *) params->destination_address_extra_id + 1,
+                    0);
+                PRINTF("Crosschain swap with template_id: %.*H\n",
+                       TEMPLATE_ID_SIZE,
+                       (uint8_t *) &swap_validated.template_id);
+                break;
+            default:
+                PRINTF("Invalid or unknown swap protocol\n");
+                swap_validated.swap_mode = SWAP_MODE_ERROR;
+        }
+    } else {
+        swap_validated.swap_mode = SWAP_MODE_STANDARD;
+    }
 
     // Parse config and save decimals and ticker
     // If there is no coin_configuration, consider that we are doing a SOL swap
@@ -266,4 +284,24 @@ void __attribute__((noreturn)) finalize_exchange_sign_transaction(bool is_succes
 
 bool is_token_transaction() {
     return (memcmp(G_swap_validated.ticker, "SOL", sizeof("SOL")) != 0);
+}
+
+swap_mode_t get_swap_mode(void) {
+    return G_swap_validated.swap_mode;
+}
+
+bool check_template_id(uint64_t template_id) {
+    if (!G_swap_validated.initialized) {
+        PRINTF("check_template_id: swap not initialized\n");
+        return false;
+    }
+
+    if (G_swap_validated.template_id != template_id) {
+        PRINTF("check_template_id: mismatch - expected %llu, got %llu\n",
+               G_swap_validated.template_id,
+               template_id);
+        return false;
+    }
+
+    return true;
 }
