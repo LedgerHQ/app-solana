@@ -314,6 +314,29 @@ static int scan_header_for_signer(const uint32_t *derivation_path,
                             signer_index);
 }
 
+static void prepare_blind_sign_summary(const MessageHeader *header,
+                                       const PrintConfig *print_config) {
+    transaction_summary_set_blind_signing(true);
+
+    SummaryItem *item = transaction_summary_primary_item();
+    summary_item_set_string(item, "Unrecognized", "format");
+
+    cx_hash_sha256(G_command.message,
+                   G_command.message_length,
+                   (uint8_t *) &G_command.message_hash,
+                   HASH_LENGTH);
+
+    item = transaction_summary_general_item();
+    summary_item_set_hash(item, "Message Hash", &G_command.message_hash);
+
+    // Add fee payer to summary if needed
+    const Pubkey *fee_payer = &header->pubkeys[0];
+    if (print_config_show_authority(print_config, fee_payer)) {
+        PRINTF("Adding fee payer to displayable info\n");
+        transaction_summary_set_fee_payer_pubkey(fee_payer);
+    }
+}
+
 void handle_sign_message_parse_message(volatile unsigned int *flags, volatile unsigned int *tx) {
     if (!tx ||
         (G_command.instruction != InsDeprecatedSignMessage &&
@@ -359,8 +382,8 @@ void handle_sign_message_parse_message(volatile unsigned int *flags, volatile un
     transaction_summary_reset();
 
     if (instruction_descriptor_received()) {
-        // Descriptor should not have been accepted so this code should never run but let's be safe
         if (!G_called_from_swap) {
+            // Parser refused descriptor in this caseso this code should never run but let's be safe
             PRINTF("instruction_descriptor_received outside of swap context\n");
             THROW(ApduReplySdkNotSupported);
         }
@@ -370,45 +393,30 @@ void handle_sign_message_parse_message(volatile unsigned int *flags, volatile un
                                                  &print_config) != 0) {
             PRINTF("Error in process_message_body_with_descriptor\n");
             swap_finalize(false);
+            // Unreachable
         } else {
+            // Successfully processed the message with descriptor (LiFi swap)
             swap_finalize(true);
+            // Unreachable
         }
     } else {
-        if (process_message_body(parser.buffer, parser.buffer_length, &print_config) == 0) {
-            handle_sign_message_ui(flags);
-        } else {
+        if (process_message_body(parser.buffer, parser.buffer_length, &print_config) != 0) {
             // Message not processed, throw if blind signing is not enabled or in swap context
             if (G_called_from_swap) {
                 PRINTF("Refuse to process blind transaction in swap context\n");
                 swap_finalize(false);
+                // Unreachable
             } else if (N_storage.settings.allow_blind_sign != BlindSignEnabled) {
                 PRINTF("Blind signing is not enabled\n");
                 start_blind_sign_error_ui();
                 THROW(ApduReplySdkNotSupported);
             } else {
                 // Blind sign allowed. Prepare UI items content
-                transaction_summary_set_blind_signing(true);
-
-                SummaryItem *item = transaction_summary_primary_item();
-                summary_item_set_string(item, "Unrecognized", "format");
-
-                cx_hash_sha256(G_command.message,
-                               G_command.message_length,
-                               (uint8_t *) &G_command.message_hash,
-                               HASH_LENGTH);
-
-                item = transaction_summary_general_item();
-                summary_item_set_hash(item, "Message Hash", &G_command.message_hash);
-
-                // Add fee payer to summary if needed
-                const Pubkey *fee_payer = &header->pubkeys[0];
-                if (print_config_show_authority(&print_config, fee_payer)) {
-                    PRINTF("Adding fee payer to displayable info\n");
-                    transaction_summary_set_fee_payer_pubkey(fee_payer);
-                }
-
-                handle_sign_message_ui(flags);
+                prepare_blind_sign_summary(header, &print_config);
             }
         }
+
+        // Start the signing UI, either normal or blind sign
+        handle_sign_message_ui(flags);
     }
 }
