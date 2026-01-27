@@ -23,6 +23,8 @@ class INS(IntEnum):
     INS_GET_PUBKEY = 0x05
     INS_SIGN_MESSAGE = 0x06
     INS_SIGN_OFFCHAIN_MESSAGE = 0x07
+    INS_SIGN_MESSAGE_PREVIEW = 0x08
+    INS_SIGN_MESSAGE_DELAYED = 0x09
     INS_INSTRUCTION_DESCRIPTOR = 0x16
     INS_GET_CHALLENGE = 0x20
     INS_TRUSTED_INFO = 0x21
@@ -81,6 +83,10 @@ class ErrorType:
     UNIMPLEMENTED_INSTRUCTION = 0x6d00
     SOLANA_SUMMARY_FINALIZE_FAILED = 0x6f00
     SOLANA_SUMMARY_UPDATE_FAILED = 0x6f01
+    SOLANA_DELAYED_PREVIEW_NOT_FOUND = 0x6f10
+    SOLANA_DELAYED_HASH_MISMATCH = 0x6f11
+    SOLANA_DELAYED_LENGTH_MISMATCH = 0x6f12
+    SOLANA_DELAYED_DERIVATION_MISMATCH = 0x6f13
     INVALID_CLA = 0x6e00
     SOLANA_INVALID_MESSAGE_SIZE = 0x6a83
 
@@ -486,11 +492,28 @@ class SolanaClient:
             yield
 
 
+    @contextmanager
+    def send_async_sign_message_preview(self,
+                                        derivation_path: bytes,
+                                        message: bytes,
+                                        user_input_is_ata_or_token_account: bool = False) -> Generator[None, None, None]:
+        with self.send_async_sign_request(INS.INS_SIGN_MESSAGE_PREVIEW, derivation_path, message, user_input_is_ata_or_token_account):
+            yield
+
+
+    def sign_previewed_message(self,
+                               derivation_path: bytes,
+                               message: bytes,
+                               user_input_is_ata_or_token_account: bool = False) -> RAPDU:
+        with self.send_async_sign_request(INS.INS_SIGN_MESSAGE_DELAYED, derivation_path, message, user_input_is_ata_or_token_account):
+            pass
+        return self.get_async_response()
+
+
     def get_async_response(self) -> RAPDU:
         return self._client.last_async_response
 
-    def craft_tx(self, instructions, sender_public_key):
-        blockhash = Hash.default()
+    def craft_tx(self, instructions, sender_public_key, blockhash=Hash(bytes(32))):
         message = Message.new_with_blockhash(instructions, sender_public_key, blockhash)
         tx = Transaction.new_unsigned(message)
         print(tx)

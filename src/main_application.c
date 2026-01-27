@@ -19,6 +19,7 @@
 #include "handle_get_pubkey.h"
 #include "handle_sign_message.h"
 #include "handle_sign_offchain_message.h"
+#include "handle_sign_message_preview.h"
 #include "handle_provide_instruction_descriptor.h"
 #include "handle_get_challenge.h"
 #include "handle_provide_trusted_info.h"
@@ -42,7 +43,7 @@ static void reset_main_globals(void) {
     MEMCLEAR(G_io_seproxyhal_spi_buffer);
 }
 
-void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx) {
+void dispatch_apdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx) {
     if (!flags || !tx) {
         THROW(ApduReplySdkInvalidParameter);
     }
@@ -61,6 +62,11 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
     if (G_command.state == ApduStatePayloadInProgress) {
         PRINTF("Received first chunk of split payload\n");
         THROW(ApduReplySuccess);
+    }
+
+    if (G_command.instruction != InsSignMessageDelayed) {
+        PRINTF("Clearing preview state for non-delayed sign instruction\n");
+        clear_preview_state();
     }
 
     switch (G_command.instruction) {
@@ -82,6 +88,20 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
         case InsDeprecatedSignMessage:
         case InsSignMessage:
             handle_sign_message_parse_message(flags, tx);
+            break;
+
+        case InsSignMessagePreview:
+            if (G_called_from_swap) {
+                PRINTF("Preview mode not supported in swap context\n");
+                THROW(ApduReplySdkNotSupported);
+            }
+            // Set preview flag and call same handler as message signing
+            G_command.is_preview_mode = true;
+            handle_sign_message_parse_message(flags, tx);
+            break;
+
+        case InsSignMessageDelayed:
+            handle_sign_message_delayed(tx);
             break;
 
         case InsSignOffchainMessage:
@@ -142,6 +162,7 @@ void app_main(void) {
     // multiple APDUs before they become complete and executed.
     reset_getpubkey_globals();
     reset_main_globals();
+    clear_preview_state();
 
     // to prevent it from having a fixed value at boot
     roll_challenge();
@@ -176,7 +197,7 @@ void app_main(void) {
 
                 PRINTF("New APDU received:\n%.*H\n", rx, G_io_apdu_buffer);
 
-                handleApdu(&flags, &tx, rx);
+                dispatch_apdu(&flags, &tx, rx);
             }
             CATCH(ApduReplySdkExceptionIoReset) {
                 THROW(ApduReplySdkExceptionIoReset);

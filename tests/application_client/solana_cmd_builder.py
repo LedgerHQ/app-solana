@@ -9,6 +9,7 @@ PROGRAM_ID_COMPUTE_BUDGET = "ComputeBudget111111111111111111111111111111"
 
 # Fake blockhash so this example doesn't need a network connection. It should be queried from the cluster in normal use.
 FAKE_RECENT_BLOCKHASH = "11111111111111111111111111111111"
+FAKE_RECENT_BLOCKHASH_BYTES = base58.b58decode(FAKE_RECENT_BLOCKHASH)
 
 
 def verify_signature(from_public_key: bytes, message: bytes, signature: bytes):
@@ -116,7 +117,7 @@ class Message:
     recent_blockhash: bytes
     compiled_instructions: List[CompiledInstruction]
 
-    def __init__(self, instructions: List[Instruction]):
+    def __init__(self, instructions: List[Instruction], recent_blockhash: bytes = FAKE_RECENT_BLOCKHASH_BYTES):
         # Cheat as we only support 1 SystemInstructionTransfer currently and compute budget only
         # TODO add support for multiple transfers and other instructions if the needs arises
         self.account_keys = []
@@ -132,7 +133,7 @@ class Message:
                 accountIndexes = [self.account_keys.index(instruction.from_pubkey), self.account_keys.index(instruction.to_pubkey)]
             self.compiled_instructions.append(CompiledInstruction(self.account_keys.index(instruction.program_id), accountIndexes, instruction.data))
         self.header = MessageHeader(2, 0, len(self.account_keys) - 2)
-        self.recent_blockhash = base58.b58decode(FAKE_RECENT_BLOCKHASH)
+        self.recent_blockhash = recent_blockhash
 
     def serialize(self) -> bytes:
         serialized: bytes = self.header.serialize()

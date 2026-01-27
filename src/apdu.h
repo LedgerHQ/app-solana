@@ -51,6 +51,11 @@ typedef enum ApduReply {
     ApduReplySolanaInvalidTrustedInfo = 0x6c00,
     ApduReplySolanaInvalidDynamicToken = 0x6ca0,
 
+    ApduReplySolanaDelayedPreviewNotFound = 0x6f10,
+    ApduReplySolanaDelayedHashMismatch = 0x6f11,
+    ApduReplySolanaDelayedLengthMismatch = 0x6f12,
+    ApduReplySolanaDelayedDerivationMismatch = 0x6f13,
+
     ApduReplyUnimplementedInstruction = 0x6d00,
     ApduReplyInvalidCla = 0x6e00,
 
@@ -74,6 +79,7 @@ typedef struct apdu_command_s {
     uint32_t derivation_path[MAX_BIP32_PATH_LENGTH];
     uint32_t derivation_path_length;
     bool non_confirm;
+    bool is_preview_mode;  // True when displaying preview (not signing)
     bool deprecated_host;
     bool user_input_is_ata_or_token_account;
     Hash message_hash;

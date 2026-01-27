@@ -288,6 +288,12 @@ static void handle_sign_message_ui(volatile unsigned int *flags) {
         // If we are in swap context, do not redisplay the message data
         // Instead, ensure they are identical with what was previously displayed
         if (G_called_from_swap) {
+            if (G_command.is_preview_mode) {
+                // Should have been caught at instruction parsing step but let's be safe
+                PRINTF("Preview mode not supported in swap context\n");
+                THROW(ApduReplySdkNotSupported);
+            }
+
             swap_finalize(check_swap_validity(summary_step_kinds, num_summary_steps));
         } else {
             // We have been started from the dashboard, prompt the UI to the user as usual
@@ -340,7 +346,8 @@ static void prepare_blind_sign_summary(const MessageHeader *header,
 void handle_sign_message_parse_message(volatile unsigned int *flags, volatile unsigned int *tx) {
     if (!tx ||
         (G_command.instruction != InsDeprecatedSignMessage &&
-         G_command.instruction != InsSignMessage) ||
+         G_command.instruction != InsSignMessage &&
+         G_command.instruction != InsSignMessagePreview) ||
         G_command.state != ApduStatePayloadComplete) {
         THROW(ApduReplySdkInvalidParameter);
     }
@@ -369,6 +376,13 @@ void handle_sign_message_parse_message(volatile unsigned int *flags, volatile un
     }
     print_config.signer_pubkey = &header->pubkeys[signer_index];
 
+    // Zero out blockhash for preview mode fingerprinting
+    if (G_command.is_preview_mode) {
+        PRINTF("Preview mode: zeroing blockhash at offset %d\n",
+               (const uint8_t *) header->blockhash - G_command.message);
+        explicit_bzero((uint8_t *) header->blockhash, HASH_LENGTH);
+    }
+
     if (G_command.non_confirm) {
         PRINTF("G_command.non_confirm refused\n");
         // Uncomment this to allow unattended signing.
@@ -382,11 +396,18 @@ void handle_sign_message_parse_message(volatile unsigned int *flags, volatile un
     transaction_summary_reset();
 
     if (instruction_descriptor_received()) {
+        PRINTF("Using descriptors to validate transaction\n");
         if (!G_called_from_swap) {
-            // Parser refused descriptor in this caseso this code should never run but let's be safe
+            // Parser should have refused at parsing handler step but let's double check
             PRINTF("instruction_descriptor_received outside of swap context\n");
             THROW(ApduReplySdkNotSupported);
         }
+
+        if (G_command.is_preview_mode) {
+            PRINTF("Preview mode not supported with instruction descriptors\n");
+            THROW(ApduReplySdkNotSupported);
+        }
+
         PRINTF("Using instruction descriptor\n");
         if (process_message_body_with_descriptor(parser.buffer,
                                                  parser.buffer_length,
@@ -400,6 +421,7 @@ void handle_sign_message_parse_message(volatile unsigned int *flags, volatile un
             // Unreachable
         }
     } else {
+        PRINTF("Using UI to validate transaction\n");
         if (process_message_body(parser.buffer, parser.buffer_length, &print_config) != 0) {
             // Message not processed, throw if blind signing is not enabled or in swap context
             if (G_called_from_swap) {
