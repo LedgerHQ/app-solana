@@ -8,66 +8,6 @@ from application_client import solana_utils as SOL
 import random
 import string
 
-class TestGetPublicKey:
-
-    def test_solana_get_public_key_ok(self, sol, scenario_navigator, root_pytest_dir):
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
-
-        with sol.send_public_key_with_confirm(SOL.SOL_PACKED_DERIVATION_PATH):
-            scenario_navigator.address_review_approve(path=root_pytest_dir)
-
-        assert sol.get_async_response().data == from_public_key
-
-
-    def test_solana_get_public_key_refused(self, sol, scenario_navigator, root_pytest_dir):
-        with pytest.raises(ExceptionRAPDU) as e:
-            with sol.send_public_key_with_confirm(SOL.SOL_PACKED_DERIVATION_PATH):
-                scenario_navigator.address_review_reject(path=root_pytest_dir)
-        assert e.value.status == ErrorType.USER_CANCEL
-
-
-class TestMessageSigning:
-
-    def test_solana_simple_transfer_ok_1(self, sol, scenario_navigator, root_pytest_dir):
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
-
-        # Create instruction
-        instruction: SystemInstructionTransfer = SystemInstructionTransfer(from_public_key, SOL.FOREIGN_PUBLIC_KEY, SOL.AMOUNT)
-        message: bytes = Message([instruction]).serialize()
-
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=root_pytest_dir)
-
-        signature: bytes = sol.get_async_response().data
-        verify_signature(from_public_key, message, signature)
-
-
-    def test_solana_simple_transfer_ok_2(self, sol, scenario_navigator, root_pytest_dir):
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH_2)
-
-        # Create instruction
-        instruction: SystemInstructionTransfer = SystemInstructionTransfer(from_public_key, SOL.FOREIGN_PUBLIC_KEY_2, SOL.AMOUNT_2)
-        message: bytes = Message([instruction]).serialize()
-
-        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH_2, message):
-            scenario_navigator.review_approve(path=root_pytest_dir)
-
-        signature: bytes = sol.get_async_response().data
-        verify_signature(from_public_key, message, signature)
-
-
-    def test_solana_simple_transfer_refused(self, sol, scenario_navigator, root_pytest_dir):
-        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
-
-        instruction: SystemInstructionTransfer = SystemInstructionTransfer(from_public_key, SOL.FOREIGN_PUBLIC_KEY, SOL.AMOUNT)
-        message: bytes = Message([instruction]).serialize()
-
-        with pytest.raises(ExceptionRAPDU) as e:
-            with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-                scenario_navigator.review_reject(path=root_pytest_dir)
-        assert e.value.status == ErrorType.USER_CANCEL
-
-
 class TestOffchainMessageSigning:
 
     def test_ledger_sign_offchain_message_ascii_ok(self, sol, scenario_navigator, root_pytest_dir):
