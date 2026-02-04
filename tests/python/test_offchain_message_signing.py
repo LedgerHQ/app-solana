@@ -8,9 +8,9 @@ from application_client import solana_utils as SOL
 import random
 import string
 
-class TestOffchainMessageSigning:
+class TestOffchainMessageSigningV0:
 
-    def test_ledger_sign_offchain_message_ascii_ok(self, sol, scenario_navigator, root_pytest_dir):
+    def test_sign_offchain_message_v0_ascii_ok(self, sol, scenario_navigator, root_pytest_dir):
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
         offchain_message: OffchainMessage = OffchainMessage(0, b"Test message", from_public_key)
@@ -23,7 +23,7 @@ class TestOffchainMessageSigning:
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_very_long_message_ascii_ok(self, sol, scenario_navigator, root_pytest_dir):
+    def test_sign_offchain_message_v0_very_long_ascii_ok(self, sol, scenario_navigator, root_pytest_dir):
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
         offchain_message: OffchainMessage = OffchainMessage(0, SOL.LONG_VALID_ASCII, from_public_key)
@@ -37,7 +37,7 @@ class TestOffchainMessageSigning:
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_message_ascii_refused(self, sol, scenario_navigator, root_pytest_dir):
+    def test_sign_offchain_message_v0_ascii_refused(self, sol, scenario_navigator, root_pytest_dir):
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
         offchain_message: OffchainMessage = OffchainMessage(0, b"Test message", from_public_key)
@@ -48,7 +48,7 @@ class TestOffchainMessageSigning:
                 scenario_navigator.review_reject(path=root_pytest_dir)
         assert e.value.status == ErrorType.USER_CANCEL
 
-    def test_ledger_sign_offchain_message_ascii_message_too_long(self, sol, scenario_navigator, root_pytest_dir):
+    def test_sign_offchain_message_v0_ascii_message_too_long(self, sol, scenario_navigator, root_pytest_dir):
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
         INVALID_LONG_MESSAGE = ''.join(random.choices(string.ascii_letters, k=32*1024))
@@ -65,7 +65,7 @@ class TestOffchainMessageSigning:
             assert e.status == ErrorType.SOLANA_INVALID_MESSAGE_SIZE
 
 
-    def test_ledger_sign_offchain_message_ascii_expert_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+    def test_sign_offchain_message_v0_ascii_expert_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_expert_mode(test_name + "_1")
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -82,7 +82,7 @@ class TestOffchainMessageSigning:
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_message_ascii_expert_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+    def test_sign_offchain_message_v0_ascii_expert_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_expert_mode(test_name + "_1")
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -97,7 +97,7 @@ class TestOffchainMessageSigning:
         assert e.value.status == ErrorType.USER_CANCEL
 
 
-    def test_ledger_sign_offchain_message_utf8_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+    def test_sign_offchain_message_v0_utf8_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_blind_signing(test_name + "_1")
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -112,7 +112,7 @@ class TestOffchainMessageSigning:
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_very_long_message_utf8_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+    def test_sign_offchain_message_v0_very_long_utf8_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_blind_signing(test_name + "_1")
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -130,7 +130,7 @@ class TestOffchainMessageSigning:
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_message_utf8_message_too_long(self, sol, scenario_navigator, root_pytest_dir):
+    def test_sign_offchain_message_v0_utf8_too_long(self, sol, scenario_navigator, root_pytest_dir):
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
         # Generate 2048 random bytes
@@ -150,7 +150,7 @@ class TestOffchainMessageSigning:
             assert e.status == ErrorType.SOLANA_INVALID_MESSAGE_SIZE
 
 
-    def test_ledger_sign_offchain_message_with_app_domain_utf8_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+    def test_sign_offchain_message_v0_with_app_domain_utf8_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_blind_signing(test_name + "_1")
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -167,7 +167,7 @@ class TestOffchainMessageSigning:
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_message_utf8_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+    def test_sign_offchain_message_v0_utf8_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_blind_signing(test_name + "_1")
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -182,7 +182,7 @@ class TestOffchainMessageSigning:
         assert e.value.status == ErrorType.USER_CANCEL
 
 
-    def test_ledger_sign_offchain_message_utf8_expert_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+    def test_sign_offchain_message_v0_utf8_expert_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_blind_signing(test_name + "_1")
         navigation_helper.enable_expert_mode(test_name + "_2")
 
@@ -200,7 +200,7 @@ class TestOffchainMessageSigning:
         verify_signature(from_public_key, message, signature)
 
 
-    def test_ledger_sign_offchain_message_utf8_expert_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+    def test_sign_offchain_message_v0_utf8_expert_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
         navigation_helper.enable_blind_signing(test_name + "_1")
         navigation_helper.enable_expert_mode(test_name + "_2")
 

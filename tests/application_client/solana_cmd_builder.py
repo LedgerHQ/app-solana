@@ -244,4 +244,3 @@ class OffchainMessage:
         # Serialize message
         data += self.message.serialize()
         return data
-
