@@ -76,63 +76,24 @@ class TestBlindSigning:
                                                   test_case_name=test_name)
 
 def test_blind_signing_enabled_reject(sol, backend, scenario_navigator, navigator, navigation_helper, root_pytest_dir, test_name):
-    navigation_helper.enable_blind_signing(test_name + "_enable_bs")
+    navigation_helper.enable_blind_signing()
     message_data = _craft_blind_signing(sol)
-
-    if backend.device.is_nano:
-        navigate_instruction = NavInsID.RIGHT_CLICK
-        pattern = "Reject transaction"
-        validation_instructions = [NavInsID.BOTH_CLICK]
-    else:
-        # no need to navigate
-        navigate_instruction = None
-        pattern = "Back to safety"
-        validation_instructions = [NavInsID.USE_CASE_CHOICE_CONFIRM]
-
     with pytest.raises(ExceptionRAPDU) as e:
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
-            navigator.navigate_until_text_and_compare(navigate_instruction=navigate_instruction,
-                                                      validation_instructions=validation_instructions,
-                                                      text=pattern,
-                                                      path=root_pytest_dir,
-                                                      test_case_name=test_name + "_choice")
+            navigation_helper.navigate_with_blind_signing_and_reject()
     assert e.value.status == ErrorType.USER_CANCEL
 
 def test_blind_signing_enabled_accept(sol, backend, scenario_navigator, navigator, navigation_helper, root_pytest_dir, test_name):
-    if backend.device.is_nano:
-        navigate_instruction = NavInsID.RIGHT_CLICK
-        warning_validation_instructions = [NavInsID.BOTH_CLICK]
-        warning_pattern = "^Blind signing ahead$"
-        approve_validation_instructions = [NavInsID.BOTH_CLICK]
-        approve_pattern = "Accept risk"
-    else:
-        navigate_instruction = NavInsID.SWIPE_CENTER_TO_LEFT
-        warning_validation_instructions = [NavInsID.USE_CASE_CHOICE_REJECT]
-        warning_pattern = "^Continue anyway$"
-        approve_validation_instructions = [NavInsID.USE_CASE_REVIEW_CONFIRM]
-        approve_pattern = "^Hold to sign$"
-
-    navigation_helper.enable_blind_signing(test_name + "_enable_bs")
+    navigation_helper.enable_blind_signing()
     message_data = _craft_blind_signing(sol)
-
     with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
-        navigator.navigate_until_text_and_compare(navigate_instruction=None,
-                                                  validation_instructions=warning_validation_instructions,
-                                                  text=warning_pattern,
-                                                  path=root_pytest_dir,
-                                                  test_case_name=test_name + "_choice")
-        navigator.navigate_until_text_and_compare(navigate_instruction=navigate_instruction,
-                                                  validation_instructions=approve_validation_instructions,
-                                                  text=approve_pattern,
-                                                  path=root_pytest_dir,
-                                                  test_case_name=test_name + "_review",
-                                                  screen_change_before_first_instruction=False)
+        navigation_helper.navigate_with_blind_signing_and_accept()
 
 def test_blind_signing_enabled_navigate_warnings(sol, backend, scenario_navigator, navigator, navigation_helper, root_pytest_dir, test_name):
     if backend.device.is_nano:
         pytest.skip("No warning to navigate on Nano devices")
 
-    navigation_helper.enable_blind_signing(test_name + "_enable_bs")
+    navigation_helper.enable_blind_signing()
     message_data = _craft_blind_signing(sol)
 
     with pytest.raises(ExceptionRAPDU) as e:

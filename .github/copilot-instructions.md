@@ -15,7 +15,7 @@ qb -cx                            # Clean rebuild for NANOX
 
 ## Testing
 
-Always run in venv (`venv` alias if needed):
+Always run the tests in the python virtual environment, use the `venv` bash alias to enter it. DO NOT try to source an activate file, use the BASH ALIAS.
 
 ```bash
 # Python UI tests (Speculos)
@@ -68,13 +68,11 @@ Preview (INS 0x08) stores SHA-512 fingerprint of message with zeroed blockhash, 
 
 **Globals:** `G_*` prefix, `N_storage` for NVM
 **Errors:** `ApduReply*` codes, `THROW()` macro
-**UI:** NBGL only (`src/ui/*_nbgl.c`), no Bagl
-**Security:** `explicit_bzero()` for sensitive data
+**UI:** NBGL only (`src/ui/*_nbgl.c`), no BAGL
+**Security:** `explicit_bzero()` for sensitive data such as private keys.
 
-**Key constants:**
-- `MAX_MESSAGE_LENGTH`: 15KB
-- `MAX_BIP32_PATH_LENGTH`: 5
-- BIP44: `44'/501'` for Solana
+**UI**
+- The UI is the heart of the application and must display accurately the data to sign. DO NOT treat it as cosmetic.
 
 **Logging:**
 - Never assume code is correct on first try - add logs to verify execution flow
