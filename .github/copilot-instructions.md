@@ -15,7 +15,7 @@ qb -cx                            # Clean rebuild for NANOX
 
 ## Testing
 
-Always run in venv (`venv` alias if needed):
+Always run in the python virtual environment (use the `venv` bash alias to enter it):
 
 ```bash
 # Python UI tests (Speculos)

@@ -59,7 +59,7 @@ static nbgl_contentTagValue_t *get_single_action_review_pair(uint8_t index) {
     if (index == G_transaction_steps_number - 1 && G_last_step_is_ascii) {
         strlcpy(displayed_slots[slot].title, "Message", sizeof(displayed_slots[slot].title));
         strlcpy(displayed_slots[slot].text,
-                (const char *) G_command.message + OFFCHAIN_MESSAGE_HEADER_LENGTH,
+                G_command.message_text,
                 sizeof(displayed_slots[slot].text));
     } else {
         populate_displayed_slot_non_ascii(slot, index);
@@ -74,7 +74,7 @@ static nbgl_contentTagValue_t *get_single_action_long_review_pair(uint8_t index)
     // Final step is special for ASCII messages
     if (index == G_transaction_steps_number - 1 && G_last_step_is_ascii) {
         strlcpy(displayed_slots[slot].title, "Message", sizeof(displayed_slots[slot].title));
-        current_pair.value = (const char *) G_command.message + OFFCHAIN_MESSAGE_HEADER_LENGTH;
+        current_pair.value = G_command.message_text;
     } else {
         populate_displayed_slot_non_ascii(slot, index);
         current_pair.value = displayed_slots[slot].text;

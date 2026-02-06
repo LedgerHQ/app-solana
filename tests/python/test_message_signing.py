@@ -2,7 +2,7 @@ import pytest
 from ragger.error import ExceptionRAPDU
 
 from application_client.solana import ErrorType
-from application_client.solana_cmd_builder import SystemInstructionTransfer, Message, verify_signature, OffchainMessage
+from application_client.solana_cmd_builder import SystemInstructionTransfer, Message, verify_signature
 from application_client import solana_utils as SOL
 
 class TestMessageSigning:

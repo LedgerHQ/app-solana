@@ -14,6 +14,11 @@
 CASSERT(MAX_OFFCHAIN_MESSAGE_LENGTH < MAX_MESSAGE_LENGTH, global_h);
 
 void ui_application_domain(const OffchainMessageHeader *header) {
+    // V1 has no application domain
+    if (header->application_domain == NULL) {
+        return;
+    }
+
     const uint8_t empty_application_domain[OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH] = {
         OFFCHAIN_EMPTY_APPLICATION_DOMAIN};
 
@@ -53,7 +58,10 @@ void ui_general(const OffchainMessageHeader *header,
         ui_application_domain(header);
 
         summary_item_set_u64(transaction_summary_general_item(), "Version", header->version);
-        summary_item_set_u64(transaction_summary_general_item(), "Format", header->format);
+        // V0 only: display format
+        if (header->version == 0) {
+            summary_item_set_u64(transaction_summary_general_item(), "Format", header->format);
+        }
         summary_item_set_u64(transaction_summary_general_item(), "Size", header->length);
         summary_item_set_hash(transaction_summary_general_item(), "Hash", &G_command.message_hash);
     } else if (!is_ascii) {
@@ -108,9 +116,16 @@ void handle_sign_offchain_message(volatile unsigned int *flags, volatile unsigne
         THROW(ApduReplySolanaInvalidMessageHeader);
     }
 
+    // Compute start of message content for later use in UI
+    G_command.message_text = G_command.message + offchain_message_header_length(&header);
+
     // validate message
-    if (header.version != 0 || header.format > 1 || header.length == 0 ||
+    if (header.version > 1 || header.length == 0 ||
         header.length != parser.buffer_length || header.signers_length == 0) {
+        THROW(ApduReplySolanaInvalidMessageHeader);
+    }
+    // V0: format must be 0 or 1
+    if (header.version == 0 && header.format > 1) {
         THROW(ApduReplySolanaInvalidMessageHeader);
     }
 
@@ -125,13 +140,20 @@ void handle_sign_offchain_message(volatile unsigned int *flags, volatile unsigne
     const bool is_ascii = is_data_ascii(parser.buffer, parser.buffer_length);
     const bool is_utf8 = is_ascii ? true : is_data_utf8(parser.buffer, parser.buffer_length);
 
-    if ((!is_ascii && header.format != 1) || !is_utf8) {
-        // Message has invalid header version or is not valid utf8 string
+    if (!is_utf8) {
+        // Message is not valid UTF-8
         THROW(ApduReplySolanaInvalidMessageFormat);
-    } else if (!is_ascii && N_storage.settings.allow_blind_sign != BlindSignEnabled) {
-        // UTF-8 messages are allowed only with blind sign enabled
-        THROW(ApduReplySdkNotSupported);
     }
+    // V0: non-ASCII requires format=1 and blind sign enabled
+    if (header.version == 0 && !is_ascii) {
+        if (header.format != 1) {
+            THROW(ApduReplySolanaInvalidMessageFormat);
+        }
+        if (N_storage.settings.allow_blind_sign != BlindSignEnabled) {
+            THROW(ApduReplySdkNotSupported);
+        }
+    }
+    // V1: UTF-8 is allowed without blind sign, no format field exists
 
     // compute message hash if needed
     if (!is_ascii || N_storage.settings.display_mode == DisplayModeExpert) {
