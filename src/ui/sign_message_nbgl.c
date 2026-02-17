@@ -251,9 +251,6 @@ void start_sign_tx_ui(size_t num_summary_steps) {
 }
 
 void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
-    // Set the operation type
-    operation_type = TYPE_MESSAGE;
-
     // Save steps number for later
     G_transaction_steps_number = num_summary_steps;
     G_last_step_is_ascii = is_ascii;
@@ -275,7 +272,7 @@ void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
         PRINTF("Non-ASCII message, blind signing required. Starting review with blind signing warning.\n");
         explicit_bzero(&warning, sizeof(nbgl_warning_t));
         warning.predefinedSet |= SET_BIT(BLIND_SIGNING_WARN);
-        nbgl_useCaseAdvancedReview(TYPE_TRANSACTION,
+        nbgl_useCaseAdvancedReview(TYPE_MESSAGE,
                                     &content,
                                     &ICON_SIGN_MENU,
                                     "Review UTF-8 message",
@@ -285,7 +282,7 @@ void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
                                     &warning,
                                     review_choice);
     } else {
-        nbgl_useCaseReview(operation_type,
+        nbgl_useCaseReview(TYPE_MESSAGE,
                         &content,
                         &ICON_REVIEW,
                         "Review message",

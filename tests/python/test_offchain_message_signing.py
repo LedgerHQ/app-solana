@@ -9,6 +9,46 @@ from application_client import solana_utils as SOL
 import random
 import string
 
+class TestOffchainMessageBlindSigningDisabled:
+    # We only test for v0 because the code behind is the same
+
+    def _craft_utf8_v0_message(self, sol):
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        offchain_message = V0OffchainMessage(bytes("Тестовое сообщение", 'utf-8'), from_public_key)
+        return offchain_message.serialize()
+
+    def test_offchain_utf8_blind_signing_disabled_go_to_settings(self, sol, backend, navigator, root_pytest_dir, test_name):
+        """When blind signing is disabled and a non-ASCII V0 message is sent, the error UI should offer to go to settings."""
+        if backend.device.is_nano:
+            pytest.skip("This feature does not exist on Nano devices")
+
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, self._craft_utf8_v0_message(sol)):
+                navigator.navigate_until_text_and_compare(navigate_instruction=NavInsID.USE_CASE_CHOICE_CONFIRM,
+                                                        validation_instructions=[NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT],
+                                                        text="^Blind signing$",
+                                                        path=root_pytest_dir,
+                                                        test_case_name=test_name)
+        assert e.value.status == ErrorType.SDK_NOT_SUPPORTED
+
+    def test_offchain_utf8_blind_signing_disabled_go_to_menu(self, sol, backend, navigator, root_pytest_dir, test_name):
+        """When blind signing is disabled and a non-ASCII V0 message is sent, the error UI should allow rejecting."""
+        if backend.device.is_nano:
+            validation_instructions=[NavInsID.BOTH_CLICK]
+            pattern = "Blind signing"
+        else:
+            validation_instructions=[NavInsID.USE_CASE_CHOICE_REJECT]
+            pattern = "Enable blind signing"
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, self._craft_utf8_v0_message(sol)):
+                navigator.navigate_until_text_and_compare(navigate_instruction=None,
+                                                        validation_instructions=validation_instructions,
+                                                        text=pattern,
+                                                        path=root_pytest_dir,
+                                                        test_case_name=test_name)
+        assert e.value.status == ErrorType.SDK_NOT_SUPPORTED
+
+
 class TestOffchainMessageSigningV0:
 
     def test_sign_offchain_message_v0_ascii_ok(self, sol, scenario_navigator, root_pytest_dir):
@@ -242,6 +282,20 @@ class TestOffchainMessageSigningV1:
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
 
+    def test_sign_offchain_message_v1_utf8_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        """Test rejecting a UTF-8 V1 message (blind signing enabled, user rejects at warning)."""
+        navigation_helper.enable_blind_signing()
+
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+        offchain_message = V1OffchainMessage("Hello 世界 🌍".encode('utf-8'), from_public_key)
+        message: bytes = offchain_message.serialize()
+
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+                navigation_helper.navigate_with_blind_signing_and_reject()
+        assert e.value.status == ErrorType.USER_CANCEL
+
     def test_sign_offchain_message_v1_refused(self, sol, scenario_navigator, root_pytest_dir):
         """Test rejecting a V1 message."""
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
@@ -301,3 +355,18 @@ class TestOffchainMessageSigningV1:
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
+
+    def test_sign_offchain_message_v1_utf8_expert_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        """Test rejecting UTF-8 V1 message in expert mode (blind signing required)."""
+        navigation_helper.enable_blind_signing()
+        navigation_helper.enable_expert_mode()
+
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+        offchain_message = V1OffchainMessage(bytes("Тестовое сообщение", 'utf-8'), from_public_key)
+        message: bytes = offchain_message.serialize()
+
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+                navigation_helper.navigate_with_blind_signing_and_reject()
+        assert e.value.status == ErrorType.USER_CANCEL
