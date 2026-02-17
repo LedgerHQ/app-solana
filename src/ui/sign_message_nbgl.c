@@ -271,17 +271,32 @@ void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
     content.nbPairs = G_transaction_steps_number;
 
     // Start review
-    nbgl_useCaseReview(operation_type,
-                       &content,
-                       &ICON_REVIEW,
-                       "Review message",
-                       NULL,
-#ifdef SCREEN_SIZE_WALLET
-                       "Sign message?",
-#else
-                       NULL,
-#endif
-                       review_choice);
+    if (!is_ascii) {
+        PRINTF("Non-ASCII message, blind signing required. Starting review with blind signing warning.\n");
+        explicit_bzero(&warning, sizeof(nbgl_warning_t));
+        warning.predefinedSet |= SET_BIT(BLIND_SIGNING_WARN);
+        nbgl_useCaseAdvancedReview(TYPE_TRANSACTION,
+                                    &content,
+                                    &ICON_SIGN_MENU,
+                                    "Review UTF-8 message",
+                                    NULL,
+                                    "Accept risk and sign UTF-8 message",
+                                    NULL,
+                                    &warning,
+                                    review_choice);
+    } else {
+        nbgl_useCaseReview(operation_type,
+                        &content,
+                        &ICON_REVIEW,
+                        "Review message",
+                        NULL,
+    #ifdef SCREEN_SIZE_WALLET
+                        "Sign message?",
+    #else
+                        NULL,
+    #endif
+                        review_choice);
+    }
 }
 
 #ifdef SCREEN_SIZE_WALLET

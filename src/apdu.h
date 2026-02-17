@@ -80,7 +80,7 @@ typedef struct apdu_command_s {
     Hash message_hash;
     bool user_input_is_ata_or_token_account;
     // Offset to message content for offchain messages (header length)
-    char *message_text;
+    const char *message_text;
 } apdu_command_t;
 
 extern apdu_command_t G_command;

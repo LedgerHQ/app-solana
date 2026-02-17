@@ -37,13 +37,9 @@ void ui_application_domain(const OffchainMessageHeader *header) {
     }
 }
 
-// To reduce unnecessary
-// preprocessor directives and keep the function cleaner, I explicitly suppress
-// warnings about unused `parser`.
-void ui_general(const OffchainMessageHeader *header,
+static bool prepare_primary_items(const OffchainMessageHeader *header,
                 const bool is_ascii,
-                const size_t signer_index,
-                Parser *parser __attribute__((unused))) {
+                const size_t signer_index) {
     if (N_storage.settings.display_mode == DisplayModeExpert) {
         SummaryItem *item = transaction_summary_primary_or_general_item();
         // First signer
@@ -64,28 +60,39 @@ void ui_general(const OffchainMessageHeader *header,
         }
         summary_item_set_u64(transaction_summary_general_item(), "Size", header->length);
         summary_item_set_hash(transaction_summary_general_item(), "Hash", &G_command.message_hash);
+        return true;
     } else if (!is_ascii) {
         summary_item_set_hash(transaction_summary_primary_or_general_item(),
                               "Hash",
                               &G_command.message_hash);
+        return true;
+    } else {
+        return false;
     }
 }
 
-void setup_ui(const OffchainMessageHeader *header,
-              const bool is_ascii,
-              Parser *parser,
-              const size_t signer_index) {
+static void setup_offchain_signing_ui(const OffchainMessageHeader *header,
+                                      const bool is_ascii,
+                                      const size_t signer_index) {
     // fill out UI steps
     transaction_summary_reset();
 
-    ui_general(header, is_ascii, signer_index, parser);
+    // prepare_primary_items returns true if it set primary item
+    bool has_primary_item = prepare_primary_items(header, is_ascii, signer_index);
 
     enum SummaryItemKind summary_step_kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
     size_t num_summary_steps = 0;
-    if (transaction_summary_finalize(summary_step_kinds, &num_summary_steps) > 1) {
-        // We can ignore missing primary item in this case
-        THROW(ApduReplySolanaSummaryFinalizeFailed);
+
+    if (has_primary_item) {
+        PRINTF("Primary item set, finalizing summary items\n");
+        // Items were set in prepare_primary_items(), finalize them
+        if (transaction_summary_finalize(summary_step_kinds, &num_summary_steps) != 0) {
+            PRINTF("Error finalizing transaction summary\n");
+            THROW(ApduReplySolanaSummaryFinalizeFailed);
+        }
     }
+    // else: no items set (user mode + ASCII) - num_summary_steps stays 0
+
     start_sign_offchain_message_ui(is_ascii, num_summary_steps);
 }
 
@@ -117,7 +124,7 @@ void handle_sign_offchain_message(volatile unsigned int *flags, volatile unsigne
     }
 
     // Compute start of message content for later use in UI
-    G_command.message_text = G_command.message + offchain_message_header_length(&header);
+    G_command.message_text = (const char *) G_command.message + offchain_message_header_length(&header);
 
     // validate message
     if (header.version > 1 || header.length == 0 ||
@@ -137,33 +144,34 @@ void handle_sign_offchain_message(volatile unsigned int *flags, volatile unsigne
         THROW(ApduReplySolanaInvalidMessageHeader);
     }
 
-    const bool is_ascii = is_data_ascii(parser.buffer, parser.buffer_length);
-    const bool is_utf8 = is_ascii ? true : is_data_utf8(parser.buffer, parser.buffer_length);
-
+    bool is_ascii = is_data_ascii(parser.buffer, parser.buffer_length);
+    bool is_utf8 = is_ascii || is_data_utf8(parser.buffer, parser.buffer_length);
     if (!is_utf8) {
         // Message is not valid UTF-8
         THROW(ApduReplySolanaInvalidMessageFormat);
     }
-    // V0: non-ASCII requires format=1 and blind sign enabled
-    if (header.version == 0 && !is_ascii) {
-        if (header.format != 1) {
-            THROW(ApduReplySolanaInvalidMessageFormat);
-        }
-        if (N_storage.settings.allow_blind_sign != BlindSignEnabled) {
-            THROW(ApduReplySdkNotSupported);
-        }
+    // V0: non-ASCII requires format=1
+    if (header.version == 0 && !is_ascii && header.format != 1) {
+        THROW(ApduReplySolanaInvalidMessageFormat);
     }
-    // V1: UTF-8 is allowed without blind sign, no format field exists
+    // Non-ASCII messages cannot be displayed by NBGL, require blind signing
+    if (!is_ascii && N_storage.settings.allow_blind_sign != BlindSignEnabled) {
+        PRINTF("Blind signing is disabled, cannot sign non-ASCII message.\n");
+        start_blind_sign_error_ui();
+        THROW(ApduReplySdkNotSupported);
+    }
 
     // compute message hash if needed
     if (!is_ascii || N_storage.settings.display_mode == DisplayModeExpert) {
-        cx_hash_sha256(parser.buffer,  // Only message content is hashed
+        // Only message content is hashed
+        // We reuse the blind signing buffer for hashing
+        cx_hash_sha256(parser.buffer,
                        header.length,
                        (uint8_t *) &G_command.message_hash,
                        HASH_LENGTH);
     }
 
-    setup_ui(&header, is_ascii, &parser, signer_index);
+    setup_offchain_signing_ui(&header, is_ascii, signer_index);
 
     *flags |= IO_ASYNCH_REPLY;
 }

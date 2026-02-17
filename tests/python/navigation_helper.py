@@ -64,6 +64,48 @@ class NavigationHelper:
                                                         path=self._root_pytest_dir,
                                                         test_case_name=self.snapshots_dir_name + "_warning")
 
+    def navigate_with_blind_signing_and_accept(self):
+        if self._backend.device.is_nano:
+            navigate_instruction = NavInsID.RIGHT_CLICK
+            warning_validation_instructions = [NavInsID.BOTH_CLICK]
+            warning_pattern = "^Blind signing ahead$"
+            approve_validation_instructions = [NavInsID.BOTH_CLICK]
+            approve_pattern = "Accept risk"
+        else:
+            navigate_instruction = NavInsID.SWIPE_CENTER_TO_LEFT
+            warning_validation_instructions = [NavInsID.USE_CASE_CHOICE_REJECT]
+            warning_pattern = "^Continue anyway$"
+            approve_validation_instructions = [NavInsID.USE_CASE_REVIEW_CONFIRM]
+            approve_pattern = "^Hold to sign$"
+
+        self._navigator.navigate_until_text_and_compare(navigate_instruction=None,
+                                                        validation_instructions=warning_validation_instructions,
+                                                        text=warning_pattern,
+                                                        path=self._root_pytest_dir,
+                                                        test_case_name=self._test_name + "_choice")
+        self._navigator.navigate_until_text_and_compare(navigate_instruction=navigate_instruction,
+                                                        validation_instructions=approve_validation_instructions,
+                                                        text=approve_pattern,
+                                                        path=self._root_pytest_dir,
+                                                        test_case_name=self._test_name + "_review",
+                                                        screen_change_before_first_instruction=False)
+
+    def navigate_with_blind_signing_and_reject(self):
+        if self._backend.device.is_nano:
+            navigate_instruction = NavInsID.RIGHT_CLICK
+            pattern = "Reject transaction"
+            validation_instructions = [NavInsID.BOTH_CLICK]
+        else:
+            # no need to navigate
+            navigate_instruction = None
+            pattern = "Back to safety"
+            validation_instructions = [NavInsID.USE_CASE_CHOICE_CONFIRM]
+        self._navigator.navigate_until_text_and_compare(navigate_instruction=navigate_instruction,
+                                                    validation_instructions=validation_instructions,
+                                                    text=pattern,
+                                                    path=self._root_pytest_dir,
+                                                    test_case_name=self._test_name + "_choice")
+
     def _enable_nano_option_n(self, n):
         # initial: go to settings
         seq = [NavInsID.RIGHT_CLICK, NavInsID.BOTH_CLICK]
@@ -79,7 +121,7 @@ class NavigationHelper:
         seq += [NavInsID.LEFT_CLICK]
         return seq
 
-    def enable_blind_signing(self, snapshots_name: str):
+    def enable_blind_signing(self):
         if self._backend.firmware.is_nano:
             nav = self._enable_nano_option_n(1)
         else:
@@ -91,7 +133,7 @@ class NavigationHelper:
                    NavIns(NavInsID.TOUCH, coordinates),
                    NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
         self._navigator.navigate_and_compare(self._root_pytest_dir,
-                                             snapshots_name,
+                                             self._test_name + "_enable_bs",
                                              nav,
                                              screen_change_before_first_instruction=False)
 
@@ -112,7 +154,7 @@ class NavigationHelper:
                                              nav,
                                              screen_change_before_first_instruction=False)
 
-    def enable_expert_mode(self, snapshots_name: str):
+    def enable_expert_mode(self):
         if self._backend.firmware.is_nano:
             nav = self._enable_nano_option_n(3)
         elif self._backend.firmware is Firmware.STAX:
@@ -129,6 +171,6 @@ class NavigationHelper:
                    NavIns(NavInsID.TOUCH, coordinates),
                    NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
         self._navigator.navigate_and_compare(self._root_pytest_dir,
-                                             snapshots_name,
+                                             self._test_name + "_enable_em",
                                              nav,
                                              screen_change_before_first_instruction=False)

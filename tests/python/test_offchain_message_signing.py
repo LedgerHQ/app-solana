@@ -1,5 +1,6 @@
 import pytest
 from ragger.error import ExceptionRAPDU
+from ragger.navigator import Navigator, NavIns, NavInsID, NavigateWithScenario
 
 from application_client.solana import SolanaClient, ErrorType
 from application_client.solana_cmd_builder import SystemInstructionTransfer, Message, verify_signature, V0OffchainMessage, V1OffchainMessage
@@ -66,7 +67,7 @@ class TestOffchainMessageSigningV0:
 
 
     def test_sign_offchain_message_v0_ascii_expert_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
-        navigation_helper.enable_expert_mode(test_name + "_1")
+        navigation_helper.enable_expert_mode()
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -83,7 +84,7 @@ class TestOffchainMessageSigningV0:
 
 
     def test_sign_offchain_message_v0_ascii_expert_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
-        navigation_helper.enable_expert_mode(test_name + "_1")
+        navigation_helper.enable_expert_mode()
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -97,8 +98,8 @@ class TestOffchainMessageSigningV0:
         assert e.value.status == ErrorType.USER_CANCEL
 
 
-    def test_sign_offchain_message_v0_utf8_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
-        navigation_helper.enable_blind_signing(test_name + "_1")
+    def test_sign_offchain_message_v0_utf8_ok(self, sol, backend, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        navigation_helper.enable_blind_signing()
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -106,14 +107,14 @@ class TestOffchainMessageSigningV0:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=root_pytest_dir, test_name=test_name + "_2")
+            navigation_helper.navigate_with_blind_signing_and_accept()
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
 
 
     def test_sign_offchain_message_v0_very_long_utf8_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
-        navigation_helper.enable_blind_signing(test_name + "_1")
+        navigation_helper.enable_blind_signing()
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -124,7 +125,7 @@ class TestOffchainMessageSigningV0:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=root_pytest_dir, test_name=test_name + "_2")
+            navigation_helper.navigate_with_blind_signing_and_accept()
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -151,7 +152,7 @@ class TestOffchainMessageSigningV0:
 
 
     def test_sign_offchain_message_v0_with_app_domain_utf8_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
-        navigation_helper.enable_blind_signing(test_name + "_1")
+        navigation_helper.enable_blind_signing()
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -159,16 +160,14 @@ class TestOffchainMessageSigningV0:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=root_pytest_dir,
-                                              test_name=test_name + "_2",
-                                              custom_screen_text=r"(Sign message|Hold to sign)")
+            navigation_helper.navigate_with_blind_signing_and_accept()
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
 
 
     def test_sign_offchain_message_v0_utf8_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
-        navigation_helper.enable_blind_signing(test_name + "_1")
+        navigation_helper.enable_blind_signing()
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -177,14 +176,13 @@ class TestOffchainMessageSigningV0:
 
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-                scenario_navigator.review_reject(path=root_pytest_dir,
-                                                 test_name=test_name + "_2")
+                navigation_helper.navigate_with_blind_signing_and_reject()
         assert e.value.status == ErrorType.USER_CANCEL
 
 
     def test_sign_offchain_message_v0_utf8_expert_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
-        navigation_helper.enable_blind_signing(test_name + "_1")
-        navigation_helper.enable_expert_mode(test_name + "_2")
+        navigation_helper.enable_blind_signing()
+        navigation_helper.enable_expert_mode()
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -192,17 +190,15 @@ class TestOffchainMessageSigningV0:
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=root_pytest_dir,
-                                              test_name=test_name + "_3",
-                                              custom_screen_text=r"(Sign message|Hold to sign)")
+            navigation_helper.navigate_with_blind_signing_and_accept()
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
 
 
     def test_sign_offchain_message_v0_utf8_expert_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
-        navigation_helper.enable_blind_signing(test_name + "_1")
-        navigation_helper.enable_expert_mode(test_name + "_2")
+        navigation_helper.enable_blind_signing()
+        navigation_helper.enable_expert_mode()
 
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
@@ -211,8 +207,7 @@ class TestOffchainMessageSigningV0:
 
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-                scenario_navigator.review_reject(path=root_pytest_dir,
-                                                 test_name=test_name + "_3")
+                navigation_helper.navigate_with_blind_signing_and_reject()
         assert e.value.status == ErrorType.USER_CANCEL
 
 
@@ -232,15 +227,17 @@ class TestOffchainMessageSigningV1:
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
 
-    def test_sign_offchain_message_v1_utf8_ok(self, sol, scenario_navigator, root_pytest_dir):
-        """Test signing a UTF-8 message with V1 format (no blind signing required)."""
+    def test_sign_offchain_message_v1_utf8_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        """Test signing a UTF-8 message with V1 format (blind signing required)."""
+        navigation_helper.enable_blind_signing()
+
         from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
 
         offchain_message = V1OffchainMessage("Hello 世界 🌍".encode('utf-8'), from_public_key)
         message: bytes = offchain_message.serialize()
 
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
-            scenario_navigator.review_approve(path=root_pytest_dir)
+            navigation_helper.navigate_with_blind_signing_and_accept()
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)
@@ -256,3 +253,51 @@ class TestOffchainMessageSigningV1:
             with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
                 scenario_navigator.review_reject(path=root_pytest_dir)
         assert e.value.status == ErrorType.USER_CANCEL
+
+    def test_sign_offchain_message_v1_ascii_expert_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        """Test signing ASCII V1 message in expert mode (exercises transaction_summary_finalize success path)."""
+        navigation_helper.enable_expert_mode()
+
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+        offchain_message = V1OffchainMessage(b"Test message", from_public_key)
+        message: bytes = offchain_message.serialize()
+
+        with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+            scenario_navigator.review_approve(path=root_pytest_dir,
+                                              test_name=test_name + "_2",
+                                              custom_screen_text=r"(Sign message|Hold to sign)")
+
+        signature: bytes = sol.get_async_response().data
+        verify_signature(from_public_key, message, signature)
+
+    def test_sign_offchain_message_v1_ascii_expert_refused(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        """Test rejecting ASCII V1 message in expert mode."""
+        navigation_helper.enable_expert_mode()
+
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+        offchain_message = V1OffchainMessage(b"Test message", from_public_key)
+        message: bytes = offchain_message.serialize()
+
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+                scenario_navigator.review_reject(path=root_pytest_dir,
+                                                 test_name=test_name + "_2")
+        assert e.value.status == ErrorType.USER_CANCEL
+
+    def test_sign_offchain_message_v1_utf8_expert_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        """Test signing UTF-8 V1 message in expert mode (blind signing required)."""
+        navigation_helper.enable_blind_signing()
+        navigation_helper.enable_expert_mode()
+
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+        offchain_message = V1OffchainMessage(bytes("Тестовое сообщение", 'utf-8'), from_public_key)
+        message: bytes = offchain_message.serialize()
+
+        with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+            navigation_helper.navigate_with_blind_signing_and_accept()
+
+        signature: bytes = sol.get_async_response().data
+        verify_signature(from_public_key, message, signature)
