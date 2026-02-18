@@ -37,6 +37,7 @@ static int parse_apdu_header(const uint8_t *apdu_message,
         case InsGetAppConfiguration:
         case InsGetPubkey:
         case InsSignMessage:
+        case InsSignMessageV2:
         case InsSignOffchainMessage:
         case InsTrustedInfoProvideInstructionDescriptor:
         case InsTrustedInfoGetChallenge:
@@ -93,6 +94,7 @@ static int parse_apdu_header(const uint8_t *apdu_message,
 static bool split_allowed_for_instruction(uint8_t instruction) {
     return (instruction == InsDeprecatedSignMessage ||
             instruction == InsSignMessage ||
+            instruction == InsSignMessageV2 ||
             instruction == InsSignOffchainMessage ||
             instruction == InsTrustedInfoProvideInfo ||
             instruction == InsTrustedInfoProvideDynamicDescriptor);

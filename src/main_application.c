@@ -18,6 +18,7 @@
 #include "utils.h"
 #include "handle_get_pubkey.h"
 #include "handle_sign_message.h"
+#include "handle_sign_message_v2.h"
 #include "handle_sign_offchain_message.h"
 #include "handle_provide_instruction_descriptor.h"
 #include "handle_get_challenge.h"
@@ -82,6 +83,10 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
         case InsDeprecatedSignMessage:
         case InsSignMessage:
             handle_sign_message_parse_message(flags, tx);
+            break;
+
+        case InsSignMessageV2:
+            handle_sign_message_v2(flags, tx);
             break;
 
         case InsSignOffchainMessage:

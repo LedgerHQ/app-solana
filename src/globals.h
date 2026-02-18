@@ -63,6 +63,7 @@ typedef enum InstructionCode {
     InsSignMessage = 0x06,
     InsSignOffchainMessage = 0x07,
     InsTrustedInfoProvideInstructionDescriptor = 0x16,
+    InsSignMessageV2 = 0x0A,
     InsTrustedInfoGetChallenge = 0x20,
     InsTrustedInfoProvideInfo = 0x21,
     InsTrustedInfoProvideDynamicDescriptor = 0x22,
