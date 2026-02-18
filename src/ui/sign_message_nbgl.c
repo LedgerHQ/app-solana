@@ -15,11 +15,11 @@
 #include "handle_sign_offchain_message.h"
 
 // Content of the review flow
-static nbgl_contentTagValueList_t content;
+static nbgl_contentTagValueList_t G_content;
 // Used by NBGL to display the reference the pair number N
-static nbgl_layoutTagValue_t current_pair;
+static nbgl_layoutTagValue_t G_current_pair;
 // Used to differentiate between message and transaction review
-static nbgl_operationType_t operation_type;
+static nbgl_operationType_t G_operation_type;
 
 // We will display at most 4 items on a Stax review screen
 #define MAX_SIMULTANEOUS_DISPLAYED_SLOTS NB_MAX_DISPLAYED_PAIRS_IN_REVIEW
@@ -49,8 +49,8 @@ static inline void populate_displayed_slot_non_ascii(const size_t slot, const ui
            sizeof(displayed_slots[slot].text));
 }
 
-// function called by NBGL to get the current_pair indexed by "index"
-// current_pair will point at values stored in displayed_slots[]
+// function called by NBGL to get the G_current_pair indexed by "index"
+// G_current_pair will point at values stored in displayed_slots[]
 // this will enable displaying at most sizeof(displayed_slots) values simultaneously
 static nbgl_contentTagValue_t *get_single_action_review_pair(uint8_t index) {
     PRINTF("get_single_action_review_pair index = %d\n", index);
@@ -64,9 +64,9 @@ static nbgl_contentTagValue_t *get_single_action_review_pair(uint8_t index) {
     } else {
         populate_displayed_slot_non_ascii(slot, index);
     }
-    current_pair.item = displayed_slots[slot].title;
-    current_pair.value = displayed_slots[slot].text;
-    return &current_pair;
+    G_current_pair.item = displayed_slots[slot].title;
+    G_current_pair.value = displayed_slots[slot].text;
+    return &G_current_pair;
 }
 
 static nbgl_contentTagValue_t *get_single_action_long_review_pair(uint8_t index) {
@@ -74,15 +74,15 @@ static nbgl_contentTagValue_t *get_single_action_long_review_pair(uint8_t index)
     // Final step is special for ASCII messages
     if (index == G_transaction_steps_number - 1 && G_last_step_is_ascii) {
         strlcpy(displayed_slots[slot].title, "Message", sizeof(displayed_slots[slot].title));
-        current_pair.value = G_command.message_text;
+        G_current_pair.value = G_command.message_text;
     } else {
         populate_displayed_slot_non_ascii(slot, index);
-        current_pair.value = displayed_slots[slot].text;
+        G_current_pair.value = displayed_slots[slot].text;
     }
 
-    current_pair.item = displayed_slots[slot].title;
+    G_current_pair.item = displayed_slots[slot].title;
 
-    return &current_pair;
+    return &G_current_pair;
 }
 
 static void review_choice(bool confirm) {
@@ -91,7 +91,7 @@ static void review_choice(bool confirm) {
     nbgl_reviewStatusType_t status_type;
     if (confirm) {
         sendResponse(set_result_sign_message(), ApduReplySuccess, false);
-        if (operation_type == TYPE_MESSAGE) {
+        if (G_operation_type == TYPE_MESSAGE) {
             status_type = STATUS_TYPE_MESSAGE_SIGNED;
         } else {
             status_type = STATUS_TYPE_TRANSACTION_SIGNED;
@@ -99,7 +99,7 @@ static void review_choice(bool confirm) {
         nbgl_useCaseReviewStatus(status_type, ui_idle);
     } else {
         sendResponse(0, ApduReplyUserRefusal, false);
-        if (operation_type == TYPE_MESSAGE) {
+        if (G_operation_type == TYPE_MESSAGE) {
             status_type = STATUS_TYPE_MESSAGE_REJECTED;
         } else {
             status_type = STATUS_TYPE_TRANSACTION_REJECTED;
@@ -115,19 +115,19 @@ static void on_warning_choice(bool cancel) {
         review_choice(false);
     } else {
         // Set the transaction type
-        operation_type = TYPE_TRANSACTION;
+        G_operation_type = TYPE_TRANSACTION;
 
         // Save steps number for later
         G_last_step_is_ascii = false;
 
-        // Initialize the content structure
-        content.nbMaxLinesForValue = 0;
-        content.smallCaseForValue = false;
-        content.wrapping = true;
-        content.pairs = NULL;  // to indicate that callback should be used
-        content.callback = get_single_action_review_pair;
-        content.startIndex = 0;
-        content.nbPairs = G_transaction_steps_number;
+        // Initialize the G_content structure
+        G_content.nbMaxLinesForValue = 0;
+        G_content.smallCaseForValue = false;
+        G_content.wrapping = true;
+        G_content.pairs = NULL;  // to indicate that callback should be used
+        G_content.callback = get_single_action_review_pair;
+        G_content.startIndex = 0;
+        G_content.nbPairs = G_transaction_steps_number;
         const char *review_title = NULL;
         // On Nano devices we display only the default "Sign transaction?"
         // We forward NULL to let NBGL handle it
@@ -138,8 +138,8 @@ static void on_warning_choice(bool cancel) {
         if (is_blind_signing) {
             explicit_bzero(&warning, sizeof(nbgl_warning_t));
             warning.predefinedSet |= SET_BIT(BLIND_SIGNING_WARN);
-            nbgl_useCaseAdvancedReview(TYPE_TRANSACTION,
-                                       &content,
+            nbgl_useCaseAdvancedReview(G_operation_type,
+                                       &G_content,
                                        &ICON_SIGN_MENU,
                                        "Review transaction",
                                        NULL,
@@ -205,8 +205,8 @@ static void on_warning_choice(bool cancel) {
                     break;
             }
 
-            nbgl_useCaseReview(operation_type,
-                               &content,
+            nbgl_useCaseReview(G_operation_type,
+                               &G_content,
                                &ICON_SIGN_MENU,
                                review_title,
                                NULL,
@@ -251,6 +251,9 @@ void start_sign_tx_ui(size_t num_summary_steps) {
 }
 
 void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
+    // Set the operation type for review_choice() status text
+    G_operation_type = TYPE_MESSAGE;
+
     // Save steps number for later
     G_transaction_steps_number = num_summary_steps;
     G_last_step_is_ascii = is_ascii;
@@ -258,22 +261,22 @@ void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
         ++G_transaction_steps_number;
     }
 
-    // Initialize the content structure
-    content.nbMaxLinesForValue = 0;
-    content.smallCaseForValue = false;
-    content.wrapping = true;
-    content.pairs = NULL;  // to indicate that callback should be used
-    content.callback = get_single_action_long_review_pair;
-    content.startIndex = 0;
-    content.nbPairs = G_transaction_steps_number;
+    // Initialize the G_content structure
+    G_content.nbMaxLinesForValue = 0;
+    G_content.smallCaseForValue = false;
+    G_content.wrapping = true;
+    G_content.pairs = NULL;  // to indicate that callback should be used
+    G_content.callback = get_single_action_long_review_pair;
+    G_content.startIndex = 0;
+    G_content.nbPairs = G_transaction_steps_number;
 
     // Start review
     if (!is_ascii) {
         PRINTF("Non-ASCII message, blind signing required. Starting review with blind signing warning.\n");
         explicit_bzero(&warning, sizeof(nbgl_warning_t));
         warning.predefinedSet |= SET_BIT(BLIND_SIGNING_WARN);
-        nbgl_useCaseAdvancedReview(TYPE_MESSAGE,
-                                    &content,
+        nbgl_useCaseAdvancedReview(G_operation_type,
+                                    &G_content,
                                     &ICON_SIGN_MENU,
                                     "Review UTF-8 message",
                                     NULL,
@@ -282,8 +285,8 @@ void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
                                     &warning,
                                     review_choice);
     } else {
-        nbgl_useCaseReview(TYPE_MESSAGE,
-                        &content,
+        nbgl_useCaseReview(G_operation_type,
+                        &G_content,
                         &ICON_REVIEW,
                         "Review message",
                         NULL,

@@ -101,10 +101,10 @@ class NavigationHelper:
             pattern = "Back to safety"
             validation_instructions = [NavInsID.USE_CASE_CHOICE_CONFIRM]
         self._navigator.navigate_until_text_and_compare(navigate_instruction=navigate_instruction,
-                                                    validation_instructions=validation_instructions,
-                                                    text=pattern,
-                                                    path=self._root_pytest_dir,
-                                                    test_case_name=self._test_name + "_choice")
+                                                        validation_instructions=validation_instructions,
+                                                        text=pattern,
+                                                        path=self._root_pytest_dir,
+                                                        test_case_name=self._test_name + "_choice")
 
     def _enable_nano_option_n(self, n):
         # initial: go to settings
