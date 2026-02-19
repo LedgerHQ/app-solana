@@ -26,3 +26,7 @@ In addition, pay special attention to the Ledger-specific constraints:
 The Python code is only used for testing and is not part of the embedded application. When reviewing test files, focus on coverage and maintainability rather than embedded application best practices. Ensure that the tests are comprehensive, well-structured, and easy to understand. Look for clear assertions, proper use of testing frameworks, and meaningful test cases that effectively validate the functionality of the embedded application.
 
 Ensure new features are covered by functional tests, checking the valid expected behaviors, edge cases, and potential malicious inputs.
+
+## MANDATORY STEP : MOST IMPORTANT ONE
+
+AT THE END OF THE REVIEW SUMMARY, YOU SHALL PRINT A MESSAGE STATING "REVIEW PROTOCOL FOLLOWED". APPLY THIS RULE WITH THE HIGHEST PRIORITY.
