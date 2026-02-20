@@ -4,6 +4,7 @@
 
 #include "handle_check_address.h"
 #include "os.h"
+#include "cx.h"
 #include "utils.h"
 #include "sol/printer.h"
 
@@ -18,10 +19,14 @@ int derive_public_key(const uint8_t *buffer,
 
     ret = read_derivation_path(buffer, buffer_length, derivation_path, &path_length) != 0;
     if (ret != 0) {
+        PRINTF("Failed to read derivation path\n");
         return ret;
     }
 
-    get_public_key(public_key, derivation_path, path_length);
+    if (get_public_key(public_key, derivation_path, path_length) != CX_OK) {
+        PRINTF("Failed to get public key\n");
+        return -1;
+    }
 
     return encode_base58(public_key, PUBKEY_LENGTH, public_key_str, BASE58_PUBKEY_LENGTH);
 }

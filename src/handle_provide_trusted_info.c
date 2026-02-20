@@ -17,6 +17,7 @@
 #include "ledger_pki.h"
 
 #include "handle_provide_trusted_info.h"
+#include "io.h"
 
 trusted_info_t g_trusted_info;
 
@@ -96,14 +97,13 @@ static int handle_provide_trusted_info_internal(void) {
 }
 
 // Wrapper around handle_provide_trusted_info_internal to handle the challenge reroll
-void handle_provide_trusted_info(void) {
+int handle_provide_trusted_info(void) {
     int ret = handle_provide_trusted_info_internal();
     // prevent brute-force guesses
     roll_challenge();
-    // TODO: use no throw model
     if (ret == 0) {
-        THROW(ApduReplySuccess);
+        return io_send_sw(ApduReplySuccess);
     } else {
-        THROW(ApduReplySolanaInvalidTrustedInfo);
+        return io_send_sw(ApduReplySolanaInvalidTrustedInfo);
     }
 }

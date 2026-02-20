@@ -1,4 +1,3 @@
-#include "io_utils.h"
 #include "sol/parser.h"
 #include "sol/printer.h"
 #include "sol/print_config.h"
@@ -8,6 +7,8 @@
 #include "apdu.h"
 #include "utils.h"
 #include "ui_api.h"
+#include "io.h"
+#include "main_std_app.h"
 
 #include "nbgl_use_case.h"
 
@@ -40,7 +41,10 @@ static inline void populate_displayed_slot_non_ascii(const size_t slot, const ui
         flags |= DisplayFlagLongPubkeys;
     }
     if (transaction_summary_display_item(index, flags)) {
-        THROW(ApduReplySolanaSummaryUpdateFailed);
+        // Should never happen as items were validated during finalization
+        // TODO: investigate how to gracefully handle display errors in NBGL callbacks
+        PRINTF("Fatal: transaction_summary_display_item failed for index %d\n", index);
+        app_exit();
     }
     memcpy(&displayed_slots[slot].title,
            &G_transaction_summary_title,
@@ -85,36 +89,48 @@ static nbgl_contentTagValue_t *get_single_action_long_review_pair(uint8_t index)
     return &G_current_pair;
 }
 
+static nbgl_reviewStatusType_t get_status_type(bool accepted) {
+    if (accepted) {
+        if (G_operation_type == TYPE_MESSAGE) {
+            return STATUS_TYPE_MESSAGE_SIGNED;
+        } else {
+            return STATUS_TYPE_TRANSACTION_SIGNED;
+        }
+    } else {
+        if (G_operation_type == TYPE_MESSAGE) {
+            return STATUS_TYPE_MESSAGE_REJECTED;
+        } else {
+            return STATUS_TYPE_TRANSACTION_REJECTED;
+        }
+    }
+}
+
 static void review_choice(bool confirm) {
     // Answer, display a status page and go back to main
-    // validate_transaction(confirm);
-    nbgl_reviewStatusType_t status_type;
     if (confirm) {
         if (G_command.is_preview_mode) {
             // In preview mode, store fingerprint instead of signing
             if (store_preview_fingerprint() == 0) {
-                sendResponse(0, ApduReplySuccess, false);
+                io_send_sw(ApduReplySuccess);
             } else {
                 // Can't really happen because store_preview_fingerprint cannot realistically fail
-                sendResponse(0, ApduReplySolanaInvalidMessage, false);
+                io_send_sw(ApduReplySolanaInvalidMessage);
             };
         } else {
-            sendResponse(set_result_sign_message(), ApduReplySuccess, false);
+            int tx = set_result_sign_message();
+            if (tx <= 0) {
+                // User has accepted to sign but an error occurred during signing
+                // This error is extremly unlikely but let's handle it gracefully just in case
+                io_send_sw(ApduReplySdkException);
+                nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
+            } else {
+                io_send_response_pointer(G_io_apdu_buffer, tx, ApduReplySuccess);
+            }
         }
-        if (G_operation_type == TYPE_MESSAGE) {
-            status_type = STATUS_TYPE_MESSAGE_SIGNED;
-        } else {
-            status_type = STATUS_TYPE_TRANSACTION_SIGNED;
-        }
-        nbgl_useCaseReviewStatus(status_type, ui_idle);
+        nbgl_useCaseReviewStatus(get_status_type(true), ui_idle);
     } else {
-        sendResponse(0, ApduReplyUserRefusal, false);
-        if (G_operation_type == TYPE_MESSAGE) {
-            status_type = STATUS_TYPE_MESSAGE_REJECTED;
-        } else {
-            status_type = STATUS_TYPE_TRANSACTION_REJECTED;
-        }
-        nbgl_useCaseReviewStatus(status_type, ui_idle);
+        io_send_sw(ApduReplyUserRefusal);
+        nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
     }
 }
 

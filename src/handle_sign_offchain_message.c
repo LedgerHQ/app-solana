@@ -1,4 +1,3 @@
-#include "io_utils.h"
 #include "os.h"
 #include "cx.h"
 #include "utils.h"
@@ -9,6 +8,7 @@
 #include "apdu.h"
 #include "handle_sign_offchain_message.h"
 #include "ui_api.h"
+#include "io.h"
 
 // ensure the command buffer has space to append a NUL terminal
 CASSERT(MAX_OFFCHAIN_MESSAGE_LENGTH < MAX_MESSAGE_LENGTH, global_h);
@@ -71,9 +71,9 @@ static bool prepare_primary_items(const OffchainMessageHeader *header,
     }
 }
 
-static void setup_offchain_signing_ui(const OffchainMessageHeader *header,
-                                      const bool is_ascii,
-                                      const size_t signer_index) {
+static int setup_offchain_signing_ui(const OffchainMessageHeader *header,
+                                     const bool is_ascii,
+                                     const size_t signer_index) {
     // fill out UI steps
     transaction_summary_reset();
 
@@ -88,30 +88,29 @@ static void setup_offchain_signing_ui(const OffchainMessageHeader *header,
         // Items were set in prepare_primary_items(), finalize them
         if (transaction_summary_finalize(summary_step_kinds, &num_summary_steps) != 0) {
             PRINTF("Error finalizing transaction summary\n");
-            THROW(ApduReplySolanaSummaryFinalizeFailed);
+            return ApduReplySolanaSummaryFinalizeFailed;
         }
     }
     // else: no items set (user mode + ASCII) - num_summary_steps stays 0
 
     start_sign_offchain_message_ui(is_ascii, num_summary_steps);
+    return 0;
 }
 
-void handle_sign_offchain_message(volatile unsigned int *flags, volatile unsigned int *tx) {
-    if (!tx || G_command.instruction != InsSignOffchainMessage ||
+int handle_sign_offchain_message(void) {
+    if (G_command.instruction != InsSignOffchainMessage ||
         G_command.state != ApduStatePayloadComplete) {
-        THROW(ApduReplySdkInvalidParameter);
+        return io_send_sw(ApduReplySdkInvalidParameter);
     }
 
     if (G_command.non_confirm) {
-        // Uncomment this to allow unattended signing.
-        //*tx = set_result_sign_message();
-        // THROW(ApduReplySuccess);
-        UNUSED(tx);
-        THROW(ApduReplySdkNotSupported);
+        // UI confirmation is not optional for message signing.
+        PRINTF("G_command.non_confirm refused\n");
+        return io_send_sw(ApduReplySdkNotSupported);
     }
 
     if (G_command.message_length > MAX_OFFCHAIN_MESSAGE_LENGTH) {
-        THROW(ApduReplySolanaInvalidMessageSize);
+        return io_send_sw(ApduReplySolanaInvalidMessageSize);
     }
 
     // parse header
@@ -120,7 +119,7 @@ void handle_sign_offchain_message(volatile unsigned int *flags, volatile unsigne
     Pubkey public_key;
 
     if (parse_offchain_message_header(&parser, &header)) {
-        THROW(ApduReplySolanaInvalidMessageHeader);
+        return io_send_sw(ApduReplySolanaInvalidMessageHeader);
     }
 
     // Compute start of message content for later use in UI
@@ -131,37 +130,42 @@ void handle_sign_offchain_message(volatile unsigned int *flags, volatile unsigne
     // validate message
     if (header.version > 1 || header.length == 0 || header.length != parser.buffer_length ||
         header.signers_length == 0) {
-        THROW(ApduReplySolanaInvalidMessageHeader);
+        return io_send_sw(ApduReplySolanaInvalidMessageHeader);
     }
     // V0: format must be 0 (RestrictedAscii) or 1 (LimitedUtf8) or 2 (ExtendedUtf8)
     if (header.version == 0 && header.format > 2) {
-        THROW(ApduReplySolanaInvalidMessageHeader);
+        return io_send_sw(ApduReplySolanaInvalidMessageHeader);
     }
 
-    get_public_key(public_key.data, G_command.derivation_path, G_command.derivation_path_length);
+    cx_err_t cx_err = get_public_key(public_key.data,
+                                     G_command.derivation_path,
+                                     G_command.derivation_path_length);
+    if (cx_err != CX_OK) {
+        return io_send_sw(ApduReplySdkException);
+    }
 
     // assert that the requested signer exists in the signers list
     size_t signer_index;
     if (get_pubkey_index(&public_key, header.signers, header.signers_length, &signer_index) != 0) {
-        THROW(ApduReplySolanaInvalidMessageHeader);
+        return io_send_sw(ApduReplySolanaInvalidMessageHeader);
     }
 
     bool is_ascii = is_data_ascii(parser.buffer, parser.buffer_length);
     bool is_utf8 = is_ascii || is_data_utf8(parser.buffer, parser.buffer_length);
     if (!is_utf8) {
         // Message is not valid UTF-8
-        THROW(ApduReplySolanaInvalidMessageFormat);
+        return io_send_sw(ApduReplySolanaInvalidMessageFormat);
     }
 
     // V0: non-ASCII requires non-zero format (1 = LimitedUtf8, 2 = ExtendedUtf8)
     if (header.version == 0 && !is_ascii && header.format == 0) {
-        THROW(ApduReplySolanaInvalidMessageFormat);
+        return io_send_sw(ApduReplySolanaInvalidMessageFormat);
     }
     // Non-ASCII messages cannot be displayed by NBGL, require blind signing
     if (!is_ascii && N_storage.settings.allow_blind_sign != BlindSignEnabled) {
         PRINTF("Blind signing is disabled, cannot sign non-ASCII message.\n");
         start_blind_sign_error_ui();
-        THROW(ApduReplySdkNotSupported);
+        return io_send_sw(ApduReplySdkNotSupported);
     }
 
     // compute message hash if needed
@@ -174,7 +178,12 @@ void handle_sign_offchain_message(volatile unsigned int *flags, volatile unsigne
                        HASH_LENGTH);
     }
 
-    setup_offchain_signing_ui(&header, is_ascii, signer_index);
+    int ret = setup_offchain_signing_ui(&header, is_ascii, signer_index);
+    if (ret != 0) {
+        return io_send_sw(ret);
+    }
 
-    *flags |= IO_ASYNCH_REPLY;
+    // If setup_offchain_signing_ui returned 0, it means it has started the UI and will send
+    // the response async later, we just return here.
+    return 0;
 }
