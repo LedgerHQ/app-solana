@@ -6,6 +6,8 @@ devices = ["nanox", "nanos+", "stax", "flex", "apex_p"]
 [use_cases]
 trusted_name_test = "TRUSTED_NAME_TEST_KEY=1"
 dbg_trusted_name_test = "DEBUG=1 TRUSTED_NAME_TEST_KEY=1"
+# Will not work without a custom SDK
+prog_reproduce = "DEBUG=1 BYPASS_TRUSTED_NAME_CHALLENGE=1 BYPASS_SIGNER_CHECK=1"
 
 [pytest.standalone]
 directory = "./tests/python/"
@@ -17,4 +19,3 @@ testing_with_latest = [
     {url = "https://github.com/LedgerHQ/app-exchange", ref = "develop", use_case = "dbg_use_test_keys"},
     {url = "https://github.com/LedgerHQ/app-ethereum", ref = "develop", use_case = "use_test_keys"},
 ]
-

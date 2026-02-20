@@ -45,7 +45,11 @@ static int handle_provide_trusted_info_internal(void) {
         PRINTF("Error: wrong challenge, received %u expected %u\n",
                tlv_output.challenge,
                expected_challenge);
+#ifndef BYPASS_TRUSTED_NAME_CHALLENGE
+        // Do NOT activate the bypass when using real funds
+        // If you are a Ledger user, do NOT modify this in ANY case
         return -1;
+#endif
     }
 
     if (tlv_output.trusted_name_type != TLV_TRUSTED_NAME_TYPE_CONTEXT_ADDRESS) {
