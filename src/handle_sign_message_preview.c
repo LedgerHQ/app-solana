@@ -38,31 +38,41 @@ static uint16_t verify_delayed_message_matches_preview(void) {
         }
     }
 
-    // Create temporary copy of message for fingerprint verification
-    uint8_t message_copy[MAX_MESSAGE_LENGTH];
-    if ((size_t) G_command.message_length > sizeof(message_copy)) {
-        PRINTF("Message too large for copy buffer\n");
-        return ApduReplySolanaInvalidMessageSize;
-    }
-
-    memcpy(message_copy, G_command.message, G_command.message_length);
-
-    // Parse the copy to locate blockhash
-    Parser copy_parser = {message_copy, G_command.message_length};
-    MessageHeader copy_header;
-    if (parse_message_header(&copy_parser, &copy_header) != 0) {
+    // Parse the message to locate blockhash
+    Parser msg_parser = {G_command.message, G_command.message_length};
+    MessageHeader msg_header;
+    if (parse_message_header(&msg_parser, &msg_header) != 0) {
         PRINTF("Failed to parse message header\n");
         return ApduReplySolanaInvalidMessage;
     }
 
-    PRINTF("Real blockhash = %.*H\n", HASH_LENGTH, copy_header.blockhash->data);
+    PRINTF("Real blockhash = %.*H\n", HASH_LENGTH, msg_header.blockhash->data);
 
-    // Zero out blockhash in the copy
-    explicit_bzero((uint8_t *) copy_header.blockhash, HASH_LENGTH);
+    // Compute SHA-512 hash with zeroed blockhash without copying the message.
+    // Hash in 3 parts: before blockhash, zeroed blockhash, after blockhash.
+    const uint8_t *blockhash_ptr = (const uint8_t *) msg_header.blockhash;
+    size_t before_len = blockhash_ptr - G_command.message;
+    size_t after_offset = before_len + HASH_LENGTH;
+    size_t after_len = G_command.message_length - after_offset;
+    uint8_t zeroed_blockhash[HASH_LENGTH];
+    explicit_bzero(zeroed_blockhash, HASH_LENGTH);
 
-    // Compute SHA-512 hash of zeroed blockhash message
+    cx_sha512_t hash_ctx;
+    cx_sha512_init_no_throw(&hash_ctx);
+    if (cx_hash_update((cx_hash_t *) &hash_ctx, G_command.message, before_len) != CX_OK) {
+        return ApduReplySolanaInvalidMessage;
+    }
+    if (cx_hash_update((cx_hash_t *) &hash_ctx, zeroed_blockhash, HASH_LENGTH) != CX_OK) {
+        return ApduReplySolanaInvalidMessage;
+    }
+    if (cx_hash_update((cx_hash_t *) &hash_ctx, G_command.message + after_offset, after_len) !=
+        CX_OK) {
+        return ApduReplySolanaInvalidMessage;
+    }
     uint8_t computed_hash[CX_SHA512_SIZE];
-    cx_hash_sha512(message_copy, G_command.message_length, computed_hash, sizeof(computed_hash));
+    if (cx_hash_final((cx_hash_t *) &hash_ctx, computed_hash)) {
+        return ApduReplySolanaInvalidMessage;
+    }
 
     // Verify hash matches preview
     if (memcmp(computed_hash, G_preview_state.message_hash_with_zero_blockhash, CX_SHA512_SIZE) !=
