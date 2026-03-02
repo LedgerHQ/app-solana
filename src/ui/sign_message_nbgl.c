@@ -112,22 +112,26 @@ static void review_choice(bool confirm) {
             // In preview mode, store fingerprint instead of signing
             if (store_preview_fingerprint() == 0) {
                 io_send_sw(ApduReplySuccess);
+                // We don't display the "Message signed" status page in preview mode as we have not
+                // actually signed. The delayed signing step will sign and display it
+                nbgl_useCaseSpinner("Signing");
             } else {
                 // Can't really happen because store_preview_fingerprint cannot realistically fail
                 io_send_sw(ApduReplySolanaInvalidMessage);
+                nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
             };
         } else {
             int tx = set_result_sign_message();
             if (tx <= 0) {
                 // User has accepted to sign but an error occurred during signing
-                // This error is extremly unlikely but let's handle it gracefully just in case
+                // This error is extremely unlikely but let's handle it gracefully just in case
                 io_send_sw(ApduReplySdkException);
                 nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
             } else {
                 io_send_response_pointer(G_io_apdu_buffer, tx, ApduReplySuccess);
+                nbgl_useCaseReviewStatus(get_status_type(true), ui_idle);
             }
         }
-        nbgl_useCaseReviewStatus(get_status_type(true), ui_idle);
     } else {
         io_send_sw(ApduReplyUserRefusal);
         nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
@@ -346,4 +350,12 @@ void start_blind_sign_error_ui(void) {
 #else
     nbgl_useCaseAction(&ICON_WARNING, "Blind signing must\nbe enabled in\nsettings", NULL, ui_idle);
 #endif
+}
+
+void ui_transaction_modal(bool is_success) {
+    if (is_success) {
+        nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_SIGNED, ui_idle);
+    } else {
+        nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_idle);
+    }
 }

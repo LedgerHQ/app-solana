@@ -7,6 +7,7 @@
 #include "utils.h"
 #include "sol/parser.h"
 #include "sol/message.h"
+#include "ui_api.h"
 #include "io.h"
 
 // Global preview state
@@ -133,6 +134,7 @@ int store_preview_fingerprint(void) {
 }
 
 static int handle_sign_message_delayed_internal(void) {
+    int ret;
     if (G_command.instruction != InsSignMessageDelayed ||
         G_command.state != ApduStatePayloadComplete) {
         // Small sanity check, should never happen but let's double check
@@ -156,6 +158,7 @@ static int handle_sign_message_delayed_internal(void) {
     // Verify the delayed message matches the preview fingerprint
     uint16_t verification_result = verify_delayed_message_matches_preview();
     if (verification_result != ApduReplySuccess) {
+        ui_transaction_modal(false);
         return io_send_sw(verification_result);
     }
 
@@ -163,11 +166,14 @@ static int handle_sign_message_delayed_internal(void) {
     int tx_len = set_result_sign_message();
     if (tx_len < 0) {
         PRINTF("set_result_sign_message failed\n");
+        ui_transaction_modal(false);
         return io_send_sw(ApduReplySdkException);
     }
 
     PRINTF("Delayed signing complete\n");
-    return io_send_response_pointer(G_io_apdu_buffer, tx_len, ApduReplySuccess);
+    ret = io_send_response_pointer(G_io_apdu_buffer, tx_len, ApduReplySuccess);
+    ui_transaction_modal(ret >= 0);
+    return ret;
 }
 
 // Simple wrapper function to ensure state is cleared

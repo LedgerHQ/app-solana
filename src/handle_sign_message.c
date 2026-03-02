@@ -292,7 +292,7 @@ static int handle_sign_message_ui(void) {
     size_t num_summary_steps = 0;
     if (transaction_summary_finalize(summary_step_kinds, &num_summary_steps) != 0) {
         PRINTF("Error transaction_summary_finalize failed\n");
-        // In theory all errors sould have been caught at parsing step, not at finalize step
+        // In theory all errors should have been caught at parsing step, not at finalize step
         // But let's handle it gracefully just in case
         return ApduReplySolanaSummaryFinalizeFailed;
     }
