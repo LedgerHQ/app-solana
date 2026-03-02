@@ -13,6 +13,7 @@
 
 #include "handle_sign_message.h"
 #include "handle_sign_offchain_message.h"
+#include "handle_sign_message_preview.h"
 
 // Content of the review flow
 static nbgl_contentTagValueList_t G_content;
@@ -89,7 +90,17 @@ static void review_choice(bool confirm) {
     // validate_transaction(confirm);
     nbgl_reviewStatusType_t status_type;
     if (confirm) {
-        sendResponse(set_result_sign_message(), ApduReplySuccess, false);
+        if (G_command.is_preview_mode) {
+            // In preview mode, store fingerprint instead of signing
+            if (store_preview_fingerprint() == 0) {
+                sendResponse(0, ApduReplySuccess, false);
+            } else {
+                // Can't really happen because store_preview_fingerprint cannot realistically fail
+                sendResponse(0, ApduReplySolanaInvalidMessage, false);
+            };
+        } else {
+            sendResponse(set_result_sign_message(), ApduReplySuccess, false);
+        }
         if (G_operation_type == TYPE_MESSAGE) {
             status_type = STATUS_TYPE_MESSAGE_SIGNED;
         } else {
