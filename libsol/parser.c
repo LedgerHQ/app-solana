@@ -171,8 +171,17 @@ int parse_offchain_message_header(Parser *parser, OffchainMessageHeader *header)
     advance(parser, domain_len);  // Signing domain - 16 bytes
 
     BAIL_IF(parse_u8(parser, &header->version));  // Header version
-    BAIL_IF(parse_offchain_message_application_domain(parser, &header->application_domain));
-    BAIL_IF(parse_u8(parser, &header->format));  // Message format
+
+    if (header->version == 0) {
+        // V0: parse application domain and format
+        BAIL_IF(parse_offchain_message_application_domain(parser, &header->application_domain));
+        BAIL_IF(parse_u8(parser, &header->format));  // Message format
+    } else {
+        // V1+: no application domain or format
+        header->application_domain = NULL;
+        header->format = 0;  // unused for V1
+    }
+
     uint8_t signers_length = 0;
     BAIL_IF(parse_u8(parser, &signers_length));  // Signer count
     header->signers_length = signers_length;

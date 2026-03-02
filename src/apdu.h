@@ -75,10 +75,12 @@ typedef struct apdu_command_s {
     uint32_t derivation_path_length;
     bool non_confirm;
     bool deprecated_host;
+    bool user_input_is_ata_or_token_account;
+    Hash message_hash;
     uint8_t message[MAX_MESSAGE_LENGTH];
     int message_length;
-    Hash message_hash;
-    bool user_input_is_ata_or_token_account;
+    // Pointer to message content start for offchain messages (after message header)
+    const char *message_text_start;
 } apdu_command_t;
 
 extern apdu_command_t G_command;

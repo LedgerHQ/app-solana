@@ -156,92 +156,62 @@ def is_utf8(string: str) -> bool:
     return True
 
 
-PACKET_DATA_SIZE: int = 1280 - 40 - 8
-U16_MAX = 2^16-1
-
-
 SIGNING_DOMAIN: bytes = b"\xffsolana offchain"
-# // Header Length = Signing Domain (16) + Header Version (1)
-BASE_HEADER_LEN: int = len(SIGNING_DOMAIN) + 1;
 
-# Header Length = Message Format (1) + Message Length (2)
-MESSAGE_HEADER_LEN: int = 3;
-# Max length of the OffchainMessage
-MAX_LEN: int = U16_MAX - BASE_HEADER_LEN - MESSAGE_HEADER_LEN;
-# Max Length of the OffchainMessage supported by the Ledger
-MAX_LEN_LEDGER: int = PACKET_DATA_SIZE - BASE_HEADER_LEN - MESSAGE_HEADER_LEN;
-
-class MessageFormat(IntEnum):
+class V0MessageFormat(IntEnum):
     RestrictedAscii = 0x00
     LimitedUtf8     = 0x01
     ExtendedUtf8    = 0x02
 
-class v0_OffchainMessage:
-    format: MessageFormat
+
+class V0OffchainMessage:
+    """V0 Offchain Message with application domain and format byte."""
+    format: V0MessageFormat
     message: bytes
     signer_pubkey: bytes
+    app_domain: bytes
 
-    def __init__(self, message: bytes, signer_pubkey: bytes):
-        # /// Construct a new OffchainMessage object from the given message
-        if is_printable_ascii(message):
-            self.format = MessageFormat.RestrictedAscii
-        elif is_utf8(message):
-            self.format = MessageFormat.LimitedUtf8
+    def __init__(self, message: bytes, signer_pubkey: bytes, app_domain: bytes = b"", format: V0MessageFormat = None):
+        # Auto-detect format if not specified
+        if format is not None:
+            self.format = format
+        elif is_printable_ascii(message):
+            self.format = V0MessageFormat.RestrictedAscii
         else:
-            raise ValueError()
-
-        if len(message) <= MAX_LEN:
-            if is_utf8(message):
-                self.format = MessageFormat.ExtendedUtf8
-            else:
-                raise ValueError()
+            self.format = V0MessageFormat.LimitedUtf8
 
         self.signer_pubkey = signer_pubkey
         self.message = message
+        self.app_domain = app_domain.ljust(32, b'\x00')[:32]
 
-    # Serialize the message to bytes, including the full header
     def serialize(self) -> bytes:
-        # data.reserve(Self::HEADER_LEN.saturating_add(self.message.len()));
         data: bytes = b""
-        # format
+        data += SIGNING_DOMAIN
+        data += (0).to_bytes(1, byteorder='little')  # version
+        data += self.app_domain
         data += self.format.to_bytes(1, byteorder='little')
-        # signers count
-        data += (1).to_bytes(1, byteorder='little')
-        # signers
+        data += (1).to_bytes(1, byteorder='little')  # signer count
         data += self.signer_pubkey
-        # message length
         data += len(self.message).to_bytes(2, byteorder='little')
-        # message
         data += self.message
         return data
 
 
-class OffchainMessage:
-    version: int
-    message: v0_OffchainMessage
-    app_domain: bytes
+class V1OffchainMessage:
+    """V1 Offchain Message - no app domain, no format byte."""
+    message: bytes
+    signer_pubkey: bytes
 
-    # Construct a new OffchainMessage object from the given version and message
-    def __init__(self, version: int, message: bytes, signer_pubkey: bytes, app_domain: bytes=b""):
-        self.version = version
-        # Ensure app_domain is exactly 32 bytes, pad with zeros if necessary
-        self.app_domain = app_domain.ljust(32, b'\x00')[:32]
+    def __init__(self, message: bytes, signer_pubkey: bytes):
+        self.signer_pubkey = signer_pubkey
+        self.message = message
 
-        if version == 0:
-            self.message = v0_OffchainMessage(message, signer_pubkey)
-        else:
-            raise ValueError("Unsupported version")
-
-    # Serialize the off-chain message to bytes including full header
     def serialize(self) -> bytes:
         data: bytes = b""
-        # Serialize signing domain
         data += SIGNING_DOMAIN
-        # Serialize version
-        data += self.version.to_bytes(1, byteorder='little')
-        # Include padded app_domain
-        data += self.app_domain
-        # Serialize message
-        data += self.message.serialize()
+        data += (1).to_bytes(1, byteorder='little')  # version
+        data += (1).to_bytes(1, byteorder='little')  # signer count
+        data += self.signer_pubkey
+        data += len(self.message).to_bytes(2, byteorder='little')
+        data += self.message
         return data
-
