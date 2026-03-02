@@ -92,8 +92,12 @@ static void review_choice(bool confirm) {
     if (confirm) {
         if (G_command.is_preview_mode) {
             // In preview mode, store fingerprint instead of signing
-            store_preview_fingerprint();
-            sendResponse(0, ApduReplySuccess, false);
+            if (store_preview_fingerprint() == 0) {
+                sendResponse(0, ApduReplySuccess, false);
+            } else {
+                // Can't really happen because store_preview_fingerprint cannot realistically fail
+                sendResponse(0, ApduReplySolanaInvalidMessage, false);
+            };
         } else {
             sendResponse(set_result_sign_message(), ApduReplySuccess, false);
         }

@@ -15,6 +15,44 @@ void clear_preview_state(void) {
     explicit_bzero(&G_preview_state, sizeof(G_preview_state));
 }
 
+// Compute SHA-512 of message with blockhash region replaced by zeros,
+// without modifying the input buffer.
+// Parses the header to locate the blockhash, then hashes in 3 parts:
+// before blockhash, zeroed blockhash, after blockhash.
+static int hash_message_with_zeroed_blockhash(const uint8_t *message,
+                                              size_t message_length,
+                                              uint8_t output[CX_SHA512_SIZE]) {
+    Parser parser = {message, message_length};
+    MessageHeader header;
+    if (parse_message_header(&parser, &header) != 0) {
+        PRINTF("Failed to parse message header\n");
+        return -1;
+    }
+
+    const uint8_t *blockhash_ptr = (const uint8_t *) header.blockhash;
+    size_t before_len = blockhash_ptr - message;
+    size_t after_offset = before_len + HASH_LENGTH;
+    size_t after_len = message_length - after_offset;
+    uint8_t zeroed_blockhash[HASH_LENGTH];
+    explicit_bzero(zeroed_blockhash, HASH_LENGTH);
+
+    cx_sha512_t hash_ctx;
+    cx_sha512_init_no_throw(&hash_ctx);
+    if (cx_hash_update((cx_hash_t *) &hash_ctx, message, before_len) != CX_OK) {
+        return -1;
+    }
+    if (cx_hash_update((cx_hash_t *) &hash_ctx, zeroed_blockhash, HASH_LENGTH) != CX_OK) {
+        return -1;
+    }
+    if (cx_hash_update((cx_hash_t *) &hash_ctx, message + after_offset, after_len) != CX_OK) {
+        return -1;
+    }
+    if (cx_hash_final((cx_hash_t *) &hash_ctx, output) != CX_OK) {
+        return -1;
+    }
+    return 0;
+}
+
 // Verify delayed message matches preview fingerprint
 // Returns ApduReplySuccess on match, error code otherwise
 static uint16_t verify_delayed_message_matches_preview(void) {
@@ -38,39 +76,10 @@ static uint16_t verify_delayed_message_matches_preview(void) {
         }
     }
 
-    // Parse the message to locate blockhash
-    Parser msg_parser = {G_command.message, G_command.message_length};
-    MessageHeader msg_header;
-    if (parse_message_header(&msg_parser, &msg_header) != 0) {
-        PRINTF("Failed to parse message header\n");
-        return ApduReplySolanaInvalidMessage;
-    }
-
-    PRINTF("Real blockhash = %.*H\n", HASH_LENGTH, msg_header.blockhash->data);
-
-    // Compute SHA-512 hash with zeroed blockhash without copying the message.
-    // Hash in 3 parts: before blockhash, zeroed blockhash, after blockhash.
-    const uint8_t *blockhash_ptr = (const uint8_t *) msg_header.blockhash;
-    size_t before_len = blockhash_ptr - G_command.message;
-    size_t after_offset = before_len + HASH_LENGTH;
-    size_t after_len = G_command.message_length - after_offset;
-    uint8_t zeroed_blockhash[HASH_LENGTH];
-    explicit_bzero(zeroed_blockhash, HASH_LENGTH);
-
-    cx_sha512_t hash_ctx;
-    cx_sha512_init_no_throw(&hash_ctx);
-    if (cx_hash_update((cx_hash_t *) &hash_ctx, G_command.message, before_len) != CX_OK) {
-        return ApduReplySolanaInvalidMessage;
-    }
-    if (cx_hash_update((cx_hash_t *) &hash_ctx, zeroed_blockhash, HASH_LENGTH) != CX_OK) {
-        return ApduReplySolanaInvalidMessage;
-    }
-    if (cx_hash_update((cx_hash_t *) &hash_ctx, G_command.message + after_offset, after_len) !=
-        CX_OK) {
-        return ApduReplySolanaInvalidMessage;
-    }
     uint8_t computed_hash[CX_SHA512_SIZE];
-    if (cx_hash_final((cx_hash_t *) &hash_ctx, computed_hash)) {
+    if (hash_message_with_zeroed_blockhash(G_command.message,
+                                           G_command.message_length,
+                                           computed_hash) != 0) {
         return ApduReplySolanaInvalidMessage;
     }
 
@@ -89,13 +98,16 @@ static uint16_t verify_delayed_message_matches_preview(void) {
     return ApduReplySuccess;
 }
 
-void store_preview_fingerprint(void) {
-    // Message blockhash has already been zeroed by handle_sign_message_parse_message
-    // Just compute SHA-512 hash of the zeroed message
-    cx_hash_sha512(G_command.message,
-                   G_command.message_length,
-                   G_preview_state.message_hash_with_zero_blockhash,
-                   sizeof(G_preview_state.message_hash_with_zero_blockhash));
+int store_preview_fingerprint(void) {
+    // Compute SHA-512 hash of the message with blockhash treated as zeros
+    // without modifying the input buffer
+    if (hash_message_with_zeroed_blockhash(G_command.message,
+                                           G_command.message_length,
+                                           G_preview_state.message_hash_with_zero_blockhash) != 0) {
+        PRINTF("Failed to compute message hash\n");
+        // Can't realistically happen but let's be clean
+        return -1;
+    }
 
     PRINTF("zeroed blockhash fingerprint = %.*H\n",
            sizeof(G_preview_state.message_hash_with_zero_blockhash),
@@ -115,6 +127,8 @@ void store_preview_fingerprint(void) {
 
     G_preview_state.initialized = true;
     PRINTF("Preview fingerprint initialized\n");
+
+    return 0;
 }
 
 static uint16_t handle_sign_message_delayed_internal(volatile unsigned int *tx) {

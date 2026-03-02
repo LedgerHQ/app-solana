@@ -376,13 +376,6 @@ void handle_sign_message_parse_message(volatile unsigned int *flags, volatile un
     }
     print_config.signer_pubkey = &header->pubkeys[signer_index];
 
-    // Zero out blockhash for preview mode fingerprinting
-    if (G_command.is_preview_mode) {
-        PRINTF("Preview mode: zeroing blockhash at offset %d\n",
-               (const uint8_t *) header->blockhash - G_command.message);
-        explicit_bzero((uint8_t *) header->blockhash, HASH_LENGTH);
-    }
-
     if (G_command.non_confirm) {
         PRINTF("G_command.non_confirm refused\n");
         // Uncomment this to allow unattended signing.
