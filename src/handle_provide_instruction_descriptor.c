@@ -17,6 +17,7 @@
 #include "os_pki.h"
 #include "ledger_pki.h"
 #include "handle_swap_sign_transaction.h"
+#include "swap_error_code_helpers.h"
 #include "dynamic_token_info.h"
 #include "instruction.h"
 #include "ed25519_helpers.h"
@@ -241,7 +242,8 @@ static bool handle_common(const tlv_data_t *data, tlv_out_t *out) {
 }
 
 // Wrapper around handle_provide_trusted_info_internal to handle the challenge reroll
-static int handle_provide_instruction_descriptor_internal(void) {
+// Sends a swap error and exits on failure. Returns only on success.
+static bool handle_provide_instruction_descriptor_internal(void) {
     // explicit_bzero(&g_dynamic_token_info, sizeof(g_dynamic_token_info));
 
     tlv_out_t tlv_extracted = {0};
@@ -252,17 +254,23 @@ static int handle_provide_instruction_descriptor_internal(void) {
 
     if (!parse_instruction_descriptor(&payload, &tlv_extracted, &tlv_extracted.received_tags)) {
         PRINTF("parse_instruction_descriptor failed\n");
-        return ApduReplySolanaInvalidInstructionDescriptor;
+        send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                               SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
+                               SWAP_EC_APP_DESCRIPTOR_PARSE_FAILED);
     }
 
     if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAG_STRUCTURE_TYPE)) {
         PRINTF("Error: no struct type specified!\n");
-        return ApduReplySolanaInvalidInstructionDescriptor;
+        send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                               SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
+                               SWAP_EC_APP_DESCRIPTOR_MISSING_STRUCT_TYPE);
     }
 
     if (tlv_extracted.structure_type != TYPE_SOLANA_SWAP_TEMPLATE) {
         PRINTF("Error: unexpected struct type %d\n", tlv_extracted.structure_type);
-        return ApduReplySolanaInvalidInstructionDescriptor;
+        send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                               SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
+                               SWAP_EC_APP_DESCRIPTOR_UNEXPECTED_STRUCT_TYPE);
     }
 
     if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags,
@@ -273,19 +281,25 @@ static int handle_provide_instruction_descriptor_internal(void) {
                                  TAG_DISCRIMINATOR,
                                  TAG_DER_SIGNATURE)) {
         PRINTF("Error: missing required fields in struct version 1\n");
-        return ApduReplySolanaInvalidInstructionDescriptor;
+        send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                               SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
+                               SWAP_EC_APP_DESCRIPTOR_MISSING_FIELDS);
     }
 
     if (tlv_extracted.version == 0 || tlv_extracted.version > 1) {
         PRINTF("Error: unsupported struct version %d\n", tlv_extracted.version);
-        return ApduReplySolanaInvalidInstructionDescriptor;
+        send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                               SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
+                               SWAP_EC_APP_DESCRIPTOR_UNSUPPORTED_VERSION);
     }
 
     // Check that the template ID matches the expected one
     if (!check_template_id(tlv_extracted.template_id)) {
         PRINTF("Error: unexpected template ID\n");
         debug_print_u64("tlv_extracted.template_id", tlv_extracted.template_id);
-        swap_finalize(false);
+        send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                               SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
+                               SWAP_EC_APP_TEMPLATE_ID_MISMATCH);
     }
 
     // Finalize hash object filled by the parser
@@ -301,7 +315,9 @@ static int handle_provide_instruction_descriptor_internal(void) {
     err = check_signature_with_pki(hash, &expected_key_usage, &curve, tlv_extracted.signature);
     if (err != CHECK_SIGNATURE_WITH_PKI_SUCCESS) {
         PRINTF("Failed to verify signature of instruction descriptor\n");
-        return ApduReplySolanaInvalidInstructionDescriptor;
+        send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                               SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
+                               SWAP_EC_APP_DESCRIPTOR_SIGNATURE_FAILED);
     }
 
     PRINTF("is_main_net = 0x%08X\n", tlv_extracted.is_main_net);
@@ -328,10 +344,13 @@ static int handle_provide_instruction_descriptor_internal(void) {
                                      tlv_extracted.template_id,
                                      &tlv_extracted.ins)) {
         PRINTF("save_instruction_descriptor error\n");
-        return ApduReplySolanaInvalidInstructionDescriptor;
+        send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                               SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
+                               SWAP_EC_APP_DESCRIPTOR_SAVE_FAILED);
     }
 
-    return ApduReplySuccess;
+    // Reaching here means the descriptor has been successfully received, validated and stored
+    return true;
 }
 
 int handle_provide_instruction_descriptor(void) {
@@ -340,15 +359,12 @@ int handle_provide_instruction_descriptor(void) {
         return io_send_sw(ApduReplySolanaInvalidInstructionDescriptor);
     }
 
-    int ret = handle_provide_instruction_descriptor_internal();
-    if (ret == ApduReplySuccess) {
+    // Sends a swap error and exits on failure, only returns on success
+    if (handle_provide_instruction_descriptor_internal()) {
         return io_send_sw(ApduReplySuccess);
     } else {
-        PRINTF("Error handling instruction descriptor. Force early return to Exchange\n");
-        G_swap_response_ready = true;
-        io_send_sw(ret);
-        // Unreachable, io_send_sw should have returned to Exchange
-        os_sched_exit(-1);
+        // Unreachable in theory, handle_provide_instruction_descriptor_internal exits on failure
+        return io_send_sw(ApduReplySolanaInvalidInstructionDescriptor);
     }
 }
 

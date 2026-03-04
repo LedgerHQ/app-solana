@@ -2,4 +2,4 @@
 
 int handle_sign_message_parse_message(void);
 
-void swap_finalize(bool is_valid);
+void __attribute__((noreturn)) swap_finalize(void);
