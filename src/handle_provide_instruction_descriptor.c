@@ -14,7 +14,6 @@
 #include "sol/printer.h"
 
 #include "macros.h"
-#include "io_utils.h"
 #include "os_pki.h"
 #include "ledger_pki.h"
 #include "handle_swap_sign_transaction.h"
@@ -23,6 +22,7 @@
 #include "ed25519_helpers.h"
 
 #include "handle_provide_instruction_descriptor.h"
+#include "io.h"
 
 #define LIFI_SOLANA_MAIN_NET 900
 #define LIFI_SOLANA_TEST_NET 901
@@ -334,19 +334,21 @@ static int handle_provide_instruction_descriptor_internal(void) {
     return ApduReplySuccess;
 }
 
-void handle_provide_instruction_descriptor(void) {
+int handle_provide_instruction_descriptor(void) {
     if (!G_called_from_swap) {
         PRINTF("Error: instruction descriptors are only allowed in swap context\n");
-        THROW(ApduReplySolanaInvalidInstructionDescriptor);
+        return io_send_sw(ApduReplySolanaInvalidInstructionDescriptor);
     }
 
     int ret = handle_provide_instruction_descriptor_internal();
     if (ret == ApduReplySuccess) {
-        THROW(ret);
+        return io_send_sw(ApduReplySuccess);
     } else {
         PRINTF("Error handling instruction descriptor. Force early return to Exchange\n");
         G_swap_response_ready = true;
-        sendResponse(0, ret, false);
+        io_send_sw(ret);
+        // Unreachable, io_send_sw should have returned to Exchange
+        os_sched_exit(-1);
     }
 }
 
@@ -527,7 +529,13 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
         }
 
         uint8_t signer_pubkey[PUBKEY_SIZE];
-        get_public_key(signer_pubkey, G_command.derivation_path, G_command.derivation_path_length);
+        if (get_public_key(signer_pubkey,
+                           G_command.derivation_path,
+                           G_command.derivation_path_length) != CX_OK) {
+            PRINTF("Error get_public_key for signer\n");
+            return -1;
+        }
+
         PRINTF("Derivated signer_pubkey = %.*H\n", sizeof(signer_pubkey), signer_pubkey);
         // Ensure our address + the mint == the ata in the TX
         if (!validate_associated_token_address(signer_pubkey,

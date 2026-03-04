@@ -23,9 +23,9 @@ typedef enum rlpTxType {
     TX_FEE
 } rlpTxType;
 
-void get_public_key(uint8_t publicKeyArray[static PUBKEY_LENGTH],
-                    const uint32_t *derivationPath,
-                    size_t pathLength);
+cx_err_t get_public_key(uint8_t publicKeyArray[static PUBKEY_LENGTH],
+                        const uint32_t *derivationPath,
+                        size_t pathLength);
 
 int get_pubkey_index(const Pubkey *needle,
                      const Pubkey *haystack,
@@ -52,7 +52,7 @@ int read_derivation_path(const uint8_t *data_buffer,
                          uint32_t *derivation_path,
                          uint32_t *derivation_path_length);
 
-uint8_t set_result_sign_message(void);
+int set_result_sign_message(void);
 
 #define SET_BIT(a) (1 << a)
 
@@ -61,10 +61,6 @@ uint8_t set_result_sign_message(void);
 // Outdated ?
 #ifdef TEST
 #include <stdio.h>
-#define THROW(code)                \
-    do {                           \
-        printf("error: %d", code); \
-    } while (0)
 #define PRINTF(msg, arg) printf(msg, arg)
 #define PIC(code)        code
 #define TARGET_BLUE      1

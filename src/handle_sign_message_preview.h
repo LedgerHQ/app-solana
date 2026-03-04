@@ -23,5 +23,5 @@ typedef struct {
 extern preview_state_t G_preview_state;
 
 int store_preview_fingerprint(void);
-void handle_sign_message_delayed(volatile unsigned int *tx);
+int handle_sign_message_delayed(void);
 void clear_preview_state(void);

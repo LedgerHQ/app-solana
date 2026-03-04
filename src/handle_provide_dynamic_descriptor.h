@@ -2,4 +2,4 @@
 
 #include "sol/printer.h"
 
-void handle_provide_dynamic_descriptor(void);
+int handle_provide_dynamic_descriptor(void);

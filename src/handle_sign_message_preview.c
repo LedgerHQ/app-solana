@@ -7,6 +7,8 @@
 #include "utils.h"
 #include "sol/parser.h"
 #include "sol/message.h"
+#include "ui_api.h"
+#include "io.h"
 
 // Global preview state
 preview_state_t G_preview_state = {0};
@@ -131,17 +133,18 @@ int store_preview_fingerprint(void) {
     return 0;
 }
 
-static uint16_t handle_sign_message_delayed_internal(volatile unsigned int *tx) {
-    if (!tx || G_command.instruction != InsSignMessageDelayed ||
+static int handle_sign_message_delayed_internal(void) {
+    int ret;
+    if (G_command.instruction != InsSignMessageDelayed ||
         G_command.state != ApduStatePayloadComplete) {
         // Small sanity check, should never happen but let's double check
-        return ApduReplySdkInvalidParameter;
+        return io_send_sw(ApduReplySdkInvalidParameter);
     }
 
     // Verify preview was initialized
     if (!G_preview_state.initialized) {
         PRINTF("No preview state found - must preview before delayed sign\n");
-        return ApduReplySolanaDelayedPreviewNotFound;
+        return io_send_sw(ApduReplySolanaDelayedPreviewNotFound);
     }
 
     // Delayed signing does not make sense in swap context.
@@ -149,25 +152,33 @@ static uint16_t handle_sign_message_delayed_internal(volatile unsigned int *tx) 
     // G_preview_state.initialized is always false but let's double check
     if (G_called_from_swap) {
         PRINTF("Delayed signing not supported in swap context\n");
-        return ApduReplySdkNotSupported;
+        return io_send_sw(ApduReplySdkNotSupported);
     }
 
     // Verify the delayed message matches the preview fingerprint
     uint16_t verification_result = verify_delayed_message_matches_preview();
     if (verification_result != ApduReplySuccess) {
-        return verification_result;
+        ui_transaction_modal(false);
+        return io_send_sw(verification_result);
     }
 
     // Sign the message directly (with real blockhash)
-    *tx = set_result_sign_message();
+    int tx_len = set_result_sign_message();
+    if (tx_len < 0) {
+        PRINTF("set_result_sign_message failed\n");
+        ui_transaction_modal(false);
+        return io_send_sw(ApduReplySdkException);
+    }
 
     PRINTF("Delayed signing complete\n");
-    return ApduReplySuccess;
+    ret = io_send_response_pointer(G_io_apdu_buffer, tx_len, ApduReplySuccess);
+    ui_transaction_modal(ret >= 0);
+    return ret;
 }
 
 // Simple wrapper function to ensure state is cleared
-void handle_sign_message_delayed(volatile unsigned int *tx) {
-    uint16_t result = handle_sign_message_delayed_internal(tx);
+int handle_sign_message_delayed(void) {
+    int ret = handle_sign_message_delayed_internal();
     clear_preview_state();
-    THROW(result);
+    return ret;
 }

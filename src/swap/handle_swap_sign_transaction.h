@@ -25,5 +25,3 @@ bool check_swap_recipient(const char *text);
 int get_swap_recipient(uint8_t recipient_address[PUBKEY_SIZE]);
 
 bool is_token_transaction();
-
-void __attribute__((noreturn)) finalize_exchange_sign_transaction(bool is_success);

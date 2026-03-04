@@ -16,19 +16,20 @@
  *****************************************************************************/
 
 #include "handle_get_pubkey.h"
-#include "io_utils.h"
 #include "sol/printer.h"
 #include "nbgl_use_case.h"
 #include "ui_api.h"
 #include "apdu.h"
+#include "io.h"
 
 static void review_choice(bool confirm) {
     // Answer, display a status page and go back to main
     if (confirm) {
-        sendResponse(set_result_get_pubkey(), ApduReplySuccess, false);
+        uint8_t tx = set_result_get_pubkey();
+        io_send_response_pointer(G_io_apdu_buffer, tx, ApduReplySuccess);
         nbgl_useCaseReviewStatus(STATUS_TYPE_ADDRESS_VERIFIED, ui_idle);
     } else {
-        sendResponse(0, ApduReplyUserRefusal, false);
+        io_send_sw(ApduReplyUserRefusal);
         nbgl_useCaseReviewStatus(STATUS_TYPE_ADDRESS_REJECTED, ui_idle);
     }
 }
