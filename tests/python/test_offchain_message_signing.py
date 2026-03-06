@@ -3,7 +3,7 @@ from ragger.error import ExceptionRAPDU
 from ragger.navigator import Navigator, NavIns, NavInsID, NavigateWithScenario
 
 from application_client.solana import SolanaClient, ErrorType
-from application_client.solana_cmd_builder import SystemInstructionTransfer, Message, verify_signature, V0OffchainMessage, V1OffchainMessage
+from application_client.solana_cmd_builder import SystemInstructionTransfer, Message, verify_signature, V0OffchainMessage, V0MessageFormat, V1OffchainMessage
 from application_client import solana_utils as SOL
 
 import random
@@ -104,6 +104,23 @@ class TestOffchainMessageSigningV0:
             assert False, "Ledger accepted too long message"
         except ExceptionRAPDU as e:
             assert e.status == ErrorType.SOLANA_INVALID_MESSAGE_SIZE
+
+
+    def test_sign_offchain_message_v0_extended_utf8_format_rejected(self, sol, root_pytest_dir):
+        """Format 2 (ExtendedUtf8) is not intended for HW wallet support and must be rejected."""
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+        offchain_message: V0OffchainMessage = V0OffchainMessage(
+            b"Test message",
+            from_public_key,
+            format=V0MessageFormat.ExtendedUtf8
+        )
+        message: bytes = offchain_message.serialize()
+
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+                pass
+        assert e.value.status == ErrorType.SOLANA_INVALID_MESSAGE_HEADER
 
 
     def test_sign_offchain_message_v0_ascii_expert_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
