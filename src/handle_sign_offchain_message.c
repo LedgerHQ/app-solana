@@ -10,7 +10,9 @@
 #include "ui_api.h"
 #include "io.h"
 
-// ensure the command buffer has space to append a NUL terminal
+// message_text_start is consumed as a NULL-terminated C string by NBGL / PRINTF.
+// apdu_handle_message() writes the NULL at message[message_length], which requires
+// message_length < MAX_MESSAGE_LENGTH.  Verify that the offchain limit satisfies this.
 CASSERT(MAX_OFFCHAIN_MESSAGE_LENGTH < MAX_MESSAGE_LENGTH, global_h);
 
 void ui_application_domain(const OffchainMessageHeader *header) {
@@ -92,6 +94,12 @@ static int setup_offchain_signing_ui(const OffchainMessageHeader *header,
         }
     }
     // else: no items set (user mode + ASCII) - num_summary_steps stays 0
+
+    if (is_ascii) {
+        // Last step of ASCII messages is not computed by the parser therefore is not taken into
+        // account in num_summary_steps
+        ++num_summary_steps;
+    }
 
     start_sign_offchain_message_ui(is_ascii, num_summary_steps);
     return 0;

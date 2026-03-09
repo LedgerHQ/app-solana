@@ -110,9 +110,10 @@ typedef struct apdu_command_s {
     bool deprecated_host;
     bool user_input_is_ata_or_token_account;
     Hash message_hash;
+    // Raw message payload assembled from (possibly split) APDUs and NULL terminated by construct.
     uint8_t message[MAX_MESSAGE_LENGTH];
     int message_length;
-    // Pointer to message content start for offchain messages (after message header)
+    // Pointer into message[] past the offchain header
     const char *message_text_start;
 } apdu_command_t;
 

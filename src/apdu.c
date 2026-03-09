@@ -263,9 +263,9 @@ int apdu_handle_message(const uint8_t *apdu_message,
         }
     }
 
-    // copy header data to the buffer
+    // Copy header data to the message buffer, ensure we have space for the NULL terminator
     if (header.data != NULL) {
-        if (apdu_command->message_length + header.data_length > MAX_MESSAGE_LENGTH) {
+        if (apdu_command->message_length + header.data_length >= MAX_MESSAGE_LENGTH) {
             PRINTF("Error combined message length too big %d\n",
                    apdu_command->message_length + header.data_length);
             return ApduReplySolanaInvalidMessageSize;
@@ -286,6 +286,10 @@ int apdu_handle_message(const uint8_t *apdu_message,
     if (!(header.p2 & P2_MORE)) {
         PRINTF("Received APDU is complete\n");
         apdu_command->state = ApduStatePayloadComplete;
+        // NUL-terminate so that handlers can safely expose message content as C strings
+        // (e.g. offchain message text passed to NBGL / PRINTF).  The >= check above
+        // guarantees message_length < MAX_MESSAGE_LENGTH, so this write is in bounds.
+        apdu_command->message[apdu_command->message_length] = '\0';
 
         apdu_command->user_input_is_ata_or_token_account = (header.p2 & P2_IS_ATA_OR_TOKEN_ACCOUNT);
     }
