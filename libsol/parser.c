@@ -186,6 +186,16 @@ int parse_offchain_message_header(Parser *parser, OffchainMessageHeader *header)
     BAIL_IF(parse_u8(parser, &signers_length));  // Signer count
     header->signers_length = signers_length;
     BAIL_IF(parse_pubkeys_with_len(parser, header->signers_length, &header->signers));
+
+    // V1+: enforce strict ascending lexicographic order on signers (implies uniqueness)
+    if (header->version >= 1) {
+        for (size_t i = 1; i < header->signers_length; i++) {
+            if (memcmp(&header->signers[i - 1], &header->signers[i], PUBKEY_SIZE) >= 0) {
+                return -1;
+            }
+        }
+    }
+
     BAIL_IF(parse_u16(parser, &header->length));  // Message length
     return 0;
 }
