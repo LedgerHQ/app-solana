@@ -727,7 +727,7 @@ class TestsSolanaDescriptor:
         test_class.perform_final_tx = test_class.perform_final_tx_hardcoded_token
         test_class.run_test("thorswap_valid_1")
 
-    # Errors detected at discriminator reception
+    # Errors detected at tx reception and discriminator usage
     @pytest.mark.parametrize('fault_test_to_run', [
         "perform_final_tx_bad_structure_type",
         "perform_final_tx_bad_version",
@@ -737,16 +737,6 @@ class TestsSolanaDescriptor:
         "perform_final_tx_discriminator_too_big",
         "perform_final_tx_too_many_descriptors",
         "perform_final_tx_mismatch_network",
-    ])
-    def test_lifi_bad_descriptor(self, backend, exchange_navigation_helper, fault_test_to_run):
-        with pytest.raises(ExceptionRAPDU) as e:
-            test_class = SolanaDescriptorTests(backend, exchange_navigation_helper)
-            test_class.perform_final_tx = getattr(test_class, fault_test_to_run)
-            test_class.run_test("thorswap_valid_1")
-        assert e.value.status == ErrorType.INVALID_INSTRUCTION_DESCRIPTOR
-
-    # Errors detected at tx reception and discriminator usage
-    @pytest.mark.parametrize('fault_test_to_run', [
         "perform_final_tx_no_descriptor",
         "perform_final_tx_mismatch_descriptor_count",
         "perform_final_tx_mismatch_program_id",
