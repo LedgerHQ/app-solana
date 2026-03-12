@@ -29,17 +29,21 @@ bool swap_copy_transaction_parameters(create_transaction_parameters_t *params) {
     swap_validated_t swap_validated;
     memset(&swap_validated, 0, sizeof(swap_validated));
 
-    // if destination_address_extra_id is given, we use the first byte to determine if we use the
-    // normal swap protocol, or the one for cross-chain swaps (LiFi template)
+    // destination_address_extra_id: a raw pointer into Exchange's memory with no length field.
+    //
+    // SIZE CONTRACT (enforced by Exchange, cannot be verified here):
+    //   EXTRA_ID_TYPE_NATIVE:          buffer must be >= EXTRA_ID_NATIVE_MIN_SIZE bytes
+    //   EXTRA_ID_TYPE_SOLANA_TEMPLATE: buffer must be >= EXTRA_ID_SOLANA_TEMPLATE_MIN_SIZE bytes
+    // See swap_common.h for the expected binary layout of each type.
     if (params->destination_address_extra_id != NULL) {
-        switch (params->destination_address_extra_id[0]) {
+        switch (params->destination_address_extra_id[0]) {  // byte [0]: type
             case EXTRA_ID_TYPE_NATIVE:
                 swap_validated.swap_mode = SWAP_MODE_STANDARD;
                 PRINTF("Standard swap\n");
                 break;
             case EXTRA_ID_TYPE_SOLANA_TEMPLATE:
                 swap_validated.swap_mode = SWAP_MODE_CROSSCHAIN;
-                // Read 8 bytes as big endian uint64_t
+                // bytes [1..8]: template_id as big-endian uint64_t
                 swap_validated.template_id = U8BE(
                     (uint8_t *) params->destination_address_extra_id + 1,
                     0);

@@ -201,18 +201,23 @@ class V0OffchainMessage:
 class V1OffchainMessage:
     """V1 Offchain Message - no app domain, no format byte."""
     message: bytes
-    signer_pubkey: bytes
+    signer_pubkeys: List[bytes]
 
-    def __init__(self, message: bytes, signer_pubkey: bytes):
-        self.signer_pubkey = signer_pubkey
+    def __init__(self, message: bytes, signer_pubkeys):
+        if isinstance(signer_pubkeys, bytes):
+            # Backward compatible: single pubkey as bytes
+            self.signer_pubkeys = [signer_pubkeys]
+        else:
+            self.signer_pubkeys = list(signer_pubkeys)
         self.message = message
 
     def serialize(self) -> bytes:
         data: bytes = b""
         data += SIGNING_DOMAIN
         data += (1).to_bytes(1, byteorder='little')  # version
-        data += (1).to_bytes(1, byteorder='little')  # signer count
-        data += self.signer_pubkey
+        data += len(self.signer_pubkeys).to_bytes(1, byteorder='little')  # signer count
+        for pubkey in self.signer_pubkeys:
+            data += pubkey
         data += len(self.message).to_bytes(2, byteorder='little')
         data += self.message
         return data

@@ -132,8 +132,9 @@ int handle_sign_offchain_message(void) {
         header.signers_length == 0) {
         return io_send_sw(ApduReplySolanaInvalidMessageHeader);
     }
-    // V0: format must be 0 (RestrictedAscii) or 1 (LimitedUtf8) or 2 (ExtendedUtf8)
-    if (header.version == 0 && header.format > 2) {
+    // V0: format must be 0 (RestrictedAscii) or 1 (LimitedUtf8).
+    // Format 2 (ExtendedUtf8) is explicitly not intended for hardware wallet support per the spec.
+    if (header.version == 0 && header.format > 1) {
         return io_send_sw(ApduReplySolanaInvalidMessageHeader);
     }
 
@@ -157,7 +158,7 @@ int handle_sign_offchain_message(void) {
         return io_send_sw(ApduReplySolanaInvalidMessageFormat);
     }
 
-    // V0: non-ASCII requires non-zero format (1 = LimitedUtf8, 2 = ExtendedUtf8)
+    // V0: non-ASCII requires format 1 (LimitedUtf8)
     if (header.version == 0 && !is_ascii && header.format == 0) {
         return io_send_sw(ApduReplySolanaInvalidMessageFormat);
     }

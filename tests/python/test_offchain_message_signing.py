@@ -3,7 +3,7 @@ from ragger.error import ExceptionRAPDU
 from ragger.navigator import Navigator, NavIns, NavInsID, NavigateWithScenario
 
 from application_client.solana import SolanaClient, ErrorType
-from application_client.solana_cmd_builder import SystemInstructionTransfer, Message, verify_signature, V0OffchainMessage, V1OffchainMessage
+from application_client.solana_cmd_builder import SystemInstructionTransfer, Message, verify_signature, V0OffchainMessage, V0MessageFormat, V1OffchainMessage
 from application_client import solana_utils as SOL
 
 import random
@@ -104,6 +104,23 @@ class TestOffchainMessageSigningV0:
             assert False, "Ledger accepted too long message"
         except ExceptionRAPDU as e:
             assert e.status == ErrorType.SOLANA_INVALID_MESSAGE_SIZE
+
+
+    def test_sign_offchain_message_v0_extended_utf8_format_rejected(self, sol, root_pytest_dir):
+        """Format 2 (ExtendedUtf8) is not intended for HW wallet support and must be rejected."""
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+        offchain_message: V0OffchainMessage = V0OffchainMessage(
+            b"Test message",
+            from_public_key,
+            format=V0MessageFormat.ExtendedUtf8
+        )
+        message: bytes = offchain_message.serialize()
+
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+                pass
+        assert e.value.status == ErrorType.SOLANA_INVALID_MESSAGE_HEADER
 
 
     def test_sign_offchain_message_v0_ascii_expert_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
@@ -370,3 +387,78 @@ class TestOffchainMessageSigningV1:
             with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
                 navigation_helper.navigate_with_blind_signing_and_reject()
         assert e.value.status == ErrorType.USER_CANCEL
+
+    def test_sign_offchain_message_v1_duplicate_signers_rejected(self, sol):
+        """V1 messages with duplicate signers must be rejected.
+
+        Strict ascending lexicographic ordering on pubkeys implies uniqueness.
+        Sending the same pubkey twice violates this invariant.
+        """
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+        offchain_message = V1OffchainMessage(b"Test message", [from_public_key, from_public_key])
+        message: bytes = offchain_message.serialize()
+
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+                pass
+        assert e.value.status == ErrorType.SOLANA_INVALID_MESSAGE_HEADER
+
+    def test_sign_offchain_message_v1_misordered_signers_rejected(self, sol):
+        """V1 messages with signers not in strict ascending lexicographic order must be rejected."""
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+        # Create a pubkey that is lexicographically greater than any real pubkey
+        high_pubkey = b'\xff' * 32
+
+        # Place high_pubkey first, device pubkey second => descending order => must be rejected
+        offchain_message = V1OffchainMessage(b"Test message", [high_pubkey, from_public_key])
+        message: bytes = offchain_message.serialize()
+
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+                pass
+        assert e.value.status == ErrorType.SOLANA_INVALID_MESSAGE_HEADER
+
+    def test_sign_offchain_message_v1_three_signers_misordered_rejected(self, sol):
+        """V1 messages with three signers where ordering breaks in the middle must be rejected."""
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+        # Build three signers: low < high but device_pubkey placed after high
+        # to ensure device key is present, then create disorder
+        low_pubkey = b'\x00' * 32
+        high_pubkey = b'\xff' * 32
+
+        # Order: low, high, device_pubkey => high > device_pubkey for most real keys => misordered
+        # But to be safe, just force disorder: low, device_pubkey, low_pubkey_bis
+        # Simplest: put device key in the middle and have last < middle
+        low_after = b'\x00' * 31 + b'\x01'  # very low, certainly < from_public_key
+
+        offchain_message = V1OffchainMessage(b"Test message", [low_after, from_public_key, low_pubkey])
+        message: bytes = offchain_message.serialize()
+
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+                pass
+        assert e.value.status == ErrorType.SOLANA_INVALID_MESSAGE_HEADER
+
+    def test_sign_offchain_message_v1_two_signers_ordered_ok(self, sol, scenario_navigator, root_pytest_dir):
+        """V1 message with two correctly ordered signers must be accepted."""
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+        low_pubkey = b'\x01' + b'\x00' * 31
+        # Ensure device pubkey sorts after low_pubkey by placing it second.
+        # If from_public_key < low_pubkey, swap them.
+        if from_public_key < low_pubkey:
+            signers = [from_public_key, low_pubkey]
+        else:
+            signers = [low_pubkey, from_public_key]
+
+        offchain_message = V1OffchainMessage(b"Test message", signers)
+        message: bytes = offchain_message.serialize()
+
+        with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+            scenario_navigator.review_approve(path=root_pytest_dir)
+
+        signature: bytes = sol.get_async_response().data
+        verify_signature(from_public_key, message, signature)
