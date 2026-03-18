@@ -16,3 +16,4 @@ jobs:
   build_application:
     name: AI Review with gh copilot extension
     uses: LedgerHQ/ledger-app-workflows/.github/workflows/reusable_ai_code_review.yml@mbr/reusable_ai_code_review.yml
+    secrets: inherit
