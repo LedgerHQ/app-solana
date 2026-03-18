@@ -5,6 +5,9 @@ on:
     branches:
       - mbr/review_test
   pull_request:
+    branches:
+      - mbr/review_test
+      - develop
 
 
 # Cancel previous runs on this reference
