@@ -1,9 +1,6 @@
 name: AI Review
 
 on:
-  push:
-    branches:
-      - mbr/review_test
   pull_request:
     branches:
       - mbr/review_test
