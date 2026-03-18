@@ -13,6 +13,3 @@ jobs:
   build_application:
     name: AI Review with gh copilot extension
     uses: LedgerHQ/ledger-app-workflows/.github/workflows/reusable_ai_code_review.yml@mbr/reusable_ai_code_review
-    with:
-      upload_app_binaries_artifact: compiled_app_binaries
-      flags: "TRUSTED_NAME_TEST_KEY=1"
