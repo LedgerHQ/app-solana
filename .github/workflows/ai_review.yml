@@ -1,11 +1,8 @@
+---
 name: AI Review
 
 on:
   pull_request:
-    branches:
-      - mbr/review_test
-      - develop
-
 
 # Cancel previous runs on this reference
 concurrency:
