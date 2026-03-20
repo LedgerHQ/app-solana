@@ -3,4 +3,4 @@
 
 void roll_challenge(void);
 uint32_t get_challenge(void);
-void handle_get_challenge(volatile unsigned int *tx);
+int handle_get_challenge(void);

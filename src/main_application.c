@@ -20,6 +20,7 @@
 #include "handle_sign_message.h"
 #include "handle_sign_message_v2.h"
 #include "handle_sign_offchain_message.h"
+#include "handle_sign_message_preview.h"
 #include "handle_provide_instruction_descriptor.h"
 #include "handle_get_challenge.h"
 #include "handle_provide_trusted_info.h"
@@ -27,6 +28,7 @@
 #include "apdu.h"
 #include "ui_api.h"
 #include "nbgl_use_case.h"
+#include "io.h"
 
 // Swap feature
 #include "swap_lib_calls.h"
@@ -43,25 +45,26 @@ static void reset_main_globals(void) {
     MEMCLEAR(G_io_seproxyhal_spi_buffer);
 }
 
-void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx) {
-    if (!flags || !tx) {
-        THROW(ApduReplySdkInvalidParameter);
-    }
-
+static int handle_apdu(int rx) {
     if (rx < 0) {
-        THROW(ApduReplySdkExceptionIoOverflow);
+        return io_send_sw(ApduReplySdkExceptionIoOverflow);
     }
 
     const int ret = apdu_handle_message(G_io_apdu_buffer, rx, &G_command);
     if (ret != 0) {
         PRINTF("Clear received invalid command\n");
         MEMCLEAR(G_command);
-        THROW(ret);
+        return io_send_sw(ret);
     }
 
     if (G_command.state == ApduStatePayloadInProgress) {
         PRINTF("Received first chunk of split payload\n");
-        THROW(ApduReplySuccess);
+        return io_send_sw(ApduReplySuccess);
+    }
+
+    if (G_command.instruction != InsSignMessageDelayed) {
+        PRINTF("Clearing preview state for non-delayed sign instruction\n");
+        clear_preview_state();
     }
 
     switch (G_command.instruction) {
@@ -72,59 +75,52 @@ void handleApdu(volatile unsigned int *flags, volatile unsigned int *tx, int rx)
             G_io_apdu_buffer[2] = MAJOR_VERSION;
             G_io_apdu_buffer[3] = MINOR_VERSION;
             G_io_apdu_buffer[4] = PATCH_VERSION;
-            *tx = 5;
-            THROW(ApduReplySuccess);
+            return io_send_response_pointer(G_io_apdu_buffer, 5, ApduReplySuccess);
 
         case InsDeprecatedGetPubkey:
         case InsGetPubkey:
-            handle_get_pubkey(flags, tx);
-            break;
+            return handle_get_pubkey();
 
         case InsDeprecatedSignMessage:
         case InsSignMessage:
-            handle_sign_message_parse_message(flags, tx);
-            break;
+            return handle_sign_message_parse_message();
+
+        case InsSignMessagePreview:
+            if (G_called_from_swap) {
+                PRINTF("Preview mode not supported in swap context\n");
+                return io_send_sw(ApduReplySdkNotSupported);
+            }
+            // Set preview flag and call same handler as message signing
+            G_command.is_preview_mode = true;
+            return handle_sign_message_parse_message();
+
+        case InsSignMessageDelayed:
+            return handle_sign_message_delayed();
 
         case InsSignMessageV2:
             handle_sign_message_v2(flags, tx);
             break;
 
         case InsSignOffchainMessage:
-            handle_sign_offchain_message(flags, tx);
-            break;
+            return handle_sign_offchain_message();
 
         case InsTrustedInfoProvideInstructionDescriptor:
-            handle_provide_instruction_descriptor();
-            break;
+            return handle_provide_instruction_descriptor();
 
         case InsTrustedInfoGetChallenge:
-            handle_get_challenge(tx);
-            break;
+            return handle_get_challenge();
 
         case InsTrustedInfoProvideInfo:
-            handle_provide_trusted_info();
-            break;
+            return handle_provide_trusted_info();
 
         case InsTrustedInfoProvideDynamicDescriptor:
-            handle_provide_dynamic_descriptor();
-            break;
+            return handle_provide_dynamic_descriptor();
 
         default:
             // Should have been caught by apdu_handle_message
             PRINTF("Received unknown instruction %d\n", G_command.instruction);
-            THROW(ApduReplyUnimplementedInstruction);
+            return io_send_sw(ApduReplyUnimplementedInstruction);
     }
-}
-
-void app_exit(void) {
-    BEGIN_TRY_L(exit) {
-        TRY_L(exit) {
-            os_sched_exit(-1);
-        }
-        FINALLY_L(exit) {
-        }
-    }
-    END_TRY_L(exit);
 }
 
 void nv_app_state_init() {
@@ -139,14 +135,13 @@ void nv_app_state_init() {
 }
 
 void app_main(void) {
-    volatile unsigned int rx = 0;
-    volatile unsigned int tx = 0;
-    volatile unsigned int flags = 0;
+    int input_len = 0;
 
     // Stores the information about the current command. Some commands expect
     // multiple APDUs before they become complete and executed.
     reset_getpubkey_globals();
     reset_main_globals();
+    clear_preview_state();
 
     // to prevent it from having a fixed value at boot
     roll_challenge();
@@ -157,6 +152,8 @@ void app_main(void) {
 
     nv_app_state_init();
 
+    io_init();
+
     // DESIGN NOTE: the bootloader ignores the way APDU are fetched. The only
     // goal is to retrieve APDU.
     // When APDU are to be fetched from multiple IOs, like NFC+USB+BLE, make
@@ -164,53 +161,24 @@ void app_main(void) {
     // switch event, before the apdu is replied to the bootloader. This avoid
     // APDU injection faults.
     for (;;) {
-        volatile unsigned short sw = 0;
-        BEGIN_TRY {
-            TRY {
-                rx = tx;
-                tx = 0;  // ensure no race in catch_other if io_exchange throws
-                         // an error
-                rx = io_exchange(CHANNEL_APDU | flags, rx);
-                flags = 0;
-
-                // no apdu received, well, reset the session, and reset the
-                // bootloader configuration
-                if (rx == 0) {
-                    THROW(ApduReplyNoApduReceived);
-                }
-
-                PRINTF("New APDU received:\n%.*H\n", rx, G_io_apdu_buffer);
-
-                handleApdu(&flags, &tx, rx);
-            }
-            CATCH(ApduReplySdkExceptionIoReset) {
-                THROW(ApduReplySdkExceptionIoReset);
-            }
-            CATCH_OTHER(e) {
-                switch (e & 0xF000) {
-                    case 0x6000:
-                        sw = e;
-                        break;
-                    case 0x9000:
-                        // All is well
-                        sw = e;
-                        break;
-                    default:
-                        // Internal error
-                        sw = 0x6800 | (e & 0x7FF);
-                        break;
-                }
-                if (e != 0x9000) {
-                    flags &= ~IO_ASYNCH_REPLY;
-                }
-                // Unexpected exception => report
-                G_io_apdu_buffer[tx] = sw >> 8;
-                G_io_apdu_buffer[tx + 1] = sw;
-                tx += 2;
-            }
-            FINALLY {
-            }
+        // Receive command bytes in G_io_apdu_buffer
+        if ((input_len = io_recv_command()) < 0) {
+            PRINTF("=> io_recv_command failure\n");
+            return;
         }
-        END_TRY;
+
+        if (input_len == 0) {
+            io_send_sw(ApduReplyNoApduReceived);
+            continue;
+        }
+
+        PRINTF("New APDU received:\n%.*H\n", input_len, G_io_apdu_buffer);
+
+        if (handle_apdu(input_len) < 0) {
+            // The handler itself has failed, most likely due to IO error. We don't even try to
+            // recover from this.
+            PRINTF("=> FATAL handle_apdu failure\n");
+            return;
+        }
     }
 }

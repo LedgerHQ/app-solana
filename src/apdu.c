@@ -39,6 +39,8 @@ static int parse_apdu_header(const uint8_t *apdu_message,
         case InsSignMessage:
         case InsSignMessageV2:
         case InsSignOffchainMessage:
+        case InsSignMessagePreview:
+        case InsSignMessageDelayed:
         case InsTrustedInfoProvideInstructionDescriptor:
         case InsTrustedInfoGetChallenge:
         case InsTrustedInfoProvideInfo:
@@ -96,12 +98,14 @@ static bool split_allowed_for_instruction(uint8_t instruction) {
             instruction == InsSignMessage ||
             instruction == InsSignMessageV2 ||
             instruction == InsSignOffchainMessage ||
+            instruction == InsSignMessagePreview ||
+            instruction == InsSignMessageDelayed ||
             instruction == InsTrustedInfoProvideInfo ||
             instruction == InsTrustedInfoProvideDynamicDescriptor);
 }
 
 static bool instruction_with_derivation_path_in_first_apdu(uint8_t instruction) {
-    // All but this two ones
+    // All but these ones
     return (instruction != InsTrustedInfoProvideInfo &&
             instruction != InsTrustedInfoProvideDynamicDescriptor &&
             instruction != InsTrustedInfoProvideInstructionDescriptor);

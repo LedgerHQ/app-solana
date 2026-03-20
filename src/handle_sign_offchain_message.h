@@ -4,4 +4,4 @@
 #include "cx.h"
 #include "globals.h"
 
-void handle_sign_offchain_message(volatile unsigned int *flags, volatile unsigned int *tx);
+int handle_sign_offchain_message(void);

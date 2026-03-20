@@ -2,7 +2,7 @@
 
 #include "buffer.h"
 
-void handle_provide_instruction_descriptor(void);
+int handle_provide_instruction_descriptor(void);
 
 void reset_saved_descriptors(void);
 
