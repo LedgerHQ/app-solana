@@ -11,6 +11,7 @@ class Key(Enum):
     TRUSTED_NAME = auto()
     DYNAMIC_TOKEN = auto()
     INSTRUCTION_DESCRIPTOR = auto()
+    TRANSACTION_CHECK = auto()
 
 
 _keys: dict[Key, SigningKey] = dict()

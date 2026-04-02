@@ -1,8 +1,9 @@
+#pragma once
+
 #include "os.h"
 #include "ux.h"
 #include "os_io_seproxyhal.h"
-
-#pragma once
+#include "feature_transaction_check.h"
 
 #define CLA 0xE0
 
@@ -59,6 +60,9 @@ typedef enum InstructionCode {
     InsTrustedInfoGetChallenge = 0x20,
     InsTrustedInfoProvideInfo = 0x21,
     InsTrustedInfoProvideDynamicDescriptor = 0x22,
+#ifdef HAVE_TRANSACTION_CHECKS
+    InsProvideTransactionCheck = 0x23,
+#endif
 } InstructionCode;
 
 extern volatile bool G_called_from_swap;
@@ -87,6 +91,10 @@ typedef struct AppSettings {
     uint8_t allow_blind_sign;
     uint8_t pubkey_display;
     uint8_t display_mode;
+#ifdef HAVE_TRANSACTION_CHECKS
+    uint8_t tx_check_enable;
+    uint8_t tx_check_opt_in;
+#endif
 } AppSettings;
 
 typedef struct internalStorage_t {

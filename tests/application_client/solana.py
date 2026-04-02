@@ -7,10 +7,12 @@ from ragger.error import ExceptionRAPDU
 from ragger.pki import SigningPartner
 
 from .tlv import format_tlv
+from .solana_keychain import Key, sign_data
 from .solana_signing_partners import (
     TRUSTED_NAME_PARTNER,
     DYNAMIC_TOKEN_PARTNER,
     INSTRUCTION_DESCRIPTOR_PARTNER,
+    TRANSACTION_CHECK_PARTNER,
 )
 
 from solders.hash import Hash
@@ -33,6 +35,7 @@ class INS(IntEnum):
     INS_GET_CHALLENGE = 0x20
     INS_TRUSTED_INFO = 0x21
     INS_DYNAMIC_TOKEN = 0x22
+    INS_TRANSACTION_CHECK = 0x23
 
 
 CLA = 0xE0
@@ -54,6 +57,7 @@ STATUS_OK = 0x9000
 
 class STRUCTURE_TYPE(IntEnum):
     TRUSTED_NAME = 0x03
+    TRANSACTION_CHECK = 0x09
     DYNAMIC_TOKEN = 0x90
     SOLANA_SWAP_TEMPLATE = 0x0a
 
@@ -86,6 +90,7 @@ class ErrorType:
     INVALID_INSTRUCTION_DESCRIPTOR = 0x6b00
     INVALID_TRUSTED_INFO = 0x6c00
     INVALID_DYNAMIC_TOKEN = 0x6ca0
+    INVALID_TRANSACTION_CHECK = 0x6cb0
     UNIMPLEMENTED_INSTRUCTION = 0x6d00
     SOLANA_SUMMARY_FINALIZE_FAILED = 0x6f00
     SOLANA_SUMMARY_UPDATE_FAILED = 0x6f01
@@ -176,6 +181,19 @@ class InstructionDescriptorTag(IntEnum):
     RECIPIENT_ATA_INDEX = 0x99
     CAPPED_AMOUNT_BPS = 0x9a
     CAPPED_AMOUNT_TOKEN_INDEX = 0x9b
+    DER_SIGNATURE = 0x15
+
+class TransactionCheckTag(IntEnum):
+    STRUCTURE_TYPE = 0x01
+    VERSION = 0x02
+    ADDRESS = 0x22
+    CHAIN_ID = 0x23
+    TX_HASH = 0x27
+    NORMALIZED_RISK = 0x80
+    NORMALIZED_CATEGORY = 0x81
+    PROVIDER_MSG = 0x82
+    TINY_URL = 0x83
+    SIMULATION_TYPE = 0x84
     DER_SIGNATURE = 0x15
 
 def _extend_and_serialize_multiple_derivations_paths(derivations_paths: List[bytes]):
@@ -331,6 +349,48 @@ class SolanaClient:
 
         self.send_pki_certificate(DYNAMIC_TOKEN_PARTNER)
         self._exchange_split(CLA, INS.INS_DYNAMIC_TOKEN, P1_NON_CONFIRM, payload)
+
+
+    def provide_transaction_check(self,
+                                  address: bytes,
+                                  tx_hash: bytes,
+                                  chain_id: int,
+                                  risk: int,
+                                  category: int,
+                                  tiny_url: str,
+                                  provider_msg: str = ""):
+        payload = format_tlv(TransactionCheckTag.STRUCTURE_TYPE, STRUCTURE_TYPE.TRANSACTION_CHECK)
+        payload += format_tlv(TransactionCheckTag.VERSION, 1)
+        payload += format_tlv(TransactionCheckTag.SIMULATION_TYPE, 0x00)  # TRANSACTION
+        payload += format_tlv(TransactionCheckTag.ADDRESS, address)
+        payload += format_tlv(TransactionCheckTag.TX_HASH, tx_hash)
+        payload += format_tlv(TransactionCheckTag.NORMALIZED_RISK, risk)
+        payload += format_tlv(TransactionCheckTag.NORMALIZED_CATEGORY, category)
+        payload += format_tlv(TransactionCheckTag.TINY_URL, tiny_url)
+        payload += format_tlv(TransactionCheckTag.CHAIN_ID, chain_id.to_bytes(8, 'big'))
+        if provider_msg:
+            payload += format_tlv(TransactionCheckTag.PROVIDER_MSG, provider_msg)
+        payload += format_tlv(TransactionCheckTag.DER_SIGNATURE, sign_data(Key.TRANSACTION_CHECK, payload))
+
+        self.send_pki_certificate(TRANSACTION_CHECK_PARTNER)
+
+        self._exchange_split(CLA, INS.INS_TRANSACTION_CHECK, P1_NON_CONFIRM, payload)
+
+    def send_async_transaction_check_opt_in(self):
+        """Send a Transaction Check opt-in APDU (P1=0x01). Response is async (user interaction)."""
+        # Send P1=0x01 with a dummy byte payload (APDU layer requires non-empty data)
+        return self._client.exchange_async(CLA, INS.INS_TRANSACTION_CHECK, P1_CONFIRM, P2_NONE, bytes([0x00]))
+
+    def request_transaction_check_opt_in(self) -> bytes:
+        """Send a Transaction Check opt-in APDU (P1=0x01) synchronously.
+        Returns the response data (1 byte: tx_check_enable state)."""
+        rapdu: RAPDU = self._client.exchange(CLA, INS.INS_TRANSACTION_CHECK, P1_CONFIRM, P2_NONE, bytes([0x00]))
+        return rapdu.data
+
+
+    def get_app_configuration(self) -> bytes:
+        rapdu: RAPDU = self._client.exchange(CLA, INS.INS_GET_APP_CONFIGURATION, P1_NON_CONFIRM, P2_NONE)
+        return rapdu.data
 
 
     def get_challenge(self) -> bytes:

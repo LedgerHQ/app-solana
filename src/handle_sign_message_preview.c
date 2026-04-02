@@ -2,6 +2,9 @@
 #include "cx.h"
 #include "handle_sign_message_preview.h"
 #include "handle_sign_message.h"
+#ifdef HAVE_TRANSACTION_CHECKS
+#include "handle_provide_transaction_check.h"
+#endif
 #include "apdu.h"
 #include "globals.h"
 #include "utils.h"
@@ -186,5 +189,8 @@ static int handle_sign_message_delayed_internal(void) {
 int handle_sign_message_delayed(void) {
     int ret = handle_sign_message_delayed_internal();
     clear_preview_state();
+#ifdef HAVE_TRANSACTION_CHECKS
+    clear_transaction_check();
+#endif
     return ret;
 }
