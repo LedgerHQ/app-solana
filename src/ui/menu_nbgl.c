@@ -21,6 +21,10 @@
 #include "nbgl_use_case.h"
 #include "ui_api.h"
 #include "utils.h"
+#include "feature_transaction_check.h"
+#ifdef HAVE_TRANSACTION_CHECKS
+#include "transaction_check_ui.h"
+#endif
 
 static void quit_app_callback(void) {
     os_sched_exit(-1);
@@ -40,6 +44,9 @@ enum {
     BLIND_SIGNING_IDX = 0,
     PUBLIC_KEY_LENGTH_IDX,
     DISPLAY_MODE_IDX,
+#ifdef HAVE_TRANSACTION_CHECKS
+    TRANSACTION_CHECKS_IDX,
+#endif
     NB_SETTINGS_SWITCHES,
 };
 static nbgl_layoutSwitch_t G_switches[NB_SETTINGS_SWITCHES];
@@ -48,6 +55,9 @@ enum {
     BLIND_SIGNING_TOKEN = FIRST_USER_TOKEN,
     PUBLIC_KEY_LENGTH_TOKEN,
     DISPLAY_MODE_TOKEN,
+#ifdef HAVE_TRANSACTION_CHECKS
+    TRANSACTION_CHECKS_TOKEN,
+#endif
 };
 
 static void settings_controls_callback(int token, uint8_t index, int page);
@@ -91,6 +101,23 @@ static void settings_controls_callback(int token, uint8_t index, int page) {
             G_switches[DISPLAY_MODE_IDX].initState = (nbgl_state_t) new_setting;
             nvm_write((void *) &N_storage.settings.display_mode, &new_setting, sizeof(new_setting));
             break;
+#ifdef HAVE_TRANSACTION_CHECKS
+        case TRANSACTION_CHECKS_TOKEN:
+            if (!N_storage.settings.tx_check_opt_in) {
+                PRINTF("First time enabling Transaction Checks, showing opt-in screen\n");
+                // First time: show consent screen instead of direct toggle.
+                // The opt-in UI will set both tx_check_opt_in and tx_check_enable.
+                ui_transaction_check_opt_in(false);
+            } else {
+                new_setting = (G_switches[TRANSACTION_CHECKS_IDX].initState != ON_STATE);
+                G_switches[TRANSACTION_CHECKS_IDX].initState = (nbgl_state_t) new_setting;
+                nvm_write((void *) &N_storage.settings.tx_check_enable,
+                          &new_setting,
+                          sizeof(new_setting));
+                PRINTF("No-screen toggling TX Checks to %d\n", N_storage.settings.tx_check_enable);
+            }
+            break;
+#endif  // HAVE_TRANSACTION_CHECKS
         default:
             PRINTF("Unreachable\n");
             break;
@@ -133,6 +160,18 @@ static void ui_main_menu(uint8_t page) {
     } else {
         G_switches[DISPLAY_MODE_IDX].initState = ON_STATE;
     }
+
+#ifdef HAVE_TRANSACTION_CHECKS
+    G_switches[TRANSACTION_CHECKS_IDX].text = "Transaction Check";
+    G_switches[TRANSACTION_CHECKS_IDX].subText =
+        "Get real-time warnings about risky transactions. Learn more: ledger.com/tx-check";
+    G_switches[TRANSACTION_CHECKS_IDX].token = TRANSACTION_CHECKS_TOKEN;
+#ifdef HAVE_PIEZO_SOUND
+    G_switches[TRANSACTION_CHECKS_IDX].tuneId = TUNE_TAP_CASUAL;
+#endif
+    G_switches[TRANSACTION_CHECKS_IDX].initState = N_storage.settings.tx_check_enable ? ON_STATE
+                                                                                      : OFF_STATE;
+#endif  // HAVE_TRANSACTION_CHECKS
 
     nbgl_useCaseHomeAndSettings(APPNAME,
                                 &ICON_HOME,

@@ -221,8 +221,8 @@ static bool handle_capped_amount_token_index(const tlv_data_t *data, tlv_out_t *
 static bool handle_signature(const tlv_data_t *data, tlv_out_t *out) {
     return get_buffer_from_tlv_data(data,
                                     &out->signature,
-                                    DER_SIGNATURE_MIN_SIZE,
-                                    DER_SIGNATURE_MAX_SIZE);
+                                    CX_ECDSA_SHA256_SIG_MIN_ASN1_LENGTH,
+                                    CX_ECDSA_SHA256_SIG_MAX_ASN1_LENGTH);
 }
 
 static bool handle_common(const tlv_data_t *data, tlv_out_t *out);
