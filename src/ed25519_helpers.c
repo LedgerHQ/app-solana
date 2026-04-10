@@ -127,8 +127,8 @@ bool validate_associated_token_address(const uint8_t owner_account[PUBKEY_LENGTH
     uint8_t nonce = 255;
 
     PRINTF("Trying to validate provided_ata %.*H\n", PUBKEY_LENGTH, provided_ata);
-    while (nonce > 0) {
-        // Worst case scenario is 255 hash + 255 memcmp. The performance hit is not noticeable.
+    do {
+        // Worst case scenario is 256 hash + 256 memcmp. The performance hit is not noticeable.
         if (derivate_ata_candidate(owner_account,
                                    mint_account,
                                    nonce,
@@ -139,7 +139,6 @@ bool validate_associated_token_address(const uint8_t owner_account[PUBKEY_LENGTH
         }
         // Compare the derived ATA with the provided ATA
         PRINTF("derived_ata %.*H with nonce%d\n", PUBKEY_LENGTH, derived_ata, nonce);
-        nonce--;
 
         if (memcmp(derived_ata, provided_ata, PUBKEY_LENGTH) == 0) {
             PRINTF("Successful ATA match\n");
@@ -153,7 +152,7 @@ bool validate_associated_token_address(const uint8_t owner_account[PUBKEY_LENGTH
                 return true;
             }
         }
-    }
+    } while (nonce-- != 0);
 
     // We exhausted all nonces without matching the provided ATA
     PRINTF("ERROR: Unable to find a valid nonce for ATA derivation\n");
