@@ -428,7 +428,7 @@ static int handle_sign_message_ui(void) {
         os_sched_exit(-1);
     } else {
         // We have been started from the dashboard, prompt the UI to the user as usual
-        start_sign_tx_ui(num_summary_steps);
+        start_sign_message_ui(num_summary_steps);
         return 0;
     }
 }

@@ -136,6 +136,7 @@ static bool handle_chain_id(const tlv_data_t *data, tlv_out_t *out) {
         return false;
     }
     if (chain_id != LIFI_SOLANA_MAIN_NET && chain_id != LIFI_SOLANA_TEST_NET) {
+        PRINTF("Error, invalid chain_id %u\n", chain_id);
         return false;
     }
     out->is_main_net = (chain_id == LIFI_SOLANA_MAIN_NET);
