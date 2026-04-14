@@ -99,7 +99,10 @@ int parse_pubkeys_header(Parser *parser, PubkeysHeader *header) {
     BAIL_IF(parse_u8(parser, &header->num_required_signatures));
     BAIL_IF(parse_u8(parser, &header->num_readonly_signed_accounts));
     BAIL_IF(parse_u8(parser, &header->num_readonly_unsigned_accounts));
-    BAIL_IF(parse_length(parser, &header->pubkeys_length));
+    size_t pubkeys_length;
+    BAIL_IF(parse_length(parser, &pubkeys_length));
+    BAIL_IF(pubkeys_length > UINT16_MAX);
+    header->pubkeys_length = (uint16_t) pubkeys_length;
     return 0;
 }
 
@@ -152,6 +155,12 @@ int parse_offchain_message_application_domain(Parser *parser,
 int parse_message_header(Parser *parser, MessageHeader *header) {
     BAIL_IF(parse_version(parser, header));
     BAIL_IF(parse_pubkeys_header(parser, &header->pubkeys_header));
+    BAIL_IF(header->pubkeys_header.num_required_signatures > header->pubkeys_header.pubkeys_length);
+    BAIL_IF(header->pubkeys_header.num_readonly_signed_accounts >
+            header->pubkeys_header.num_required_signatures);
+    BAIL_IF(
+        header->pubkeys_header.num_readonly_unsigned_accounts >
+        (header->pubkeys_header.pubkeys_length - header->pubkeys_header.num_required_signatures));
     BAIL_IF(
         parse_pubkeys_with_len(parser, header->pubkeys_header.pubkeys_length, &header->pubkeys));
     BAIL_IF(parse_blockhash(parser, &header->blockhash));

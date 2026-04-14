@@ -26,7 +26,7 @@ static void debug_print_header(const MessageHeader *header) {
            header->pubkeys_header.num_readonly_unsigned_accounts);
     PRINTF("pubkeys_length = %d\n", header->pubkeys_header.pubkeys_length);
     if (header->pubkeys != NULL) {
-        for (uint8_t i = 0; i < header->pubkeys_header.pubkeys_length; ++i) {
+        for (uint16_t i = 0; i < header->pubkeys_header.pubkeys_length; ++i) {
             PRINTF("pubkeys[%d] = %.*H\n", i, PUBKEY_SIZE, header->pubkeys[i].data);
         }
     }
