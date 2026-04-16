@@ -638,7 +638,7 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
                                              InstructionInfo *const *infos,
                                              size_t infos_length) {
     int print_ret = -1;
-    uint32_t transaction_max_fee = 0;
+    uint64_t transaction_max_fee = 0;
 
     // Extract compute budget from infos but don't print yet
     ComputeBudgetFeeInfo compute_budget_fee_info;
