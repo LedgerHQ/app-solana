@@ -27,8 +27,8 @@ pytest tests/swap/ --device flex
 pytest tests/swap/ --device flex --golden_run  # Regenerate snapshots, use conservatively
 
 # libsol unit tests
-make -C libsol
-COVERAGE=1 make -C libsol
+qb_run_in_docker make -C libsol
+qb_run_in_docker COVERAGE=1 make -C libsol
 ```
 
 ## Architecture
