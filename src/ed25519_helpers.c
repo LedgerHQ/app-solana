@@ -122,13 +122,11 @@ bool validate_associated_token_address(const uint8_t owner_account[PUBKEY_LENGTH
                                        bool is_token_2022) {
     uint8_t derived_ata[PUBKEY_LENGTH];
 
-    // Start with the maximum nonce value
-    // As this is how official libraries do, we minimize the number of checks of valid case
-    uint8_t nonce = 255;
-
+    // Nonce candidates go from 255 down to 0 (256 total), matching the search order
+    // of official Solana libraries. Use int to allow natural loop termination.
     PRINTF("Trying to validate provided_ata %.*H\n", PUBKEY_LENGTH, provided_ata);
-    while (nonce > 0) {
-        // Worst case scenario is 255 hash + 255 memcmp. The performance hit is not noticeable.
+    for (int nonce = 255; nonce >= 0; nonce--) {
+        // Worst case scenario is 256 hash + 256 memcmp. The performance hit is not noticeable.
         if (derivate_ata_candidate(owner_account,
                                    mint_account,
                                    nonce,
@@ -138,8 +136,7 @@ bool validate_associated_token_address(const uint8_t owner_account[PUBKEY_LENGTH
             return false;
         }
         // Compare the derived ATA with the provided ATA
-        PRINTF("derived_ata %.*H with nonce%d\n", PUBKEY_LENGTH, derived_ata, nonce);
-        nonce--;
+        PRINTF("derived_ata %.*H with nonce %d\n", PUBKEY_LENGTH, derived_ata, nonce);
 
         if (memcmp(derived_ata, provided_ata, PUBKEY_LENGTH) == 0) {
             PRINTF("Successful ATA match\n");
