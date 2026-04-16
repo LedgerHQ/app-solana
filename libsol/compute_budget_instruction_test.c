@@ -66,10 +66,82 @@ void test_parse_compute_budget_instructions_invalid_kind() {
     assert(result == 1);  // Invalid instruction kind for ComputeBudget program
 }
 
+// Verify fee calculation with typical values
+void test_calculate_max_fee_normal() {
+    ComputeBudgetChangeUnitPriceInfo price = {.units = 1000};
+    ComputeBudgetChangeUnitLimitInfo limit = {.units = 200000};
+    ComputeBudgetFeeInfo info = {
+        .change_unit_price = &price,
+        .change_unit_limit = &limit,
+        .instructions_count = 1,
+        .signatures_count = 1,
+    };
+    uint64_t fee = calculate_max_fee(&info);
+    assert(fee == 5200);
+}
+
+// Verify fee calculation is correct when result exceeds UINT32_MAX
+void test_calculate_max_fee_no_truncation() {
+    ComputeBudgetChangeUnitPriceInfo price = {.units = UINT64_C(4294967296)};
+    ComputeBudgetChangeUnitLimitInfo limit = {.units = 1000000};
+    ComputeBudgetFeeInfo info = {
+        .change_unit_price = &price,
+        .change_unit_limit = &limit,
+        .instructions_count = 1,
+        .signatures_count = 1,
+    };
+    uint64_t fee = calculate_max_fee(&info);
+    assert(fee == UINT64_C(4294972296));
+}
+
+// Verify no overflow in intermediate computations with large unit price
+void test_calculate_max_fee_large_price() {
+    ComputeBudgetChangeUnitPriceInfo price = {.units = UINT64_C(10000000000000)};
+    ComputeBudgetChangeUnitLimitInfo limit = {.units = 1400000};
+    ComputeBudgetFeeInfo info = {
+        .change_unit_price = &price,
+        .change_unit_limit = &limit,
+        .instructions_count = 1,
+        .signatures_count = 1,
+    };
+    uint64_t fee = calculate_max_fee(&info);
+    assert(fee == UINT64_C(14000000005000));
+}
+
+// Without unit price, fee is base fee only
+void test_calculate_max_fee_base_only() {
+    ComputeBudgetFeeInfo info = {
+        .change_unit_price = NULL,
+        .change_unit_limit = NULL,
+        .instructions_count = 3,
+        .signatures_count = 2,
+    };
+    uint64_t fee = calculate_max_fee(&info);
+    assert(fee == 10000);
+}
+
+// Without explicit unit limit, default max compute is used
+void test_calculate_max_fee_default_compute_limit() {
+    ComputeBudgetChangeUnitPriceInfo price = {.units = 2000000};
+    ComputeBudgetFeeInfo info = {
+        .change_unit_price = &price,
+        .change_unit_limit = NULL,
+        .instructions_count = 3,
+        .signatures_count = 1,
+    };
+    uint64_t fee = calculate_max_fee(&info);
+    assert(fee == 1205000);
+}
+
 int main() {
     test_parse_compute_budget_instruction_kind();
     test_parse_compute_budget_instruction_kind_invalid();
     test_parse_compute_budget_instructions_invalid_kind();
+    test_calculate_max_fee_normal();
+    test_calculate_max_fee_no_truncation();
+    test_calculate_max_fee_large_price();
+    test_calculate_max_fee_base_only();
+    test_calculate_max_fee_default_compute_limit();
 
     printf("passed\n");
     return 0;

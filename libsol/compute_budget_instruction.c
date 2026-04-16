@@ -46,11 +46,11 @@ static int parse_loaded_accounts_data_size_limit(
     return 0;
 }
 
-uint32_t calculate_max_fee(const ComputeBudgetFeeInfo *info) {
-    uint32_t max_fee = FEE_LAMPORTS_PER_SIGNATURE * info->signatures_count;
+uint64_t calculate_max_fee(const ComputeBudgetFeeInfo *info) {
+    uint64_t max_fee = (uint64_t) FEE_LAMPORTS_PER_SIGNATURE * info->signatures_count;
 
     if (info->change_unit_price != NULL) {
-        uint32_t max_compute = 0;
+        uint64_t max_compute = 0;
         if (info->change_unit_limit != NULL) {
             max_compute = info->change_unit_limit->units;
         } else {
@@ -63,7 +63,7 @@ uint32_t calculate_max_fee(const ComputeBudgetFeeInfo *info) {
     return max_fee;
 }
 
-int print_compute_budget_max_fee(uint32_t max_fee, const PrintConfig *print_config) {
+int print_compute_budget_max_fee(uint64_t max_fee, const PrintConfig *print_config) {
     UNUSED(print_config);
 
     SummaryItem *item;
@@ -80,7 +80,7 @@ int print_compute_budget_max_fee(uint32_t max_fee, const PrintConfig *print_conf
  * are omitted on purpose as they currently do not display any data on the screen
  */
 void print_compute_budget(ComputeBudgetFeeInfo *info, const PrintConfig *print_config) {
-    uint32_t transaction_max_fee = calculate_max_fee(info);
+    uint64_t transaction_max_fee = calculate_max_fee(info);
     print_compute_budget_max_fee(transaction_max_fee, print_config);
 }
 
