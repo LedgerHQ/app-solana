@@ -47,7 +47,7 @@ typedef struct PubkeysHeader {
     uint8_t num_required_signatures;
     uint8_t num_readonly_signed_accounts;
     uint8_t num_readonly_unsigned_accounts;
-    size_t pubkeys_length;
+    uint16_t pubkeys_length;
 } PubkeysHeader;
 
 typedef struct MessageHeader {
