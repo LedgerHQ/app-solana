@@ -44,6 +44,7 @@ typedef enum ApduReply {
     ApduReplySolanaInvalidMessageHeader = 0x6a81,
     ApduReplySolanaInvalidMessageFormat = 0x6a82,
     ApduReplySolanaInvalidMessageSize = 0x6a83,
+    ApduReplySolanaInvalidDerivationPath = 0x6a84,
     ApduReplySolanaSummaryFinalizeFailed = 0x6f00,
     ApduReplySolanaSummaryUpdateFailed = 0x6f01,
 
