@@ -213,3 +213,134 @@ int print_u64(uint64_t u64, char *out, size_t out_length) {
 int print_timestamp(int64_t timestamp, char *out, size_t out_length) {
     return rfc3339_format(out, out_length, timestamp);
 }
+
+// Validate that numeric part of an amount string contains only digits and at most one dot.
+// Returns the position of the dot (or num_len if no dot).
+// Returns -1 on validation error.
+static int validate_numeric_part(const char *str, size_t num_len) {
+    int dot_pos = (int) num_len;
+    bool has_dot = false;
+
+    if (num_len == 0) {
+        PRINTF("validate_numeric_part: empty numeric part\n");
+        return -1;
+    }
+
+    for (size_t i = 0; i < num_len; i++) {
+        if (str[i] == '.') {
+            if (has_dot) {
+                PRINTF("validate_numeric_part: multiple dots\n");
+                return -1;
+            }
+            if (i == 0) {
+                PRINTF("validate_numeric_part: leading dot\n");
+                return -1;
+            }
+            if (i == num_len - 1) {
+                PRINTF("validate_numeric_part: trailing dot\n");
+                return -1;
+            }
+            dot_pos = (int) i;
+            has_dot = true;
+        } else if (str[i] < '0' || str[i] > '9') {
+            PRINTF("validate_numeric_part: invalid char '%c'\n", str[i]);
+            return -1;
+        }
+    }
+
+    return dot_pos;
+}
+
+bool amount_as_string_is_greater_or_equal(const char *a, const char *b) {
+    if (a == NULL || b == NULL) {
+        PRINTF("amount_as_string_is_greater_or_equal: NULL input\n");
+        return false;
+    }
+
+    // Find space separating numeric part from ticker
+    const char *a_space = strchr(a, ' ');
+    const char *b_space = strchr(b, ' ');
+
+    if (a_space == NULL || b_space == NULL) {
+        PRINTF("amount_as_string_is_greater_or_equal: missing ticker (no space found)\n");
+        return false;
+    }
+
+    // Check tickers are not empty
+    const char *a_ticker = a_space + 1;
+    const char *b_ticker = b_space + 1;
+    if (*a_ticker == '\0' || *b_ticker == '\0') {
+        PRINTF("amount_as_string_is_greater_or_equal: empty ticker\n");
+        return false;
+    }
+
+    // Check tickers match
+    if (strcmp(a_ticker, b_ticker) != 0) {
+        PRINTF("amount_as_string_is_greater_or_equal: ticker mismatch '%s' vs '%s'\n",
+               a_ticker,
+               b_ticker);
+        return false;
+    }
+
+    // Numeric part lengths
+    size_t a_num_len = (size_t) (a_space - a);
+    size_t b_num_len = (size_t) (b_space - b);
+
+    PRINTF("amount_as_string_is_greater_or_equal: comparing '%.*s' vs '%.*s' (%s)\n",
+           (int) a_num_len,
+           a,
+           (int) b_num_len,
+           b,
+           a_ticker);
+
+    // Validate numeric parts
+    int a_dot = validate_numeric_part(a, a_num_len);
+    int b_dot = validate_numeric_part(b, b_num_len);
+    if (a_dot < 0 || b_dot < 0) {
+        return false;
+    }
+
+    // Compare integer part lengths: more digits means larger number
+    if (a_dot != b_dot) {
+        PRINTF("amount_as_string_is_greater_or_equal: integer part lengths differ: %d vs %d\n",
+               a_dot,
+               b_dot);
+        return (a_dot > b_dot);
+    }
+
+    // Same integer part length: compare integer digits
+    for (int i = 0; i < a_dot; i++) {
+        if (a[i] != b[i]) {
+            PRINTF("amount_as_string_is_greater_or_equal: digit diff at pos %d: '%c' vs '%c'\n",
+                   i,
+                   a[i],
+                   b[i]);
+            return (a[i] > b[i]);
+        }
+    }
+
+    // Integer parts are equal, compare fractional parts
+    bool a_has_frac = ((size_t) a_dot < a_num_len);
+    bool b_has_frac = ((size_t) b_dot < b_num_len);
+    size_t a_frac_start = a_has_frac ? (size_t) a_dot + 1 : a_num_len;
+    size_t b_frac_start = b_has_frac ? (size_t) b_dot + 1 : b_num_len;
+    size_t a_frac_len = a_has_frac ? a_num_len - (size_t) a_dot - 1 : 0;
+    size_t b_frac_len = b_has_frac ? b_num_len - (size_t) b_dot - 1 : 0;
+    size_t max_frac = (a_frac_len > b_frac_len) ? a_frac_len : b_frac_len;
+
+    for (size_t i = 0; i < max_frac; i++) {
+        // Assume a character is '0' if it's past the end of the fractional part, "1.5" == "1.50"
+        char ca = (i < a_frac_len) ? a[a_frac_start + i] : '0';
+        char cb = (i < b_frac_len) ? b[b_frac_start + i] : '0';
+        if (ca != cb) {
+            PRINTF("amount_as_string_is_greater_or_equal: frac diff at pos %zu: '%c' vs '%c'\n",
+                   i,
+                   ca,
+                   cb);
+            return (ca > cb);
+        }
+    }
+
+    PRINTF("amount_as_string_is_greater_or_equal: values are equal\n");
+    return true;
+}
