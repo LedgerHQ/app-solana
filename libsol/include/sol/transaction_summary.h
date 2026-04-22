@@ -19,14 +19,22 @@
 //
 // If all _Required_ `SummaryItem`s have not been set, finalization will fail.
 
-#define NUM_GENERAL_ITEMS          11
+// Worst case: print_create_stake_account_with_seed_and_delegate
+//   print_system_create_account_with_seed_info (display_owner=false): 4
+//     deposit + from + base + seed
+//   print_stake_initialize_info:                                      5
+//     new_stake_auth + new_withdraw_auth + lockup_time + lockup_epoch + lockup_authority
+//   print_delegate_stake_info:                                        2
+//     vote_account + authorized_by
+#define NUM_GENERAL_ITEMS          (4 + 5 + 2)
 #define DEFAULT_COMPUTE_UNIT_LIMIT 200000
 #define COMPUTE_UNIT_PRICE_DIVIDER 1000000
-#define MAX_TRANSACTION_SUMMARY_ITEMS              \
-    (1                       /* primary */         \
-     + NUM_GENERAL_ITEMS + 1 /* nonce_account */   \
-     + 1                     /* nonce_authority */ \
-     + 1                     /* fee_payer */       \
+#define MAX_TRANSACTION_SUMMARY_ITEMS           \
+    (1                   /* primary */          \
+     + NUM_GENERAL_ITEMS /* optional generic */ \
+     + 1                 /* nonce_account */    \
+     + 1                 /* nonce_authority */  \
+     + 1                 /* fee_payer */        \
     )
 
 typedef struct TokenAmount {

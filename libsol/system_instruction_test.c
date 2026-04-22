@@ -201,9 +201,98 @@ void test_system_create_account_with_seed_instruction() {
     SizedString *seed = &cws_info->seed;
     assert(strncmp("seed", seed->string, seed->length) == 0);
     assert(cws_info->lamports == 1);
+    assert(cws_info->space == 16);
+    Pubkey stake_program = {{PROGRAM_ID_STAKE}};
+    assert(memcmp(&stake_program, cws_info->owner, PUBKEY_SIZE) == 0);
 
     /* check routing */
     assert(parse_system_instructions(&instruction, &header, &info) == 0);
+}
+
+void test_system_create_account_instruction() {
+#define CA_FROM_PUBKEY  BYTES32_BS58_2
+#define CA_TO_PUBKEY    BYTES32_BS58_3
+#define CA_OWNER_PUBKEY BYTES32_BS58_4
+    Pubkey pubkeys[3] = {
+        {{CA_FROM_PUBKEY}},
+        {{CA_TO_PUBKEY}},
+    };
+    memcpy(&pubkeys[2], &system_program_id, PUBKEY_SIZE);
+    Blockhash blockhash = {{BYTES32_BS58_5}};
+    MessageHeader header = {
+        false,
+        0,
+        {2, 0, 0, ARRAY_LEN(pubkeys)},
+        pubkeys,
+        &blockhash,
+        1,
+    };
+    uint8_t accounts[] = {0, 1};
+    uint8_t ix_data[] = {/* kind (SystemCreateAccount = 0) */
+                         0x00,
+                         0x00,
+                         0x00,
+                         0x00,
+                         /* lamports (100) */
+                         0x64,
+                         0x00,
+                         0x00,
+                         0x00,
+                         0x00,
+                         0x00,
+                         0x00,
+                         0x00,
+                         /* space (200) */
+                         0xc8,
+                         0x00,
+                         0x00,
+                         0x00,
+                         0x00,
+                         0x00,
+                         0x00,
+                         0x00,
+                         /* owner program */
+                         CA_OWNER_PUBKEY};
+    Instruction instruction = {
+        2,
+        accounts,
+        2,
+        ix_data,
+        sizeof(ix_data),
+    };
+
+    /* parse via top-level router */
+    SystemInfo info;
+    assert(parse_system_instructions(&instruction, &header, &info) == 0);
+    assert(info.kind == SystemCreateAccount);
+    SystemCreateAccountInfo *ca_info = &info.create_account;
+
+    Pubkey ca_from = {{CA_FROM_PUBKEY}};
+    assert(memcmp(&ca_from, ca_info->from, PUBKEY_SIZE) == 0);
+    Pubkey ca_to = {{CA_TO_PUBKEY}};
+    assert(memcmp(&ca_to, ca_info->to, PUBKEY_SIZE) == 0);
+    assert(ca_info->lamports == 100);
+    assert(ca_info->space == 200);
+    Pubkey ca_owner = {{CA_OWNER_PUBKEY}};
+    assert(memcmp(&ca_owner, ca_info->owner, PUBKEY_SIZE) == 0);
+
+    /* verify that print outputs space and owner */
+    PrintConfig print_config;
+    print_config.expert_mode = false;
+    print_config.header = header;
+    /* Use a different pubkey so print_config_show_authority() displays "From" */
+    print_config.signer_pubkey = &pubkeys[1];
+    transaction_summary_reset();
+    assert(print_system_create_account_info("Create account", ca_info, &print_config, true) == 0);
+    enum SummaryItemKind kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
+    size_t num_kinds;
+    transaction_summary_set_fee_payer_pubkey(&header.pubkeys[0]);
+    assert(transaction_summary_finalize(kinds, &num_kinds) == 0);
+    /* primary(to) + deposit + from + data_size + owner_program + fee_payer = 6 */
+    assert(num_kinds == 6);
+#undef CA_FROM_PUBKEY
+#undef CA_TO_PUBKEY
+#undef CA_OWNER_PUBKEY
 }
 
 void test_process_system_transfer() {
@@ -329,6 +418,7 @@ int main() {
     RUN_TEST(test_parse_system_transfer_instructions);
     RUN_TEST(test_parse_system_transfer_instructions_with_payer);
     RUN_TEST(test_parse_system_advance_nonce_account_instruction);
+    RUN_TEST(test_system_create_account_instruction);
     RUN_TEST(test_system_create_account_with_seed_instruction);
     RUN_TEST(test_process_system_transfer);
 

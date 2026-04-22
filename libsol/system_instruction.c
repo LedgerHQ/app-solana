@@ -3,9 +3,19 @@
 #include "instruction.h"
 #include "sol/parser.h"
 #include "sol/transaction_summary.h"
+#include "spl_token_instruction.h"
+#include "spl_token2022_instruction.h"
+#include "stake_instruction.h"
 #include "system_instruction.h"
+#include "vote_instruction.h"
 #include "util.h"
 #include <string.h>
+
+static bool is_well_known_owner(const Pubkey *owner) {
+    return pubkeys_equal(owner, &system_program_id) || pubkeys_equal(owner, &stake_program_id) ||
+           pubkeys_equal(owner, &vote_program_id) || pubkeys_equal(owner, &spl_token_program_id) ||
+           pubkeys_equal(owner, &spl_token2022_program_id);
+}
 
 #define CREATE_ACCOUNT_TITLE "Create account"
 
@@ -60,6 +70,8 @@ static int parse_system_create_account_instruction(Parser *parser,
     BAIL_IF(instruction_accounts_iterator_next(&it, &info->to));
 
     BAIL_IF(parse_u64(parser, &info->lamports));
+    BAIL_IF(parse_u64(parser, &info->space));
+    BAIL_IF(parse_pubkey(parser, &info->owner));
 
     return 0;
 }
@@ -78,6 +90,8 @@ static int parse_system_create_account_with_seed_instruction(
     BAIL_IF(parse_pubkey(parser, &info->base));
     BAIL_IF(parse_sized_string(parser, &info->seed));
     BAIL_IF(parse_u64(parser, &info->lamports));
+    BAIL_IF(parse_u64(parser, &info->space));
+    BAIL_IF(parse_pubkey(parser, &info->owner));
 
     return 0;
 }
@@ -388,12 +402,14 @@ int print_system_info(const SystemInfo *info, const PrintConfig *print_config) {
             PRINTF("Printing system info SystemCreateAccount\n");
             return print_system_create_account_info(CREATE_ACCOUNT_TITLE,
                                                     &info->create_account,
-                                                    print_config);
+                                                    print_config,
+                                                    true);
         case SystemCreateAccountWithSeed:
             PRINTF("Printing system info SystemCreateAccountWithSeed\n");
             return print_system_create_account_with_seed_info(CREATE_ACCOUNT_TITLE,
                                                               &info->create_account_with_seed,
-                                                              print_config);
+                                                              print_config,
+                                                              true);
         case SystemInitializeNonceAccount:
             PRINTF("Printing system info SystemInitializeNonceAccount\n");
             return print_system_initialize_nonce_info("Init nonce acct",
@@ -442,7 +458,8 @@ int print_system_nonced_transaction_sentinel(const SystemInfo *info,
 
 int print_system_create_account_info(const char *primary_title,
                                      const SystemCreateAccountInfo *info,
-                                     const PrintConfig *print_config) {
+                                     const PrintConfig *print_config,
+                                     bool display_owner) {
     SummaryItem *item;
     if (primary_title != NULL) {
         item = transaction_summary_primary_item();
@@ -455,6 +472,14 @@ int print_system_create_account_info(const char *primary_title,
     if (print_config_show_authority(print_config, info->from)) {
         item = transaction_summary_general_item();
         summary_item_set_pubkey(item, "From", info->from);
+    }
+
+    if (display_owner && !is_well_known_owner(info->owner)) {
+        item = transaction_summary_general_item();
+        summary_item_set_u64(item, "Data size", info->space);
+
+        item = transaction_summary_general_item();
+        summary_item_set_pubkey(item, "Owner program", info->owner);
     }
 
     return 0;
@@ -462,7 +487,8 @@ int print_system_create_account_info(const char *primary_title,
 
 int print_system_create_account_with_seed_info(const char *primary_title,
                                                const SystemCreateAccountWithSeedInfo *info,
-                                               const PrintConfig *print_config) {
+                                               const PrintConfig *print_config,
+                                               bool display_owner) {
     SummaryItem *item;
     if (primary_title != NULL) {
         item = transaction_summary_primary_item();
@@ -475,6 +501,14 @@ int print_system_create_account_with_seed_info(const char *primary_title,
     if (print_config_show_authority(print_config, info->from)) {
         item = transaction_summary_general_item();
         summary_item_set_pubkey(item, "From", info->from);
+    }
+
+    if (display_owner && !is_well_known_owner(info->owner)) {
+        item = transaction_summary_general_item();
+        summary_item_set_u64(item, "Data size", info->space);
+
+        item = transaction_summary_general_item();
+        summary_item_set_pubkey(item, "Owner program", info->owner);
     }
 
     if (print_config->expert_mode) {
