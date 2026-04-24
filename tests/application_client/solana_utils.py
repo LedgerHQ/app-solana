@@ -67,6 +67,14 @@ CHORUS_ONE_PUBLIC_KEY  = base58.b58decode(CHORUS_ONE_ADDRESS)
 SOL_PACKED_DERIVATION_PATH      = pack_derivation_path("m/44'/501'/12345'")
 SOL_PACKED_DERIVATION_PATH_2    = pack_derivation_path("m/44'/501'/0'/0'")
 
+# Invalid derivation paths for testing path enforcement
+# Ethereum path - wrong coin type
+ETH_PACKED_DERIVATION_PATH      = pack_derivation_path("m/44'/60'/0'")
+# Bitcoin path - wrong coin type
+BTC_PACKED_DERIVATION_PATH      = pack_derivation_path("m/44'/0'/0'")
+# Wrong purpose
+WRONG_PURPOSE_PACKED_DERIVATION_PATH = pack_derivation_path("m/45'/501'/0'")
+
 ### Package this currency configuration in exchange format ###
 
 # Simple native currency configuration: Ticker + Appname

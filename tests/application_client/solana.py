@@ -91,6 +91,7 @@ class ErrorType:
     SOLANA_DELAYED_DERIVATION_MISMATCH = 0x6f13
     INVALID_CLA = 0x6e00
     SOLANA_INVALID_MESSAGE_SIZE = 0x6a83
+    SOLANA_INVALID_DERIVATION_PATH = 0x6a84
 
 # https://ledgerhq.atlassian.net/wiki/spaces/TrustServices/pages/3736863735/LNS+Arch+Nano+Trusted+Names+Descriptor+Format+APIs#TLV-description
 class TrustedNameTag(IntEnum):
