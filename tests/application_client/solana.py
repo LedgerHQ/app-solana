@@ -3,11 +3,15 @@ from enum import IntEnum
 from contextlib import contextmanager
 
 from ragger.backend.interface import BackendInterface, RAPDU
-from ragger.firmware import Firmware
 from ragger.error import ExceptionRAPDU
+from ragger.pki import SigningPartner
 
 from .tlv import format_tlv
-from .solana_keychain import Key, sign_data
+from .solana_signing_partners import (
+    TRUSTED_NAME_PARTNER,
+    DYNAMIC_TOKEN_PARTNER,
+    INSTRUCTION_DESCRIPTOR_PARTNER,
+)
 
 from solders.hash import Hash
 from solders.message import Message
@@ -190,49 +194,16 @@ class StatusWord(IntEnum):
     EXCEPTION_OVERFLOW = 0x6807
     NOT_IMPLEMENTED = 0x911c
 
-class CertificatePubKeyUsage(IntEnum):
-    CERTIFICATE_PUBLIC_KEY_USAGE_GENUINE_CHECK        = 0x01,
-    CERTIFICATE_PUBLIC_KEY_USAGE_EXCHANGE_PAYLOAD     = 0x02,
-    CERTIFICATE_PUBLIC_KEY_USAGE_NFT_METADATA         = 0x03,
-    CERTIFICATE_PUBLIC_KEY_USAGE_TRUSTED_NAME         = 0x04,
-    CERTIFICATE_PUBLIC_KEY_USAGE_BACKUP_PROVIDER      = 0x05,
-    CERTIFICATE_PUBLIC_KEY_USAGE_RECOVER_ORCHESTRATOR = 0x06,
-    CERTIFICATE_PUBLIC_KEY_USAGE_PLUGIN_METADATA      = 0x07,
-    CERTIFICATE_PUBLIC_KEY_USAGE_COIN_META            = 0x08,
-    CERTIFICATE_PUBLIC_KEY_USAGE_SEED_ID_AUTH         = 0x09,
-    CERTIFICATE_PUBLIC_KEY_USAGE_TX_SIMU_SIGNER       = 0x0a,
-    CERTIFICATE_PUBLIC_KEY_USAGE_CALLDATA             = 0x0b,
-    CERTIFICATE_PUBLIC_KEY_USAGE_NETWORK              = 0x0c,
-    CERTIFICATE_PUBLIC_KEY_USAGE_SWAP_TEMPLATE        = 0x0d,
 
-class PKIClient:
-    _CLA: int = 0xB0
-    _INS: int = 0x06
-
-    def __init__(self, client: BackendInterface) -> None:
-        self._client = client
-
-    def send_certificate(self, key_usage: CertificatePubKeyUsage, payload: bytes) -> RAPDU:
-        response = self.send_raw(key_usage, payload)
-
-    def send_raw(self, key_usage: CertificatePubKeyUsage, payload: bytes) -> RAPDU:
-        header = bytearray()
-        header.append(self._CLA)
-        header.append(self._INS)
-        header.append(key_usage)
-        header.append(0x00)
-        header.append(len(payload))
-        return self._client.exchange_raw(header + payload)
 
 class SolanaClient:
     client: BackendInterface
 
     def __init__(self, client: BackendInterface):
         self._client = client
-        self._pki_client: Optional[PKIClient] = None
-        if self._client.firmware != Firmware.NANOS:
-            # LedgerPKI not supported on Nanos
-            self._pki_client = PKIClient(self._client)
+
+    def send_pki_certificate(self, partner: SigningPartner) -> RAPDU:
+        return self._client.exchange_raw(partner.get_certificate_payload(self._client.device.type))
 
     def _exchange_split(self, cla: int, ins: int, p1: int, payload: bytes) -> RAPDU:
         if not payload:
@@ -291,28 +262,10 @@ class SolanaClient:
             payload += format_tlv(InstructionDescriptorTag.RECIPIENT_ACCOUNT_INDEX, recipient_account_index)
         if recipient_ata_index is not None:
             payload += format_tlv(InstructionDescriptorTag.RECIPIENT_ATA_INDEX, recipient_ata_index)
-        payload += format_tlv(InstructionDescriptorTag.DER_SIGNATURE, sign_data(Key.INSTRUCTION_DESCRIPTOR, payload))
+        payload += format_tlv(InstructionDescriptorTag.DER_SIGNATURE,
+                              INSTRUCTION_DESCRIPTOR_PARTNER.sign(payload))
 
-        # send PKI certificate
-        if self._pki_client is None:
-            print(f"Ledger-PKI Not supported on '{self._client.firmware.name}'")
-        else:
-            # pylint: disable=line-too-long
-            if self._client.firmware == Firmware.NANOSP:
-                cert_apdu = "010101020102110400000002120100130200021401011604000000002016496E737472756374696F6E5F44657363726970746F723002000F31010D3201213321028E03CDF2147B980260C7800A07199D910D381E6F3F45BF625E805D466E96F03F340101350103154730450221009929503B375B192B1E91AF0B1AA9039E68A399932F30EE74CE376C1C7939CF2002201B1EAB947C29FA7B1D66A15DC8A9208BC363F289EB7EB71F973FF81154094674"  # noqa: E501
-            elif self._client.firmware == Firmware.NANOX:
-                cert_apdu = "010101020102110400000002120100130200021401011604000000002016496E737472756374696F6E5F44657363726970746F723002000F31010D3201213321028E03CDF2147B980260C7800A07199D910D381E6F3F45BF625E805D466E96F03F34010135010215473045022100E1117D524DA7C153E698EE8E7E592C8630BFF75A2D3CAA4D77A827EA6908B4730220567EFBE3BEA3A4191AAAABFFD8CC608D0787C94C453F733824B436D605FEFD87"  # noqa: E501
-            elif self._client.firmware == Firmware.STAX:
-                cert_apdu = "010101020102110400000002120100130200021401011604000000002016496E737472756374696F6E5F44657363726970746F723002000F31010D3201213321028E03CDF2147B980260C7800A07199D910D381E6F3F45BF625E805D466E96F03F34010135010415473045022100AE6527E96EF90909D5684856F16500414A28E4630598C1C0B5167CD1B5E2D9AF02202AF82D82937ADC4A08CFD50F196D76D26717817FC98E4B6DEB9208EF9EEFE1E3"  # noqa: E501
-            elif self._client.firmware == Firmware.FLEX:
-                cert_apdu = "010101020102110400000002120100130200021401011604000000002016496E737472756374696F6E5F44657363726970746F723002000F31010D3201213321028E03CDF2147B980260C7800A07199D910D381E6F3F45BF625E805D466E96F03F3401013501051547304502210092C3A04381DE963C5A514E54AAFCB1353A61E5428F66D9087F57784CECF6FB7302204981F0CEB10FFF93690D2A97254DD3E59DFEB08EFB52BFADCCDC41475A6014F8"  # noqa: E501
-            elif self._client.firmware == Firmware.APEX_P:
-                cert_apdu = "010101020102110400000002120100130200021401011604000000002016496E737472756374696F6E5F44657363726970746F723002000F31010D3201213321028E03CDF2147B980260C7800A07199D910D381E6F3F45BF625E805D466E96F03F34010135010615463044022063EC1237740F566D2A554079B3E0F9C17064FFDBD9A5B2E9F5246C3E02EA461F02203EF4703F702B30BB0AEE4F4350CE9B792A3CF2CF43FD51F84635EEDD772C54CE"  # noqa: E501
-            # pylint: enable=line-too-long
-
-            self._pki_client.send_certificate(CertificatePubKeyUsage.CERTIFICATE_PUBLIC_KEY_USAGE_SWAP_TEMPLATE,
-                                              bytes.fromhex(cert_apdu))
-
+        self.send_pki_certificate(INSTRUCTION_DESCRIPTOR_PARTNER)
         self._exchange_split(CLA, INS.INS_INSTRUCTION_DESCRIPTOR, P1_NON_CONFIRM, payload)
 
     def enroll_ata(self, mint_address, destination_ata, destination_address):
@@ -330,7 +283,6 @@ class SolanaClient:
                              address: bytes,
                              chain_id: int,
                              challenge: Optional[int] = None):
-
         payload = format_tlv(TrustedNameTag.STRUCTURE_TYPE, STRUCTURE_TYPE.TRUSTED_NAME)
         payload += format_tlv(TrustedNameTag.VERSION, 2)
         payload += format_tlv(TrustedNameTag.TRUSTED_NAME_TYPE, 0x06)
@@ -344,30 +296,9 @@ class SolanaClient:
         payload += format_tlv(TrustedNameTag.SIGNER_KEY_ID, 0)  # test key
         payload += format_tlv(TrustedNameTag.SIGNER_ALGO, 1)  # secp256k1
         payload += format_tlv(TrustedNameTag.DER_SIGNATURE,
-                              sign_data(Key.TRUSTED_NAME, payload))
+                              TRUSTED_NAME_PARTNER.sign(payload))
 
-        # send PKI certificate
-        if self._pki_client is None:
-            print(f"Ledger-PKI Not supported on '{self._client.firmware.name}'")
-        else:
-            # pylint: disable=line-too-long
-            if self._client.firmware == Firmware.NANOSP:
-                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F6534010135010315473045022100D494B106E217B46BB90BF20A4E9285529C4C8382D9B80FF462F74942579785F802202D68D0F85CD7CA36BDF351FD41332F310E93163BD175F6A92446C14A3329CC8B"  # noqa: E501
-            elif self._client.firmware == Firmware.NANOX:
-                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F653401013501021546304402207FCD665B94B43A6E838E8CD68BE52403D38A7E6A98E2CE291AB1C5D24A41101D02207AB1863E5CB127D9E8A680AC63FF2F2CBEA79CE76652A72832EF154BF1AD6477"  # noqa: E501
-            elif self._client.firmware == Firmware.STAX:
-                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F65340101350104154730450221008F8FB0117C8D51F0D13A77680C18CA98B4B317C3D6C67F23BF9198410BEDF1A1022023B1052CA43E86E2411831990C64B1E027D85E142AD39F480948E3EF9517E55E"  # noqa: E501
-            elif self._client.firmware == Firmware.FLEX:
-                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F6534010135010515473045022100CEF28780DCAFA3A485D83406D519F9AC12FD9B9C3AA7AE798896013F07DD178D022020F01B1AB1D2AAEDA70357F615EAC55E17FE94EC36DF9DE850CEFACBC98D16C8"  # noqa: E501
-            elif self._client.firmware == Firmware.APEX_P:
-                cert_apdu = "01010102010211040000000212010013020002140101160400000000200C547275737465645F4E616D6530020004310104320121332102B91FBEC173E3BA4A714E014EBC827B6F899A9FA7F4AC769CDE284317A00F4F6534010135010615463044022059B471F3F7F28EDC959B5854A4811E45454C983E731C3B99EF329A7030592E6F02206AE7716C26A5280F3BCE34E9C8660C7128512AC32D58FB8CA49B80DBD7CED8DC"  # noqa: E501
-            # pylint: enable=line-too-long
-
-            self._pki_client.send_certificate(CertificatePubKeyUsage.CERTIFICATE_PUBLIC_KEY_USAGE_TRUSTED_NAME,
-                                              bytes.fromhex(cert_apdu))
-
-        # send TLV trusted info
-        # res: RAPDU = self._client.exchange(CLA, INS.INS_TRUSTED_INFO, P1_NON_CONFIRM, P2_NONE, payload)
+        self.send_pki_certificate(TRUSTED_NAME_PARTNER)
         self._exchange_split(CLA, INS.INS_TRUSTED_INFO, P1_NON_CONFIRM, payload)
 
 
@@ -376,6 +307,7 @@ class SolanaClient:
                               magnitude: int,
                               is_token_2022: bool,
                               mint_address: str):
+
         tuid = format_tlv(DynamicTokenTag_TUID.TOKEN_TYPE_FLAG, SolanaTokenType.TOKEN_2022 if is_token_2022 else SolanaTokenType.TOKEN_LEGACY)
         tuid += format_tlv(DynamicTokenTag_TUID.MINT_ADDRESS, mint_address)
         tuid += format_tlv(DynamicTokenTag_TUID.EXT_CODE, b"")
@@ -387,28 +319,9 @@ class SolanaClient:
         payload += format_tlv(DynamicTokenTag.TICKER, ticker)
         payload += format_tlv(DynamicTokenTag.MAGNITUDE, magnitude)
         payload += format_tlv(DynamicTokenTag.TUID, tuid)
-        payload += format_tlv(DynamicTokenTag.SIGNATURE, sign_data(Key.DYNAMIC_TOKEN, payload))
+        payload += format_tlv(DynamicTokenTag.SIGNATURE, DYNAMIC_TOKEN_PARTNER.sign(payload))
 
-        # send PKI certificate
-        if self._pki_client is None:
-            print(f"Ledger-PKI Not supported on '{self._client.firmware.name}'")
-        else:
-            # pylint: disable=line-too-long
-            if self._client.firmware == Firmware.NANOSP:
-                cert_apdu = "01010102010211040000000212010013020002140101160400000000200D44796E616D69635F546F6B656E3002000E310108320121332102E3C05B637A0626AB382004A9350BEB1DE47958A3B9FC1EFC6E16A72104C05FE73401013501031546304402207756CFA4C31D0732F45FE12AD824262C1359BD49A89EE847A5322D99023E1D2802204D6B36F57BE3DD3D0FF2BBD5ECC71FAAE5D52899742673200D9F8236A58913E3"  # noqa: E501
-            elif self._client.firmware == Firmware.NANOX:
-                cert_apdu = "01010102010211040000000212010013020002140101160400000000200D44796E616D69635F546F6B656E3002000E310108320121332102E3C05B637A0626AB382004A9350BEB1DE47958A3B9FC1EFC6E16A72104C05FE734010135010215473045022100B483BB3A8D6B4EEF83DD75E7ADBFB4330F5C46BBCFAF343B6997B964C6DA1DCB022077F1F41F2C7931CF191364D0A4071E1DB8CE4FA510BC0E7E7517E7E973F4A1DA"  # noqa: E501
-            elif self._client.firmware == Firmware.STAX:
-                cert_apdu = "01010102010211040000000212010013020002140101160400000000200D44796E616D69635F546F6B656E3002000E310108320121332102E3C05B637A0626AB382004A9350BEB1DE47958A3B9FC1EFC6E16A72104C05FE734010135010415463044022037C48A6217CE3EA24351B4DEB714A8420A64F985DF62E1820D421C6AC8AFF75F0220290A3296A4263346866F52520197C6FA2A5E6E32E464833D3598706EE9158DB0"  # noqa: E501
-            elif self._client.firmware == Firmware.FLEX:
-                cert_apdu = "01010102010211040000000212010013020002140101160400000000200D44796E616D69635F546F6B656E3002000E310108320121332102E3C05B637A0626AB382004A9350BEB1DE47958A3B9FC1EFC6E16A72104C05FE734010135010515473045022100B31EF0A2398641FE938C55568DFC5F1A4297244C765A0C0659821361B812A4C6022023559941A0D58FEDA2B37008DDE3B1B27C85A4AEEAFF7D74BC68E093CEC4585E"  # noqa: E501
-            elif self._client.firmware == Firmware.APEX_P:
-                cert_apdu = "01010102010211040000000212010013020002140101160400000000200D44796E616D69635F546F6B656E3002000E310108320121332102E3C05B637A0626AB382004A9350BEB1DE47958A3B9FC1EFC6E16A72104C05FE73401013501061547304502210082871ACD246B31207A6D526628D0F4EB702F5DF60A906502AC94E8D5FF2C7A89022016C84B407E53113F26916C574C0B6DC4FC129C401E44FEBCB64C01C1BACC9E82"  # noqa: E501
-            # pylint: enable=line-too-long
-
-            self._pki_client.send_certificate(CertificatePubKeyUsage.CERTIFICATE_PUBLIC_KEY_USAGE_COIN_META,
-                                              bytes.fromhex(cert_apdu))
-
+        self.send_pki_certificate(DYNAMIC_TOKEN_PARTNER)
         self._exchange_split(CLA, INS.INS_DYNAMIC_TOKEN, P1_NON_CONFIRM, payload)
 
 
