@@ -58,6 +58,5 @@ int parse_compute_budget_instructions(const Instruction *instruction,
                                       const MessageHeader *header,
                                       ComputeBudgetInfo *info);
 
-uint64_t calculate_max_fee(const ComputeBudgetFeeInfo *info);
+int calculate_max_fee(const ComputeBudgetFeeInfo *info, uint64_t *max_fee);
 int print_compute_budget_max_fee(uint64_t max_fee, const PrintConfig *print_config);
-void print_compute_budget(ComputeBudgetFeeInfo *info, const PrintConfig *print_config);

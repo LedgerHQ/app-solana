@@ -4,7 +4,7 @@ import base58
 from hashlib import sha256
 from ragger.error import ExceptionRAPDU
 
-from ledger_app_clients.exchange.test_runner import ExchangeTestRunner, ALL_TESTS_EXCEPT_MEMO_THORSWAP_AND_FEES, THORSWAP_TESTS
+from ledger_app_clients.exchange.test_runner import ExchangeTestRunner, ALL_TESTS_EXCEPT_MEMO_AND_THORSWAP, ALL_TESTS_EXCEPT_MEMO_THORSWAP_AND_FEES, THORSWAP_TESTS
 from ledger_app_clients.exchange.client import PayinExtraDataID
 from application_client.solana import SolanaClient, ErrorType
 from application_client.solana_cmd_builder import SystemInstructionTransfer, ComputeBudgetInstructionSetComputeUnitLimit, ComputeBudgetInstructionSetComputeUnitPrice, verify_signature
@@ -77,8 +77,13 @@ class TestsSolana:
 class SolanaPriorityFeesTests(GenericSolanaTests):
     def perform_final_tx(self, destination, send_amount, fees, memo):
         decoded_destination = SOLANA_ADDRESS_DECODER[destination]
-        computeUnitLimit: ComputeBudgetInstructionSetComputeUnitLimit = ComputeBudgetInstructionSetComputeUnitLimit(300)
-        computeUnitPrice: ComputeBudgetInstructionSetComputeUnitPrice = ComputeBudgetInstructionSetComputeUnitPrice(20000)
+        # max_fee = FEE_LAMPORTS_PER_SIGNATURE * signatures + (unit_price * unit_limit) / MICRO_LAMPORT_MULTIPLIER
+        # Message header hardcodes num_required_signatures = 2, so base fee = 10000
+        # With unit_limit = MICRO_LAMPORT_MULTIPLIER, max_fee = 10000 + unit_price
+        unit_limit = 1_000_000
+        unit_price = fees - 10000
+        computeUnitLimit: ComputeBudgetInstructionSetComputeUnitLimit = ComputeBudgetInstructionSetComputeUnitLimit(unit_limit)
+        computeUnitPrice: ComputeBudgetInstructionSetComputeUnitPrice = ComputeBudgetInstructionSetComputeUnitPrice(unit_price)
         instruction: SystemInstructionTransfer = SystemInstructionTransfer(SOL.OWNED_PUBLIC_KEY, decoded_destination, send_amount)
         message: bytes = MessageCustom([computeUnitLimit, computeUnitPrice, instruction]).serialize()
         sol = SolanaClient(self.backend)
@@ -90,7 +95,7 @@ class SolanaPriorityFeesTests(GenericSolanaTests):
 
 # Use a class to reuse the same Speculos instance
 class TestsSolanaPriorityFees:
-    @pytest.mark.parametrize('test_to_run', ALL_TESTS_EXCEPT_MEMO_THORSWAP_AND_FEES)
+    @pytest.mark.parametrize('test_to_run', ALL_TESTS_EXCEPT_MEMO_AND_THORSWAP)
     def test_solana_priority_fees(self, backend, exchange_navigation_helper, test_to_run):
         SolanaPriorityFeesTests(backend, exchange_navigation_helper).run_test(test_to_run)
 
@@ -157,7 +162,6 @@ class TestsSPLToken:
     @pytest.mark.parametrize('test_to_run', ALL_TESTS_EXCEPT_MEMO_THORSWAP_AND_FEES)
     def test_solana_spl_token(self, backend, exchange_navigation_helper, test_to_run):
         SPLTokenTests(backend, exchange_navigation_helper).run_test(test_to_run)
-        # message: bytes = bytes.fromhex("0100030621a36fe74e1234c35e62bfd700fd247b92c4d4e0e538401ac51f5c4ae97657a7276497ba0bb8659172b72edd8c66e18f561764d9c86a610a3a7e0f79c0baf9dbc71573813ea96479a79e579af14646413602b9b3dcbdc51cbf8e064b5685ed120479d9c7cc1035de7211f99eb48c09d70b2bdf5bdf9e2e56b8a1fbb5a2ea332706ddf6e1d765a193d9cbe146ceeb79ac1cb485ed5f5b37913a8cf5857eff00a938b19525b109c0e2517df8786389e33365afe2dc6bfabeb65458fd24a1ab5b13000000000000000000000000000000000000000000000000000000000000000001040501030205000a0c020000000000000006")
 
 class SPLToken2022Tests(SPLTokenTests):
     def perform_final_tx(self, destination, send_amount, fees, memo):

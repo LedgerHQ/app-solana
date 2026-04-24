@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sol/parser.h"
+#include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
 
@@ -38,3 +39,5 @@ int print_summary(const char *in,
 int print_timestamp(int64_t, char *out, size_t out_length);
 
 int encode_base58(const void *in, size_t length, char *out, size_t maxoutlen);
+
+bool amount_as_string_is_greater_or_equal(const char *a, const char *b);

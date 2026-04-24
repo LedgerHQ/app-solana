@@ -645,7 +645,10 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
     infos = preprocess_compute_budget_instructions(infos, &infos_length, &compute_budget_fee_info);
     if (compute_budget_fee_info.change_unit_limit || compute_budget_fee_info.change_unit_price) {
         PRINTF("Compute budget set, calculating max fees\n");
-        transaction_max_fee = calculate_max_fee(&compute_budget_fee_info);
+        if (calculate_max_fee(&compute_budget_fee_info, &transaction_max_fee) != 0) {
+            PRINTF("Fee calculation overflow, rejecting transaction\n");
+            return -1;
+        }
     }
 
     PRINTF("infos_length = %d\n", infos_length);
