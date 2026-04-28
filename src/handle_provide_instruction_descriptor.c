@@ -434,9 +434,13 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
     // Retrieve / calculate the swap validated mint address and recipient address
     // With the current architecture we actually do this step at each instruction but the impact is
     // negligeable
+    // Security: resolve the swap mint from the hardcoded registry only. Host-provided dynamic
+    // token metadata must never be used as the authoritative source of asset identity in swap
+    // validation, otherwise a same-ticker dynamic descriptor could substitute an attacker-chosen
+    // mint for the real one.
     bool is_token_2022_kind;
-    const uint8_t *validated_mint_address = get_token_mint_address(get_swap_ticker(),
-                                                                   &is_token_2022_kind);
+    const uint8_t *validated_mint_address =
+        get_hardcoded_token_mint_address(get_swap_ticker(), &is_token_2022_kind);
     if (validated_mint_address == NULL) {
         PRINTF("Error: no mint address retrieved\n");
         return -1;
