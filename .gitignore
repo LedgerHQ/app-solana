@@ -21,5 +21,5 @@ snapshots-tmp/
 tests/swap/.test_dependencies/app-ethereum
 tests/swap/.test_dependencies/app-exchange
 
-# local test helper files
+# Manually ignore this file. It is a helper to replay apdus quickly.
 tests/swap/test_raw.py

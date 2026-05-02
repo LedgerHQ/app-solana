@@ -442,10 +442,20 @@ static int scan_header_for_signer(const uint32_t *derivation_path,
     if (cx_err != CX_OK) {
         return -1;
     }
-    return get_pubkey_index(&signer_pubkey,
-                            header->pubkeys,
-                            header->pubkeys_header.num_required_signatures,
-                            signer_index);
+    if (get_pubkey_index(&signer_pubkey,
+                         header->pubkeys,
+                         header->pubkeys_header.num_required_signatures,
+                         signer_index) != 0) {
+        PRINTF("get_pubkey_index failed to retrieve signer public key index\n");
+#ifdef BYPASS_SIGNER_CHECK
+        // Do NOT activate the bypass when using real funds
+        // If you are a Ledger user, do NOT modify this in ANY case
+        *signer_index = 0;
+#else
+        return -1;
+#endif
+    }
+    return 0;
 }
 
 int handle_sign_message_parse_message(void) {

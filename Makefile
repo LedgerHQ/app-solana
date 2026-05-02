@@ -90,6 +90,21 @@ ENABLE_PKI_LIBRARY = 1
 # --8<-- [end:variables]
 
 ########################################
+#            TEST BYPASSES             #
+########################################
+ifdef BYPASS_TRUSTED_NAME_CHALLENGE
+    $(warning [WARNING] BYPASS_TRUSTED_NAME_CHALLENGE enabled)
+    DEFINES += BYPASS_TRUSTED_NAME_CHALLENGE
+    TEST_BUILD = 1
+endif
+
+ifdef BYPASS_SIGNER_CHECK
+    $(warning [WARNING] BYPASS_SIGNER_CHECK enabled)
+    DEFINES += BYPASS_SIGNER_CHECK
+    TEST_BUILD = 1
+endif
+
+########################################
 #          Features disablers          #
 ########################################
 # These advanced settings allow to disable some feature that are by
