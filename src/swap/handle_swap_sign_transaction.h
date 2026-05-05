@@ -12,6 +12,8 @@ bool check_template_id(uint64_t template_id);
 
 bool check_swap_amount_raw(uint64_t amount);
 
+int get_swap_amount_raw(uint64_t *amount);
+
 bool check_swap_amount(const char *text);
 
 bool check_swap_ticker(const char *ticker);

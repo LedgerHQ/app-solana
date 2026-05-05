@@ -174,6 +174,8 @@ class InstructionDescriptorTag(IntEnum):
     ASSET_ATA_INDEX = 0x97
     RECIPIENT_ACCOUNT_INDEX = 0x98
     RECIPIENT_ATA_INDEX = 0x99
+    CAPPED_AMOUNT_BPS = 0x9a
+    CAPPED_AMOUNT_TOKEN_INDEX = 0x9b
     DER_SIGNATURE = 0x15
 
 def _extend_and_serialize_multiple_derivations_paths(derivations_paths: List[bytes]):
@@ -237,7 +239,9 @@ class SolanaClient:
                                        asset_account_index = None,
                                        asset_ata_index = None,
                                        recipient_account_index = None,
-                                       recipient_ata_index = None):
+                                       recipient_ata_index = None,
+                                       capped_amount_bps = None,
+                                       capped_amount_token_index = None):
         amount_rules = 0
         if amount_rules_big_endian:
             amount_rules |= AMOUNT_RULES_ENDIANESS_MASK
@@ -262,6 +266,10 @@ class SolanaClient:
             payload += format_tlv(InstructionDescriptorTag.RECIPIENT_ACCOUNT_INDEX, recipient_account_index)
         if recipient_ata_index is not None:
             payload += format_tlv(InstructionDescriptorTag.RECIPIENT_ATA_INDEX, recipient_ata_index)
+        if capped_amount_bps is not None:
+            payload += format_tlv(InstructionDescriptorTag.CAPPED_AMOUNT_BPS, capped_amount_bps)
+        if capped_amount_token_index is not None:
+            payload += format_tlv(InstructionDescriptorTag.CAPPED_AMOUNT_TOKEN_INDEX, capped_amount_token_index)
         payload += format_tlv(InstructionDescriptorTag.DER_SIGNATURE,
                               INSTRUCTION_DESCRIPTOR_PARTNER.sign(payload))
 

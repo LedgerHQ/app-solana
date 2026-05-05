@@ -147,6 +147,15 @@ bool check_swap_amount_raw(uint64_t amount) {
     return true;
 }
 
+int get_swap_amount_raw(uint64_t *amount) {
+    if (!G_swap_validated.initialized) {
+        PRINTF("get_swap_amount_raw internal error\n");
+        return -1;
+    }
+    *amount = G_swap_validated.amount;
+    return 0;
+}
+
 bool check_swap_ticker(const char *ticker) {
     if (ticker == NULL || !G_swap_validated.initialized) {
         PRINTF("check_swap_ticker internal error\n");

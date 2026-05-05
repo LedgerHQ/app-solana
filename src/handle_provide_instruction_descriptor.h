@@ -34,6 +34,12 @@ typedef struct instruction_descriptor_s {
 
     bool recipient_ata_index_received;
     uint8_t recipient_ata_index;
+
+    bool capped_amount_bps_received;
+    uint16_t capped_amount_bps;
+
+    bool capped_amount_token_index_received;
+    uint8_t capped_amount_token_index;
 } instruction_descriptor_t;
 
 int get_next_descriptor(const instruction_descriptor_t **instruction_descriptor);
