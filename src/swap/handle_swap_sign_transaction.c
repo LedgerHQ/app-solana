@@ -11,6 +11,8 @@
 
 typedef struct swap_validated_s {
     bool initialized;
+    swap_mode_t swap_mode;
+    uint64_t template_id;
     uint8_t decimals;
     char ticker[MAX_SWAP_TOKEN_LENGTH];
     uint64_t amount;
@@ -20,25 +22,42 @@ typedef struct swap_validated_s {
 
 static swap_validated_t G_swap_validated;
 
-// Save the BSS address where we will write the return value when finished
-static uint8_t *G_swap_sign_return_value_address;
-
 // Save the data validated during the Exchange app flow
 bool swap_copy_transaction_parameters(create_transaction_parameters_t *params) {
-    // Ensure no extraid
-    if (params->destination_address_extra_id == NULL) {
-        PRINTF("destination_address_extra_id expected\n");
-        return false;
-    } else if (params->destination_address_extra_id[0] != '\0') {
-        PRINTF("destination_address_extra_id expected empty, not '%s'\n",
-               params->destination_address_extra_id);
-        return false;
-    }
-
     // first copy parameters to stack, and then to global data.
     // We need this "trick" as the input data position can overlap with app globals
     swap_validated_t swap_validated;
     memset(&swap_validated, 0, sizeof(swap_validated));
+
+    // destination_address_extra_id: a raw pointer into Exchange's memory with no length field.
+    //
+    // SIZE CONTRACT (enforced by Exchange, cannot be verified here):
+    //   EXTRA_ID_TYPE_NATIVE:          buffer must be >= EXTRA_ID_NATIVE_MIN_SIZE bytes
+    //   EXTRA_ID_TYPE_SOLANA_TEMPLATE: buffer must be >= EXTRA_ID_SOLANA_TEMPLATE_MIN_SIZE bytes
+    // See swap_common.h for the expected binary layout of each type.
+    if (params->destination_address_extra_id != NULL) {
+        switch (params->destination_address_extra_id[0]) {  // byte [0]: type
+            case EXTRA_ID_TYPE_NATIVE:
+                swap_validated.swap_mode = SWAP_MODE_STANDARD;
+                PRINTF("Standard swap\n");
+                break;
+            case EXTRA_ID_TYPE_SOLANA_TEMPLATE:
+                swap_validated.swap_mode = SWAP_MODE_CROSSCHAIN;
+                // bytes [1..8]: template_id as big-endian uint64_t
+                swap_validated.template_id = U8BE(
+                    (uint8_t *) params->destination_address_extra_id + 1,
+                    0);
+                PRINTF("Crosschain swap with template_id: %.*H\n",
+                       TEMPLATE_ID_SIZE,
+                       (uint8_t *) &swap_validated.template_id);
+                break;
+            default:
+                PRINTF("Invalid or unknown swap protocol\n");
+                swap_validated.swap_mode = SWAP_MODE_ERROR;
+        }
+    } else {
+        swap_validated.swap_mode = SWAP_MODE_STANDARD;
+    }
 
     // Parse config and save decimals and ticker
     // If there is no coin_configuration, consider that we are doing a SOL swap
@@ -79,9 +98,6 @@ bool swap_copy_transaction_parameters(create_transaction_parameters_t *params) {
 
     // Full reset the global variables
     os_explicit_zero_BSS_segment();
-
-    // Keep the address at which we'll reply the signing status
-    G_swap_sign_return_value_address = &params->result;
 
     // Commit the values read from exchange to the clean global space
     memcpy(&G_swap_validated, &swap_validated, sizeof(swap_validated));
@@ -152,10 +168,6 @@ const char *get_swap_ticker() {
     return G_swap_validated.ticker;
 }
 
-static bool is_valid_char(char c) {
-    return (c == '.' || (c >= '0' && c <= '9'));
-}
-
 bool check_swap_fee(const char *text) {
     if (!G_swap_validated.initialized) {
         return false;
@@ -166,59 +178,13 @@ bool check_swap_fee(const char *text) {
         PRINTF("Conversion failed\n");
         return false;
     }
-    if (validated_fee[MAX_PRINTABLE_AMOUNT_SIZE - 1] != '\0') {
-        PRINTF("Error in formatting, aborting check\n");
-        return false;
-    }
 
     PRINTF("Fee requested in this transaction = %s\n", text);
     PRINTF("Fee validated in swap = %s\n", validated_fee);
-    if (strcmp(text, validated_fee) == 0) {
-        PRINTF("Fees are the exact same");
-        return true;
-    } else {
-        // Check that we are paying LESS than promised
-        // Expected format is 'X.Y SOL' anything else is an error
-        uint8_t pos = 0;
-        char current_text;
-        char current_validated;
-        do {
-            current_text = text[pos];
-            current_validated = validated_fee[pos];
-            if (!is_valid_char(current_text)) {
-                PRINTF("!is_valid_char(current_text) %c\n", current_text);
-                return false;
-            }
-            if (!is_valid_char(current_validated)) {
-                PRINTF("!is_valid_char(current_validated) %c\n", current_validated);
-                return false;
-            }
-            if (current_text != current_validated) {
-                // period char is smaller than all integers char, and they are themselves ordered
-                PRINTF("Checking current_text %c vs current_validated %c\n",
-                       current_text,
-                       current_validated);
-                return (current_text < current_validated);
-            } else {
-                // Keep looking for a diff
-                ++pos;
-            }
-        } while ((current_text != '\0' && current_text != ' ') &&
-                 (current_validated != ' ' && current_validated != '\0'));
 
-        if (current_text == '\0' || current_validated == '\0') {
-            PRINTF("ERROR: unexpectedly reached end of string\n");
-            return false;
-        }
-
-        if (current_text == ' ' && current_validated == ' ') {
-            PRINTF("ERROR: both strings encountered simultaneous end: tickers differ\n");
-            return false;
-        }
-
-        // current_text is smaller if it ends first, if all previous characters are the same
-        return (current_text == ' ');
-    }
+    // The displayed fee must be less than or equal to the validated fee
+    // amount_as_string_is_greater_or_equal returns true when first arg >= second arg
+    return amount_as_string_is_greater_or_equal(validated_fee, text);
 }
 
 // Check that the recipient in parameter is the same as the previously saved recipient
@@ -259,11 +225,26 @@ int get_swap_recipient(uint8_t recipient_address[PUBKEY_SIZE]) {
     return 0;
 }
 
-void __attribute__((noreturn)) finalize_exchange_sign_transaction(bool is_success) {
-    *G_swap_sign_return_value_address = is_success;
-    os_lib_end();
-}
-
 bool is_token_transaction() {
     return (memcmp(G_swap_validated.ticker, "SOL", sizeof("SOL")) != 0);
+}
+
+swap_mode_t get_swap_mode(void) {
+    return G_swap_validated.swap_mode;
+}
+
+bool check_template_id(uint64_t template_id) {
+    if (!G_swap_validated.initialized) {
+        PRINTF("check_template_id: swap not initialized\n");
+        return false;
+    }
+
+    if (G_swap_validated.template_id != template_id) {
+        PRINTF("check_template_id: mismatch - expected %llu, got %llu\n",
+               G_swap_validated.template_id,
+               template_id);
+        return false;
+    }
+
+    return true;
 }

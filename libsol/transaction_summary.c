@@ -189,8 +189,8 @@ void transaction_summary_set_blind_signing(bool is_blind_signing) {
     G_transaction_summary.is_blind_signing = is_blind_signing;
 }
 
-void transaction_summary_get_blind_signing(bool *is_blind_signing) {
-    *is_blind_signing = G_transaction_summary.is_blind_signing;
+bool transaction_summary_is_blind_signing() {
+    return G_transaction_summary.is_blind_signing;
 }
 
 #define FEE_PAYER_TITLE "Fee payer"

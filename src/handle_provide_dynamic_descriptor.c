@@ -18,6 +18,7 @@
 #include "tlv_use_case_dynamic_descriptor.h"
 
 #include "handle_provide_dynamic_descriptor.h"
+#include "io.h"
 
 #define SOLANA_SLIP_44_VALUE          501
 #define SOLANA_SLIP_44_VALUE_HARDENED (0x80000000 | SOLANA_SLIP_44_VALUE)
@@ -101,7 +102,7 @@ DEFINE_TLV_PARSER(TUID_TLV_TAGS, NULL, parse_dynamic_token_tuid)
 
 dynamic_token_info_t g_dynamic_token_info;
 
-void handle_provide_dynamic_descriptor(void) {
+int handle_provide_dynamic_descriptor(void) {
     explicit_bzero(&g_dynamic_token_info, sizeof(g_dynamic_token_info));
 
     tlv_dynamic_descriptor_out_t tlv_output = {0};
@@ -111,19 +112,19 @@ void handle_provide_dynamic_descriptor(void) {
 
     if (tlv_use_case_dynamic_descriptor(&payload, &tlv_output) != TLV_DYNAMIC_DESCRIPTOR_SUCCESS) {
         PRINTF("tlv_use_case_dynamic_descriptor failed\n");
-        THROW(ApduReplySolanaInvalidDynamicToken);
+        return io_send_sw(ApduReplySolanaInvalidDynamicToken);
     }
 
     tlv_TUID_data_t tlv_TUID_data;
     if (!parse_dynamic_token_tuid(&tlv_output.TUID, &tlv_TUID_data, &tlv_TUID_data.received_tags)) {
         PRINTF("Failed to parse tuid tlv payload\n");
-        THROW(ApduReplySolanaInvalidDynamicToken);
+        return io_send_sw(ApduReplySolanaInvalidDynamicToken);
     }
 
     if (tlv_output.coin_type != SOLANA_SLIP_44_VALUE &&
         tlv_output.coin_type != SOLANA_SLIP_44_VALUE_HARDENED) {
         PRINTF("Error: unsupported coin type %d\n", tlv_output.coin_type);
-        THROW(ApduReplySolanaInvalidDynamicToken);
+        return io_send_sw(ApduReplySolanaInvalidDynamicToken);
     }
 
     if (!TLV_CHECK_RECEIVED_TAGS(tlv_TUID_data.received_tags,
@@ -131,12 +132,12 @@ void handle_provide_dynamic_descriptor(void) {
                                  TUID_MINT_ADDRESS,
                                  TUID_EXT_CODE)) {
         PRINTF("Error: missing required TUID fields in struct version 1\n");
-        THROW(ApduReplySolanaInvalidDynamicToken);
+        return io_send_sw(ApduReplySolanaInvalidDynamicToken);
     }
 
     if (tlv_TUID_data.token_type != TOKEN_LEGACY && tlv_TUID_data.token_type != TOKEN_2022) {
         PRINTF("Error: unsupported token type %d\n", tlv_TUID_data.token_type);
-        THROW(ApduReplySolanaInvalidDynamicToken);
+        return io_send_sw(ApduReplySolanaInvalidDynamicToken);
     }
 
     for (uint8_t i = 0; i < tlv_TUID_data.extensions.size; ++i) {
@@ -153,7 +154,7 @@ void handle_provide_dynamic_descriptor(void) {
                                g_dynamic_token_info.encoded_mint_address,
                                g_dynamic_token_info.mint_address) != 0) {
         PRINTF("copy_and_decode_pubkey error for encoded_mint_address\n");
-        THROW(ApduReplySolanaInvalidDynamicToken);
+        return io_send_sw(ApduReplySolanaInvalidDynamicToken);
     }
 
     // g_dynamic_token_info.ticker and tlv_extracted->ticker have the same size
@@ -170,5 +171,5 @@ void handle_provide_dynamic_descriptor(void) {
     PRINTF("encoded_mint_address = %s\n", g_dynamic_token_info.encoded_mint_address);
     PRINTF("mint_address         = %.*H\n", PUBKEY_LENGTH, g_dynamic_token_info.mint_address);
 
-    THROW(ApduReplySuccess);
+    return io_send_sw(ApduReplySuccess);
 }

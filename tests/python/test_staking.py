@@ -277,7 +277,7 @@ class TestStaking:
                 AccountMeta(pubkey=self.payer_pubkey, is_signer=False, is_writable=False),
                 AccountMeta(pubkey=self.stake_account, is_signer=False, is_writable=True),
             ],
-            data=struct.pack("<IQ", SystemInstruction.SystemCreateAccount, 123456789),
+            data=struct.pack("<IQQ", SystemInstruction.SystemCreateAccount, 123456789, 200) + bytes(STAKE_PROGRAM_ID),
         )
 
         custodian_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)

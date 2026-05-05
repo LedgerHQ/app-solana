@@ -27,8 +27,10 @@ void ui_get_public_key(void);
 
 void start_blind_sign_error_ui(void);
 
-void start_sign_tx_ui(size_t num_summary_steps);
+void start_sign_message_ui(size_t num_summary_steps);
 
 void start_blind_sign_tx_ui(size_t num_summary_steps);
 
 void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps);
+
+void ui_transaction_modal(bool is_success);

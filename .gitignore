@@ -20,3 +20,6 @@ snapshots-tmp/
 
 tests/swap/.test_dependencies/app-ethereum
 tests/swap/.test_dependencies/app-exchange
+
+# local test helper files
+tests/swap/test_raw.py

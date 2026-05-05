@@ -31,9 +31,28 @@ static int parse_create_spl_associated_token_account_instruction(
 int parse_spl_associated_token_account_instructions(const Instruction *instruction,
                                                     const MessageHeader *header,
                                                     SplAssociatedTokenAccountInfo *info) {
-    return parse_create_spl_associated_token_account_instruction(instruction,
-                                                                 header,
-                                                                 &info->create);
+    if (instruction->data_length == 0) {
+        // Legacy Create instruction with no discriminator
+        return parse_create_spl_associated_token_account_instruction(instruction,
+                                                                     header,
+                                                                     &info->create);
+    }
+
+    Parser parser = {instruction->data, instruction->data_length};
+    uint8_t kind = 0;
+
+    BAIL_IF(parse_u8(&parser, &kind));
+    BAIL_IF(!parser_is_empty(&parser));
+
+    switch (kind) {
+        case 0: /* Create */
+        case 1: /* CreateIdempotent */
+            return parse_create_spl_associated_token_account_instruction(instruction,
+                                                                         header,
+                                                                         &info->create);
+        default:
+            return 1;
+    }
 }
 
 int print_spl_associated_token_account_create_info(const SplAssociatedTokenAccountCreateInfo *info,

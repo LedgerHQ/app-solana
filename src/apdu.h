@@ -44,6 +44,7 @@ typedef enum ApduReply {
     ApduReplySolanaInvalidMessageHeader = 0x6a81,
     ApduReplySolanaInvalidMessageFormat = 0x6a82,
     ApduReplySolanaInvalidMessageSize = 0x6a83,
+    ApduReplySolanaInvalidDerivationPath = 0x6a84,
     ApduReplySolanaSummaryFinalizeFailed = 0x6f00,
     ApduReplySolanaSummaryUpdateFailed = 0x6f01,
 
@@ -51,11 +52,43 @@ typedef enum ApduReply {
     ApduReplySolanaInvalidTrustedInfo = 0x6c00,
     ApduReplySolanaInvalidDynamicToken = 0x6ca0,
 
+    ApduReplySolanaDelayedPreviewNotFound = 0x6f10,
+    ApduReplySolanaDelayedHashMismatch = 0x6f11,
+    ApduReplySolanaDelayedLengthMismatch = 0x6f12,
+    ApduReplySolanaDelayedDerivationMismatch = 0x6f13,
+
     ApduReplyUnimplementedInstruction = 0x6d00,
     ApduReplyInvalidCla = 0x6e00,
 
     ApduReplySuccess = 0x9000,
 } ApduReply;
+
+typedef enum swap_error_application_specific_code_e {
+    SWAP_EC_APP_GENERIC = 0x00,
+    // handle_provide_instruction_descriptor.c
+    SWAP_EC_APP_TEMPLATE_ID_MISMATCH = 0x01,
+    SWAP_EC_APP_DESCRIPTOR_PARSE_FAILED = 0x02,
+    SWAP_EC_APP_DESCRIPTOR_MISSING_STRUCT_TYPE = 0x03,
+    SWAP_EC_APP_DESCRIPTOR_UNEXPECTED_STRUCT_TYPE = 0x04,
+    SWAP_EC_APP_DESCRIPTOR_MISSING_FIELDS = 0x05,
+    SWAP_EC_APP_DESCRIPTOR_UNSUPPORTED_VERSION = 0x06,
+    SWAP_EC_APP_DESCRIPTOR_SIGNATURE_FAILED = 0x07,
+    SWAP_EC_APP_DESCRIPTOR_SAVE_FAILED = 0x08,
+    // handle_sign_message.c - check_swap_validity
+    SWAP_EC_APP_INVALID_SWAP_PROTOCOL = 0x09,
+    SWAP_EC_APP_CROSSCHAIN_IN_STANDARD_CHECK = 0x0A,
+    SWAP_EC_APP_TRANSFER_CHECKED_WITH_FEES_REQUIRED = 0x0B,
+    SWAP_EC_APP_TRANSFER_HOOK_REFUSED = 0x0C,
+    // handle_sign_message.c - check_swap_validity_token
+    SWAP_EC_APP_DESCRIPTOR_INFO_MISSING = 0x0D,
+    SWAP_EC_APP_ATA_VALIDATION_FAILED = 0x0E,
+    SWAP_EC_APP_DUPLICATE_AMOUNT = 0x0F,
+    SWAP_EC_APP_UNEXPECTED_TOKEN_CONTEXT = 0x10,
+    // handle_sign_message.c - handle_sign_message_ui / handle_sign_message_parse_message
+    SWAP_EC_APP_PREVIEW_NOT_SUPPORTED = 0x11,
+    SWAP_EC_APP_DESCRIPTOR_PROCESSING_FAILED = 0x12,
+    SWAP_EC_APP_BLIND_SIGNING_REFUSED = 0x13,
+} swap_error_application_specific_code_t;
 
 typedef struct ApduHeader {
     uint8_t class;
@@ -74,11 +107,15 @@ typedef struct apdu_command_s {
     uint32_t derivation_path[MAX_BIP32_PATH_LENGTH];
     uint32_t derivation_path_length;
     bool non_confirm;
+    bool is_preview_mode;  // True when displaying preview (not signing)
     bool deprecated_host;
+    bool user_input_is_ata_or_token_account;
+    Hash message_hash;
+    // Raw message payload assembled from (possibly split) APDUs and NULL terminated by construct.
     uint8_t message[MAX_MESSAGE_LENGTH];
     int message_length;
-    Hash message_hash;
-    bool user_input_is_ata_or_token_account;
+    // Pointer into message[] past the offchain header
+    const char *message_text_start;
 } apdu_command_t;
 
 extern apdu_command_t G_command;

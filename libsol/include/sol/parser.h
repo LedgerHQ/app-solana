@@ -47,7 +47,7 @@ typedef struct PubkeysHeader {
     uint8_t num_required_signatures;
     uint8_t num_readonly_signed_accounts;
     uint8_t num_readonly_unsigned_accounts;
-    size_t pubkeys_length;
+    uint16_t pubkeys_length;
 } PubkeysHeader;
 
 typedef struct MessageHeader {
@@ -66,12 +66,25 @@ typedef struct OffchainMessageApplicationDomain {
 
 typedef struct OffchainMessageHeader {
     uint8_t version;
+    // V0 only: application_domain is NULL for V1
     const OffchainMessageApplicationDomain *application_domain;
+    // V0 only: format is unused for V1
     uint8_t format;
     size_t signers_length;
     const Pubkey *signers;
     uint16_t length;
 } OffchainMessageHeader;
+
+// Compute the header length based on version and signers count
+static inline size_t offchain_message_header_length(const OffchainMessageHeader *header) {
+    // Common: signing_domain(16) + version(1) + signer_count(1) + signers(32*n) + length(2)
+    size_t base_length = 16 + 1 + 1 + (PUBKEY_SIZE * header->signers_length) + 2;
+    if (header->version == 0) {
+        // V0 adds: application_domain(32) + format(1)
+        base_length += OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH + 1;
+    }
+    return base_length;
+}
 
 static inline int parser_is_empty(Parser *parser) {
     return parser->buffer_length == 0;

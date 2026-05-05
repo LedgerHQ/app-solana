@@ -99,7 +99,10 @@ int parse_pubkeys_header(Parser *parser, PubkeysHeader *header) {
     BAIL_IF(parse_u8(parser, &header->num_required_signatures));
     BAIL_IF(parse_u8(parser, &header->num_readonly_signed_accounts));
     BAIL_IF(parse_u8(parser, &header->num_readonly_unsigned_accounts));
-    BAIL_IF(parse_length(parser, &header->pubkeys_length));
+    size_t pubkeys_length;
+    BAIL_IF(parse_length(parser, &pubkeys_length));
+    BAIL_IF(pubkeys_length > UINT16_MAX);
+    header->pubkeys_length = (uint16_t) pubkeys_length;
     return 0;
 }
 
@@ -152,6 +155,12 @@ int parse_offchain_message_application_domain(Parser *parser,
 int parse_message_header(Parser *parser, MessageHeader *header) {
     BAIL_IF(parse_version(parser, header));
     BAIL_IF(parse_pubkeys_header(parser, &header->pubkeys_header));
+    BAIL_IF(header->pubkeys_header.num_required_signatures > header->pubkeys_header.pubkeys_length);
+    BAIL_IF(header->pubkeys_header.num_readonly_signed_accounts >
+            header->pubkeys_header.num_required_signatures);
+    BAIL_IF(
+        header->pubkeys_header.num_readonly_unsigned_accounts >
+        (header->pubkeys_header.pubkeys_length - header->pubkeys_header.num_required_signatures));
     BAIL_IF(
         parse_pubkeys_with_len(parser, header->pubkeys_header.pubkeys_length, &header->pubkeys));
     BAIL_IF(parse_blockhash(parser, &header->blockhash));
@@ -171,12 +180,31 @@ int parse_offchain_message_header(Parser *parser, OffchainMessageHeader *header)
     advance(parser, domain_len);  // Signing domain - 16 bytes
 
     BAIL_IF(parse_u8(parser, &header->version));  // Header version
-    BAIL_IF(parse_offchain_message_application_domain(parser, &header->application_domain));
-    BAIL_IF(parse_u8(parser, &header->format));  // Message format
+
+    if (header->version == 0) {
+        // V0: parse application domain and format
+        BAIL_IF(parse_offchain_message_application_domain(parser, &header->application_domain));
+        BAIL_IF(parse_u8(parser, &header->format));  // Message format
+    } else {
+        // V1+: no application domain or format
+        header->application_domain = NULL;
+        header->format = 0;  // unused for V1
+    }
+
     uint8_t signers_length = 0;
     BAIL_IF(parse_u8(parser, &signers_length));  // Signer count
     header->signers_length = signers_length;
     BAIL_IF(parse_pubkeys_with_len(parser, header->signers_length, &header->signers));
+
+    // V1+: enforce strict ascending lexicographic order on signers (implies uniqueness)
+    if (header->version >= 1) {
+        for (size_t i = 1; i < header->signers_length; i++) {
+            if (memcmp(&header->signers[i - 1], &header->signers[i], PUBKEY_SIZE) >= 0) {
+                return -1;
+            }
+        }
+    }
+
     BAIL_IF(parse_u16(parser, &header->length));  // Message length
     return 0;
 }

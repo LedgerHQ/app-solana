@@ -143,6 +143,141 @@ void test_print_timestamp() {
     assert(print_timestamp(0, out, sizeof(out) - 1) == 1);
 }
 
+void test_amount_as_string_is_greater_or_equal() {
+    // ---- Exact equality ----
+    assert(amount_as_string_is_greater_or_equal("0 SOL", "0 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("1 SOL", "1 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("123 SOL", "123 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("1.5 SOL", "1.5 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("0.000000001 SOL", "0.000000001 SOL") == true);
+
+    // ---- Equal with different trailing precision ----
+    assert(amount_as_string_is_greater_or_equal("1.50 SOL", "1.5 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("1.5 SOL", "1.50 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("1.500 SOL", "1.5 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("12.0 SOL", "12 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("12 SOL", "12.0 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("12 SOL", "12.00 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("7.10 SOL", "7.1 SOL") == true);
+
+    // ---- Different integer part lengths (the original bug) ----
+    assert(amount_as_string_is_greater_or_equal("10 SOL", "9 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("9 SOL", "10 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("100 SOL", "99 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("99 SOL", "100 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("10.5 SOL", "9.9 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("9.9 SOL", "10.5 SOL") == false);
+
+    // ---- Same integer part length, different digits ----
+    assert(amount_as_string_is_greater_or_equal("15 SOL", "14 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("14 SOL", "15 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("99 SOL", "11 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("11 SOL", "99 SOL") == false);
+
+    // ---- Fractional comparison ----
+    assert(amount_as_string_is_greater_or_equal("1.9 SOL", "1.1 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("1.1 SOL", "1.9 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("0.123456789 SOL", "0.123456788 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("0.123456788 SOL", "0.123456789 SOL") == false);
+
+    // ---- Integer vs fractional (same integer part) ----
+    assert(amount_as_string_is_greater_or_equal("2 SOL", "1.999 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("1.999 SOL", "2 SOL") == false);
+
+    // ---- One has fractional, other doesn't ----
+    assert(amount_as_string_is_greater_or_equal("12 SOL", "12.5 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("12.5 SOL", "12 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("12 SOL", "12.0 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("12.0 SOL", "12 SOL") == true);
+
+    // ---- Realistic SOL fee values ----
+    assert(amount_as_string_is_greater_or_equal("0.002123 SOL", "0.002123 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("0.002123 SOL", "0.005543 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("0.005543 SOL", "0.002123 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("10.005543 SOL", "2.002123 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("0.000005000 SOL", "0.000005 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("0.000005 SOL", "0.000005000 SOL") == true);
+
+    // ---- Large values ----
+    assert(amount_as_string_is_greater_or_equal("18446744073.709551615 SOL",
+                                                "18446744073.709551615 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("18446744073.709551615 SOL",
+                                                "18446744073.709551614 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("18446744073.709551614 SOL",
+                                                "18446744073.709551615 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("99999999999 SOL", "1 SOL") == true);
+
+    // ---- Zero handling ----
+    assert(amount_as_string_is_greater_or_equal("0 SOL", "0 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("0.0 SOL", "0 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("0 SOL", "0.0 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("0 SOL", "1 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("1 SOL", "0 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("0.0 SOL", "0.0 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("0.1 SOL", "0 SOL") == true);
+
+    // ---- Different tickers (tokens / SPL) ----
+    assert(amount_as_string_is_greater_or_equal("100 USDC", "50 USDC") == true);
+    assert(amount_as_string_is_greater_or_equal("50 USDC", "100 USDC") == false);
+    assert(amount_as_string_is_greater_or_equal("1.5 BONK", "1.5 BONK") == true);
+
+    // ---- Ticker mismatch -> false ----
+    assert(amount_as_string_is_greater_or_equal("10 SOL", "10 USDC") == false);
+    assert(amount_as_string_is_greater_or_equal("10 USDC", "10 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("10 SOL", "5 USDC") == false);
+    assert(amount_as_string_is_greater_or_equal("10 ABC", "10 ABCD") == false);
+
+    // ---- Missing ticker -> false ----
+    assert(amount_as_string_is_greater_or_equal("10", "10 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("10 SOL", "10") == false);
+    assert(amount_as_string_is_greater_or_equal("10", "10") == false);
+
+    // ---- Empty ticker -> false ----
+    assert(amount_as_string_is_greater_or_equal("10 ", "10 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("10 SOL", "10 ") == false);
+    assert(amount_as_string_is_greater_or_equal("10 ", "10 ") == false);
+
+    // ---- NULL inputs -> false ----
+    assert(amount_as_string_is_greater_or_equal(NULL, "1 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("1 SOL", NULL) == false);
+    assert(amount_as_string_is_greater_or_equal(NULL, NULL) == false);
+
+    // ---- Multiple dots -> false ----
+    assert(amount_as_string_is_greater_or_equal("1.2.3 SOL", "1 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("1 SOL", "1.2.3 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("1..2 SOL", "1 SOL") == false);
+
+    // ---- Leading dot -> false ----
+    assert(amount_as_string_is_greater_or_equal(".5 SOL", "1 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("1 SOL", ".5 SOL") == false);
+
+    // ---- Trailing dot -> false ----
+    assert(amount_as_string_is_greater_or_equal("5. SOL", "1 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("1 SOL", "5. SOL") == false);
+
+    // ---- Non-digit characters -> false ----
+    assert(amount_as_string_is_greater_or_equal("abc SOL", "1 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("1 SOL", "abc SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("1a2 SOL", "1 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("-1 SOL", "1 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("1 SOL", "+1 SOL") == false);
+
+    // ---- Empty numeric part -> false ----
+    assert(amount_as_string_is_greater_or_equal(" SOL", "1 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("1 SOL", " SOL") == false);
+
+    // ---- Boundary: single digit values ----
+    assert(amount_as_string_is_greater_or_equal("9 SOL", "0 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("0 SOL", "9 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("5 SOL", "5 SOL") == true);
+
+    // ---- Long fractional part comparison ----
+    assert(amount_as_string_is_greater_or_equal("0.000000001 SOL", "0.000000002 SOL") == false);
+    assert(amount_as_string_is_greater_or_equal("0.000000002 SOL", "0.000000001 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("0.100000000 SOL", "0.099999999 SOL") == true);
+    assert(amount_as_string_is_greater_or_equal("0.099999999 SOL", "0.100000000 SOL") == false);
+}
+
 int main() {
     RUN_TEST(test_print_amount);
     RUN_TEST(test_print_token_amount);
@@ -152,6 +287,7 @@ int main() {
     RUN_TEST(test_print_i64);
     RUN_TEST(test_print_u64);
     RUN_TEST(test_print_timestamp);
+    RUN_TEST(test_amount_as_string_is_greater_or_equal);
 
     printf("passed\n");
     return 0;

@@ -3,14 +3,15 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include "base58.h"
+#include "bip32.h"
 
 #include "lib_standard_app/crypto_helpers.h"
 
 #include "utils.h"
 
-void get_public_key(uint8_t publicKeyArray[static PUBKEY_LENGTH],
-                    const uint32_t *derivationPath,
-                    size_t pathLength) {
+cx_err_t get_public_key(uint8_t publicKeyArray[static PUBKEY_LENGTH],
+                        const uint32_t *derivationPath,
+                        size_t pathLength) {
     uint8_t rawPubkey[65];
     cx_err_t cx_err;
 
@@ -25,7 +26,8 @@ void get_public_key(uint8_t publicKeyArray[static PUBKEY_LENGTH],
                                                    0);
 
     if (CX_OK != cx_err) {
-        THROW(cx_err);
+        PRINTF("bip32_derive_with_seed_get_pubkey_256 failed: %x\n", cx_err);
+        return cx_err;
     }
 
     for (int i = 0; i < PUBKEY_LENGTH; i++) {
@@ -34,6 +36,7 @@ void get_public_key(uint8_t publicKeyArray[static PUBKEY_LENGTH],
     if ((rawPubkey[PUBKEY_LENGTH] & 1) != 0) {
         publicKeyArray[PUBKEY_LENGTH - 1] |= 0x80;
     }
+    return CX_OK;
 }
 
 int get_pubkey_index(const Pubkey *needle,
@@ -77,10 +80,20 @@ int read_derivation_path(const uint8_t *data_buffer,
 
     *derivation_path_length = len;
 
+    // Enforce Solana derivation path policy: must start with m/44'/501'.
+    // The OS already enforces this via PATH_APP_LOAD_PARAMS in the Makefile, but we also
+    // enforce it at the application level as defense-in-depth, independently from the OS
+    // restriction.
+    if (len < 2 || derivation_path[0] != (BIP32_HARDENED_MASK | 44) ||
+        derivation_path[1] != (BIP32_HARDENED_MASK | 501)) {
+        PRINTF("Invalid derivation path: must start with m/44'/501'\n");
+        return ApduReplySolanaInvalidDerivationPath;
+    }
+
     return 0;
 }
 
-uint8_t set_result_sign_message(void) {
+int set_result_sign_message(void) {
     size_t sigLen = SIGNATURE_LENGTH;
     cx_err_t cx_err;
 
@@ -96,8 +109,9 @@ uint8_t set_result_sign_message(void) {
                                                         NULL,
                                                         0);
 
-    if (CX_OK != cx_err) {
-        THROW(cx_err);
+    if (cx_err != CX_OK) {
+        PRINTF("bip32_derive_with_seed_eddsa_sign_hash_256 failed: %x\n", cx_err);
+        return -1;
     }
 
     return SIGNATURE_LENGTH;

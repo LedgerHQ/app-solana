@@ -321,6 +321,73 @@ void test_parser_is_empty() {
     assert(parser_is_empty(&empty));
 }
 
+// Helper: build a minimal legacy message header buffer (single-byte shortvec lengths only)
+// Layout: num_required_signatures(1) | num_readonly_signed(1) | num_readonly_unsigned(1) |
+//         pubkeys_length(1) | pubkeys(PUBKEY_SIZE*n) | blockhash(BLOCKHASH_SIZE) |
+//         instructions_length(1)
+#define MSG_HEADER_BUF_SIZE(n) (4 + PUBKEY_SIZE * (n) + BLOCKHASH_SIZE + 1)
+
+static void build_message_header_buf(uint8_t *buf,
+                                     uint8_t num_required_signatures,
+                                     uint8_t num_readonly_signed,
+                                     uint8_t num_readonly_unsigned,
+                                     uint8_t pubkeys_length) {
+    memset(buf, 0, MSG_HEADER_BUF_SIZE(pubkeys_length));
+    buf[0] = num_required_signatures;
+    buf[1] = num_readonly_signed;
+    buf[2] = num_readonly_unsigned;
+    buf[3] = pubkeys_length;
+}
+
+// Verify pubkeys_length is bounded to uint16_t range
+void test_parse_pubkeys_header_too_many_pubkeys() {
+    // shortvec encoding of 65536: 0x80 0x80 0x04
+    uint8_t message[] = {1, 0, 0, 0x80, 0x80, 0x04};
+    Parser parser = {message, sizeof(message)};
+    PubkeysHeader header;
+    assert(parse_pubkeys_header(&parser, &header) == 1);
+}
+
+// Verify parse_message_header accepts a valid header
+void test_parse_message_header_valid() {
+    // 3 pubkeys, 2 required sigs, 1 readonly signed, 1 readonly unsigned
+    uint8_t buf[MSG_HEADER_BUF_SIZE(3)];
+    build_message_header_buf(buf, 2, 1, 1, 3);
+    Parser parser = {buf, sizeof(buf)};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 0);
+}
+
+// Verify num_required_signatures cannot exceed pubkeys_length
+void test_parse_message_header_too_many_signatures() {
+    // 2 pubkeys but 3 required signatures
+    uint8_t buf[MSG_HEADER_BUF_SIZE(2)];
+    build_message_header_buf(buf, 3, 0, 0, 2);
+    Parser parser = {buf, sizeof(buf)};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 1);
+}
+
+// Verify num_readonly_signed_accounts cannot exceed num_required_signatures
+void test_parse_message_header_too_many_readonly_signed() {
+    // 3 pubkeys, 2 required, but 3 readonly signed
+    uint8_t buf[MSG_HEADER_BUF_SIZE(3)];
+    build_message_header_buf(buf, 2, 3, 0, 3);
+    Parser parser = {buf, sizeof(buf)};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 1);
+}
+
+// Verify num_readonly_unsigned_accounts cannot exceed (pubkeys_length - num_required_signatures)
+void test_parse_message_header_too_many_readonly_unsigned() {
+    // 4 pubkeys, 2 required -> 2 unsigned slots, but claim 3 readonly unsigned
+    uint8_t buf[MSG_HEADER_BUF_SIZE(4)];
+    build_message_header_buf(buf, 2, 0, 3, 4);
+    Parser parser = {buf, sizeof(buf)};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 1);
+}
+
 int main() {
     RUN_TEST(test_parse_u8);
     RUN_TEST(test_parse_u8_too_short);
@@ -333,6 +400,7 @@ int main() {
     RUN_TEST(test_parse_sized_string);
     RUN_TEST(test_parse_pubkey);
     RUN_TEST(test_parse_pubkeys_header);
+    RUN_TEST(test_parse_pubkeys_header_too_many_pubkeys);
     RUN_TEST(test_parse_pubkeys);
     RUN_TEST(test_parse_pubkeys_too_short);
     RUN_TEST(test_parse_hash);
@@ -341,6 +409,10 @@ int main() {
     RUN_TEST(test_parse_data_too_short);
     RUN_TEST(test_parse_instruction);
     RUN_TEST(test_parser_is_empty);
+    RUN_TEST(test_parse_message_header_valid);
+    RUN_TEST(test_parse_message_header_too_many_signatures);
+    RUN_TEST(test_parse_message_header_too_many_readonly_signed);
+    RUN_TEST(test_parse_message_header_too_many_readonly_unsigned);
 
     printf("passed\n");
     return 0;

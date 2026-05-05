@@ -19,6 +19,8 @@ all: $(test_oks) $(test_exes) $o/libsol.a
 CFLAGS += -Werror -Wall -Wextra -pedantic -Wshadow -Wcast-qual -Wcast-align -Wno-unused-parameter -Wno-sign-compare
 CFLAGS += -fPIC
 CFLAGS += -Iinclude -Imock -I${FLEX_SDK}/include -I${FLEX_SDK}/io/include -I${FLEX_SDK}/target/flex/include/ -I${FLEX_SDK}/lib_standard_app/
+CFLAGS += -isystem /usr/include/bsd -DLIBBSD_OVERLAY
+LDFLAGS += -lbsd
 CFLAGS += $($(mode)_CFLAGS)
 # CFLAGS += -D PRINTF=mcu_usb_printf -D HAVE_PRINTF
 
@@ -44,7 +46,7 @@ $o/%.o: %.c $(mock_files)
 # unit tests
 $o/%_test: $o/%_test.o $(sdk_files) $(mock_files) $o/libsol.a
 	@echo "==> Link test $@"
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 $o/%_test.ok: $o/%_test $(mock_files)
 	@echo "==> Run test $<"

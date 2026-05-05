@@ -3,8 +3,10 @@
 #include "sol/parser.h"
 #include "sol/print_config.h"
 #include "sol/transaction_summary.h"
+#include "stake_instruction.h"
 #include "spl_token2022_instruction.h"
 #include "transaction_printers.h"
+#include "vote_instruction.h"
 #include "util.h"
 
 const InstructionBrief nonce_brief[] = {
@@ -219,7 +221,7 @@ static int print_create_stake_account(const PrintConfig *print_config,
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create stake acct", ca_info->to);
 
-    BAIL_IF(print_system_create_account_info(NULL, ca_info, print_config));
+    BAIL_IF(print_system_create_account_info(NULL, ca_info, print_config, false));
     BAIL_IF(print_stake_initialize_info(NULL, si_info, print_config));
 
     return 0;
@@ -236,7 +238,7 @@ static int print_create_stake_account_with_seed(const PrintConfig *print_config,
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create stake acct", cws_info->to);
 
-    BAIL_IF(print_system_create_account_with_seed_info(NULL, cws_info, print_config));
+    BAIL_IF(print_system_create_account_with_seed_info(NULL, cws_info, print_config, false));
     BAIL_IF(print_stake_initialize_info(NULL, si_info, print_config));
 
     return 0;
@@ -254,7 +256,7 @@ static int print_create_stake_account_and_delegate(const PrintConfig *print_conf
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Delegated from", ca_info->to);
 
-    BAIL_IF(print_system_create_account_info(NULL, ca_info, print_config));
+    BAIL_IF(print_system_create_account_info(NULL, ca_info, print_config, false));
     BAIL_IF(print_stake_initialize_info(NULL, si_info, print_config));
     BAIL_IF(print_delegate_stake_info(NULL, sd_info, print_config));
 
@@ -274,7 +276,7 @@ static int print_create_stake_account_with_seed_and_delegate(const PrintConfig *
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Delegated from", cws_info->to);
 
-    BAIL_IF(print_system_create_account_with_seed_info(NULL, cws_info, print_config));
+    BAIL_IF(print_system_create_account_with_seed_info(NULL, cws_info, print_config, false));
     BAIL_IF(print_stake_initialize_info(NULL, si_info, print_config));
     BAIL_IF(print_delegate_stake_info(NULL, sd_info, print_config));
 
@@ -391,7 +393,7 @@ static int print_create_nonce_account(const PrintConfig *print_config,
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create nonce acct", ca_info->to);
 
-    BAIL_IF(print_system_create_account_info(NULL, ca_info, print_config));
+    BAIL_IF(print_system_create_account_info(NULL, ca_info, print_config, false));
     BAIL_IF(print_system_initialize_nonce_info(NULL, ni_info, print_config));
 
     return 0;
@@ -408,7 +410,7 @@ static int print_create_nonce_account_with_seed(const PrintConfig *print_config,
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create nonce acct", ca_info->to);
 
-    BAIL_IF(print_system_create_account_with_seed_info(NULL, ca_info, print_config));
+    BAIL_IF(print_system_create_account_with_seed_info(NULL, ca_info, print_config, false));
     BAIL_IF(print_system_initialize_nonce_info(NULL, ni_info, print_config));
 
     return 0;
@@ -425,7 +427,7 @@ static int print_create_vote_account(const PrintConfig *print_config,
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create vote acct", ca_info->to);
 
-    BAIL_IF(print_system_create_account_info(NULL, ca_info, print_config));
+    BAIL_IF(print_system_create_account_info(NULL, ca_info, print_config, false));
     BAIL_IF(print_vote_initialize_info(NULL, vi_info, print_config));
 
     return 0;
@@ -442,7 +444,7 @@ static int print_create_vote_account_with_seed(const PrintConfig *print_config,
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create vote acct", ca_info->to);
 
-    BAIL_IF(print_system_create_account_with_seed_info(NULL, ca_info, print_config));
+    BAIL_IF(print_system_create_account_with_seed_info(NULL, ca_info, print_config, false));
     BAIL_IF(print_vote_initialize_info(NULL, vi_info, print_config));
 
     return 0;
@@ -638,14 +640,17 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
                                              InstructionInfo *const *infos,
                                              size_t infos_length) {
     int print_ret = -1;
-    uint32_t transaction_max_fee = 0;
+    uint64_t transaction_max_fee = 0;
 
     // Extract compute budget from infos but don't print yet
     ComputeBudgetFeeInfo compute_budget_fee_info;
     infos = preprocess_compute_budget_instructions(infos, &infos_length, &compute_budget_fee_info);
     if (compute_budget_fee_info.change_unit_limit || compute_budget_fee_info.change_unit_price) {
         PRINTF("Compute budget set, calculating max fees\n");
-        transaction_max_fee = calculate_max_fee(&compute_budget_fee_info);
+        if (calculate_max_fee(&compute_budget_fee_info, &transaction_max_fee) != 0) {
+            PRINTF("Fee calculation overflow, rejecting transaction\n");
+            return -1;
+        }
     }
 
     PRINTF("infos_length = %d\n", infos_length);

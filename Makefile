@@ -34,8 +34,8 @@ APPNAME = "Solana"
 
 # Application version
 APPVERSION_M = 1
-APPVERSION_N = 12
-APPVERSION_P = 1
+APPVERSION_N = 15
+APPVERSION_P = 0
 APPVERSION = "$(APPVERSION_M).$(APPVERSION_N).$(APPVERSION_P)"
 
 # Application source files
@@ -81,6 +81,12 @@ ENABLE_SWAP = 1
 #             UI features              #
 ########################################
 ENABLE_NBGL_FOR_NANO_DEVICES = 1
+
+########################################
+#          TLV & PKI features          #
+########################################
+ENABLE_TLV_LIBRARY = 1
+ENABLE_PKI_LIBRARY = 1
 # --8<-- [end:variables]
 
 ########################################
