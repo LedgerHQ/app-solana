@@ -24,13 +24,14 @@
 
 #include "handle_provide_instruction_descriptor.h"
 #include "io.h"
+#include "sol/safe_math.h"
 
 #define LIFI_SOLANA_MAIN_NET 900
 #define LIFI_SOLANA_TEST_NET 901
 
 // https://ledgerhq.atlassian.net/wiki/spaces/TA/pages/5764022544/ARCH+Solana+LiFi+swap+support
 
-#define MAX_DISCRIMINATOR_NUMBER 10
+#define MAX_DISCRIMINATOR_NUMBER 15
 
 #define TYPE_SOLANA_SWAP_TEMPLATE     0x0a
 #define AMOUNT_RULES_ENDIANESS_MASK   (1 << 0)
@@ -206,6 +207,16 @@ static bool handle_recipient_ata_index(const tlv_data_t *data, tlv_out_t *out) {
     return get_uint8_t_from_tlv_data(data, &out->ins.recipient_ata_index);
 }
 
+static bool handle_capped_amount_bps(const tlv_data_t *data, tlv_out_t *out) {
+    out->ins.capped_amount_bps_received = true;
+    return get_uint16_t_from_tlv_data(data, &out->ins.capped_amount_bps);
+}
+
+static bool handle_capped_amount_token_index(const tlv_data_t *data, tlv_out_t *out) {
+    out->ins.capped_amount_token_index_received = true;
+    return get_uint8_t_from_tlv_data(data, &out->ins.capped_amount_token_index);
+}
+
 static bool handle_signature(const tlv_data_t *data, tlv_out_t *out) {
     return get_buffer_from_tlv_data(data,
                                     &out->signature,
@@ -216,21 +227,23 @@ static bool handle_signature(const tlv_data_t *data, tlv_out_t *out) {
 static bool handle_common(const tlv_data_t *data, tlv_out_t *out);
 
 // clang-format off
-#define INSTRUCTION_DESCRIPTOR_TLV_TAGS(X)                                               \
-X(0x01, TAG_STRUCTURE_TYPE,          handle_structure_type,          ENFORCE_UNIQUE_TAG) \
-X(0x02, TAG_VERSION,                 handle_version,                 ENFORCE_UNIQUE_TAG) \
-X(0x23, TAG_CHAIN_ID,                handle_chain_id,                ENFORCE_UNIQUE_TAG) \
-X(0x90, TAG_TEMPLATE_ID,             handle_template_id,             ENFORCE_UNIQUE_TAG) \
-X(0x91, TAG_PROGRAM_ID,              handle_program_id,              ENFORCE_UNIQUE_TAG) \
-X(0x92, TAG_DISCRIMINATOR,           handle_discriminator,           ENFORCE_UNIQUE_TAG) \
-X(0x93, TAG_AMOUNT_SIZE,             handle_amount_size,             ENFORCE_UNIQUE_TAG) \
-X(0x94, TAG_AMOUNT_OFFSET,           handle_amount_offset,           ENFORCE_UNIQUE_TAG) \
-X(0x95, TAG_AMOUNT_RULES,            handle_amount_rules,            ENFORCE_UNIQUE_TAG) \
-X(0x96, TAG_ASSET_ACCOUNT_INDEX,     handle_asset_account_index,     ENFORCE_UNIQUE_TAG) \
-X(0x97, TAG_ASSET_ATA_INDEX,         handle_asset_ata_index,         ENFORCE_UNIQUE_TAG) \
-X(0x98, TAG_RECIPIENT_ACCOUNT_INDEX, handle_recipient_account_index, ENFORCE_UNIQUE_TAG) \
-X(0x99, TAG_RECIPIENT_ATA_INDEX,     handle_recipient_ata_index,     ENFORCE_UNIQUE_TAG) \
-X(0x15, TAG_DER_SIGNATURE,           handle_signature,               ENFORCE_UNIQUE_TAG)
+#define INSTRUCTION_DESCRIPTOR_TLV_TAGS(X)                                                 \
+X(0x01, TAG_STRUCTURE_TYPE,          handle_structure_type,            ENFORCE_UNIQUE_TAG) \
+X(0x02, TAG_VERSION,                 handle_version,                   ENFORCE_UNIQUE_TAG) \
+X(0x23, TAG_CHAIN_ID,                handle_chain_id,                  ENFORCE_UNIQUE_TAG) \
+X(0x90, TAG_TEMPLATE_ID,             handle_template_id,               ENFORCE_UNIQUE_TAG) \
+X(0x91, TAG_PROGRAM_ID,              handle_program_id,                ENFORCE_UNIQUE_TAG) \
+X(0x92, TAG_DISCRIMINATOR,           handle_discriminator,             ENFORCE_UNIQUE_TAG) \
+X(0x93, TAG_AMOUNT_SIZE,             handle_amount_size,               ENFORCE_UNIQUE_TAG) \
+X(0x94, TAG_AMOUNT_OFFSET,           handle_amount_offset,             ENFORCE_UNIQUE_TAG) \
+X(0x95, TAG_AMOUNT_RULES,            handle_amount_rules,              ENFORCE_UNIQUE_TAG) \
+X(0x96, TAG_ASSET_ACCOUNT_INDEX,     handle_asset_account_index,       ENFORCE_UNIQUE_TAG) \
+X(0x97, TAG_ASSET_ATA_INDEX,         handle_asset_ata_index,           ENFORCE_UNIQUE_TAG) \
+X(0x98, TAG_RECIPIENT_ACCOUNT_INDEX, handle_recipient_account_index,   ENFORCE_UNIQUE_TAG) \
+X(0x99, TAG_RECIPIENT_ATA_INDEX,     handle_recipient_ata_index,       ENFORCE_UNIQUE_TAG) \
+X(0x9a, TAG_CAPPED_AMOUNT_BPS,       handle_capped_amount_bps,         ENFORCE_UNIQUE_TAG) \
+X(0x9b, TAG_CAPPED_AMOUNT_TOKEN_IDX, handle_capped_amount_token_index, ENFORCE_UNIQUE_TAG) \
+X(0x15, TAG_DER_SIGNATURE,           handle_signature,                 ENFORCE_UNIQUE_TAG)
 // clang-format on
 
 DEFINE_TLV_PARSER(INSTRUCTION_DESCRIPTOR_TLV_TAGS, &handle_common, parse_instruction_descriptor)
@@ -294,6 +307,24 @@ static bool handle_provide_instruction_descriptor_internal(void) {
                                SWAP_EC_APP_DESCRIPTOR_UNSUPPORTED_VERSION);
     }
 
+    // capped_amount_token_index requires capped_amount_bps
+    if (TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAG_CAPPED_AMOUNT_TOKEN_IDX) &&
+        !TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAG_CAPPED_AMOUNT_BPS)) {
+        PRINTF("Error: capped_amount_token_index without capped_amount_bps\n");
+        send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                               SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
+                               SWAP_EC_APP_DESCRIPTOR_INVALID_CAPPED_FIELDS);
+    }
+
+    // capped_amount_bps requires amount extraction fields (amount_size must be nonzero)
+    if (TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAG_CAPPED_AMOUNT_BPS) &&
+        tlv_extracted.ins.amount_size == 0) {
+        PRINTF("Error: capped_amount_bps without amount extraction rules\n");
+        send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                               SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
+                               SWAP_EC_APP_DESCRIPTOR_INVALID_CAPPED_FIELDS);
+    }
+
     // Check that the template ID matches the expected one
     if (!check_template_id(tlv_extracted.template_id)) {
         PRINTF("Error: unexpected template ID\n");
@@ -338,6 +369,11 @@ static bool handle_provide_instruction_descriptor_internal(void) {
     PRINTF("asset_ata_index = %u\n", tlv_extracted.ins.asset_ata_index);
     PRINTF("recipient_account_index = %u\n", tlv_extracted.ins.recipient_account_index);
     PRINTF("recipient_ata_index = %u\n", tlv_extracted.ins.recipient_ata_index);
+    PRINTF("capped_amount_bps_received = %u\n", tlv_extracted.ins.capped_amount_bps_received);
+    PRINTF("capped_amount_bps = %u\n", tlv_extracted.ins.capped_amount_bps);
+    PRINTF("capped_amount_token_index_received = %u\n",
+           tlv_extracted.ins.capped_amount_token_index_received);
+    PRINTF("capped_amount_token_index = %u\n", tlv_extracted.ins.capped_amount_token_index);
 
     // Store descriptor
     if (!save_instruction_descriptor(&G_saved_descriptors,
@@ -502,10 +538,59 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
             return -1;
         }
 
-        if (!check_swap_amount_raw(amount_value)) {
-            PRINTF("Error received wrong amount\n");
+        if (instruction_descriptor->capped_amount_bps_received) {
+            // Capped amount: fee instruction must not exceed (swap_amount * bps / 10000)
+            uint64_t swap_amount;
+            if (get_swap_amount_raw(&swap_amount) != 0) {
+                PRINTF("Error: swap amount not available\n");
+                return -1;
+            }
+
+            uint64_t cap;
+            if (safe_mul_bps_div10000(swap_amount,
+                                      instruction_descriptor->capped_amount_bps,
+                                      &cap) != 0) {
+                PRINTF("Overflow in capped amount computation\n");
+                return -1;
+            }
+
+            debug_print_u64("Capped amount_value", amount_value);
+            debug_print_u64("Capped limit", cap);
+
+            if (amount_value > cap) {
+                PRINTF("Capped amount exceeded\n");
+                return -1;
+            }
+            PRINTF("Capped amount validated\n");
+        } else {
+            // Exact amount match for non-fee instructions
+            if (!check_swap_amount_raw(amount_value)) {
+                PRINTF("Error received wrong amount\n");
+                return -1;
+            }
+        }
+    }
+
+    // CHECK CAPPED TOKEN INDEX (mint validation for fee instructions)
+    if (instruction_descriptor->capped_amount_token_index_received) {
+        PRINTF("Received capped_amount_token_index to check\n");
+        const uint8_t *capped_token_account = get_account_from_ins(
+            instruction,
+            header,
+            instruction_descriptor->capped_amount_token_index);
+        if (capped_token_account == NULL) {
+            PRINTF("Error get_account_from_ins for capped_amount_token_index\n");
             return -1;
         }
+        if (memcmp(validated_mint_address, capped_token_account, PUBKEY_SIZE) != 0) {
+            PRINTF("Error capped token mint mismatch, %.*H != %.*H\n",
+                   PUBKEY_SIZE,
+                   validated_mint_address,
+                   PUBKEY_SIZE,
+                   capped_token_account);
+            return -1;
+        }
+        PRINTF("Validated capped token mint %.*H\n", PUBKEY_SIZE, capped_token_account);
     }
 
     // CHECK MINT ADDRESS

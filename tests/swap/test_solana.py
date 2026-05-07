@@ -493,6 +493,61 @@ class SolanaDescriptorTests(SPLTokenTests):
             sol.provide_instruction_descriptor(template_id=template_id,
                                                program_id=self.decoded_custom_program_id_string)
 
+        # SOL fee instruction (capped at 25 bps = 0.25% of swap amount)
+        sol_fee_amount = send_amount * 25 // 10000
+        instructions_list.append(Instruction(
+            program_id=self.custom_program_id,
+            accounts=[AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True)],
+            data=struct.pack("<Q", sol_fee_amount),
+        ))
+        sol.provide_instruction_descriptor(template_id=template_id,
+                                           program_id=self.decoded_custom_program_id_string,
+                                           amount_size=8,
+                                           amount_offset=0,
+                                           capped_amount_bps=25)
+
+        # Token fee instruction (capped at 50 bps = 0.50% of swap amount, with mint check)
+        token_fee_amount = send_amount * 50 // 10000
+        instructions_list.append(Instruction(
+            program_id=self.custom_program_id,
+            accounts=[
+                AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True),
+                AccountMeta(pubkey=dummy_storage_account, is_signer=False, is_writable=True), # noise
+                AccountMeta(pubkey=mint_pubkey, is_signer=False, is_writable=False), # capped_amount_token_index
+            ],
+            data=struct.pack("<Q", token_fee_amount),
+        ))
+        sol.provide_instruction_descriptor(template_id=template_id,
+                                           program_id=self.decoded_custom_program_id_string,
+                                           amount_size=8,
+                                           amount_offset=0,
+                                           capped_amount_bps=50,
+                                           capped_amount_token_index=2)
+
+        # Fee instruction with bps=0 (cap is 0, so fee must be 0)
+        instructions_list.append(Instruction(
+            program_id=self.custom_program_id,
+            accounts=[AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True)],
+            data=struct.pack("<Q", 0),
+        ))
+        sol.provide_instruction_descriptor(template_id=template_id,
+                                           program_id=self.decoded_custom_program_id_string,
+                                           amount_size=8,
+                                           amount_offset=0,
+                                           capped_amount_bps=0)
+
+        # Nothing to check * 2 (padding to reach 15 instructions)
+        for i in range(2):
+            instructions_list.append(Instruction(
+                program_id=self.custom_program_id,
+                accounts=[
+                    AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True),
+                ],
+                data=struct.pack("B", 0),
+            ))
+            sol.provide_instruction_descriptor(template_id=template_id,
+                                               program_id=self.decoded_custom_program_id_string)
+
         # Other order of accounts
         instructions_list.append(Instruction(
             program_id=self.custom_program_id,
@@ -563,7 +618,7 @@ class SolanaDescriptorTests(SPLTokenTests):
 
     def perform_final_tx_too_many_descriptors(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
-        for x in range(11):
+        for x in range(16):
             sol.provide_instruction_descriptor(template_id=self.template_id_1)
 
     def perform_final_tx_mismatch_template(self, destination, send_amount, fees, memo):
@@ -713,6 +768,120 @@ class SolanaDescriptorTests(SPLTokenTests):
         sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
         self._perform_final_lifi_transaction(sol, destination, send_amount, True, SOL.GORK_MINT_ADDRESS_STR, memo)
 
+    # capped_amount_token_index without capped_amount_bps is invalid
+    def perform_final_tx_capped_token_index_without_bps(self, destination, send_amount, fees, memo):
+        sol = SolanaClient(self.backend)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1,
+                                           program_id=self.decoded_custom_program_id_string,
+                                           capped_amount_token_index=0)
+
+    # capped_amount_bps without amount extraction fields is invalid
+    def perform_final_tx_capped_bps_without_amount_fields(self, destination, send_amount, fees, memo):
+        sol = SolanaClient(self.backend)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1,
+                                           program_id=self.decoded_custom_program_id_string,
+                                           capped_amount_bps=25)
+
+    # Fee amount exceeds cap (bps=1 but amount=send_amount which is >> 0.01%)
+    def perform_final_tx_capped_amount_exceeded(self, destination, send_amount, fees, memo):
+        instruction = Instruction(
+            program_id=self.custom_program_id,
+            accounts=[AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True)],
+            data=struct.pack("<Q", send_amount),  # Full swap amount, not a fee
+        )
+
+        sol = SolanaClient(self.backend)
+        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1,
+                                           program_id=self.decoded_custom_program_id_string,
+                                           amount_size=8,
+                                           amount_offset=0,
+                                           capped_amount_bps=1)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
+            pass
+
+    # Fee at exact boundary: fee = send_amount * bps // 10000 + 1 (one above cap)
+    def perform_final_tx_capped_amount_boundary_exceeded(self, destination, send_amount, fees, memo):
+        boundary_bps = 100
+        fee_amount = send_amount * boundary_bps // 10000 + 1  # One lamport above cap
+        instruction = Instruction(
+            program_id=self.custom_program_id,
+            accounts=[AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True)],
+            data=struct.pack("<Q", fee_amount),
+        )
+
+        sol = SolanaClient(self.backend)
+        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1,
+                                           program_id=self.decoded_custom_program_id_string,
+                                           amount_size=8,
+                                           amount_offset=0,
+                                           capped_amount_bps=boundary_bps)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
+            pass
+
+    # capped_amount_token_index out of bounds in instruction account list
+    def perform_final_tx_capped_token_index_oob(self, destination, send_amount, fees, memo):
+        fee_amount = send_amount * 50 // 10000
+        instruction = Instruction(
+            program_id=self.custom_program_id,
+            accounts=[AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True)],
+            data=struct.pack("<Q", fee_amount),
+        )
+
+        sol = SolanaClient(self.backend)
+        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1,
+                                           program_id=self.decoded_custom_program_id_string,
+                                           amount_size=8,
+                                           amount_offset=0,
+                                           capped_amount_bps=50,
+                                           capped_amount_token_index=5)  # OOB: only 1 account
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
+            pass
+
+    # bps=0 means cap=0, so any nonzero fee must be rejected
+    def perform_final_tx_capped_bps_zero_exceeded(self, destination, send_amount, fees, memo):
+        instruction = Instruction(
+            program_id=self.custom_program_id,
+            accounts=[AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True)],
+            data=struct.pack("<Q", 1),  # 1 lamport, exceeds bps=0 cap
+        )
+
+        sol = SolanaClient(self.backend)
+        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1,
+                                           program_id=self.decoded_custom_program_id_string,
+                                           amount_size=8,
+                                           amount_offset=0,
+                                           capped_amount_bps=0)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
+            pass
+
+    # capped_amount_token_index points to wrong mint
+    def perform_final_tx_capped_token_index_wrong_mint(self, destination, send_amount, fees, memo):
+        dummy_storage_account = Pubkey.from_string("EHsACWBhgmw8iq5dmUZzTA1esRqcTognhKNHUkPi4q4g")
+        fee_amount = send_amount * 50 // 10000
+        instruction = Instruction(
+            program_id=self.custom_program_id,
+            accounts=[
+                AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True),
+                AccountMeta(pubkey=dummy_storage_account, is_signer=False, is_writable=True), # wrong mint
+            ],
+            data=struct.pack("<Q", fee_amount),
+        )
+
+        sol = SolanaClient(self.backend)
+        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1,
+                                           program_id=self.decoded_custom_program_id_string,
+                                           amount_size=8,
+                                           amount_offset=0,
+                                           capped_amount_bps=50,
+                                           capped_amount_token_index=1)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, sol.craft_tx([instruction], self.sender_public_key)):
+            pass
+
 # Use a class to reuse the same Speculos instance
 class TestsSolanaDescriptor:
     @pytest.mark.parametrize('test_to_run', THORSWAP_TESTS)
@@ -762,6 +931,13 @@ class TestsSolanaDescriptor:
         "perform_final_tx_mismatch_template",
         "perform_final_tx_mismatch_token_2022",
         "perform_final_tx_mismatch_token_2022_variant",
+        "perform_final_tx_capped_token_index_without_bps",
+        "perform_final_tx_capped_bps_without_amount_fields",
+        "perform_final_tx_capped_amount_exceeded",
+        "perform_final_tx_capped_amount_boundary_exceeded",
+        "perform_final_tx_capped_token_index_wrong_mint",
+        "perform_final_tx_capped_token_index_oob",
+        "perform_final_tx_capped_bps_zero_exceeded",
     ])
     def test_lifi_sign_refused(self, backend, exchange_navigation_helper, fault_test_to_run):
         with pytest.raises(ExceptionRAPDU) as e:
