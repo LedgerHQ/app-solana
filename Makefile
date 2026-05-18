@@ -131,6 +131,14 @@ ifneq ($(TRUSTED_NAME_TEST_KEY),0)
   DEFINES += TRUSTED_NAME_TEST_KEY
 endif
 
+#######################################
+# Memory Profiling                    #
+#######################################
+MEMORY_PROFILING ?= 0
+ifneq ($(MEMORY_PROFILING),0)
+  DEFINES += HAVE_MEMORY_PROFILING
+endif
+
 FIXED_TLV_CHALLENGE ?= 0
 ifneq ($(FIXED_TLV_CHALLENGE),0)
   DEFINES += FIXED_TLV_CHALLENGE
