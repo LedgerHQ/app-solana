@@ -87,6 +87,11 @@ ENABLE_NBGL_FOR_NANO_DEVICES = 1
 ########################################
 ENABLE_TLV_LIBRARY = 1
 ENABLE_PKI_LIBRARY = 1
+
+########################################
+#        Dynamic allocation            #
+########################################
+ENABLE_DYNAMIC_ALLOC = 1
 # --8<-- [end:variables]
 
 ########################################

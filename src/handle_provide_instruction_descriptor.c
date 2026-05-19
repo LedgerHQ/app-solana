@@ -25,6 +25,7 @@
 #include "handle_provide_instruction_descriptor.h"
 #include "io.h"
 #include "sol/safe_math.h"
+#include "app_mem_utils.h"
 
 #define LIFI_SOLANA_MAIN_NET 900
 #define LIFI_SOLANA_TEST_NET 901
@@ -45,65 +46,65 @@ typedef struct saved_descriptors_s {
     instruction_descriptor_t descriptors[MAX_DISCRIMINATOR_NUMBER];
 } saved_descriptors_t;
 
-static saved_descriptors_t G_saved_descriptors;
+static saved_descriptors_t *G_saved_descriptors;
 
 void reset_saved_descriptors(void) {
-    explicit_bzero(&G_saved_descriptors, sizeof(G_saved_descriptors));
+    APP_MEM_FREE_AND_NULL((void **) &G_saved_descriptors);
 }
 
 uint8_t get_descriptor_count(void) {
-    return G_saved_descriptors.saved_count;
+    return G_saved_descriptors->saved_count;
 }
 
 int get_next_descriptor(const instruction_descriptor_t **instruction_descriptor) {
-    if (G_saved_descriptors.read_count >= G_saved_descriptors.saved_count) {
+    if (G_saved_descriptors->read_count >= G_saved_descriptors->saved_count) {
         return -1;
     }
-    PRINTF("Reading descriptor n %d\n", G_saved_descriptors.read_count);
+    PRINTF("Reading descriptor n %d\n", G_saved_descriptors->read_count);
 
-    *instruction_descriptor = &G_saved_descriptors.descriptors[G_saved_descriptors.read_count];
-    G_saved_descriptors.read_count++;
+    *instruction_descriptor = &G_saved_descriptors->descriptors[G_saved_descriptors->read_count];
+    G_saved_descriptors->read_count++;
     return 0;
 }
 
 bool instruction_descriptor_received(void) {
-    return (get_descriptor_count() != 0);
+    return (G_saved_descriptors != NULL);
 }
 
-static bool save_instruction_descriptor(saved_descriptors_t *saved_descriptors,
-                                        bool is_main_net,
+static bool save_instruction_descriptor(bool is_main_net,
                                         uint64_t template_id,
                                         const instruction_descriptor_t *instruction_descriptor) {
-    PRINTF("Attempting to save descriptor n %d\n", saved_descriptors->saved_count + 1);
-    if (saved_descriptors->saved_count >= MAX_DISCRIMINATOR_NUMBER) {
-        PRINTF("Error, saved_descriptors is full\n");
+    PRINTF("Attempting to save descriptor n %d\n", G_saved_descriptors->saved_count + 1);
+
+    if (G_saved_descriptors->saved_count >= MAX_DISCRIMINATOR_NUMBER) {
+        PRINTF("Error, descriptor limit reached (%d)\n", MAX_DISCRIMINATOR_NUMBER);
         return false;
     }
 
-    if (saved_descriptors->saved_count == 0) {
-        saved_descriptors->is_main_net = is_main_net;
-        saved_descriptors->template_id = template_id;
-    } else {
-        if (is_main_net != saved_descriptors->is_main_net) {
+    if (G_saved_descriptors->saved_count > 0) {
+        if (is_main_net != G_saved_descriptors->is_main_net) {
             PRINTF("Error, is_main_net differs %d != %d\n",
                    is_main_net,
-                   saved_descriptors->is_main_net);
+                   G_saved_descriptors->is_main_net);
             return false;
         }
 
-        if (template_id != saved_descriptors->template_id) {
+        if (template_id != G_saved_descriptors->template_id) {
             PRINTF("Error, template_id differs\n");
             debug_print_u64("template_id", template_id);
-            debug_print_u64("saved_descriptors->template_id", saved_descriptors->template_id);
+            debug_print_u64("G_saved_descriptors->template_id", G_saved_descriptors->template_id);
             return false;
         }
+    } else {
+        G_saved_descriptors->is_main_net = is_main_net;
+        G_saved_descriptors->template_id = template_id;
     }
 
-    PRINTF("Saving descriptor in slot n %d\n", saved_descriptors->saved_count);
-    memcpy(&(saved_descriptors->descriptors[saved_descriptors->saved_count]),
+    PRINTF("Saving descriptor in slot n %d\n", G_saved_descriptors->saved_count);
+    memcpy(&(G_saved_descriptors->descriptors[G_saved_descriptors->saved_count]),
            instruction_descriptor,
            sizeof(instruction_descriptor_t));
-    ++saved_descriptors->saved_count;
+    ++G_saved_descriptors->saved_count;
     return true;
 }
 
@@ -375,9 +376,18 @@ static bool handle_provide_instruction_descriptor_internal(void) {
            tlv_extracted.ins.capped_amount_token_index_received);
     PRINTF("capped_amount_token_index = %u\n", tlv_extracted.ins.capped_amount_token_index);
 
+    // Allocate saved_descriptors on first call
+    if (G_saved_descriptors == NULL) {
+        if (!APP_MEM_CALLOC((void **) &G_saved_descriptors, sizeof(saved_descriptors_t))) {
+            PRINTF("Memory allocation failed for saved_descriptors\n");
+            send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                                   SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
+                                   SWAP_EC_APP_DESCRIPTOR_SAVE_FAILED);
+        }
+    }
+
     // Store descriptor
-    if (!save_instruction_descriptor(&G_saved_descriptors,
-                                     tlv_extracted.is_main_net,
+    if (!save_instruction_descriptor(tlv_extracted.is_main_net,
                                      tlv_extracted.template_id,
                                      &tlv_extracted.ins)) {
         PRINTF("save_instruction_descriptor error\n");

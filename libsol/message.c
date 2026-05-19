@@ -213,6 +213,7 @@ int process_message_body_with_descriptor(const uint8_t *message_body,
     const MessageHeader *header = &print_config->header;
     debug_print_header(header);
     BAIL_IF(header->instructions_length == 0);
+    BAIL_IF(!instruction_descriptor_received());
 
     // We need to have recievied exactly 1 descriptor for each instruction
     uint8_t received_descriptors = get_descriptor_count();

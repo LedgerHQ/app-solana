@@ -7,7 +7,7 @@ bool check_ata_against_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
                                     const uint8_t dest_account[PUBKEY_LENGTH],
                                     bool is_token_2022) {
     // Here we will check the content of the SPL transaction against the received descriptor
-    if (!g_trusted_info.received) {
+    if (g_trusted_info == NULL || !g_trusted_info->received) {
         PRINTF("Descriptor info is required for a SPL transfer\n");
         return false;
     }
@@ -25,24 +25,24 @@ bool check_ata_against_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
     PRINTF("dest_account          = %.*H\n", PUBKEY_LENGTH, dest_account);
 
     PRINTF("=== TRUSTED INFO ===\n");
-    PRINTF("encoded_owner_address = %s\n", g_trusted_info.encoded_owner_address);
-    PRINTF("owner_address         = %.*H\n", PUBKEY_LENGTH, g_trusted_info.owner_address);
-    PRINTF("encoded_token_address = %s\n", g_trusted_info.encoded_token_address);
-    PRINTF("token_address         = %.*H\n", PUBKEY_LENGTH, g_trusted_info.token_address);
-    PRINTF("encoded_mint_address  = %s\n", g_trusted_info.encoded_mint_address);
-    PRINTF("mint_address          = %.*H\n", PUBKEY_LENGTH, g_trusted_info.mint_address);
+    PRINTF("encoded_owner_address = %s\n", g_trusted_info->encoded_owner_address);
+    PRINTF("owner_address         = %.*H\n", PUBKEY_LENGTH, g_trusted_info->owner_address);
+    PRINTF("encoded_token_address = %s\n", g_trusted_info->encoded_token_address);
+    PRINTF("token_address         = %.*H\n", PUBKEY_LENGTH, g_trusted_info->token_address);
+    PRINTF("encoded_mint_address  = %s\n", g_trusted_info->encoded_mint_address);
+    PRINTF("mint_address          = %.*H\n", PUBKEY_LENGTH, g_trusted_info->mint_address);
 
-    if (memcmp(g_trusted_info.mint_address, mint_account, PUBKEY_LENGTH) != 0) {
+    if (memcmp(g_trusted_info->mint_address, mint_account, PUBKEY_LENGTH) != 0) {
         PRINTF("Mint address does not match with mint address in descriptor\n");
         return false;
     }
 
-    if (memcmp(g_trusted_info.token_address, dest_account, PUBKEY_LENGTH) != 0) {
+    if (memcmp(g_trusted_info->token_address, dest_account, PUBKEY_LENGTH) != 0) {
         PRINTF("Token address does not match with token address in descriptor\n");
         return false;
     }
 
-    if (!validate_associated_token_address(g_trusted_info.owner_address,
+    if (!validate_associated_token_address(g_trusted_info->owner_address,
                                            mint_account,
                                            dest_account,
                                            is_token_2022)) {
@@ -54,11 +54,11 @@ bool check_ata_against_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
 
 int get_transfer_to_address(const char **to_address) {
     // Already checked in parsing step but let's be secure
-    if (!g_trusted_info.received) {
+    if (g_trusted_info == NULL || !g_trusted_info->received) {
         PRINTF("Descriptor info is required for a SPL transfer\n");
         return -1;
     }
 
-    *to_address = g_trusted_info.encoded_owner_address;
+    *to_address = g_trusted_info->encoded_owner_address;
     return 0;
 }

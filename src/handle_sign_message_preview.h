@@ -20,7 +20,7 @@ typedef struct {
     uint32_t derivation_path[MAX_BIP32_PATH_LENGTH];
 } preview_state_t;
 
-extern preview_state_t G_preview_state;
+extern preview_state_t *G_preview_state;
 
 int store_preview_fingerprint(void);
 int handle_sign_message_delayed(void);

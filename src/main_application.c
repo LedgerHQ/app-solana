@@ -28,6 +28,8 @@
 #include "ui_api.h"
 #include "nbgl_use_case.h"
 #include "io.h"
+#include "mem_utils.h"
+#include "main_std_app.h"
 
 // Swap feature
 #include "swap_lib_calls.h"
@@ -131,6 +133,11 @@ void nv_app_state_init() {
 
 void app_main(void) {
     int input_len = 0;
+
+    if (app_mem_init() != 0) {
+        PRINTF("FATAL: Memory initialization failed\n");
+        app_exit();
+    }
 
     // Stores the information about the current command. Some commands expect
     // multiple APDUs before they become complete and executed.
