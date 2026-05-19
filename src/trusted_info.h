@@ -13,7 +13,9 @@ typedef struct trusted_info_s {
     uint8_t mint_address[PUBKEY_LENGTH];
 } trusted_info_t;
 
-extern trusted_info_t g_trusted_info;
+extern trusted_info_t *g_trusted_info;
+
+void reset_trusted_info(void);
 
 bool check_ata_against_trusted_info(const uint8_t src_account[PUBKEY_LENGTH],
                                     const uint8_t mint_account[PUBKEY_LENGTH],

@@ -10,3 +10,7 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
 uint8_t get_descriptor_count(void) {
     return 0;
 }
+
+bool instruction_descriptor_received(void) {
+    return true;
+}

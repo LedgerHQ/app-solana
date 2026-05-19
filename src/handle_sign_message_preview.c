@@ -9,12 +9,12 @@
 #include "sol/message.h"
 #include "ui_api.h"
 #include "io.h"
+#include "app_mem_utils.h"
 
-// Global preview state
-preview_state_t G_preview_state = {0};
+preview_state_t *G_preview_state;
 
 void clear_preview_state(void) {
-    explicit_bzero(&G_preview_state, sizeof(G_preview_state));
+    APP_MEM_FREE_AND_NULL((void **) &G_preview_state);
 }
 
 // Compute SHA-512 of message with blockhash region replaced by zeros,
@@ -59,20 +59,20 @@ static int hash_message_with_zeroed_blockhash(const uint8_t *message,
 // Returns ApduReplySuccess on match, error code otherwise
 static uint16_t verify_delayed_message_matches_preview(void) {
     // Verify message length matches
-    if (G_command.message_length != G_preview_state.message_length) {
+    if (G_command.message_length != G_preview_state->message_length) {
         PRINTF("Message length mismatch: preview=%d, delayed=%d\n",
-               G_preview_state.message_length,
+               G_preview_state->message_length,
                G_command.message_length);
         return ApduReplySolanaDelayedLengthMismatch;
     }
 
     // Verify derivation path matches
-    if (G_command.derivation_path_length != G_preview_state.derivation_path_length) {
+    if (G_command.derivation_path_length != G_preview_state->derivation_path_length) {
         PRINTF("Derivation path length mismatch\n");
         return ApduReplySolanaDelayedDerivationMismatch;
     }
     for (size_t i = 0; i < G_command.derivation_path_length; i++) {
-        if (G_command.derivation_path[i] != G_preview_state.derivation_path[i]) {
+        if (G_command.derivation_path[i] != G_preview_state->derivation_path[i]) {
             PRINTF("Derivation path mismatch at index %d\n", i);
             return ApduReplySolanaDelayedDerivationMismatch;
         }
@@ -86,11 +86,11 @@ static uint16_t verify_delayed_message_matches_preview(void) {
     }
 
     // Verify hash matches preview
-    if (memcmp(computed_hash, G_preview_state.message_hash_with_zero_blockhash, CX_SHA512_SIZE) !=
+    if (memcmp(computed_hash, G_preview_state->message_hash_with_zero_blockhash, CX_SHA512_SIZE) !=
         0) {
         PRINTF("Fingerprint mismatch, saved %.*H != received %.*H\n",
                CX_SHA512_SIZE,
-               G_preview_state.message_hash_with_zero_blockhash,
+               G_preview_state->message_hash_with_zero_blockhash,
                CX_SHA512_SIZE,
                computed_hash);
         return ApduReplySolanaDelayedHashMismatch;
@@ -101,33 +101,39 @@ static uint16_t verify_delayed_message_matches_preview(void) {
 }
 
 int store_preview_fingerprint(void) {
+    if (!APP_MEM_CALLOC((void **) &G_preview_state, sizeof(preview_state_t))) {
+        PRINTF("Failed to allocate preview state\n");
+        return -1;
+    }
+
     // Compute SHA-512 hash of the message with blockhash treated as zeros
     // without modifying the input buffer
     if (hash_message_with_zeroed_blockhash(G_command.message,
                                            G_command.message_length,
-                                           G_preview_state.message_hash_with_zero_blockhash) != 0) {
+                                           G_preview_state->message_hash_with_zero_blockhash) !=
+        0) {
         PRINTF("Failed to compute message hash\n");
-        // Can't realistically happen but let's be clean
+        clear_preview_state();
         return -1;
     }
 
     PRINTF("zeroed blockhash fingerprint = %.*H\n",
-           sizeof(G_preview_state.message_hash_with_zero_blockhash),
-           G_preview_state.message_hash_with_zero_blockhash);
+           sizeof(G_preview_state->message_hash_with_zero_blockhash),
+           G_preview_state->message_hash_with_zero_blockhash);
 
     // Store derivation path
     PRINTF("Storing derivation path (length=%d)\n", G_command.derivation_path_length);
-    G_preview_state.derivation_path_length = G_command.derivation_path_length;
+    G_preview_state->derivation_path_length = G_command.derivation_path_length;
     for (size_t i = 0; i < G_command.derivation_path_length; i++) {
-        G_preview_state.derivation_path[i] = G_command.derivation_path[i];
+        G_preview_state->derivation_path[i] = G_command.derivation_path[i];
         PRINTF("  path[%d] = %08x\n", i, G_command.derivation_path[i]);
     }
 
     // Store message length for verification
-    G_preview_state.message_length = G_command.message_length;
-    PRINTF("Storing message length: %d bytes\n", G_preview_state.message_length);
+    G_preview_state->message_length = G_command.message_length;
+    PRINTF("Storing message length: %d bytes\n", G_preview_state->message_length);
 
-    G_preview_state.initialized = true;
+    G_preview_state->initialized = true;
     PRINTF("Preview fingerprint initialized\n");
 
     return 0;
@@ -142,14 +148,14 @@ static int handle_sign_message_delayed_internal(void) {
     }
 
     // Verify preview was initialized
-    if (!G_preview_state.initialized) {
+    if (G_preview_state == NULL || !G_preview_state->initialized) {
         PRINTF("No preview state found - must preview before delayed sign\n");
         return io_send_sw(ApduReplySolanaDelayedPreviewNotFound);
     }
 
     // Delayed signing does not make sense in swap context.
     // It should never happen because preview is always refused in swap context so
-    // G_preview_state.initialized is always false but let's double check
+    // G_preview_state->initialized is always false but let's double check
     if (G_called_from_swap) {
         PRINTF("Delayed signing not supported in swap context\n");
         return io_send_sw(ApduReplySdkNotSupported);

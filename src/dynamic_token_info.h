@@ -15,7 +15,9 @@ typedef struct dynamic_token_info_s {
     // extension_code_value_t extensions[EXTENSION_CODE_VALUE_COUNT];
 } dynamic_token_info_t;
 
-extern dynamic_token_info_t g_dynamic_token_info;
+extern dynamic_token_info_t *g_dynamic_token_info;
+
+void reset_dynamic_token_info(void);
 
 const char *get_dynamic_token_symbol(const uint8_t *mint_address, bool is_token_2022_kind);
 const char *get_token_symbol(const uint8_t *mint_address, bool is_token_2022_kind);

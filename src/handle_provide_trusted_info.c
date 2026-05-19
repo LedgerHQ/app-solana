@@ -18,11 +18,24 @@
 
 #include "handle_provide_trusted_info.h"
 #include "io.h"
+#include "app_mem_utils.h"
 
-trusted_info_t g_trusted_info;
+trusted_info_t *g_trusted_info;
+
+void reset_trusted_info(void) {
+    APP_MEM_FREE_AND_NULL((void **) &g_trusted_info);
+}
 
 static int handle_provide_trusted_info_internal(void) {
-    explicit_bzero(&g_trusted_info, sizeof(g_trusted_info));
+    // Allocate if not yet allocated, otherwise reset
+    if (g_trusted_info == NULL) {
+        if (!APP_MEM_CALLOC((void **) &g_trusted_info, sizeof(trusted_info_t))) {
+            PRINTF("Memory allocation failed for trusted_info\n");
+            return -1;
+        }
+    } else {
+        explicit_bzero(g_trusted_info, sizeof(*g_trusted_info));
+    }
 
     tlv_trusted_name_out_t tlv_output = {0};
 
@@ -63,35 +76,35 @@ static int handle_provide_trusted_info_internal(void) {
     // We could save just one but as we need to decode them to ensure they are valid we save both
 
     if (copy_and_decode_pubkey(tlv_output.address,
-                               g_trusted_info.encoded_owner_address,
-                               g_trusted_info.owner_address) != 0) {
+                               g_trusted_info->encoded_owner_address,
+                               g_trusted_info->owner_address) != 0) {
         PRINTF("copy_and_decode_pubkey error for encoded_owner_address\n");
         return -1;
     }
 
     if (copy_and_decode_pubkey(tlv_output.trusted_name,
-                               g_trusted_info.encoded_token_address,
-                               g_trusted_info.token_address) != 0) {
+                               g_trusted_info->encoded_token_address,
+                               g_trusted_info->token_address) != 0) {
         PRINTF("copy_and_decode_pubkey error for encoded_token_address\n");
         return -1;
     }
 
     if (copy_and_decode_pubkey(tlv_output.source_contract,
-                               g_trusted_info.encoded_mint_address,
-                               g_trusted_info.mint_address) != 0) {
+                               g_trusted_info->encoded_mint_address,
+                               g_trusted_info->mint_address) != 0) {
         PRINTF("copy_and_decode_pubkey error for encoded_mint_address\n");
         return -1;
     }
 
-    g_trusted_info.received = true;
+    g_trusted_info->received = true;
 
     PRINTF("=== TRUSTED INFO ===\n");
-    PRINTF("encoded_owner_address = %s\n", g_trusted_info.encoded_owner_address);
-    PRINTF("owner_address         = %.*H\n", PUBKEY_LENGTH, g_trusted_info.owner_address);
-    PRINTF("encoded_token_address = %s\n", g_trusted_info.encoded_token_address);
-    PRINTF("token_address         = %.*H\n", PUBKEY_LENGTH, g_trusted_info.token_address);
-    PRINTF("encoded_mint_address  = %s\n", g_trusted_info.encoded_mint_address);
-    PRINTF("mint_address          = %.*H\n", PUBKEY_LENGTH, g_trusted_info.mint_address);
+    PRINTF("encoded_owner_address = %s\n", g_trusted_info->encoded_owner_address);
+    PRINTF("owner_address         = %.*H\n", PUBKEY_LENGTH, g_trusted_info->owner_address);
+    PRINTF("encoded_token_address = %s\n", g_trusted_info->encoded_token_address);
+    PRINTF("token_address         = %.*H\n", PUBKEY_LENGTH, g_trusted_info->token_address);
+    PRINTF("encoded_mint_address  = %s\n", g_trusted_info->encoded_mint_address);
+    PRINTF("mint_address          = %.*H\n", PUBKEY_LENGTH, g_trusted_info->mint_address);
 
     return 0;
 }
@@ -104,6 +117,8 @@ int handle_provide_trusted_info(void) {
     if (ret == 0) {
         return io_send_sw(ApduReplySuccess);
     } else {
+        // Free the partially filled struct on failure to avoid leaking memory
+        reset_trusted_info();
         return io_send_sw(ApduReplySolanaInvalidTrustedInfo);
     }
 }

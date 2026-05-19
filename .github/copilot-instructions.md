@@ -19,12 +19,14 @@ Always run the tests in the python virtual environment, use the `venv` bash alia
 
 ```bash
 # Python UI tests (Speculos)
-pytest tests/python/ --device flex
-pytest tests/python/ --device stax --golden_run  # Regenerate snapshots, use conservatively
+venv && pytest tests/python/ --device flex
+venv && pytest tests/python/ --device stax --golden_run  # Regenerate snapshots, use conservatively
 
 # Swap tests (Exchange + Ethereum apps)
-pytest tests/swap/ --device flex
-pytest tests/swap/ --device flex --golden_run  # Regenerate snapshots, use conservatively
+venv && pytest tests/swap/ --device flex
+venv && pytest tests/swap/ --device flex --golden_run  # Regenerate snapshots, use conservatively
+
+# NEVER attempt to run both pytest instances, "pytest tests/python/ tests/swap/" it WILL NOT work.
 
 # libsol unit tests
 qb_run_in_docker make -C libsol
@@ -66,19 +68,24 @@ Preview (INS 0x08) stores SHA-512 fingerprint of message with zeroed blockhash, 
 
 ## Code Patterns
 
-**Globals:** `G_*` prefix, `N_storage` for NVM
-**Errors:** `ApduReply*` codes, `THROW()` macro
-**UI:** NBGL only (`src/ui/*_nbgl.c`), no BAGL
-**Security:** `explicit_bzero()` for sensitive data such as private keys.
+### Logging
 
-**UI**
-- The UI is the heart of the application and must display accurately the data to sign. DO NOT treat it as cosmetic.
-
-**Logging:**
 - Never assume code is correct on first try - add logs to verify execution flow
 - Trace logs (no variables): Use `PRINTF("Function entered\n")` sparingly in key dispatch logic (e.g., APDU handlers, main switch cases)
 - Variable logs: Use `PRINTF("variable_name=%d\n", var)` or `PRINTF("buffer=%.*H\n", len, buf)` liberally in calculations and new code
 - Purpose: Help understand what actually runs vs what was expected to run
+
+### Coding conventions
+
+- bool return is used to indicate the result of a CHECK, NOT a success or failure.
+- int return is used to report a success or failure of a function by using -1 or 0.
+- Global or module variables are prefixed by `G_*`.
+
+### Swap feature
+
+- The SWAP flow is the flow started from the Exchange application instead of the dashboard. It enables some features and blocks others.
+- The information coming from Exchange is TRUSTED.
+- The application must return to Exchange after the handling of an apdu to sign, whether valid or not. Return is made through the send_swap_error_X() SDK functions in case of error, or through the SDK IO stack once G_swap_response_ready has been set. In both cases, cleaning non-sensitive data is completely useless (dynamic allocator free, apdu managers, etc).
 
 ## Critical Files
 
@@ -90,17 +97,10 @@ Preview (INS 0x08) stores SHA-512 fingerprint of message with zeroed blockhash, 
 - `libsol/transaction_summary.c` - UI summary
 - `doc/api.md` - APDU protocol spec
 
-## Makefile Flags
-
-- `ENABLE_TLV_LIBRARY=1` - Trusted names
-- `ENABLE_PKI_LIBRARY=1` - PKI verification
-- `ENABLE_NBGL_FOR_NANO_DEVICES=1` - NBGL on all devices
-- `ENABLE_SWAP=1` - Exchange integration
-
 Makefile flags are handled through the `qb` tool via `ledger_app.toml`. dbg_trusted_name_test is the standard debug profile.
 
 ## Common Issues
 
 1. **libsol is portable** - no SDK includes in `libsol/*.c` files
-2. **Clean when needed** - `qb -c` clears leftover .o files (not required for device switches)
+2. **Clean only when needed** - `qb -c` clears leftover .o files (not required for device switches)
 4. **Swap context is different than normal Dashboard start and blocks features** - `G_called_from_swap` prevents other features like message preview or blind signing.

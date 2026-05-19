@@ -87,6 +87,11 @@ ENABLE_NBGL_FOR_NANO_DEVICES = 1
 ########################################
 ENABLE_TLV_LIBRARY = 1
 ENABLE_PKI_LIBRARY = 1
+
+########################################
+#        Dynamic allocation            #
+########################################
+ENABLE_DYNAMIC_ALLOC = 1
 # --8<-- [end:variables]
 
 ########################################
@@ -124,6 +129,14 @@ endif
 TRUSTED_NAME_TEST_KEY ?= 0
 ifneq ($(TRUSTED_NAME_TEST_KEY),0)
   DEFINES += TRUSTED_NAME_TEST_KEY
+endif
+
+#######################################
+# Memory Profiling                    #
+#######################################
+MEMORY_PROFILING ?= 0
+ifneq ($(MEMORY_PROFILING),0)
+  DEFINES += HAVE_MEMORY_PROFILING
 endif
 
 FIXED_TLV_CHALLENGE ?= 0

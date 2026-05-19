@@ -15,6 +15,8 @@
 #include "handle_sign_message.h"
 #include "handle_sign_offchain_message.h"
 #include "handle_sign_message_preview.h"
+#include "trusted_info.h"
+#include "dynamic_token_info.h"
 
 // Content of the review flow
 static nbgl_contentTagValueList_t G_content;
@@ -90,6 +92,10 @@ static nbgl_reviewStatusType_t get_status_type(bool accepted) {
 }
 
 static void review_choice(bool confirm) {
+    // Free dynamically allocated trusted info and dynamic token info
+    reset_trusted_info();
+    reset_dynamic_token_info();
+
     // Answer, display a status page and go back to main
     if (confirm) {
         if (G_command.is_preview_mode) {

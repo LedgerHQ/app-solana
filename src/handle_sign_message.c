@@ -10,6 +10,7 @@
 #include "sol/message.h"
 #include "sol/transaction_summary.h"
 #include "trusted_info.h"
+#include "dynamic_token_info.h"
 #include "ed25519_helpers.h"
 
 #include "handle_sign_message.h"
@@ -130,16 +131,16 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
     bool dest_sol_address_ok = false;
     bool create_token_account_received = false;
 
-    if (!g_trusted_info.received) {
+    if (g_trusted_info == NULL || !g_trusted_info->received) {
         // This case should never happen because this is already checked at TX parsing
         PRINTF("Descriptor info is required for a SPL transfer\n");
         send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
                                SWAP_EC_ERROR_GENERIC,
                                SWAP_EC_APP_DESCRIPTOR_INFO_MISSING);
     }
-    if (!validate_associated_token_address(g_trusted_info.owner_address,
-                                           g_trusted_info.mint_address,
-                                           g_trusted_info.token_address,
+    if (!validate_associated_token_address(g_trusted_info->owner_address,
+                                           g_trusted_info->mint_address,
+                                           g_trusted_info->token_address,
                                            is_token_2022)) {
         // This case should never happen because this is already checked at TX parsing
         PRINTF("Failed to validate ATA\n");
@@ -205,7 +206,7 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
 
             case SummaryItemPubkey:
                 if (strcmp(G_transaction_summary_title, "Create token account") == 0) {
-                    if (strcmp(g_trusted_info.encoded_token_address, G_transaction_summary_text) !=
+                    if (strcmp(g_trusted_info->encoded_token_address, G_transaction_summary_text) !=
                         0) {
                         PRINTF("Create ATA address does not match with address in descriptor\n");
                         send_swap_error_with_string(ApduReplySolanaSummaryFinalizeFailed,
@@ -233,7 +234,7 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
                     break;
                 } else if (strcmp(G_transaction_summary_title, "Token address") == 0) {
                     // MINT
-                    if (strcmp(g_trusted_info.encoded_mint_address, G_transaction_summary_text) !=
+                    if (strcmp(g_trusted_info->encoded_mint_address, G_transaction_summary_text) !=
                         0) {
                         // This case should never happen because this is already checked at TX
                         // parsing
@@ -250,7 +251,7 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
                     break;
                 } else if (strcmp(G_transaction_summary_title, "To (token account)") == 0) {
                     // Destination ATA
-                    if (strcmp(g_trusted_info.encoded_token_address, G_transaction_summary_text) !=
+                    if (strcmp(g_trusted_info->encoded_token_address, G_transaction_summary_text) !=
                         0) {
                         // This case should never happen because this is already checked at TX
                         // parsing
@@ -274,7 +275,8 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
                                                 "Unexpected string title: %s",
                                                 G_transaction_summary_title);
                 }
-                if (strcmp(g_trusted_info.encoded_owner_address, G_transaction_summary_text) != 0) {
+                if (strcmp(g_trusted_info->encoded_owner_address, G_transaction_summary_text) !=
+                    0) {
                     // This case should never happen because this is already checked at TX parsing
                     PRINTF("Dest SOL address does not match with SOL address in descriptor\n");
                     send_swap_error_with_string(ApduReplySolanaSummaryFinalizeFailed,
@@ -494,11 +496,13 @@ int handle_sign_message_parse_message(void) {
         if (!G_called_from_swap) {
             // Parser should have refused at parsing handler step but let's double check
             PRINTF("instruction_descriptor_received outside of swap context\n");
+            reset_saved_descriptors();
             return io_send_sw(ApduReplySdkNotSupported);
         }
 
         if (G_command.is_preview_mode) {
             PRINTF("Preview mode not supported with instruction descriptors\n");
+            reset_saved_descriptors();
             return io_send_sw(ApduReplySdkNotSupported);
         }
 
@@ -507,12 +511,18 @@ int handle_sign_message_parse_message(void) {
                                                  parser.buffer_length,
                                                  &print_config) != 0) {
             PRINTF("Error in process_message_body_with_descriptor\n");
+            reset_saved_descriptors();
+            reset_trusted_info();
+            reset_dynamic_token_info();
             send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
                                    SWAP_EC_ERROR_GENERIC,
                                    SWAP_EC_APP_DESCRIPTOR_PROCESSING_FAILED);
             // Unreachable
         } else {
             // Successfully processed the message with descriptor (LiFi swap)
+            reset_saved_descriptors();
+            reset_trusted_info();
+            reset_dynamic_token_info();
             swap_finalize();
             // Unreachable
         }
