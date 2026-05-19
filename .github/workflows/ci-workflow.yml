@@ -17,6 +17,11 @@ on:
       - develop
   pull_request:
 
+permissions:
+  contents: write       # Needed for snapshot PR creation in ragger/swap tests
+  actions: write        # Needed for upload-artifact in build and test workflows
+  pull-requests: write  # Needed for PR comments and snapshot PR creation
+
 # Cancel previous runs on this reference
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
