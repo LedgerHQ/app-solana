@@ -31,6 +31,12 @@ venv && pytest tests/swap/ --device flex --golden_run  # Regenerate snapshots, u
 # libsol unit tests
 qb_run_in_docker make -C libsol
 qb_run_in_docker COVERAGE=1 make -C libsol
+
+# Memory leak tests (valground)
+# Build with memory_profiling flag, run pytest with -s to capture allocator logs, pipe to valground.py
+# Clean if previous compilation was with a different flag, e.g. from dbg_trusted_name_test to memory_profiling
+qb -ce -f memory_profiling
+venv && pytest tests/python/ --device flex -s 2>&1 | tools/valground.py -q
 ```
 
 ## Architecture
