@@ -47,6 +47,11 @@ static int parse_apdu_header(const uint8_t *apdu_message,
 #ifdef HAVE_TRANSACTION_CHECKS
         case InsProvideTransactionCheck:
 #endif
+        case InsProvideInstructionSubstructure:
+        case InsProvideEnumVariant:
+        case InsProvideInstructionInfo:
+        case InsProvideTokenAccountState:
+        case InsProvideAltResolution:
             PRINTF("Handling modern instruction %d\n", header->instruction);
             header->deprecated_host = false;
             data_offset = OFFSET_CDATA;
@@ -102,7 +107,12 @@ static bool split_allowed_for_instruction(uint8_t instruction) {
             instruction == InsSignMessagePreview ||
             instruction == InsSignMessageDelayed ||
             instruction == InsTrustedInfoProvideInfo ||
-            instruction == InsTrustedInfoProvideDynamicDescriptor
+            instruction == InsTrustedInfoProvideDynamicDescriptor ||
+            instruction == InsProvideInstructionSubstructure ||
+            instruction == InsProvideEnumVariant ||
+            instruction == InsProvideInstructionInfo ||
+            instruction == InsProvideTokenAccountState ||
+            instruction == InsProvideAltResolution
 #ifdef HAVE_TRANSACTION_CHECKS
             || instruction == InsProvideTransactionCheck
 #endif
@@ -113,7 +123,12 @@ static bool instruction_with_derivation_path_in_first_apdu(uint8_t instruction) 
     // All but these ones
     return (instruction != InsTrustedInfoProvideInfo &&
             instruction != InsTrustedInfoProvideDynamicDescriptor &&
-            instruction != InsTrustedInfoProvideInstructionDescriptor
+            instruction != InsTrustedInfoProvideInstructionDescriptor &&
+            instruction != InsProvideInstructionSubstructure &&
+            instruction != InsProvideEnumVariant &&
+            instruction != InsProvideInstructionInfo &&
+            instruction != InsProvideTokenAccountState &&
+            instruction != InsProvideAltResolution
 #ifdef HAVE_TRANSACTION_CHECKS
             && instruction != InsProvideTransactionCheck
 #endif

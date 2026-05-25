@@ -27,6 +27,11 @@
 #ifdef HAVE_TRANSACTION_CHECKS
 #include "handle_provide_transaction_check.h"
 #endif
+#include "clear_signing/handle_provide_instruction_info.h"
+#include "clear_signing/handle_provide_instruction_substructure.h"
+#include "clear_signing/handle_provide_enum_variant.h"
+#include "clear_signing/handle_provide_token_account_state.h"
+#include "clear_signing/handle_provide_alt_resolution.h"
 #include "apdu.h"
 #include "ui_api.h"
 #include "nbgl_use_case.h"
@@ -130,6 +135,21 @@ static int handle_apdu(int rx) {
             }
             return handle_provide_transaction_check();
 #endif
+
+        case InsProvideInstructionInfo:
+            return handle_provide_instruction_info();
+
+        case InsProvideInstructionSubstructure:
+            return handle_provide_instruction_substructure();
+
+        case InsProvideEnumVariant:
+            return handle_provide_enum_variant();
+
+        case InsProvideTokenAccountState:
+            return handle_provide_token_account_state();
+
+        case InsProvideAltResolution:
+            return handle_provide_alt_resolution();
 
         default:
             // Should have been caught by apdu_handle_message

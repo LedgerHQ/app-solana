@@ -68,6 +68,11 @@ typedef enum InstructionCode {
 #ifdef HAVE_TRANSACTION_CHECKS
     InsProvideTransactionCheck = 0x23,
 #endif
+    InsProvideInstructionSubstructure = 0x24,
+    InsProvideEnumVariant = 0x25,
+    InsProvideInstructionInfo = 0x26,
+    InsProvideTokenAccountState = 0x27,
+    InsProvideAltResolution = 0x28,
 } InstructionCode;
 
 extern volatile bool G_called_from_swap;
