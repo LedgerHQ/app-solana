@@ -128,7 +128,7 @@ int encode_base58(const void *in, size_t length, char *out, size_t maxoutlen) {
     uint8_t j;
     size_t start_at;
     size_t zero_count = 0;
-    if (length > sizeof(tmp)) {
+    if (length > (sizeof(buffer) / 2)) {
         return INVALID_PARAMETER;
     }
     memmove(tmp, in, length);
