@@ -36,6 +36,11 @@ class INS(IntEnum):
     INS_TRUSTED_INFO = 0x21
     INS_DYNAMIC_TOKEN = 0x22
     INS_TRANSACTION_CHECK = 0x23
+    INS_INSTRUCTION_SUBSTRUCTURE = 0x24
+    INS_ENUM_VARIANT = 0x25
+    INS_INSTRUCTION_INFO = 0x26
+    INS_TOKEN_ACCOUNT_STATE = 0x27
+    INS_ALT_RESOLUTION = 0x28
 
 
 CLA = 0xE0
@@ -91,6 +96,11 @@ class ErrorType:
     INVALID_TRUSTED_INFO = 0x6c00
     INVALID_DYNAMIC_TOKEN = 0x6ca0
     INVALID_TRANSACTION_CHECK = 0x6cb0
+    INVALID_INSTRUCTION_INFO = 0x6cc0
+    INVALID_INSTRUCTION_SUBSTRUCTURE = 0x6cd0
+    INVALID_ENUM_VARIANT = 0x6ce0
+    INVALID_TOKEN_ACCOUNT_STATE = 0x6cf0
+    INVALID_ALT_RESOLUTION = 0x6d10
     UNIMPLEMENTED_INSTRUCTION = 0x6d00
     SOLANA_SUMMARY_FINALIZE_FAILED = 0x6f00
     SOLANA_SUMMARY_UPDATE_FAILED = 0x6f01
@@ -195,6 +205,55 @@ class TransactionCheckTag(IntEnum):
     TINY_URL = 0x83
     SIMULATION_TYPE = 0x84
     DER_SIGNATURE = 0x15
+
+class TokenAccountStateTag(IntEnum):
+    STRUCT_TYPE = 0x01
+    STRUCT_VERSION = 0x02
+    CHALLENGE = 0x12
+    ACCOUNT_ADDRESS = 0x20
+    MINT = 0x21
+    OWNER = 0x22
+    PRE_BALANCE = 0x23
+    SIGNATURE = 0x15
+
+class AltResolutionTag(IntEnum):
+    STRUCT_TYPE = 0x01
+    STRUCT_VERSION = 0x02
+    CHALLENGE = 0x12
+    ALT_ADDRESS = 0x20
+    ENTRY_INDEX = 0x21
+    RESOLVED_ADDRESS = 0x22
+    SIGNATURE = 0x15
+
+class EnumVariantTag(IntEnum):
+    STRUCT_TYPE = 0x01
+    STRUCT_VERSION = 0x02
+    PROGRAM_ID = 0x20
+    ENUM_ID = 0x21
+    VARIANT_INDEX = 0x22
+    VARIANT_NAME = 0x23
+    PAYLOAD_KIND = 0x24
+    PAYLOAD = 0x25
+    SIGNATURE = 0x15
+
+class InstructionInfoTag(IntEnum):
+    VERSION = 0x00
+    PROGRAM_ID = 0x01
+    DISCRIMINATOR = 0x02
+    OPERATION_TYPE = 0x03
+    PROGRAM_NAME = 0x04
+    SUBSTRUCTURES_HASH = 0x05
+    IDL_TYPE_POOL = 0x06
+    IDL_ROOT_TYPE = 0x07
+    MINT_ASSOC_ACCOUNT = 0x08
+    MINT_ASSOC_MINT = 0x09
+    OWNER_ASSOC_ACCOUNT = 0x0A
+    OWNER_ASSOC_OWNER = 0x0B
+    SIGNATURE = 0x15
+
+class ValueTag(IntEnum):
+    SOURCE = 0x01
+    PAYLOAD = 0x02
 
 def _extend_and_serialize_multiple_derivations_paths(derivations_paths: List[bytes]):
     serialized: bytes = len(derivations_paths).to_bytes(1, byteorder='little')
@@ -396,6 +455,99 @@ class SolanaClient:
     def get_challenge(self) -> bytes:
         challenge: RAPDU = self._client.exchange(CLA, INS.INS_GET_CHALLENGE,P1_NON_CONFIRM, P2_NONE)
         return challenge.data
+
+    def provide_token_account_state(self,
+                                    challenge: bytes,
+                                    account_address: bytes,
+                                    mint: bytes,
+                                    owner: bytes,
+                                    pre_balance: int):
+        payload = format_tlv(TokenAccountStateTag.STRUCT_TYPE, 0x15)
+        payload += format_tlv(TokenAccountStateTag.STRUCT_VERSION, 1)
+        payload += format_tlv(TokenAccountStateTag.CHALLENGE, challenge)
+        payload += format_tlv(TokenAccountStateTag.ACCOUNT_ADDRESS, account_address)
+        payload += format_tlv(TokenAccountStateTag.MINT, mint)
+        payload += format_tlv(TokenAccountStateTag.OWNER, owner)
+        payload += format_tlv(TokenAccountStateTag.PRE_BALANCE, pre_balance)
+        payload += format_tlv(TokenAccountStateTag.SIGNATURE,
+                              INSTRUCTION_DESCRIPTOR_PARTNER.sign(payload))
+
+        self.send_pki_certificate(INSTRUCTION_DESCRIPTOR_PARTNER)
+        self._exchange_split(CLA, INS.INS_TOKEN_ACCOUNT_STATE, P1_NON_CONFIRM, payload)
+
+    def provide_alt_resolution(self,
+                               challenge: bytes,
+                               alt_address: bytes,
+                               entry_index: int,
+                               resolved_address: bytes):
+        payload = format_tlv(AltResolutionTag.STRUCT_TYPE, 0x16)
+        payload += format_tlv(AltResolutionTag.STRUCT_VERSION, 1)
+        payload += format_tlv(AltResolutionTag.CHALLENGE, challenge)
+        payload += format_tlv(AltResolutionTag.ALT_ADDRESS, alt_address)
+        payload += format_tlv(AltResolutionTag.ENTRY_INDEX, entry_index)
+        payload += format_tlv(AltResolutionTag.RESOLVED_ADDRESS, resolved_address)
+        payload += format_tlv(AltResolutionTag.SIGNATURE,
+                              INSTRUCTION_DESCRIPTOR_PARTNER.sign(payload))
+
+        self.send_pki_certificate(INSTRUCTION_DESCRIPTOR_PARTNER)
+        self._exchange_split(CLA, INS.INS_ALT_RESOLUTION, P1_NON_CONFIRM, payload)
+
+    def provide_enum_variant(self,
+                             program_id: bytes,
+                             enum_id: str,
+                             variant_index: int,
+                             variant_name: str,
+                             payload_kind: int,
+                             variant_payload: bytes = b""):
+        payload = format_tlv(EnumVariantTag.STRUCT_TYPE, 0x17)
+        payload += format_tlv(EnumVariantTag.STRUCT_VERSION, 1)
+        payload += format_tlv(EnumVariantTag.PROGRAM_ID, program_id)
+        payload += format_tlv(EnumVariantTag.ENUM_ID, enum_id)
+        payload += format_tlv(EnumVariantTag.VARIANT_INDEX, variant_index)
+        payload += format_tlv(EnumVariantTag.VARIANT_NAME, variant_name)
+        payload += format_tlv(EnumVariantTag.PAYLOAD_KIND, payload_kind)
+        if variant_payload:
+            payload += format_tlv(EnumVariantTag.PAYLOAD, variant_payload)
+        payload += format_tlv(EnumVariantTag.SIGNATURE,
+                              INSTRUCTION_DESCRIPTOR_PARTNER.sign(payload))
+
+        self.send_pki_certificate(INSTRUCTION_DESCRIPTOR_PARTNER)
+        self._exchange_split(CLA, INS.INS_ENUM_VARIANT, P1_NON_CONFIRM, payload)
+
+    def provide_instruction_info(self,
+                                 program_id: bytes,
+                                 discriminator: bytes = b"",
+                                 operation_type: str = "Transfer",
+                                 program_name: str = "",
+                                 substructures_hash: bytes = b'\x00' * 32,
+                                 idl_type_pool: bytes = b'\x00',
+                                 idl_root_type: int = 0,
+                                 mint_assoc_account: int = None,
+                                 mint_assoc_mint: int = None,
+                                 owner_assoc_account: int = None,
+                                 owner_assoc_owner_value: bytes = None):
+        payload = format_tlv(InstructionInfoTag.VERSION, 1)
+        payload += format_tlv(InstructionInfoTag.PROGRAM_ID, program_id)
+        payload += format_tlv(InstructionInfoTag.DISCRIMINATOR, discriminator)
+        payload += format_tlv(InstructionInfoTag.OPERATION_TYPE, operation_type)
+        if program_name:
+            payload += format_tlv(InstructionInfoTag.PROGRAM_NAME, program_name)
+        payload += format_tlv(InstructionInfoTag.SUBSTRUCTURES_HASH, substructures_hash)
+        payload += format_tlv(InstructionInfoTag.IDL_TYPE_POOL, idl_type_pool)
+        payload += format_tlv(InstructionInfoTag.IDL_ROOT_TYPE, idl_root_type)
+        if mint_assoc_account is not None:
+            payload += format_tlv(InstructionInfoTag.MINT_ASSOC_ACCOUNT, mint_assoc_account)
+        if mint_assoc_mint is not None:
+            payload += format_tlv(InstructionInfoTag.MINT_ASSOC_MINT, mint_assoc_mint)
+        if owner_assoc_account is not None:
+            payload += format_tlv(InstructionInfoTag.OWNER_ASSOC_ACCOUNT, owner_assoc_account)
+        if owner_assoc_owner_value is not None:
+            payload += format_tlv(InstructionInfoTag.OWNER_ASSOC_OWNER, owner_assoc_owner_value)
+        payload += format_tlv(InstructionInfoTag.SIGNATURE,
+                              INSTRUCTION_DESCRIPTOR_PARTNER.sign(payload))
+
+        self.send_pki_certificate(INSTRUCTION_DESCRIPTOR_PARTNER)
+        self._exchange_split(CLA, INS.INS_INSTRUCTION_INFO, P1_NON_CONFIRM, payload)
 
 
     def get_public_key(self, derivation_path: bytes) -> bytes:
