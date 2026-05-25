@@ -354,11 +354,12 @@ static int print_stake_authorize_both(const PrintConfig *print_config,
     // Sanity check
     BAIL_IF(staker_info->authorize != StakeAuthorizeStaker);
     BAIL_IF(withdrawer_info->authorize != StakeAuthorizeWithdrawer);
+    BAIL_IF(!pubkeys_equal(staker_info->account, withdrawer_info->account));
 
     item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Set stake auth", staker_info->account);
 
-    if (staker_info->new_authority == withdrawer_info->new_authority) {
+    if (pubkeys_equal(staker_info->new_authority, withdrawer_info->new_authority)) {
         item = transaction_summary_general_item();
         summary_item_set_pubkey(item, "New authorities", staker_info->new_authority);
     } else {
@@ -462,11 +463,12 @@ static int print_vote_authorize_both(const PrintConfig *print_config,
     // Sanity check
     BAIL_IF(voter_info->authorize != VoteAuthorizeVoter);
     BAIL_IF(withdrawer_info->authorize != VoteAuthorizeWithdrawer);
+    BAIL_IF(!pubkeys_equal(voter_info->account, withdrawer_info->account));
 
     item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Set vote auth", voter_info->account);
 
-    if (voter_info->new_authority == withdrawer_info->new_authority) {
+    if (pubkeys_equal(voter_info->new_authority, withdrawer_info->new_authority)) {
         item = transaction_summary_general_item();
         summary_item_set_pubkey(item, "New authorities", voter_info->new_authority);
     } else {
