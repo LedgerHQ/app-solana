@@ -31,6 +31,10 @@ void start_sign_message_ui(size_t num_summary_steps);
 
 void start_blind_sign_tx_ui(size_t num_summary_steps);
 
+// Display the raw deserialized message (instructions, account metas, data) as a
+// blind-signing review with `num_pairs` display pairs.
+void start_sign_message_raw_ui(size_t num_pairs);
+
 void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps);
 
 void ui_transaction_modal(bool is_success);

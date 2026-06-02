@@ -2,6 +2,7 @@
 #include "sol/printer.h"
 #include "sol/print_config.h"
 #include "sol/message.h"
+#include "sol/message_raw.h"
 #include "sol/transaction_summary.h"
 #include "glyphs.h"
 #include "apdu.h"
@@ -25,6 +26,9 @@ static nbgl_layoutTagValue_t G_current_pair;
 // Used to differentiate between message and transaction review
 static nbgl_operationType_t G_operation_type;
 static bool G_is_ascii_message;
+// When set, review pairs are rendered from the raw deserialized message
+// (instructions + account metas + data) instead of the transaction summary.
+static bool G_raw_view;
 
 // We will display at most 4 items on a Stax review screen
 #define MAX_SIMULTANEOUS_DISPLAYED_SLOTS NB_MAX_DISPLAYED_PAIRS_IN_REVIEW
@@ -33,6 +37,11 @@ typedef struct dynamic_slot_s {
     char text[sizeof(G_transaction_summary_text)];
 } dynamic_slot_t;
 static dynamic_slot_t displayed_slots[MAX_SIMULTANEOUS_DISPLAYED_SLOTS];
+
+// Raw-view values (a base58 pubkey with its signer/writable suffix, or a hex
+// data chunk) are larger than transaction-summary values, so the raw branch
+// renders into its own rotating buffers and leaves the summary path untouched.
+static char G_raw_values[MAX_SIMULTANEOUS_DISPLAYED_SLOTS][RAW_MESSAGE_VALUE_BUF_SIZE];
 
 // NBGL library has to know how many steps will be displayed
 static size_t G_transaction_steps_number;
@@ -48,6 +57,27 @@ static nbgl_contentTagValue_t *get_review_pair(uint8_t index) {
     // We use a rotating access to the displayed_slots buffers to ensure there is no overwrite
     // by adjacent indexes
     uint8_t slot = index % ARRAY_COUNT(displayed_slots);
+
+    if (G_raw_view) {
+        // Render the raw pair: title into the (unchanged) slot title buffer,
+        // value into the larger dedicated raw buffer.
+        if (raw_message_render_pair(index,
+                                    displayed_slots[slot].title,
+                                    sizeof(displayed_slots[slot].title),
+                                    G_raw_values[slot],
+                                    sizeof(G_raw_values[slot])) != 0) {
+            // Should never happen as the pair count was validated during setup
+            PRINTF("Fatal: raw_message_render_pair failed for index %d\n", index);
+            app_exit();
+        }
+        G_current_pair.item = displayed_slots[slot].title;
+        G_current_pair.value = G_raw_values[slot];
+        // Start each instruction on a new page so pages stay instruction-aligned.
+        G_current_pair.forcePageStart = raw_message_starts_instruction(index);
+        return &G_current_pair;
+    }
+    G_current_pair.forcePageStart = false;
+
     // Final step is special for ASCII messages
     if (index == G_transaction_steps_number - 1 && G_operation_type == TYPE_MESSAGE &&
         G_is_ascii_message) {
@@ -135,6 +165,7 @@ static void init_review_content(nbgl_opType_t operation_type,
     G_operation_type = operation_type;
     G_transaction_steps_number = num_summary_steps;
     G_is_ascii_message = is_ascii_message;
+    G_raw_view = false;
 
     G_content.nbMaxLinesForValue = 0;
     G_content.smallCaseForValue = false;
@@ -290,6 +321,15 @@ void start_sign_message_ui(size_t num_summary_steps) {
             start_message_signing_review();
         }
     }
+}
+
+void start_sign_message_raw_ui(size_t num_pairs) {
+    init_review_content(TYPE_TRANSACTION, num_pairs, false);
+    // Pairs are rendered from the raw message rather than the summary.
+    G_raw_view = true;
+    // Add a "Skip" button so a long raw review can jump straight to signing.
+    G_operation_type |= SKIPPABLE_OPERATION;
+    start_blind_signing_ui("Review raw transaction", "Accept risk and sign transaction?");
 }
 
 void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {

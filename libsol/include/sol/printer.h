@@ -40,4 +40,10 @@ int print_timestamp(int64_t, char *out, size_t out_length);
 
 int encode_base58(const void *in, size_t length, char *out, size_t maxoutlen);
 
+// Encode a byte buffer as an uppercase hex string; returns the number of bytes
+// written (including the NUL) on success, -1 otherwise. Copied verbatim from the
+// SDK's format_hex so libsol stays self-contained:
+// https://github.com/LedgerHQ/ledger-secure-sdk/blob/3ff3ddcbd4506cfdf97ec36fdb72f9914107b1e7/lib_standard_app/format.c#L156
+int encode_hex(const uint8_t *in, size_t in_len, char *out, size_t out_len);
+
 bool amount_as_string_is_greater_or_equal(const char *a, const char *b);

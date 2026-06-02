@@ -166,6 +166,35 @@ int encode_base58(const void *in, size_t length, char *out, size_t maxoutlen) {
     return 0;
 }
 
+// Copy of format_hex from the SDK's lib_standard_app/format.c (see printer.h).
+// Kept local so libsol stays self-contained for host unit tests and fuzzing.
+int encode_hex(const uint8_t *in, size_t in_len, char *out, size_t out_len) {
+    if (out_len < 2 * in_len + 1) {
+        return -1;
+    }
+
+    const char hex[] = "0123456789ABCDEF";
+    size_t i = 0;
+    int written = 0;
+
+    while (i < in_len && (i * 2 + (2 + 1)) <= out_len) {
+        uint8_t high_nibble = (in[i] & 0xF0) >> 4;
+        *out = hex[high_nibble];
+        out++;
+
+        uint8_t low_nibble = in[i] & 0x0F;
+        *out = hex[low_nibble];
+        out++;
+
+        i++;
+        written += 2;
+    }
+
+    *out = '\0';
+
+    return written + 1;
+}
+
 int print_i64(int64_t i64, char *out, size_t out_length) {
     BAIL_IF(out_length < 1);
     uint64_t u64 = (uint64_t) i64;
