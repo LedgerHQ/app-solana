@@ -46,7 +46,7 @@ void test_raw_single_instruction() {
 
     size_t pairs = 0;
     assert(raw_message_init(body, ARRAY_LEN(body), &header, &g_hash, false, &pairs) == 0);
-    // 1 count + (1 program + 2 accounts + 1 data) + 2 tail
+    // 3 leading + (1 program + 2 accounts + 1 data) = 7
     assert(pairs == 7);
 
     char title[TITLE_SIZE];
@@ -127,7 +127,7 @@ void test_raw_lookup_account_and_empty_data() {
 
     size_t pairs = 0;
     assert(raw_message_init(body, ARRAY_LEN(body), &header, &g_hash, false, &pairs) == 0);
-    // 1 count + (1 program + 1 account + 1 empty-data) + 2 tail
+    // 3 leading + (1 program + 1 account + 1 empty-data) = 6
     assert(pairs == 6);
 
     char title[TITLE_SIZE];
@@ -156,7 +156,7 @@ void test_raw_data_chunking() {
 
     size_t pairs = 0;
     assert(raw_message_init(body, sizeof(body), &header, &g_hash, false, &pairs) == 0);
-    // 1 count + (1 program + 0 accounts + 2 data) + 2 tail
+    // 3 leading + (1 program + 0 accounts + 2 data) = 6
     assert(pairs == 6);
 
     char title[TITLE_SIZE];
@@ -184,7 +184,7 @@ void test_raw_multiple_instructions() {
 
     size_t pairs = 0;
     assert(raw_message_init(body, ARRAY_LEN(body), &header, &g_hash, false, &pairs) == 0);
-    // 1 + (1+1+1) + (1+2+1) + 2 = 10
+    // 3 leading + (1+1+1) + (1+2+1) = 10
     assert(pairs == 10);
 
     char title[TITLE_SIZE];
@@ -235,6 +235,46 @@ void test_raw_readonly_account_no_flag() {
     assert(strstr(value, "(writable)") != NULL);
 }
 
+// A versioned (v0) message whose instruction references two lookup-table
+// accounts: the table loads the first as writable and the second as read-only.
+// The writable one is flagged; the read-only one is not.
+void test_raw_versioned_lookup_writable() {
+    MessageHeader header = make_header(1);
+    header.versioned = true;
+    header.version = 0;
+    // ix: program=2 (static), accounts=[3, 4] (both from the lookup table), data=[].
+    // Then the address-table-lookups section: one table with one writable index
+    // and one read-only index, so global index 3 is writable and 4 is read-only.
+    uint8_t body[] = {
+        2, 2, 3, 4, 0,  // ix: program=2, accounts=[3,4], data_length=0
+        1,              // 1 address table lookup
+        // table account key (32 bytes)
+        0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
+        0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55, 0x55,
+        0x55, 0x55,
+        1, 5,  // writable_indexes = [5] -> one writable account (global index 3)
+        1, 7,  // readonly_indexes = [7] -> one read-only account (global index 4)
+    };
+
+    size_t pairs = 0;
+    assert(raw_message_init(body, ARRAY_LEN(body), &header, &g_hash, false, &pairs) == 0);
+    // 3 leading + (1 program + 2 accounts + 1 empty-data) = 7
+    assert(pairs == 7);
+
+    char title[TITLE_SIZE];
+    char value[RAW_MESSAGE_VALUE_BUF_SIZE];
+
+    // Global index 3: first lookup-table account, loaded writable -> flagged.
+    assert(render(4, title, value) == 0);
+    assert(strcmp(title, "Ix 1 account 1/2") == 0);
+    assert(strcmp(value, "lookup table account #3 (writable)") == 0);
+
+    // Global index 4: read-only lookup-table account -> no flag.
+    assert(render(5, title, value) == 0);
+    assert(strcmp(title, "Ix 1 account 2/2") == 0);
+    assert(strcmp(value, "lookup table account #4") == 0);
+}
+
 void test_raw_rejects_empty() {
     MessageHeader header = make_header(0);
     size_t pairs = 0;
@@ -248,6 +288,7 @@ int main() {
     RUN_TEST(test_raw_data_chunking);
     RUN_TEST(test_raw_multiple_instructions);
     RUN_TEST(test_raw_readonly_account_no_flag);
+    RUN_TEST(test_raw_versioned_lookup_writable);
     RUN_TEST(test_raw_rejects_empty);
     printf("passed\n");
     return 0;

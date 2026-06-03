@@ -17,7 +17,7 @@
 //
 // Signer/writable flags are derived positionally from the header (read-only
 // accounts get no flag); lookup-table accounts (absent from the message) render
-// as "lookup table account #N".
+// as "lookup table account #N", flagged "(writable)" when the table loads them so.
 
 // Minimum size of the value buffer that raw_message_render_pair writes into.
 // Large enough for a base58 pubkey plus its " (signer, writable)" suffix and

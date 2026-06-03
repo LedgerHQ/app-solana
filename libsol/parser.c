@@ -223,3 +223,25 @@ int parse_instruction(Parser *parser, Instruction *instruction) {
     BAIL_IF(parse_data(parser, &instruction->data, &instruction->data_length));
     return 0;
 }
+
+int parse_address_table_lookups(Parser *parser, size_t *num_writable) {
+    size_t num_lookups;
+    BAIL_IF(parse_length(parser, &num_lookups));
+    size_t writable_total = 0;
+    for (size_t i = 0; i < num_lookups; i++) {
+        // Lookup: account_key (32B), then writable and read-only index lists.
+        BAIL_IF(check_buffer_length(parser, PUBKEY_SIZE));
+        advance(parser, PUBKEY_SIZE);
+        size_t writable_count;
+        BAIL_IF(parse_length(parser, &writable_count));
+        BAIL_IF(check_buffer_length(parser, writable_count));
+        advance(parser, writable_count);
+        writable_total += writable_count;
+        size_t readonly_count;
+        BAIL_IF(parse_length(parser, &readonly_count));
+        BAIL_IF(check_buffer_length(parser, readonly_count));
+        advance(parser, readonly_count);  // skip read-only indexes
+    }
+    *num_writable = writable_total;
+    return 0;
+}

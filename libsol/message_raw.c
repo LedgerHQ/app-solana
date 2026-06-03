@@ -21,6 +21,7 @@ typedef struct RawMessageContext {
     uint8_t num_required_signatures;
     uint8_t num_readonly_signed;
     uint8_t num_readonly_unsigned;
+    size_t num_alt_writable;  // accounts an address lookup table loads as writable (v0)
     size_t instructions_length;
     const Hash *message_hash;
     size_t total_pairs;
@@ -77,11 +78,17 @@ static const char *account_flags(uint16_t global_index, bool short_form) {
 
 // Render the pubkey at `global_index` into `value`. Accounts referenced through
 // an address lookup table are not present in the message and are rendered as a
-// placeholder. When `with_flags` is set, a non-empty signer/writable tag is
-// appended.
+// placeholder, flagged "(writable)" when the table loads them as writable. When
+// `with_flags` is set, a non-empty signer/writable tag is appended.
 static int render_pubkey(uint16_t global_index, char *value, size_t value_len, bool with_flags) {
     if (global_index >= G_raw.pubkeys_length) {
         snprintf(value, value_len, "lookup table account #%u", global_index);
+        // Lookup-table accounts are never signers; across all lookup tables the
+        // writable accounts are loaded ahead of all the read-only ones, so the
+        // offset past the static keys tells us which.
+        if (with_flags && (size_t) (global_index - G_raw.pubkeys_length) < G_raw.num_alt_writable) {
+            strlcat(value, G_raw.short_pubkeys ? " (w)" : " (writable)", value_len);
+        }
         return 0;
     }
     if (G_raw.short_pubkeys) {
@@ -148,6 +155,14 @@ int raw_message_init(const uint8_t *body,
         }
     }
 
+    // For versioned (v0) messages the address-lookup-table section follows the
+    // instructions; resolved account lists place the tables' writable accounts
+    // before their read-only ones, so we only need the writable count.
+    if (header->versioned && parse_address_table_lookups(&parser, &G_raw.num_alt_writable) != 0) {
+        PRINTF("raw_message_init: failed to parse address table lookups\n");
+        return -1;
+    }
+
     G_raw.total_pairs = total;
     *out_pairs = total;
     PRINTF("raw_message_init: %d display pairs\n", (int) total);
@@ -185,9 +200,11 @@ int raw_message_render_pair(size_t index,
         return 0;
     }
 
-    // Instruction region: walk instructions, accumulating their pair counts
-    // until `local` lands inside one of them.
-    size_t local = index - 3;
+    // `cursor` is the first pair index we haven't ruled out. We skip whole
+    // instructions until `index` falls inside one, then step through that
+    // instruction's sections (program, accounts, data). The offset within
+    // whatever we're examining is always `index - cursor`.
+    size_t cursor = 3;  // first pair after the three leading ones
     Parser parser = {G_raw.body, G_raw.body_length};
     for (size_t i = 0; i < G_raw.instructions_length; i++) {
         Instruction ix;
@@ -196,20 +213,25 @@ int raw_message_render_pair(size_t index,
         }
         size_t accounts = ix.accounts_length;
         size_t data_pairs = data_pairs_for(ix.data_length);
-        if (local >= 1 + accounts + data_pairs) {
-            local -= 1 + accounts + data_pairs;
+        size_t pairs = 1 + accounts + data_pairs;
+        if (index >= cursor + pairs) {
+            cursor += pairs;  // index is in a later instruction
             continue;
         }
+        if (index < cursor) {
+            return -1;  // can't happen (cursor stays <= index)
+        }
 
-        // Program id.
-        if (local == 0) {
+        // Program id (1 pair).
+        if (index == cursor) {
             snprintf(title, title_len, "Ix %u program", (unsigned) (i + 1));
             return render_pubkey(ix.program_id_index, value, value_len, false);
         }
+        cursor += 1;
 
-        // Account meta.
-        if (local <= accounts) {
-            size_t account_ordinal = local - 1;  // 0-based within this instruction
+        // Account meta (`accounts` pairs).
+        if (index < cursor + accounts) {
+            size_t account_ordinal = index - cursor;
             snprintf(title,
                      title_len,
                      "Ix %u account %u/%u",
@@ -218,9 +240,10 @@ int raw_message_render_pair(size_t index,
                      (unsigned) accounts);
             return render_pubkey(ix.accounts[account_ordinal], value, value_len, true);
         }
+        cursor += accounts;
 
         // Instruction data (hex, chunked).
-        size_t chunk = local - 1 - accounts;
+        size_t chunk = index - cursor;
         if (ix.data_length == 0) {
             snprintf(title, title_len, "Ix %u data", (unsigned) (i + 1));
             strlcpy(value, "(empty)", value_len);
@@ -233,6 +256,9 @@ int raw_message_render_pair(size_t index,
                  (unsigned) (chunk + 1),
                  (unsigned) data_pairs);
         size_t start = chunk * RAW_DATA_BYTES_PER_PAIR;
+        if (start >= ix.data_length) {
+            return -1;  // can't happen (chunk < data_pairs)
+        }
         size_t remaining = ix.data_length - start;
         size_t n = remaining < RAW_DATA_BYTES_PER_PAIR ? remaining : RAW_DATA_BYTES_PER_PAIR;
         // encode_hex returns >0 (bytes written incl. NUL) on success, -1 on error.
@@ -249,7 +275,7 @@ bool raw_message_starts_instruction(size_t index) {
     if (index < 3) {
         return false;
     }
-    size_t local = index - 3;
+    size_t ix_start = 3;  // global index where this instruction's pairs begin
     Parser parser = {G_raw.body, G_raw.body_length};
     for (size_t i = 0; i < G_raw.instructions_length; i++) {
         Instruction ix;
@@ -257,10 +283,11 @@ bool raw_message_starts_instruction(size_t index) {
             return false;
         }
         size_t pairs = pairs_for_instruction(&ix);
-        if (local < pairs) {
-            return (local == 0) && (i >= 1);
+        if (index < ix_start + pairs) {
+            // First (program) pair of an instruction other than the first.
+            return (index == ix_start) && (i >= 1);
         }
-        local -= pairs;
+        ix_start += pairs;
     }
     return false;
 }
