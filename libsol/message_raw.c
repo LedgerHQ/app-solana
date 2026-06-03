@@ -130,9 +130,9 @@ int raw_message_init(const uint8_t *body,
         return -1;
     }
 
-    // 1 "Instructions" header pair + per-instruction pairs + 2 tail pairs
-    // ("Message Hash", "Fee payer").
-    size_t total = 1;
+    // Three leading pairs (Message Hash, Fee payer, Instructions count) precede
+    // the per-instruction pairs.
+    size_t total = 3;
     Parser parser = {body, body_length};
     for (size_t i = 0; i < header->instructions_length; i++) {
         Instruction ix;
@@ -146,11 +146,6 @@ int raw_message_init(const uint8_t *body,
             PRINTF("raw_message_init: %d pairs exceeds limit %d\n", (int) total, RAW_MAX_PAIRS);
             return -1;
         }
-    }
-    total += 2;
-    if (total > RAW_MAX_PAIRS) {
-        PRINTF("raw_message_init: %d pairs exceeds limit %d\n", (int) total, RAW_MAX_PAIRS);
-        return -1;
     }
 
     G_raw.total_pairs = total;
