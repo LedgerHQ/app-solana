@@ -162,27 +162,25 @@ int raw_message_render_pair(size_t index,
     if (index >= G_raw.total_pairs || title_len == 0 || value_len == 0) {
         return -1;
     }
-    title[0] = '\0';
-    value[0] = '\0';
 
     // Leading pairs: the identity of what is being signed. The hash goes
     // first so it is reachable without paging through every instruction and
     // mirrors the hash-only fallback screen; the fee payer and instruction
     // count follow before the per-instruction breakdown.
     if (index == 0) {
-        strlcat(title, "Message Hash", title_len);
+        strlcpy(title, "Message Hash", title_len);
         return encode_base58(G_raw.message_hash, HASH_SIZE, value, value_len);
     }
     if (index == 1) {
-        strlcat(title, "Fee payer", title_len);
+        strlcpy(title, "Fee payer", title_len);
         if (G_raw.pubkeys_length == 0) {
-            strlcat(value, "(none)", value_len);
+            strlcpy(value, "(none)", value_len);
             return 0;
         }
         return render_pubkey(0, value, value_len, false);
     }
     if (index == 2) {
-        strlcat(title, "Instructions", title_len);
+        strlcpy(title, "Instructions", title_len);
         snprintf(value, value_len, "%u", (unsigned) G_raw.instructions_length);
         return 0;
     }
@@ -225,7 +223,7 @@ int raw_message_render_pair(size_t index,
         size_t chunk = local - 1 - accounts;
         if (ix.data_length == 0) {
             snprintf(title, title_len, "Ix %u data", (unsigned) (i + 1));
-            strlcat(value, "(empty)", value_len);
+            strlcpy(value, "(empty)", value_len);
             return 0;
         }
         snprintf(title,
