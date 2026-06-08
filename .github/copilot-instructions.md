@@ -11,9 +11,13 @@ qb -xpaen -f dbg_trusted_name_test # All devices
 qb -cx                            # Clean rebuild for NANOX
 ```
 
-**NANOS is DEPRECATED** - do not support it.
+**NANOS is DEPRECATED**
 
 ## Testing
+
+Whenever possible, adopt a TDD approch when developing new features or fixing bugs.
+
+### Running Tests
 
 Always run the tests in the python virtual environment, use the `venv` bash alias to enter it. DO NOT try to source an activate file, use the BASH ALIAS.
 
@@ -26,12 +30,24 @@ venv && pytest tests/python/ --device stax --golden_run  # Regenerate snapshots,
 venv && pytest tests/swap/ --device flex
 venv && pytest tests/swap/ --device flex --golden_run  # Regenerate snapshots, use conservatively
 
-# NEVER attempt to run both pytest instances, "pytest tests/python/ tests/swap/" it WILL NOT work.
-
 # libsol unit tests
 qb_run_in_docker make -C libsol
 qb_run_in_docker COVERAGE=1 make -C libsol
+
+# Memory leak tests (valground)
+# Build with memory_profiling flag, run pytest with -s to capture allocator logs, pipe to valground.py
+# Clean if previous compilation was with a different flag, e.g. from dbg_trusted_name_test to memory_profiling
+qb -ce -f memory_profiling
+venv && pytest tests/python/ --device flex -s 2>&1 | tools/valground.py -q
 ```
+
+### Test pitfals
+
+- NEVER attempt to run both pytest instances, "pytest tests/python/ tests/swap/" it WILL NOT work as fixtures will fight each other.
+- snapshot checking is performed before returning APDU response: a snapshot failure can mean the application refused to sign and is displaying an error screen.
+- tests can timeout in case of errors, if that happens be smart when iterating to avoid wasting too much time.
+- debuging a test is done by adding logs in the C code, rebuilding, and re-running the test with `-s` option so Speculos prints PRINTF in stdout.
+- There is NO SUCH THING as a "pre-existing failure". All tests are presumed correct and failures are ALWAYS caused by latest changes. Suggesting otherwise is entirely FORBIDDEN. ALL TESTS SHALL ALWAYS PASS.
 
 ## Architecture
 
@@ -43,14 +59,14 @@ qb_run_in_docker COVERAGE=1 make -C libsol
 
 **Instructions:** `0x04` config, `0x05` pubkey, `0x06` sign, `0x07` offchain, `0x08` preview, `0x09` delayed sign, `0x16-0x22` trusted name
 
-### Transaction Parsing (libsol)
-Portable C code, no SDK deps (except `libsol/mock/` for tests):
+### Pure Solana code (libsol)
+The Libsol is independent of the SDK features (PKI, NBGL, etc) and contains code purely related to the Solana blockchain. (except `libsol/mock/` for tests).
+Despite PRINTF being a SDK API, they are available in libsol and shall be used as in other modules
+
 1. `message.c` → parse header/accounts
 2. `instruction.c` → identify programs
 3. Program parsers → `system_instruction.c`, `spl_token_instruction.c`, etc.
 4. `transaction_summary.c` → build UI items
-
-**Summary items** → NBGL screens (Amount, Pubkey, String types)
 
 ### Trusted Names
 PKI-signed token metadata for display:
@@ -66,26 +82,38 @@ Preview (INS 0x08) stores SHA-512 fingerprint of message with zeroed blockhash, 
 - Error codes: `0x6f10` (no preview), `0x6f11` (hash), `0x6f12` (length), `0x6f13` (derivation)
 - State cleared after every delayed sign
 
+### Swap feature
+
+- The SWAP flow is the flow started from the Exchange application instead of the dashboard. It enables some features and blocks others.
+- The information coming from Exchange is TRUSTED.
+- The application must return to Exchange after the handling of an apdu to sign, whether valid or not. Return is made through the send_swap_error_X() SDK functions in case of error, or through the SDK IO stack once G_swap_response_ready has been set. In both cases, cleaning non-sensitive data is completely useless (dynamic allocator free, apdu managers, etc).
+
+### Dynamic allocation
+
+- Dynamic allocation is allowed but must be used with great care, ensuring the data is always freed after use.
+- Splitting a function in an internal one that performs the logic and an external one that calls the internal one and frees is a good pattern to ensure proper freeing of memory.
+- The size of the allocated pool can be increased if needed.
+
+### Test pem keys
+
+- You do NOT have the possibility to regenerate the PKI certificates for new keys. As a result NEVER try to generate new .pem files. If a new use cases requires new keys, reuse the existing test keys and their corresponding .pem files for development purposes and flag so in the result summary.
+
 ## Code Patterns
+
+Coding patterns described here are more important than uniformity cross applications.
 
 ### Logging
 
-- Never assume code is correct on first try - add logs to verify execution flow
-- Trace logs (no variables): Use `PRINTF("Function entered\n")` sparingly in key dispatch logic (e.g., APDU handlers, main switch cases)
-- Variable logs: Use `PRINTF("variable_name=%d\n", var)` or `PRINTF("buffer=%.*H\n", len, buf)` liberally in calculations and new code
-- Purpose: Help understand what actually runs vs what was expected to run
+- Never assume code is correct on first try, writing logs is mandatory to verify execution flow
+- Trace logs (no variables): Use `PRINTF("Function entered or choice taken\n")` in key dispatch logic (e.g., APDU handlers, main switch cases)
+- Variable logs: Use `PRINTF("variable_name=%d\n", var)` or `PRINTF("buffer=%.*H\n", len, buf)` in calculations and new code
+- PRINTF are meant to be permanent.
 
 ### Coding conventions
 
 - bool return is used to indicate the result of a CHECK, NOT a success or failure.
 - int return is used to report a success or failure of a function by using -1 or 0.
 - Global or module variables are prefixed by `G_*`.
-
-### Swap feature
-
-- The SWAP flow is the flow started from the Exchange application instead of the dashboard. It enables some features and blocks others.
-- The information coming from Exchange is TRUSTED.
-- The application must return to Exchange after the handling of an apdu to sign, whether valid or not. Return is made through the send_swap_error_X() SDK functions in case of error, or through the SDK IO stack once G_swap_response_ready has been set. In both cases, cleaning non-sensitive data is completely useless (dynamic allocator free, apdu managers, etc).
 
 ## Critical Files
 
@@ -97,10 +125,17 @@ Preview (INS 0x08) stores SHA-512 fingerprint of message with zeroed blockhash, 
 - `libsol/transaction_summary.c` - UI summary
 - `doc/api.md` - APDU protocol spec
 
-Makefile flags are handled through the `qb` tool via `ledger_app.toml`. dbg_trusted_name_test is the standard debug profile.
-
 ## Common Issues
 
-1. **libsol is portable** - no SDK includes in `libsol/*.c` files
-2. **Clean only when needed** - `qb -c` clears leftover .o files (not required for device switches)
-4. **Swap context is different than normal Dashboard start and blocks features** - `G_called_from_swap` prevents other features like message preview or blind signing.
+- **Clean only when needed** - `qb -c` clears leftover .o files (not required for device switches)
+- **Swap context is different than normal Dashboard start and blocks features** - `G_called_from_swap` prevents other features like message preview or blind signing.
+- Do not use /tmp as a storage for temporary files, if you want to create temporary files, create them in the project directory and remove them after.
+
+## External projects
+
+Other repositories that are relevant to the development of the Solana Ledger application are available as read-only in the directory ./other_projects
+This includes but is not limited to:
+- app-ethereum
+- ledger-app-workflows
+- ledger-secure-sdk
+- ragger
