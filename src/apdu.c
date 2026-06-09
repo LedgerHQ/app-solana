@@ -44,6 +44,7 @@ static int parse_apdu_header(const uint8_t *apdu_message,
         case InsTrustedInfoGetChallenge:
         case InsTrustedInfoProvideInfo:
         case InsTrustedInfoProvideDynamicDescriptor:
+        case InsMockReview:
             PRINTF("Handling modern instruction %d\n", header->instruction);
             header->deprecated_host = false;
             data_offset = OFFSET_CDATA;
@@ -106,7 +107,8 @@ static bool instruction_with_derivation_path_in_first_apdu(uint8_t instruction) 
     // All but these ones
     return (instruction != InsTrustedInfoProvideInfo &&
             instruction != InsTrustedInfoProvideDynamicDescriptor &&
-            instruction != InsTrustedInfoProvideInstructionDescriptor);
+            instruction != InsTrustedInfoProvideInstructionDescriptor &&
+            instruction != InsMockReview);
 }
 
 static bool instruction_without_payload(uint8_t instruction) {

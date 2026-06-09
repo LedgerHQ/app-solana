@@ -68,6 +68,7 @@ typedef enum InstructionCode {
     InsTrustedInfoGetChallenge = 0x20,
     InsTrustedInfoProvideInfo = 0x21,
     InsTrustedInfoProvideDynamicDescriptor = 0x22,
+    InsMockReview = 0xA0,
 } InstructionCode;
 
 extern volatile bool G_called_from_swap;
