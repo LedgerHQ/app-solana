@@ -114,6 +114,7 @@ Coding patterns described here are more important than uniformity cross applicat
 - bool return is used to indicate the result of a CHECK, NOT a success or failure.
 - int return is used to report a success or failure of a function by using -1 or 0.
 - Global or module variables are prefixed by `G_*`.
+- Never use ternary conditional operator
 
 ## Critical Files
 
