@@ -90,6 +90,7 @@ typedef enum swap_error_application_specific_code_e {
     SWAP_EC_APP_BLIND_SIGNING_REFUSED = 0x13,
 
     SWAP_EC_APP_DESCRIPTOR_INVALID_CAPPED_FIELDS = 0x14,
+    SWAP_EC_APP_TX_HASH_MISMATCH = 0x15,
 } swap_error_application_specific_code_t;
 
 typedef struct ApduHeader {

@@ -8,7 +8,9 @@ bool swap_copy_transaction_parameters(create_transaction_parameters_t *sign_tran
 
 swap_mode_t get_swap_mode(void);
 
-bool check_template_id(uint64_t template_id);
+bool check_template_id(uint32_t template_id);
+
+bool check_swap_tx_hash(const uint8_t *computed_hash);
 
 bool check_swap_amount_raw(uint64_t amount);
 

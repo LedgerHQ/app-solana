@@ -442,3 +442,21 @@ class SolanaClient:
         tx = Transaction.new_unsigned(message)
         print(tx)
         return tx.message_data()
+
+    def craft_v0_tx(self, instructions, sender_public_key, address_table_lookups, blockhash=Hash(bytes(32))):
+        """Build a v0 versioned message from instructions + address table lookups.
+
+        address_table_lookups is a list of tuples: (account_key_bytes_32, writable_indexes_bytes, readonly_indexes_bytes)
+        """
+        # Get legacy message data
+        legacy_data = self.craft_tx(instructions, sender_public_key, blockhash)
+        # Convert to v0: prepend version prefix, append address_table_lookups section
+        version_prefix = bytes([0x80])
+        alt_section = len(address_table_lookups).to_bytes(1, 'little')
+        for (account_key, writable_indexes, readonly_indexes) in address_table_lookups:
+            alt_section += account_key
+            alt_section += len(writable_indexes).to_bytes(1, 'little')
+            alt_section += bytes(writable_indexes)
+            alt_section += len(readonly_indexes).to_bytes(1, 'little')
+            alt_section += bytes(readonly_indexes)
+        return version_prefix + legacy_data + alt_section
