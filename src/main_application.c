@@ -24,6 +24,7 @@
 #include "handle_get_challenge.h"
 #include "handle_provide_trusted_info.h"
 #include "handle_provide_dynamic_descriptor.h"
+#include "handle_mock_review.h"
 #include "apdu.h"
 #include "ui_api.h"
 #include "nbgl_use_case.h"
@@ -112,6 +113,9 @@ static int handle_apdu(int rx) {
 
         case InsTrustedInfoProvideDynamicDescriptor:
             return handle_provide_dynamic_descriptor();
+
+        case InsMockReview:
+            return handle_mock_review();
 
         default:
             // Should have been caught by apdu_handle_message
