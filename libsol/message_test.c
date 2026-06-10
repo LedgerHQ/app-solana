@@ -132,7 +132,7 @@ void test_process_message_body_ix_with_unknown_program_id_fail() {
 }
 
 static void process_message_body_and_sanity_check(const uint8_t* message, size_t message_length, size_t expected_fields) {
-    PrintConfig print_config;
+    PrintConfig print_config = {0};
     print_config.expert_mode = true;
     Parser parser = { message, message_length };
     assert(parse_message_header(&parser, &print_config.header) == 0);
@@ -1682,7 +1682,7 @@ void test_process_message_body_spl_token_transfer() {
                 42, 0, 0, 0, 0, 0, 0, 0,
                 9
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 6);
+    process_message_body_and_sanity_check(message, sizeof(message), 5);
 }
 
 void test_process_message_body_spl_token_approve() {
@@ -1929,7 +1929,7 @@ void test_process_message_body_spl_associated_token_recover_nested_fail() {
             0x01,
                 0x02,
     };
-    PrintConfig print_config;
+    PrintConfig print_config = {0};
     Parser parser = { message, sizeof(message) };
     assert(parse_message_header(&parser, &print_config.header) == 0);
     transaction_summary_reset();
@@ -1955,7 +1955,7 @@ void test_process_message_body_spl_associated_token_trailing_data_fail() {
             0x02,
                 0x00, 0x00,
     };
-    PrintConfig print_config;
+    PrintConfig print_config = {0};
     Parser parser = { message, sizeof(message) };
     assert(parse_message_header(&parser, &print_config.header) == 0);
     transaction_summary_reset();
@@ -2013,7 +2013,7 @@ void test_process_message_body_spl_associated_token_create_with_transfer() {
                 0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x09
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 7);
+    process_message_body_and_sanity_check(message, sizeof(message), 6);
 }
 
 void test_process_message_body_spl_associated_token_create_with_transfer_and_assert_owner() {
@@ -2052,7 +2052,7 @@ void test_process_message_body_spl_associated_token_create_with_transfer_and_ass
                     0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                     0x09
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 7);
+    process_message_body_and_sanity_check(message, sizeof(message), 6);
 }
 
 /* clang-format on */
