@@ -23,12 +23,19 @@ static void mock_review_choice(bool confirm) {
 
 // Each filler returns the total number of pairs it handles.
 // The callback index is guaranteed < this value by NBGL.
-
+// [1/1] Jupiter (JUP6...TaV4)
+//   Intent: Swap
+//   Destination: BmDp...jAnz
+//   You Pay: 6.524386 USDC
+//   Minimum Received: 0.00412035 ETH
+//   Slippage Tolerance: 1%
+//   Platform Fee: 0%
+#define TITLE_1_v1 "Review transaction"
 static uint8_t mock_contract_1_v1(uint8_t index) {
     switch (index) {
         case 0:
-            G_mock_pair.item = "Amount";
-            G_mock_pair.value = "1.5 SOL";
+            G_mock_pair.item = "[1/1] Swap";
+            G_mock_pair.value = "Jupiter";
             break;
         case 1:
             G_mock_pair.item = "Recipient";
@@ -45,6 +52,7 @@ static uint8_t mock_contract_1_v1(uint8_t index) {
     return 3;
 }
 
+#define TITLE_1_v2 "Review transaction"
 static uint8_t mock_contract_1_v2(uint8_t index) {
     switch (index) {
         case 0:
@@ -66,6 +74,7 @@ static uint8_t mock_contract_1_v2(uint8_t index) {
     return 3;
 }
 
+#define TITLE_2_v1 "Review transaction"
 static uint8_t mock_contract_2_v1(uint8_t index) {
     switch (index) {
         case 0:
@@ -87,6 +96,7 @@ static uint8_t mock_contract_2_v1(uint8_t index) {
     return 3;
 }
 
+#define TITLE_2_v2 "Review transaction"
 static uint8_t mock_contract_2_v2(uint8_t index) {
     switch (index) {
         case 0:
@@ -108,6 +118,7 @@ static uint8_t mock_contract_2_v2(uint8_t index) {
     return 3;
 }
 
+#define TITLE_3_v1 "Review transaction"
 static uint8_t mock_contract_3_v1(uint8_t index) {
     switch (index) {
         case 0:
@@ -133,6 +144,7 @@ static uint8_t mock_contract_3_v1(uint8_t index) {
     return 4;
 }
 
+#define TITLE_3_v2 "Review transaction"
 static uint8_t mock_contract_3_v2(uint8_t index) {
     switch (index) {
         case 0:
@@ -158,6 +170,7 @@ static uint8_t mock_contract_3_v2(uint8_t index) {
     return 4;
 }
 
+#define TITLE_4_v1 "Review transaction"
 static uint8_t mock_contract_4_v1(uint8_t index) {
     switch (index) {
         case 0:
@@ -179,6 +192,7 @@ static uint8_t mock_contract_4_v1(uint8_t index) {
     return 3;
 }
 
+#define TITLE_4_v2 "Review transaction"
 static uint8_t mock_contract_4_v2(uint8_t index) {
     switch (index) {
         case 0:
@@ -200,6 +214,7 @@ static uint8_t mock_contract_4_v2(uint8_t index) {
     return 3;
 }
 
+#define TITLE_5_v1 "Review transaction"
 static uint8_t mock_contract_5_v1(uint8_t index) {
     switch (index) {
         case 0:
@@ -221,6 +236,7 @@ static uint8_t mock_contract_5_v1(uint8_t index) {
     return 3;
 }
 
+#define TITLE_5_v2 "Review transaction"
 static uint8_t mock_contract_5_v2(uint8_t index) {
     switch (index) {
         case 0:
@@ -252,12 +268,12 @@ static const mock_fill_pair_t G_mock_fillers[5][2] = {
     {mock_contract_5_v1, mock_contract_5_v2},
 };
 
-static const char *const G_mock_titles[5] = {
-    "Review token\ntransfer",
-    "Review stake\ndelegation",
-    "Review NFT\npurchase",
-    "Review swap",
-    "Review program\nupgrade",
+static const char *const G_mock_titles[5][2] = {
+    {TITLE_1_v1, TITLE_1_v2},
+    {TITLE_2_v1, TITLE_2_v2},
+    {TITLE_3_v1, TITLE_3_v2},
+    {TITLE_4_v1, TITLE_4_v2},
+    {TITLE_5_v1, TITLE_5_v2},
 };
 
 static mock_fill_pair_t get_filler(void) {
@@ -289,8 +305,8 @@ void ui_mock_review(uint8_t contract, uint8_t version) {
     nbgl_useCaseReview(TYPE_TRANSACTION,
                        &G_mock_content,
                        &ICON_SIGN_MENU,
-                       PIC(G_mock_titles[contract - 1]),
+                       PIC(G_mock_titles[contract - 1][version - 1]),
                        NULL,
-                       NULL,
+                       "Sign transaction on the Solana network?",
                        mock_review_choice);
 }
