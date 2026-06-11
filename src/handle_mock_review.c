@@ -11,11 +11,6 @@ int handle_mock_review(void) {
     }
     uint8_t contract = G_command.message[0];
     uint8_t version = G_command.message[1];
-    PRINTF("mock review contract=%d version=%d\n", contract, version);
-    if (contract < 1 || contract > 5 || version < 1 || version > 2) {
-        PRINTF("Invalid contract/version\n");
-        return io_send_sw(ApduReplySdkInvalidParameter);
-    }
     ui_mock_review(contract, version);
     return 0;
 }
