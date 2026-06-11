@@ -8,6 +8,7 @@
 #include "sol/printer.h"
 #include "sol/print_config.h"
 #include "sol/message.h"
+#include "sol/message_raw.h"
 #include "sol/transaction_summary.h"
 #include "trusted_info.h"
 #include "dynamic_token_info.h"
@@ -550,16 +551,35 @@ int handle_sign_message_parse_message(void) {
                 start_blind_sign_error_ui();
                 return io_send_sw(ApduReplySdkNotSupported);
             } else {
-                // Blind sign allowed. Prepare UI items content
+                // Blind sign allowed: compute the message hash, then try to show
+                // the raw deserialized message instead of just the hash.
                 transaction_summary_set_blind_signing(true);
-
-                SummaryItem *item = transaction_summary_primary_item();
-                summary_item_set_string(item, "Unrecognized", "format");
 
                 cx_hash_sha256(G_command.message,
                                G_command.message_length,
                                (uint8_t *) &G_command.message_hash,
                                HASH_LENGTH);
+
+                // `parser` still points at the message body (past the header).
+                // Raw view is opt-in via Expert mode; otherwise show the hash.
+                size_t raw_pairs = 0;
+                bool raw_short_pubkeys = (N_storage.settings.pubkey_display == PubkeyDisplayShort);
+                if (print_config.expert_mode && raw_message_init(parser.buffer,
+                                                                 parser.buffer_length,
+                                                                 header,
+                                                                 &G_command.message_hash,
+                                                                 raw_short_pubkeys,
+                                                                 &raw_pairs) == 0) {
+                    PRINTF("Displaying raw message (%d pairs)\n", (int) raw_pairs);
+                    start_sign_message_raw_ui(raw_pairs);
+                    return 0;
+                }
+
+                // Fallback (not in Expert mode, or the message can't be enumerated): show
+                // the hash only.
+                PRINTF("Raw enumeration unavailable, falling back to hash-only screen\n");
+                SummaryItem *item = transaction_summary_primary_item();
+                summary_item_set_string(item, "Unrecognized", "format");
 
                 item = transaction_summary_general_item();
                 summary_item_set_hash(item, "Message Hash", &G_command.message_hash);
