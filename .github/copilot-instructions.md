@@ -20,6 +20,7 @@ Whenever possible, adopt a TDD approch when developing new features or fixing bu
 ### Running Tests
 
 Always run the tests in the python virtual environment, use the `venv` bash alias to enter it. DO NOT try to source an activate file, use the BASH ALIAS.
+NEVER use 'python3' in the venv, use 'python'
 
 ```bash
 # Python UI tests (Speculos)

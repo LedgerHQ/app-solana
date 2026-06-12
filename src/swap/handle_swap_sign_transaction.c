@@ -12,7 +12,8 @@
 typedef struct swap_validated_s {
     bool initialized;
     swap_mode_t swap_mode;
-    uint64_t template_id;
+    uint32_t template_id;
+    uint8_t tx_hash[TX_HASH_SIZE];
     uint8_t decimals;
     char ticker[MAX_SWAP_TOKEN_LENGTH];
     uint64_t amount;
@@ -43,13 +44,18 @@ bool swap_copy_transaction_parameters(create_transaction_parameters_t *params) {
                 break;
             case EXTRA_ID_TYPE_SOLANA_TEMPLATE:
                 swap_validated.swap_mode = SWAP_MODE_CROSSCHAIN;
-                // bytes [1..8]: template_id as big-endian uint64_t
-                swap_validated.template_id = U8BE(
+                // bytes [1..4]: template_id as big-endian uint32_t
+                swap_validated.template_id = U4BE(
                     (uint8_t *) params->destination_address_extra_id + 1,
                     0);
+                // bytes [5..36]: tx_hash (SHA256 of the transaction message)
+                memcpy(swap_validated.tx_hash,
+                       (uint8_t *) params->destination_address_extra_id + 1 + TEMPLATE_ID_SIZE,
+                       TX_HASH_SIZE);
                 PRINTF("Crosschain swap with template_id: %.*H\n",
                        TEMPLATE_ID_SIZE,
-                       (uint8_t *) &swap_validated.template_id);
+                       (uint8_t *) params->destination_address_extra_id + 1);
+                PRINTF("Crosschain swap tx_hash: %.*H\n", TX_HASH_SIZE, swap_validated.tx_hash);
                 break;
             default:
                 PRINTF("Invalid or unknown swap protocol\n");
@@ -242,16 +248,32 @@ swap_mode_t get_swap_mode(void) {
     return G_swap_validated.swap_mode;
 }
 
-bool check_template_id(uint64_t template_id) {
+bool check_template_id(uint32_t template_id) {
     if (!G_swap_validated.initialized) {
         PRINTF("check_template_id: swap not initialized\n");
         return false;
     }
 
     if (G_swap_validated.template_id != template_id) {
-        PRINTF("check_template_id: mismatch - expected %llu, got %llu\n",
+        PRINTF("check_template_id: mismatch - expected %u, got %u\n",
                G_swap_validated.template_id,
                template_id);
+        return false;
+    }
+
+    return true;
+}
+
+bool check_swap_tx_hash(const uint8_t *computed_hash) {
+    if (!G_swap_validated.initialized) {
+        PRINTF("check_swap_tx_hash: swap not initialized\n");
+        return false;
+    }
+
+    if (memcmp(G_swap_validated.tx_hash, computed_hash, TX_HASH_SIZE) != 0) {
+        PRINTF("check_swap_tx_hash: mismatch\n");
+        PRINTF("Expected: %.*H\n", TX_HASH_SIZE, G_swap_validated.tx_hash);
+        PRINTF("Got:      %.*H\n", TX_HASH_SIZE, computed_hash);
         return false;
     }
 

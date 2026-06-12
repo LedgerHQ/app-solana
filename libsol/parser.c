@@ -217,6 +217,27 @@ static int parse_data(Parser *parser, const uint8_t **data, size_t *data_length)
     return 0;
 }
 
+int skip_address_table_lookups(Parser *parser) {
+    size_t num_tables;
+    BAIL_IF(parse_length(parser, &num_tables));
+    for (size_t i = 0; i < num_tables; i++) {
+        // account_key: 32 bytes
+        BAIL_IF(check_buffer_length(parser, PUBKEY_SIZE));
+        advance(parser, PUBKEY_SIZE);
+        // writable_indexes: compact-u16 length + N bytes
+        size_t num_writable;
+        BAIL_IF(parse_length(parser, &num_writable));
+        BAIL_IF(check_buffer_length(parser, num_writable));
+        advance(parser, num_writable);
+        // readonly_indexes: compact-u16 length + N bytes
+        size_t num_readonly;
+        BAIL_IF(parse_length(parser, &num_readonly));
+        BAIL_IF(check_buffer_length(parser, num_readonly));
+        advance(parser, num_readonly);
+    }
+    return 0;
+}
+
 int parse_instruction(Parser *parser, Instruction *instruction) {
     BAIL_IF(parse_u8(parser, &instruction->program_id_index));
     BAIL_IF(parse_data(parser, &instruction->accounts, &instruction->accounts_length));

@@ -243,6 +243,14 @@ int process_message_body_with_descriptor(const uint8_t *message_body,
         }
     }
 
+    // Skip address table lookups for versioned messages
+    if (header->versioned) {
+        if (skip_address_table_lookups(&parser) != 0) {
+            PRINTF("Error skip_address_table_lookups\n");
+            return -1;
+        }
+    }
+
     // Ensure we've consumed the entire message body
     if (!parser_is_empty(&parser)) {
         PRINTF("Error !parser_is_empty\n");

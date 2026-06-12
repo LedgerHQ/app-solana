@@ -520,6 +520,22 @@ int handle_sign_message_parse_message(void) {
             // Unreachable
         } else {
             // Successfully processed the message with descriptor (LiFi swap)
+            // Verify the transaction hash matches what Exchange stored
+            uint8_t computed_tx_hash[CX_SHA256_SIZE];
+            cx_hash_sha256(G_command.message,
+                           G_command.message_length,
+                           computed_tx_hash,
+                           CX_SHA256_SIZE);
+            if (!check_swap_tx_hash(computed_tx_hash)) {
+                PRINTF("Transaction hash mismatch\n");
+                reset_saved_descriptors();
+                reset_trusted_info();
+                reset_dynamic_token_info();
+                send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                                       SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
+                                       SWAP_EC_APP_TX_HASH_MISMATCH);
+                // Unreachable
+            }
             reset_saved_descriptors();
             reset_trusted_info();
             reset_dynamic_token_info();

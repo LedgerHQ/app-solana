@@ -42,7 +42,7 @@ typedef struct saved_descriptors_s {
     uint8_t saved_count;
     uint8_t read_count;
     bool is_main_net;
-    uint64_t template_id;
+    uint32_t template_id;
     instruction_descriptor_t descriptors[MAX_DISCRIMINATOR_NUMBER];
 } saved_descriptors_t;
 
@@ -72,7 +72,7 @@ bool instruction_descriptor_received(void) {
 }
 
 static bool save_instruction_descriptor(bool is_main_net,
-                                        uint64_t template_id,
+                                        uint32_t template_id,
                                         const instruction_descriptor_t *instruction_descriptor) {
     PRINTF("Attempting to save descriptor n %d\n", G_saved_descriptors->saved_count + 1);
 
@@ -115,7 +115,7 @@ typedef struct tlv_out_s {
     uint8_t version;
 
     bool is_main_net;
-    uint64_t template_id;
+    uint32_t template_id;
 
     instruction_descriptor_t ins;
 
@@ -146,7 +146,7 @@ static bool handle_chain_id(const tlv_data_t *data, tlv_out_t *out) {
 }
 
 static bool handle_template_id(const tlv_data_t *data, tlv_out_t *out) {
-    return get_uint64_t_from_tlv_data(data, &out->template_id);
+    return get_uint32_t_from_tlv_data(data, &out->template_id);
 }
 
 static bool handle_program_id(const tlv_data_t *data, tlv_out_t *out) {

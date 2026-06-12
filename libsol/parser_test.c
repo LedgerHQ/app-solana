@@ -388,6 +388,113 @@ void test_parse_message_header_too_many_readonly_unsigned() {
     assert(parse_message_header(&parser, &header) == 1);
 }
 
+// skip_address_table_lookups: zero tables
+void test_skip_alt_zero_tables() {
+    uint8_t buf[] = {0};  // num_tables = 0
+    Parser parser = {buf, sizeof(buf)};
+    assert(skip_address_table_lookups(&parser) == 0);
+    assert(parser_is_empty(&parser));
+}
+
+// skip_address_table_lookups: single table with writable and readonly indexes
+void test_skip_alt_single_table() {
+    uint8_t buf[32 + 6] = {0};
+    // num_tables = 1
+    buf[0] = 1;
+    // account_key: 32 bytes (zeroed)
+    // writable_indexes: length=2, indexes=[0, 1]
+    buf[33] = 2;
+    buf[34] = 0;
+    buf[35] = 1;
+    // readonly_indexes: length=1, index=[2]
+    buf[36] = 1;
+    buf[37] = 2;
+    // Total: 1 + 32 + 1 + 2 + 1 + 1 = 38
+    Parser parser = {buf, 38};
+    assert(skip_address_table_lookups(&parser) == 0);
+    assert(parser_is_empty(&parser));
+}
+
+// skip_address_table_lookups: two tables
+void test_skip_alt_two_tables() {
+    // Table 1: 32-byte key, 0 writable, 0 readonly
+    // Table 2: 32-byte key, 1 writable, 0 readonly
+    /* clang-format off */
+    uint8_t buf[] = {
+        2,  // num_tables
+        // Table 1: 32-byte key (all zeros)
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0,  // writable count = 0
+        0,  // readonly count = 0
+        // Table 2: 32-byte key (all 0x01)
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1,     // writable count = 1
+        0x05,  // writable index
+        0,     // readonly count = 0
+    };
+    /* clang-format on */
+    Parser parser = {buf, sizeof(buf)};
+    assert(skip_address_table_lookups(&parser) == 0);
+    assert(parser_is_empty(&parser));
+}
+
+// skip_address_table_lookups: trailing data preserved after skip
+void test_skip_alt_with_trailing_data() {
+    /* clang-format off */
+    uint8_t buf[] = {
+        1,  // num_tables = 1
+        // 32-byte key
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0,  // writable count = 0
+        0,  // readonly count = 0
+        0xAB, 0xCD,  // trailing data
+    };
+    /* clang-format on */
+    Parser parser = {buf, sizeof(buf)};
+    assert(skip_address_table_lookups(&parser) == 0);
+    assert(parser.buffer_length == 2);
+    assert(parser.buffer[0] == 0xAB);
+    assert(parser.buffer[1] == 0xCD);
+}
+
+// skip_address_table_lookups: empty buffer fails
+void test_skip_alt_empty_buffer() {
+    Parser parser = {NULL, 0};
+    assert(skip_address_table_lookups(&parser) == 1);
+}
+
+// skip_address_table_lookups: truncated account key fails
+void test_skip_alt_truncated_key() {
+    uint8_t buf[10] = {0};
+    buf[0] = 1;  // num_tables = 1, but only 9 bytes remain (need 32 for key)
+    Parser parser = {buf, sizeof(buf)};
+    assert(skip_address_table_lookups(&parser) == 1);
+}
+
+// skip_address_table_lookups: writable count exceeds remaining buffer
+void test_skip_alt_truncated_writable() {
+    // 1 table, 32-byte key, writable_count=5 but no data for the 5 indexes
+    uint8_t buf[34] = {0};
+    buf[0] = 1;   // num_tables = 1
+    buf[33] = 5;  // writable_count = 5, only 0 bytes remain
+    Parser parser = {buf, sizeof(buf)};
+    assert(skip_address_table_lookups(&parser) == 1);
+}
+
+// skip_address_table_lookups: readonly count exceeds remaining buffer
+void test_skip_alt_truncated_readonly() {
+    // 1 table, 32-byte key, writable_count=0, readonly_count=3 but no data
+    uint8_t buf[35] = {0};
+    buf[0] = 1;   // num_tables = 1
+    buf[33] = 0;  // writable_count = 0
+    buf[34] = 3;  // readonly_count = 3, only 0 bytes remain
+    Parser parser = {buf, sizeof(buf)};
+    assert(skip_address_table_lookups(&parser) == 1);
+}
+
 int main() {
     RUN_TEST(test_parse_u8);
     RUN_TEST(test_parse_u8_too_short);
@@ -413,6 +520,14 @@ int main() {
     RUN_TEST(test_parse_message_header_too_many_signatures);
     RUN_TEST(test_parse_message_header_too_many_readonly_signed);
     RUN_TEST(test_parse_message_header_too_many_readonly_unsigned);
+    RUN_TEST(test_skip_alt_zero_tables);
+    RUN_TEST(test_skip_alt_single_table);
+    RUN_TEST(test_skip_alt_two_tables);
+    RUN_TEST(test_skip_alt_with_trailing_data);
+    RUN_TEST(test_skip_alt_empty_buffer);
+    RUN_TEST(test_skip_alt_truncated_key);
+    RUN_TEST(test_skip_alt_truncated_writable);
+    RUN_TEST(test_skip_alt_truncated_readonly);
 
     printf("passed\n");
     return 0;
