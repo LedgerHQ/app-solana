@@ -35,6 +35,11 @@ typedef struct InstructionInfo {
 
 enum ProgramId instruction_program_id(const Instruction *instruction, const MessageHeader *header);
 int instruction_validate(const Instruction *instruction, const MessageHeader *header);
+// Variant for the swap + descriptor context. Tolerates instruction account indices that reference
+// Address Lookup Table (ALT) loaded accounts (index >= pubkeys_length); their integrity is sealed
+// by the swap tx_hash check, not by structural validation. The program_id_index must still resolve
+// in the statically listed keys.
+int instruction_validate_allow_ALT(const Instruction *instruction, const MessageHeader *header);
 
 typedef struct InstructionBrief {
     enum ProgramId program_id;

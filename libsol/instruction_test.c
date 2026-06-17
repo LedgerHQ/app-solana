@@ -274,11 +274,130 @@ void test_instruction_accounts_iterator_next() {
     assert(instruction_accounts_iterator_remaining(&it) == expected_remaining);
 }
 
+void test_instruction_validate_allow_ALT_ok() {
+    // Plain in-range accounts must pass, exactly like the strict validator.
+    uint8_t accounts[] = {1, 2, 3};
+    Instruction instruction = {0, accounts, 3, NULL, 0};
+    {
+        MessageHeader header = {false, 0, {0, 0, 0, 4}, NULL, NULL, 1};
+        assert(instruction_validate_allow_ALT(&instruction, &header) == 0);
+    }
+    {
+        MessageHeader header = {true, 0, {0, 0, 0, 4}, NULL, NULL, 1};
+        assert(instruction_validate_allow_ALT(&instruction, &header) == 0);
+    }
+}
+
+void test_instruction_validate_allow_ALT_tolerates_alt_account_indices() {
+    // Account indices >= pubkeys_length reference ALT loaded accounts and MUST be tolerated here.
+    // pubkeys_length is 4 (static keys 0..3); indices 4 and 6 are loaded from an ALT.
+    uint8_t accounts[] = {1, 4, 2, 6};
+    Instruction instruction = {0, accounts, 4, NULL, 0};
+    {
+        MessageHeader header = {false, 0, {0, 0, 0, 4}, NULL, NULL, 1};
+        assert(instruction_validate_allow_ALT(&instruction, &header) == 0);
+    }
+    {
+        MessageHeader header = {true, 0, {0, 0, 0, 4}, NULL, NULL, 1};
+        assert(instruction_validate_allow_ALT(&instruction, &header) == 0);
+    }
+}
+
+void test_instruction_validate_allow_ALT_bad_program_id_index_fail() {
+    // The program_id_index must always resolve in the statically listed keys, even with ALTs.
+    uint8_t accounts[] = {1, 4, 2, 6};
+    Instruction instruction = {4, accounts, 4, NULL, 0};
+    {
+        MessageHeader header = {false, 0, {0, 0, 0, 4}, NULL, NULL, 1};
+        assert(instruction_validate_allow_ALT(&instruction, &header) == 1);
+    }
+    {
+        MessageHeader header = {true, 0, {0, 0, 0, 4}, NULL, NULL, 1};
+        assert(instruction_validate_allow_ALT(&instruction, &header) == 1);
+    }
+}
+
+void test_get_account_from_ins_resolves_static_account() {
+    uint8_t accounts[] = {1, 3};
+    Instruction instruction = {0, accounts, ARRAY_LEN(accounts), NULL, 0};
+    Pubkey header_pubkeys[] = {
+        {{BYTES32_BS58_2}},
+        {{BYTES32_BS58_3}},
+        {{BYTES32_BS58_4}},
+        {{BYTES32_BS58_5}},
+    };
+    MessageHeader header = {
+        false,
+        0,
+        {0, 0, 0, ARRAY_LEN(header_pubkeys)},
+        header_pubkeys,
+        NULL,
+        1,
+    };
+    // account_index 0 -> pubkey index 1, account_index 1 -> pubkey index 3
+    Pubkey expected0 = {{BYTES32_BS58_3}};
+    Pubkey expected1 = {{BYTES32_BS58_5}};
+    const uint8_t *resolved0 = get_account_from_ins(&instruction, &header, 0);
+    assert(resolved0 != NULL);
+    assert(memcmp(resolved0, &expected0, PUBKEY_SIZE) == 0);
+    const uint8_t *resolved1 = get_account_from_ins(&instruction, &header, 1);
+    assert(resolved1 != NULL);
+    assert(memcmp(resolved1, &expected1, PUBKEY_SIZE) == 0);
+}
+
+void test_get_account_from_ins_alt_index_fails_closed() {
+    // accounts[1] == 4 points into the ALT range (pubkeys_length == 4)
+    uint8_t accounts[] = {1, 4};
+    Instruction instruction = {0, accounts, ARRAY_LEN(accounts), NULL, 0};
+    Pubkey header_pubkeys[] = {
+        {{BYTES32_BS58_2}},
+        {{BYTES32_BS58_3}},
+        {{BYTES32_BS58_4}},
+        {{BYTES32_BS58_5}},
+    };
+    MessageHeader header = {
+        false,
+        0,
+        {0, 0, 0, ARRAY_LEN(header_pubkeys)},
+        header_pubkeys,
+        NULL,
+        1,
+    };
+    assert(get_account_from_ins(&instruction, &header, 1) == NULL);
+}
+
+void test_get_account_from_ins_account_index_out_of_range_fails_closed() {
+    uint8_t accounts[] = {1, 3};
+    Instruction instruction = {0, accounts, ARRAY_LEN(accounts), NULL, 0};
+    Pubkey header_pubkeys[] = {
+        {{BYTES32_BS58_2}},
+        {{BYTES32_BS58_3}},
+        {{BYTES32_BS58_4}},
+        {{BYTES32_BS58_5}},
+    };
+    MessageHeader header = {
+        false,
+        0,
+        {0, 0, 0, ARRAY_LEN(header_pubkeys)},
+        header_pubkeys,
+        NULL,
+        1,
+    };
+    // account_index 2 is beyond the instruction's accounts_length (2).
+    assert(get_account_from_ins(&instruction, &header, 2) == NULL);
+}
+
 int main() {
     test_instruction_validate_ok();
     test_instruction_validate_bad_program_id_index_fail();
     test_instruction_validate_bad_first_account_index_fail();
     test_instruction_validate_bad_last_account_index_fail();
+    test_instruction_validate_allow_ALT_ok();
+    test_instruction_validate_allow_ALT_tolerates_alt_account_indices();
+    test_instruction_validate_allow_ALT_bad_program_id_index_fail();
+    test_get_account_from_ins_resolves_static_account();
+    test_get_account_from_ins_alt_index_fails_closed();
+    test_get_account_from_ins_account_index_out_of_range_fails_closed();
     test_instruction_program_id_unknown();
     test_instruction_program_id_stake();
     test_instruction_program_id_system();

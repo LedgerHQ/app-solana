@@ -34,21 +34,34 @@ static void debug_print_header(const MessageHeader *header) {
 
 static int parse_validate_and_debug_instruction_accounts(Parser *parser,
                                                          Instruction *instruction,
-                                                         const MessageHeader *header) {
+                                                         const MessageHeader *header,
+                                                         bool allow_alt) {
     if (parse_instruction(parser, instruction) != 0) {
         PRINTF("Error in parse_instruction\n");
         return -1;
     }
-    if (instruction_validate(instruction, header) != 0) {
-        PRINTF("Error in instruction_validate\n");
-        return -1;
+    if (allow_alt) {
+        if (instruction_validate_allow_ALT(instruction, header) != 0) {
+            PRINTF("Error in instruction_validate_allow_ALT\n");
+            return -1;
+        }
+    } else {
+        if (instruction_validate(instruction, header) != 0) {
+            PRINTF("Error in instruction_validate\n");
+            return -1;
+        }
     }
     for (uint8_t i = 0; i < instruction->accounts_length; ++i) {
-        PRINTF("accounts[%d] = pubkeys[%d] = %.*H\n",
-               i,
-               instruction->accounts[i],
-               PUBKEY_SIZE,
-               header->pubkeys[instruction->accounts[i]].data);
+        if (instruction->accounts[i] >= header->pubkeys_header.pubkeys_length) {
+            // ALT-loaded account: not present in the wire format, cannot be resolved on device
+            PRINTF("accounts[%d] = pubkeys[%d] = <ALT loaded>\n", i, instruction->accounts[i]);
+        } else {
+            PRINTF("accounts[%d] = pubkeys[%d] = %.*H\n",
+                   i,
+                   instruction->accounts[i],
+                   PUBKEY_SIZE,
+                   header->pubkeys[instruction->accounts[i]].data);
+        }
     }
     return 0;
 }
@@ -74,7 +87,10 @@ int process_message_body(const uint8_t *message_body,
     Parser parser = {message_body, message_body_length};
     for (uint8_t ins_idx = 0; ins_idx < header->instructions_length; ins_idx++) {
         Instruction instruction;
-        if (parse_validate_and_debug_instruction_accounts(&parser, &instruction, header) != 0) {
+        // Every account is displayed to the user and therefore must be resolvable in the statically
+        // listed keys. ALT-loaded indices are rejected (fail closed).
+        if (parse_validate_and_debug_instruction_accounts(&parser, &instruction, header, false) !=
+            0) {
             PRINTF("Error in parse_validate_and_debug_instruction_accounts for ins %d\n", ins_idx);
             return -1;
         }
@@ -228,7 +244,11 @@ int process_message_body_with_descriptor(const uint8_t *message_body,
     Parser parser = {message_body, message_body_length};
     for (uint8_t ins_idx = 0; ins_idx < header->instructions_length; ins_idx++) {
         Instruction instruction;
-        if (parse_validate_and_debug_instruction_accounts(&parser, &instruction, header) != 0) {
+        // Swap + descriptor path: ALT-loaded account indices are tolerated here, their integrity is
+        // sealed by the swap tx_hash check. Concrete account inspection is gated by
+        // get_account_from_ins() which fails closed on ALT indices.
+        if (parse_validate_and_debug_instruction_accounts(&parser, &instruction, header, true) !=
+            0) {
             PRINTF("Error in parse_validate_and_debug_instruction_accounts for ins %d\n", ins_idx);
             return -1;
         }
