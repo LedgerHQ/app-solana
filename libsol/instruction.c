@@ -54,6 +54,19 @@ int instruction_validate(const Instruction *instruction, const MessageHeader *he
     return 0;
 }
 
+int instruction_validate_allow_ALT(const Instruction *instruction, const MessageHeader *header) {
+    // Swap + descriptor context only.
+    // The program_id must always resolve in the statically listed keys: it is dereferenced to
+    // match the descriptor's program_id, and a program loaded from an ALT could not be matched.
+    BAIL_IF(instruction->program_id_index >= header->pubkeys_header.pubkeys_length);
+    // Instruction account indices MAY reference accounts loaded from an Address Lookup Table
+    // (index >= pubkeys_length). These are not present in the wire format and cannot be resolved
+    // on the device. Their integrity is guaranteed by the swap tx_hash check (see ALT Option 2),
+    // not by structural validation here. Any descriptor that needs to inspect a concrete account
+    // is gated separately by get_account_from_ins(), which fails closed on ALT indices.
+    return 0;
+}
+
 bool instruction_info_matches_brief(const InstructionInfo *info, const InstructionBrief *brief) {
     if (brief->program_id == info->kind) {
         switch (brief->program_id) {
@@ -138,10 +151,21 @@ const uint8_t *get_account_from_ins(const Instruction *instruction,
                instruction->accounts_length);
         return NULL;
     }
+    // The resolved pubkey index must fall within the statically listed keys. An index pointing
+    // into the Address Lookup Table range cannot be resolved on the device, so we fail closed:
+    // a descriptor may only validate accounts the device can actually read.
+    uint8_t pubkey_index = instruction->accounts[account_index];
+    if (pubkey_index >= header->pubkeys_header.pubkeys_length) {
+        PRINTF("Error account_index %d resolves to pubkey %d outside static keys (length %d)\n",
+               account_index,
+               pubkey_index,
+               header->pubkeys_header.pubkeys_length);
+        return NULL;
+    }
     PRINTF("account_index %d = pubkey %d = %.*H\n",
            account_index,
-           instruction->accounts[account_index],
+           pubkey_index,
            PUBKEY_SIZE,
-           header->pubkeys[instruction->accounts[account_index]].data);
-    return header->pubkeys[instruction->accounts[account_index]].data;
+           header->pubkeys[pubkey_index].data);
+    return header->pubkeys[pubkey_index].data;
 }
