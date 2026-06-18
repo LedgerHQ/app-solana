@@ -33,6 +33,7 @@ class INS(IntEnum):
     INS_GET_CHALLENGE = 0x20
     INS_TRUSTED_INFO = 0x21
     INS_DYNAMIC_TOKEN = 0x22
+    INS_MOCK_REVIEW = 0xA0
 
 
 CLA = 0xE0
@@ -436,6 +437,13 @@ class SolanaClient:
 
     def get_async_response(self) -> RAPDU:
         return self._client.last_async_response
+
+    @contextmanager
+    def send_mock_review(self, contract: int, version: int) -> Generator[None, None, None]:
+        with self._client.exchange_async(CLA, INS.INS_MOCK_REVIEW,
+                                         P1_NON_CONFIRM, P2_NONE,
+                                         bytes([contract, version])):
+            yield
 
     def craft_tx(self, instructions, sender_public_key, blockhash=Hash(bytes(32))):
         message = Message.new_with_blockhash(instructions, sender_public_key, blockhash)

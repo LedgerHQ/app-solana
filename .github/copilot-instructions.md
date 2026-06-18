@@ -15,6 +15,8 @@ qb -cx                            # Clean rebuild for NANOX
 
 ## Testing
 
+**There is NO SUCH THING as a "pre-existing failure"**. All tests are correct and failures are ALWAYS caused by latest changes. Dismissing a failure (swap or functionnal or unit) is entirely FORBIDDEN. ALL TESTS SHALL ALWAYS PASS AT ALL TIMES.
+
 Whenever possible, adopt a TDD approch when developing new features or fixing bugs.
 
 ### Running Tests
@@ -48,7 +50,6 @@ venv && pytest tests/python/ --device flex -s 2>&1 | tools/valground.py -q
 - snapshot checking is performed before returning APDU response: a snapshot failure can mean the application refused to sign and is displaying an error screen.
 - tests can timeout in case of errors, if that happens be smart when iterating to avoid wasting too much time.
 - debuging a test is done by adding logs in the C code, rebuilding, and re-running the test with `-s` option so Speculos prints PRINTF in stdout.
-- There is NO SUCH THING as a "pre-existing failure". All tests are presumed correct and failures are ALWAYS caused by latest changes. Suggesting otherwise is entirely FORBIDDEN. ALL TESTS SHALL ALWAYS PASS.
 
 ## Architecture
 
@@ -116,6 +117,7 @@ Coding patterns described here are more important than uniformity cross applicat
 - int return is used to report a success or failure of a function by using -1 or 0.
 - Global or module variables are prefixed by `G_*`.
 - Never use ternary conditional operator
+- Never put switch cases on a single line to "optimize" lines
 
 ## Critical Files
 
