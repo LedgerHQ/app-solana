@@ -122,6 +122,10 @@ Coding patterns described here are more important than uniformity cross applicat
 - Never use ternary conditional operator
 - Comments are RARE, CONCISE, and STRAIGHT TO THE POINT
 
+### Chain of trust
+
+- The payloads received signed from the CAL (descriptors, trusted names, etc) are trusted in content.
+
 ## Critical Files
 
 - `src/main_application.c` - APDU dispatch
