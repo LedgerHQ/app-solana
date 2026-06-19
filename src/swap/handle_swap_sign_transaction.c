@@ -136,16 +136,16 @@ bool check_swap_amount(const char *text) {
     }
 }
 
-bool check_swap_amount_raw(uint64_t amount) {
+bool check_swap_amount_raw_less_or_equal(uint64_t amount) {
     if (!G_swap_validated.initialized) {
-        PRINTF("check_swap_ticker internal error\n");
+        PRINTF("check_swap_amount_raw_less_or_equal internal error\n");
         return false;
     }
 
     debug_print_u64("Received amount", amount);
     debug_print_u64("Validated G_swap_validated.amount", G_swap_validated.amount);
-    if (amount != G_swap_validated.amount) {
-        PRINTF("Amount mismatch\n");
+    if (amount > G_swap_validated.amount) {
+        PRINTF("Amount exceeds the validated swap amount\n");
         return false;
     }
 

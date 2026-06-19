@@ -573,8 +573,9 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
             }
             PRINTF("Capped amount validated\n");
         } else {
-            // Exact amount match for non-fee instructions
-            if (!check_swap_amount_raw(amount_value)) {
+            // Main asset spend must not exceed the advertised amount, the rest may be consumed
+            // by other descriptor-bound instructions such as a partner fee.
+            if (!check_swap_amount_raw_less_or_equal(amount_value)) {
                 PRINTF("Error received wrong amount\n");
                 return -1;
             }

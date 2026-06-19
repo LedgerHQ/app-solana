@@ -12,7 +12,7 @@ bool check_template_id(uint32_t template_id);
 
 bool check_swap_tx_hash(const uint8_t *computed_hash);
 
-bool check_swap_amount_raw(uint64_t amount);
+bool check_swap_amount_raw_less_or_equal(uint64_t amount);
 
 int get_swap_amount_raw(uint64_t *amount);
 
