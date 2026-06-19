@@ -294,6 +294,11 @@ LIFI_TX_HASH_GORK = _compute_lifi_tx_hash(SOL.AMOUNT, LIFI_DEST_1, False, SOL.GO
 LIFI_TX_HASH_GORK_2022 = _compute_lifi_tx_hash(SOL.AMOUNT, LIFI_DEST_1, True, SOL.GORK_MINT_ADDRESS_STR)
 LIFI_TX_HASH_USDC = _compute_lifi_tx_hash(SOL.AMOUNT, LIFI_DEST_1, False, SOL.USDC_MINT_ADDRESS_STR)
 
+# Main-asset spend may be less than the advertised amount, but never more.
+LIFI_SPEND_DELTA = sol_to_lamports(0.001)
+LIFI_TX_HASH_GORK_SPEND_LESS = _compute_lifi_tx_hash(SOL.AMOUNT - LIFI_SPEND_DELTA, LIFI_DEST_1, False, SOL.GORK_MINT_ADDRESS_STR)
+LIFI_TX_HASH_GORK_SPEND_MORE = _compute_lifi_tx_hash(SOL.AMOUNT + LIFI_SPEND_DELTA, LIFI_DEST_1, False, SOL.GORK_MINT_ADDRESS_STR)
+
 # ExchangeTestRunner implementation for Solana
 class GenericSolanaTests(ExchangeTestRunner):
     currency_configuration = cal.SOL_CURRENCY_CONFIGURATION
@@ -654,6 +659,18 @@ class SolanaDescriptorTests(SPLTokenTests):
         sol = SolanaClient(self.backend)
         self._perform_final_lifi_transaction(sol, destination, send_amount, False, SOL.USDC_MINT_ADDRESS_STR, memo)
 
+    # Spend strictly LESS than the advertised amount
+    def perform_final_tx_spend_less(self, destination, send_amount, fees, memo):
+        sol = SolanaClient(self.backend)
+        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
+        self._perform_final_lifi_transaction(sol, destination, send_amount - LIFI_SPEND_DELTA, False, SOL.GORK_MINT_ADDRESS_STR, memo)
+
+    # Spend strictly MORE than the advertised amount. Must be refused.
+    def perform_final_tx_spend_more(self, destination, send_amount, fees, memo):
+        sol = SolanaClient(self.backend)
+        sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False, mint_address=SOL.GORK_MINT_ADDRESS)
+        self._perform_final_lifi_transaction(sol, destination, send_amount + LIFI_SPEND_DELTA, False, SOL.GORK_MINT_ADDRESS_STR, memo)
+
     def perform_final_tx_bad_structure_type(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
         sol.provide_instruction_descriptor(template_id=self.template_id_1, structure_type=0x00)
@@ -977,6 +994,22 @@ class TestsSolanaDescriptor:
         test_class.perform_final_tx = test_class.perform_final_tx_hardcoded_token
         test_class.valid_payin_extra_data_1 = PayinExtraDataID.SOL_TEMPLATE.to_bytes(1, byteorder='big') + SolanaDescriptorTests.template_id_1.to_bytes(4, byteorder='big') + LIFI_TX_HASH_USDC
         test_class.run_test("thorswap_valid_1")
+
+    # Main-asset spend less than advertised is accepted.
+    def test_lifi_spend_less_than_advertised(self, backend, exchange_navigation_helper):
+        test_class = SolanaDescriptorTests(backend, exchange_navigation_helper)
+        test_class.perform_final_tx = test_class.perform_final_tx_spend_less
+        test_class.valid_payin_extra_data_1 = PayinExtraDataID.SOL_TEMPLATE.to_bytes(1, byteorder='big') + SolanaDescriptorTests.template_id_1.to_bytes(4, byteorder='big') + LIFI_TX_HASH_GORK_SPEND_LESS
+        test_class.run_test("thorswap_valid_1")
+
+    # Main-asset spend more than advertised is refused.
+    def test_lifi_spend_more_than_advertised(self, backend, exchange_navigation_helper):
+        with pytest.raises(ExceptionRAPDU) as e:
+            test_class = SolanaDescriptorTests(backend, exchange_navigation_helper)
+            test_class.perform_final_tx = test_class.perform_final_tx_spend_more
+            test_class.valid_payin_extra_data_1 = PayinExtraDataID.SOL_TEMPLATE.to_bytes(1, byteorder='big') + SolanaDescriptorTests.template_id_1.to_bytes(4, byteorder='big') + LIFI_TX_HASH_GORK_SPEND_MORE
+            test_class.run_test("thorswap_valid_1")
+        assert e.value.status == ErrorType.SOLANA_SUMMARY_FINALIZE_FAILED
 
     # Errors detected at tx reception and discriminator usage
     @pytest.mark.parametrize('fault_test_to_run', [
