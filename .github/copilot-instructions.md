@@ -116,6 +116,7 @@ Coding patterns described here are more important than uniformity cross applicat
 - int return is used to report a success or failure of a function by using -1 or 0.
 - Global or module variables are prefixed by `G_*`.
 - Never use ternary conditional operator
+- Comments are RARE, CONCISE, and STRAIGHT TO THE POINT
 
 ## Critical Files
 
