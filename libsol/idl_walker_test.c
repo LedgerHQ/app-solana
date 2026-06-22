@@ -41,10 +41,9 @@ void test_provide_pool() {
     assert(walker.pool_ready == true);
     assert(walker.pool_size == sizeof(pool));
     assert(walker.root_index == 7);
-    assert(walker.pool != NULL);
-    assert(walker.pool != pool);  // owned copy, not aliased
-    assert(memcmp(walker.pool, pool, sizeof(pool)) == 0);
-    assert(mock_mem_outstanding() > 0);
+    assert(walker.pool == pool);  // borrowed, aliased to the caller's buffer
+    // Forwarding the pool does not allocate anything.
+    assert(mock_mem_outstanding() == 0);
 
     idl_walker_reset(&walker);
     assert(mock_mem_outstanding() == 0);
@@ -59,9 +58,9 @@ void test_provide_instruction_data() {
 
     assert(walker.data_ready == true);
     assert(walker.data_size == sizeof(data));
-    assert(walker.data != NULL);
-    assert(walker.data != data);  // owned copy, not aliased
-    assert(memcmp(walker.data, data, sizeof(data)) == 0);
+    assert(walker.data == data);  // borrowed, aliased to the caller's buffer
+    // Forwarding the data does not allocate anything.
+    assert(mock_mem_outstanding() == 0);
 
     idl_walker_reset(&walker);
     assert(mock_mem_outstanding() == 0);
@@ -74,14 +73,14 @@ void test_provide_pool_replaces_previous() {
     const uint8_t pool_a[] = {0x01, 0x02, 0x03};
     const uint8_t pool_b[] = {0xaa, 0xbb, 0xcc, 0xdd, 0xee};
     assert(idl_walker_provide_pool(&walker, pool_a, sizeof(pool_a), 1) == 0);
-    size_t after_first = mock_mem_outstanding();
+    assert(walker.pool == pool_a);
 
     assert(idl_walker_provide_pool(&walker, pool_b, sizeof(pool_b), 2) == 0);
-    // Re-providing must free the old buffer, so live allocations stay flat.
-    assert(mock_mem_outstanding() == after_first);
+    // Re-providing just swaps the borrowed reference; nothing is allocated.
+    assert(walker.pool == pool_b);
     assert(walker.pool_size == sizeof(pool_b));
     assert(walker.root_index == 2);
-    assert(memcmp(walker.pool, pool_b, sizeof(pool_b)) == 0);
+    assert(mock_mem_outstanding() == 0);
 
     idl_walker_reset(&walker);
     assert(mock_mem_outstanding() == 0);
@@ -225,21 +224,6 @@ void test_run_twice_does_not_leak() {
     assert(mock_mem_outstanding() == 0);
 }
 
-void test_oom_on_provide_pool() {
-    idl_walker_t walker;
-    setup(&walker);
-
-    mock_mem_fail_after(0);  // every allocation fails
-    const uint8_t pool[] = {0x01, 0x02, 0x03};
-    assert(idl_walker_provide_pool(&walker, pool, sizeof(pool), 1) == -1);
-    assert(walker.pool_ready == false);
-    assert(walker.pool == NULL);
-    assert(mock_mem_outstanding() == 0);
-
-    idl_walker_reset(&walker);
-    assert(mock_mem_outstanding() == 0);
-}
-
 void test_oom_on_run_leaf_array() {
     idl_walker_t walker;
     setup(&walker);
@@ -261,7 +245,7 @@ void test_oom_on_run_leaf_array() {
     assert(mock_mem_outstanding() == 0);
 }
 
-void test_oom_on_run_value_buffer() {
+void test_oom_on_run_path_buffer() {
     idl_walker_t walker;
     setup(&walker);
 
@@ -271,8 +255,8 @@ void test_oom_on_run_value_buffer() {
     assert(idl_walker_provide_instruction_data(&walker, data, sizeof(data)) == 0);
     size_t before_run = mock_mem_outstanding();
 
-    // Let the leaf-array and path allocations succeed, fail the value buffer.
-    mock_mem_fail_after(2);
+    // Let the leaf-array allocation succeed, fail the path buffer.
+    mock_mem_fail_after(1);
     assert(idl_walker_run(&walker) == -1);
     assert(walker.leaf_count == 0);
     assert(walker.leaves == NULL);
@@ -328,9 +312,8 @@ int main() {
     RUN_TEST(test_run_value_shorter_than_max);
     RUN_TEST(test_run_with_empty_data);
     RUN_TEST(test_run_twice_does_not_leak);
-    RUN_TEST(test_oom_on_provide_pool);
     RUN_TEST(test_oom_on_run_leaf_array);
-    RUN_TEST(test_oom_on_run_value_buffer);
+    RUN_TEST(test_oom_on_run_path_buffer);
     RUN_TEST(test_reset_is_idempotent);
     RUN_TEST(test_null_walker_is_safe);
 
