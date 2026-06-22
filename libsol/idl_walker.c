@@ -6,8 +6,10 @@
 // kind-driven type-tree walk (and enum-variant handling) is not implemented
 // yet.
 //
-// Every variable-size buffer is dynamically allocated, so the only size-driven
-// failure path is the allocator returning NULL (out of space).
+// Inputs are borrowed, never copied: the caller keeps the pool and instruction
+// data buffers alive until idl_walker_reset(). Only the output leaves are
+// dynamically allocated, so the only size-driven failure path is the allocator
+// returning NULL (out of space).
 
 #include <string.h>
 
@@ -15,39 +17,20 @@
 #include "util.h"
 #include "app_mem_utils.h"
 
-// Number of leading instruction-data bytes echoed into a mock leaf value.
+// Number of leading instruction-data bytes exposed through a mock leaf value.
 #define MOCK_LEAF_VALUE_MAX 4
 
 static void free_leaves(idl_walker_t *walker) {
     if (walker->leaves != NULL) {
         for (size_t i = 0; i < walker->leaf_count; i++) {
+            // `value` is borrowed (points into the instruction data); only the
+            // synthesized `path` is owned.
             APP_MEM_FREE(walker->leaves[i].path);
-            APP_MEM_FREE(walker->leaves[i].value);
         }
         APP_MEM_FREE(walker->leaves);
         walker->leaves = NULL;
     }
     walker->leaf_count = 0;
-}
-
-// Copy `size` bytes from `src` into a freshly owned buffer at `*dst`, replacing
-// (and freeing) any previous content. A zero-length input leaves `*dst` NULL.
-// Returns 0 on success, -1 on out-of-space.
-static int copy_into(uint8_t **dst, size_t *dst_size, const uint8_t *src, size_t size) {
-    APP_MEM_FREE_AND_NULL((void **) dst);
-    *dst_size = 0;
-    if (size == 0) {
-        return 0;
-    }
-    uint8_t *buf = APP_MEM_ALLOC(size);
-    if (buf == NULL) {
-        PRINTF("idl_walker: allocation of %d bytes failed\n", size);
-        return -1;
-    }
-    memcpy(buf, src, size);
-    *dst = buf;
-    *dst_size = size;
-    return 0;
 }
 
 void idl_walker_init(idl_walker_t *walker) {
@@ -69,10 +52,9 @@ int idl_walker_provide_pool(idl_walker_t *walker,
         return -1;
     }
 
-    walker->pool_ready = false;
-    if (copy_into(&walker->pool, &walker->pool_size, pool, pool_size) != 0) {
-        return -1;
-    }
+    // Borrow the caller's buffer; it must outlive the walk (until reset).
+    walker->pool = pool;
+    walker->pool_size = pool_size;
     walker->root_index = root_index;
     walker->pool_ready = true;
 
@@ -93,10 +75,9 @@ int idl_walker_provide_instruction_data(idl_walker_t *walker,
         return -1;
     }
 
-    walker->data_ready = false;
-    if (copy_into(&walker->data, &walker->data_size, data, data_size) != 0) {
-        return -1;
-    }
+    // Borrow the caller's buffer; it must outlive the walk (until reset).
+    walker->data = data;
+    walker->data_size = data_size;
     walker->data_ready = true;
 
     PRINTF("idl_walker: received instruction data (size=%d)\n", walker->data_size);
@@ -105,7 +86,7 @@ int idl_walker_provide_instruction_data(idl_walker_t *walker,
 
 // SCAFFOLDING: emit one deterministic mock leaf derived from the forwarded
 // inputs (path = single step to root_index, value = leading instruction-data
-// bytes). Replaces this with the real kind-driven walk later.
+// bytes, borrowed). Replaces this with the real kind-driven walk later.
 static int produce_mock_leaves(idl_walker_t *walker) {
     idl_leaf_t *leaves = APP_MEM_ALLOC(sizeof(idl_leaf_t));
     if (leaves == NULL) {
@@ -130,14 +111,8 @@ static int produce_mock_leaves(idl_walker_t *walker) {
         value_size = MOCK_LEAF_VALUE_MAX;
     }
     if (value_size > 0) {
-        leaves[0].value = APP_MEM_ALLOC(value_size);
-        if (leaves[0].value == NULL) {
-            PRINTF("idl_walker: leaf value allocation failed\n");
-            APP_MEM_FREE(leaves[0].path);
-            APP_MEM_FREE(leaves);
-            return -1;
-        }
-        memcpy(leaves[0].value, walker->data, value_size);
+        // Borrow into the instruction data; no copy.
+        leaves[0].value = walker->data;
         leaves[0].value_size = value_size;
     }
 
@@ -180,12 +155,13 @@ void idl_walker_reset(idl_walker_t *walker) {
     if (walker == NULL) {
         return;
     }
-    APP_MEM_FREE_AND_NULL((void **) &walker->pool);
+    // pool and data are borrowed; just drop the references, never free them.
+    walker->pool = NULL;
     walker->pool_size = 0;
     walker->root_index = 0;
     walker->pool_ready = false;
 
-    APP_MEM_FREE_AND_NULL((void **) &walker->data);
+    walker->data = NULL;
     walker->data_size = 0;
     walker->data_ready = false;
 
