@@ -2,8 +2,8 @@
 //
 // Decodes the raw argument bytes of a Solana instruction against the
 // kind-driven IDL_TYPE_POOL descriptor and streams every decoded leaf to a
-// caller-supplied callback. The pool is parsed once at provide time into an
-// owned entry array (freed at reset); the pool and data bytes are borrowed,
+// caller-supplied callback. The pool descriptor is owned by the idl_pool
+// module and read here through its getters; the data bytes are borrowed,
 // never copied. The walk's own scratch (frame stack, path, fixed-size table)
 // is released before idl_walker_run() returns.
 //
@@ -14,280 +14,17 @@
 #include <string.h>
 
 #include "idl_walker.h"
+#include "idl_pool.h"
 #include "util.h"
 #include "app_mem_utils.h"
 
 // =============================================================================
-// Parsed pool entry
+// Static-size table (OPTION_FIXED skip)
 // =============================================================================
-
-// A single IDL_TYPE_POOL entry, parsed into a structured view. Pointer fields
-// borrow into the caller's pool bytes; only the entry_t array itself is owned.
-typedef struct entry_s {
-    uint8_t kind;             // IDL_KIND_*
-    uint16_t fixed_size;      // BYTES_FIXED/STRING_FIXED byte size, ARRAY_FIXED count
-    uint8_t encoding;         // STRING_FIXED/STRING_PREFIXED encoding (unused by the walk)
-    uint8_t len_kind;         // STRING_PREFIXED/ARRAY_PREFIXED length kind
-    uint8_t flag_kind;        // OPTION_DYNAMIC/OPTION_FIXED flag kind
-    uint8_t disc_kind;        // ENUM discriminator kind
-    uint16_t total_variants;  // ENUM total variant count
-    const uint8_t *refs;      // pointer into pool bytes: ref_count contiguous u8 indices
-    uint8_t ref_count;
-    const uint8_t *sentinel;  // OPTION_ZEROABLE sentinel bytes
-    uint8_t sentinel_len;
-    const uint8_t *enum_id;   // ENUM identifier bytes
-    uint8_t enum_id_len;
-} entry_t;
 
 // Fixed-size table sentinels (see compute_fixed_sizes).
 #define FS_UNKNOWN  (SIZE_MAX)
 #define FS_VARIABLE (SIZE_MAX - 1)
-
-// =============================================================================
-// Pool parsing
-// =============================================================================
-
-// Parse the entries of an IDL_TYPE_POOL payload into the pre-allocated, zeroed
-// `entries` array. Multi-byte descriptor metadata is big-endian. Returns 0 on
-// success, -1 on truncation, trailing bytes, an out-of-range ref, or an
-// unknown kind.
-static int parse_pool_entries(const uint8_t *buf, size_t size, entry_t *entries, uint8_t count) {
-    size_t offset = 1;
-    PRINTF("idl_walker: parse_pool_entries count=%d size=%d\n", count, size);
-
-    for (uint8_t i = 0; i < count; i++) {
-        if (offset >= size) {
-            PRINTF("idl_walker: pool truncated before entry %d\n", i);
-            return -1;
-        }
-        uint8_t kind = buf[offset++];
-        entry_t *entry = &entries[i];
-        entry->kind = kind;
-        PRINTF("idl_walker: parsing entry %d kind=0x%02x at offset=%d\n", i, kind, offset - 1);
-
-        switch (kind) {
-            case IDL_KIND_U8:
-            case IDL_KIND_U16:
-            case IDL_KIND_U32:
-            case IDL_KIND_U64:
-            case IDL_KIND_U128:
-            case IDL_KIND_I8:
-            case IDL_KIND_I16:
-            case IDL_KIND_I32:
-            case IDL_KIND_I64:
-            case IDL_KIND_I128:
-            case IDL_KIND_F32:
-            case IDL_KIND_F64:
-            case IDL_KIND_SHORT_U16:
-            case IDL_KIND_BOOL_U8:
-            case IDL_KIND_BOOL_U16:
-            case IDL_KIND_BOOL_U32:
-            case IDL_KIND_PUBKEY_32:
-            case IDL_KIND_BYTES_REMAINDER:
-                break;
-
-            case IDL_KIND_BYTES_FIXED:
-                if (offset + 2 > size) {
-                    PRINTF("idl_walker: BYTES_FIXED entry %d truncated\n", i);
-                    return -1;
-                }
-                entry->fixed_size = (uint16_t) ((buf[offset] << 8) | buf[offset + 1]);
-                offset += 2;
-                break;
-
-            case IDL_KIND_STRING_FIXED:
-                if (offset + 3 > size) {
-                    PRINTF("idl_walker: STRING_FIXED entry %d truncated\n", i);
-                    return -1;
-                }
-                entry->fixed_size = (uint16_t) ((buf[offset] << 8) | buf[offset + 1]);
-                entry->encoding = buf[offset + 2];
-                offset += 3;
-                break;
-
-            case IDL_KIND_STRING_PREFIXED:
-                if (offset + 2 > size) {
-                    PRINTF("idl_walker: STRING_PREFIXED entry %d truncated\n", i);
-                    return -1;
-                }
-                entry->len_kind = buf[offset];
-                entry->encoding = buf[offset + 1];
-                offset += 2;
-                break;
-
-            case IDL_KIND_STRUCT:
-            case IDL_KIND_TUPLE: {
-                if (offset >= size) {
-                    PRINTF("idl_walker: STRUCT/TUPLE entry %d truncated\n", i);
-                    return -1;
-                }
-                uint8_t field_count = buf[offset++];
-                if (offset + field_count > size) {
-                    PRINTF("idl_walker: STRUCT/TUPLE entry %d refs truncated\n", i);
-                    return -1;
-                }
-                entry->refs = &buf[offset];
-                entry->ref_count = field_count;
-                offset += field_count;
-                break;
-            }
-
-            case IDL_KIND_OPTION_DYNAMIC:
-            case IDL_KIND_OPTION_FIXED:
-                if (offset + 2 > size) {
-                    PRINTF("idl_walker: OPTION entry %d truncated\n", i);
-                    return -1;
-                }
-                entry->flag_kind = buf[offset];
-                entry->refs = &buf[offset + 1];
-                entry->ref_count = 1;
-                offset += 2;
-                break;
-
-            case IDL_KIND_OPTION_ZEROABLE: {
-                if (offset + 2 > size) {
-                    PRINTF("idl_walker: OPTION_ZEROABLE entry %d truncated\n", i);
-                    return -1;
-                }
-                entry->refs = &buf[offset];
-                entry->ref_count = 1;
-                uint8_t sentinel_len = buf[offset + 1];
-                offset += 2;
-                if (offset + sentinel_len > size) {
-                    PRINTF("idl_walker: OPTION_ZEROABLE entry %d sentinel truncated\n", i);
-                    return -1;
-                }
-                entry->sentinel = &buf[offset];
-                entry->sentinel_len = sentinel_len;
-                offset += sentinel_len;
-                break;
-            }
-
-            case IDL_KIND_ARRAY_FIXED:
-                if (offset + 3 > size) {
-                    PRINTF("idl_walker: ARRAY_FIXED entry %d truncated\n", i);
-                    return -1;
-                }
-                entry->fixed_size = (uint16_t) ((buf[offset] << 8) | buf[offset + 1]);
-                entry->refs = &buf[offset + 2];
-                entry->ref_count = 1;
-                offset += 3;
-                break;
-
-            case IDL_KIND_ARRAY_PREFIXED:
-                if (offset + 2 > size) {
-                    PRINTF("idl_walker: ARRAY_PREFIXED entry %d truncated\n", i);
-                    return -1;
-                }
-                entry->len_kind = buf[offset];
-                entry->refs = &buf[offset + 1];
-                entry->ref_count = 1;
-                offset += 2;
-                break;
-
-            case IDL_KIND_ARRAY_REMAINDER:
-            case IDL_KIND_OPTION_REMAINDER:
-                if (offset + 1 > size) {
-                    PRINTF("idl_walker: REMAINDER entry %d truncated\n", i);
-                    return -1;
-                }
-                entry->refs = &buf[offset];
-                entry->ref_count = 1;
-                offset += 1;
-                break;
-
-            case IDL_KIND_ENUM: {
-                if (offset + 4 > size) {
-                    PRINTF("idl_walker: ENUM entry %d truncated\n", i);
-                    return -1;
-                }
-                entry->disc_kind = buf[offset];
-                entry->total_variants = (uint16_t) ((buf[offset + 1] << 8) | buf[offset + 2]);
-                uint8_t id_len = buf[offset + 3];
-                offset += 4;
-                if (offset + id_len > size) {
-                    PRINTF("idl_walker: ENUM entry %d id truncated\n", i);
-                    return -1;
-                }
-                entry->enum_id = &buf[offset];
-                entry->enum_id_len = id_len;
-                offset += id_len;
-                break;
-            }
-
-            case IDL_KIND_HIDDEN_PREFIX:
-            case IDL_KIND_HIDDEN_SUFFIX:
-                if (offset + 2 > size) {
-                    PRINTF("idl_walker: HIDDEN entry %d truncated\n", i);
-                    return -1;
-                }
-                entry->refs = &buf[offset];  // [skip_ref, inner_ref]
-                entry->ref_count = 2;
-                offset += 2;
-                break;
-
-            default:
-                PRINTF("idl_walker: unknown pool kind 0x%02x\n", kind);
-                return -1;
-        }
-    }
-
-    if (offset != size) {
-        PRINTF("idl_walker: %d trailing byte(s) in pool\n", size - offset);
-        return -1;
-    }
-    PRINTF("idl_walker: all %d entries parsed, validating refs\n", count);
-
-    for (uint8_t i = 0; i < count; i++) {
-        const entry_t *entry = &entries[i];
-        for (uint8_t j = 0; j < entry->ref_count; j++) {
-            if (entry->refs[j] >= count) {
-                PRINTF("idl_walker: ref %d out of range (count=%d)\n", entry->refs[j], count);
-                return -1;
-            }
-        }
-    }
-    PRINTF("idl_walker: pool refs validated OK\n");
-    return 0;
-}
-
-// Parse the IDL_TYPE_POOL payload (`u8 count || entries`) into an owned array
-// of entry_t. The owned array is allocated here and freed on parse failure, so
-// parse_pool_entries can return -1 directly without leaking.
-//
-// Returns 0 on success (caller owns *out_entries), -1 on error.
-static int parse_pool(const uint8_t *buf, size_t size, entry_t **out_entries, uint8_t *out_count) {
-    if (buf == NULL || size < 1) {
-        PRINTF("idl_walker: empty pool buffer\n");
-        return -1;
-    }
-    uint8_t count = buf[0];
-    PRINTF("idl_walker: parse_pool size=%d declared count=%d\n", size, count);
-
-    // malloc(0) is implementation-defined; allocate at least one slot.
-    size_t alloc_count = (count == 0) ? 1 : count;
-    entry_t *entries = APP_MEM_ALLOC(alloc_count * sizeof(entry_t));
-    if (entries == NULL) {
-        PRINTF("idl_walker: pool entry array allocation failed\n");
-        return -1;
-    }
-    memset(entries, 0, alloc_count * sizeof(entry_t));
-
-    if (parse_pool_entries(buf, size, entries, count) != 0) {
-        PRINTF("idl_walker: parse_pool_entries failed, freeing entries\n");
-        APP_MEM_FREE(entries);
-        return -1;
-    }
-
-    *out_entries = entries;
-    *out_count = count;
-    PRINTF("idl_walker: parse_pool succeeded with %d entries\n", count);
-    return 0;
-}
-
-// =============================================================================
-// Static-size table (OPTION_FIXED skip)
-// =============================================================================
 
 // Width in bytes of a fixed-width numeric/pubkey primitive, or 0 if `kind` is
 // not such a primitive.
@@ -320,11 +57,12 @@ static size_t fixed_primitive_width(uint8_t kind) {
     }
 }
 
-// Try to determine the static serialized size of pool[idx] from the partially
-// filled size table `sizes`. Writes the result to *out and returns true when
-// it can be decided now; returns false when a child size is still FS_UNKNOWN.
-static bool try_static_size(const entry_t *pool, uint8_t idx, const size_t *sizes, size_t *out) {
-    const entry_t *entry = &pool[idx];
+// Try to determine the static serialized size of pool entry `idx` from the
+// partially filled size table `sizes`. Writes the result to *out and returns
+// true when it can be decided now; returns false when a child size is still
+// FS_UNKNOWN.
+static bool try_static_size(uint8_t idx, const size_t *sizes, size_t *out) {
+    const idl_pool_entry_t *entry = idl_pool_entry(idx);
     uint8_t kind = entry->kind;
 
     size_t primitive_width = fixed_primitive_width(kind);
@@ -429,7 +167,7 @@ static bool try_static_size(const entry_t *pool, uint8_t idx, const size_t *size
 // FS_VARIABLE, so any OPTION_FIXED that depends on them is rejected at walk.
 //
 // Returns 0 on success (caller owns *out_sizes), -1 on out-of-space.
-static int compute_fixed_sizes(const entry_t *pool, uint8_t count, size_t **out_sizes) {
+static int compute_fixed_sizes(uint8_t count, size_t **out_sizes) {
     size_t alloc_count = (count == 0) ? 1 : count;
     size_t *sizes = APP_MEM_ALLOC(alloc_count * sizeof(size_t));
     if (sizes == NULL) {
@@ -448,7 +186,7 @@ static int compute_fixed_sizes(const entry_t *pool, uint8_t count, size_t **out_
                 continue;
             }
             size_t size;
-            if (try_static_size(pool, i, sizes, &size)) {
+            if (try_static_size(i, sizes, &size)) {
                 sizes[i] = size;
                 changed = true;
             }
@@ -468,9 +206,10 @@ static int compute_fixed_sizes(const entry_t *pool, uint8_t count, size_t **out_
     return 0;
 }
 
-static bool pool_has_option_fixed(const entry_t *pool, uint8_t count) {
+static bool pool_has_option_fixed(void) {
+    uint8_t count = idl_pool_count();
     for (uint8_t i = 0; i < count; i++) {
-        if (pool[i].kind == IDL_KIND_OPTION_FIXED) {
+        if (idl_pool_entry(i)->kind == IDL_KIND_OPTION_FIXED) {
             return true;
         }
     }
@@ -499,8 +238,6 @@ typedef struct walk_ctx_s {
     size_t data_size;
     size_t cursor;
 
-    const entry_t *pool;
-    uint8_t pool_count;
     const size_t *fixed_sizes;  // NULL unless the pool contains an OPTION_FIXED
 
     frame_t *stack;
@@ -538,7 +275,7 @@ static size_t step_width(uint8_t parent_kind) {
 
 // Select the (pool ref, step value) the current frame descends into for its
 // `child_i`-th child, honoring the per-kind ordering rules from the spec.
-static void select_child(const entry_t *entry,
+static void select_child(const idl_pool_entry_t *entry,
                          uint8_t kind,
                          size_t child_i,
                          uint8_t *ref_idx,
@@ -718,7 +455,8 @@ static int emit_leaf(walk_ctx_t *walk, uint8_t kind, const uint8_t *value, size_
 }
 
 static int push_frame(walk_ctx_t *walk, uint8_t entry_idx, uint8_t parent_kind, size_t step_value) {
-    if (entry_idx >= walk->pool_count) {
+    const idl_pool_entry_t *entry = idl_pool_entry(entry_idx);
+    if (entry == NULL) {
         PRINTF("idl_walker: push_frame ref %d out of range\n", entry_idx);
         return -1;
     }
@@ -734,7 +472,7 @@ static int push_frame(walk_ctx_t *walk, uint8_t entry_idx, uint8_t parent_kind, 
     }
     frame_t *frame = &walk->stack[walk->stack_len++];
     frame->entry_idx = entry_idx;
-    frame->kind = walk->pool[entry_idx].kind;
+    frame->kind = entry->kind;
     frame->entered = false;
     frame->child_i = 0;
     frame->child_count = 0;
@@ -753,7 +491,7 @@ static int push_frame(walk_ctx_t *walk, uint8_t entry_idx, uint8_t parent_kind, 
 // Descend into the current frame's next child, or pop the frame when its
 // children are exhausted. Used by every aggregate/option/hidden kind whose
 // child count is fixed once `entered`.
-static int step_children(walk_ctx_t *walk, frame_t *frame, const entry_t *entry) {
+static int step_children(walk_ctx_t *walk, frame_t *frame, const idl_pool_entry_t *entry) {
     if (frame->child_i < frame->child_count) {
         uint8_t ref_idx;
         size_t step_val;
@@ -771,7 +509,7 @@ static int step_children(walk_ctx_t *walk, frame_t *frame, const entry_t *entry)
 // a child, or pop. Returns 0 on progress, -1 on a fatal error.
 static int walk_top(walk_ctx_t *walk) {
     frame_t *frame = &walk->stack[walk->stack_len - 1];
-    const entry_t *entry = &walk->pool[frame->entry_idx];
+    const idl_pool_entry_t *entry = idl_pool_entry(frame->entry_idx);
     PRINTF("idl_walker: walk_top entry_idx=%d kind=0x%02x cursor=%d depth=%d\n",
            frame->entry_idx,
            frame->kind,
@@ -1037,66 +775,11 @@ static int walk_top(walk_ctx_t *walk) {
 // Public API
 // =============================================================================
 
-void idl_walker_init(idl_walker_t *walker) {
-    if (walker == NULL) {
-        PRINTF("idl_walker_init: NULL walker\n");
-        return;
-    }
-    PRINTF("idl_walker_init: zeroing walker context\n");
-    memset(walker, 0, sizeof(*walker));
-}
-
-int idl_walker_provide_pool(idl_walker_t *walker,
-                            const uint8_t *pool,
-                            size_t pool_size,
-                            uint8_t root_index) {
-    if (walker == NULL) {
-        PRINTF("idl_walker_provide_pool: NULL walker\n");
-        return -1;
-    }
-    if (pool == NULL && pool_size > 0) {
-        PRINTF("idl_walker_provide_pool: NULL pool with non-zero size\n");
-        return -1;
-    }
-
-    // Re-providing replaces any previously parsed pool.
-    APP_MEM_FREE(walker->entries);
-    walker->entries = NULL;
-    walker->entry_count = 0;
-    walker->pool_ready = false;
-
-    entry_t *entries = NULL;
-    uint8_t count = 0;
-    if (parse_pool(pool, pool_size, &entries, &count) != 0) {
-        return -1;
-    }
-    if (root_index >= count) {
-        PRINTF("idl_walker: root_index %d out of range (count=%d)\n", root_index, count);
-        APP_MEM_FREE(entries);
-        return -1;
-    }
-
-    // The parsed entries borrow into the caller's pool bytes, which must
-    // outlive the walk (until reset).
-    walker->entries = entries;
-    walker->entry_count = count;
-    walker->root_index = root_index;
-    walker->pool_ready = true;
-
-    PRINTF("idl_walker: parsed IDL type pool (entries=%d, root_index=%d)\n", count, root_index);
-    return 0;
-}
-
-int idl_walker_run(idl_walker_t *walker,
-                   const uint8_t *data,
+int idl_walker_run(const uint8_t *data,
                    size_t data_size,
                    idl_leaf_cb_t leaf_callback,
                    void *callback_context) {
-    if (walker == NULL) {
-        PRINTF("idl_walker_run: NULL walker\n");
-        return -1;
-    }
-    if (!walker->pool_ready) {
+    if (!idl_pool_ready()) {
         PRINTF("idl_walker_run: no pool provided\n");
         return -1;
     }
@@ -1104,18 +787,18 @@ int idl_walker_run(idl_walker_t *walker,
         PRINTF("idl_walker_run: NULL data with non-zero size (data_size=%d)\n", data_size);
         return -1;
     }
+
+    uint8_t entry_count = idl_pool_count();
+    uint8_t root_index = idl_pool_root_index();
     PRINTF("idl_walker_run: starting (entry_count=%d, root_index=%d, data_size=%d)\n",
-           walker->entry_count,
-           walker->root_index,
+           entry_count,
+           root_index,
            data_size);
 
-    entry_t *entries = walker->entries;
-    uint8_t entry_count = walker->entry_count;
-
     size_t *fixed_sizes = NULL;
-    if (pool_has_option_fixed(entries, entry_count)) {
+    if (pool_has_option_fixed()) {
         PRINTF("idl_walker_run: pool has OPTION_FIXED, building fixed-size table\n");
-        if (compute_fixed_sizes(entries, entry_count, &fixed_sizes) != 0) {
+        if (compute_fixed_sizes(entry_count, &fixed_sizes) != 0) {
             PRINTF("idl_walker_run: fixed-size table build failed\n");
             return -1;
         }
@@ -1125,8 +808,6 @@ int idl_walker_run(idl_walker_t *walker,
     walk.data = data;
     walk.data_size = data_size;
     walk.cursor = 0;
-    walk.pool = entries;
-    walk.pool_count = entry_count;
     walk.fixed_sizes = fixed_sizes;
     walk.leaf_callback = leaf_callback;
     walk.callback_context = callback_context;
@@ -1138,7 +819,7 @@ int idl_walker_run(idl_walker_t *walker,
         PRINTF("idl_walker: frame stack allocation failed\n");
         walk_result = -1;
     } else {
-        walk_result = push_frame(&walk, walker->root_index, 0, 0);
+        walk_result = push_frame(&walk, root_index, 0, 0);
         while (walk_result == 0 && walk.stack_len > 0) {
             walk_result = walk_top(&walk);
         }
@@ -1161,16 +842,3 @@ int idl_walker_run(idl_walker_t *walker,
     return walk_result;
 }
 
-void idl_walker_reset(idl_walker_t *walker) {
-    if (walker == NULL) {
-        PRINTF("idl_walker_reset: NULL walker\n");
-        return;
-    }
-    PRINTF("idl_walker_reset: freeing %d owned entries\n", walker->entry_count);
-    // entries are owned: free them. Their borrowed pool bytes are caller-owned.
-    APP_MEM_FREE(walker->entries);
-    walker->entries = NULL;
-    walker->entry_count = 0;
-    walker->root_index = 0;
-    walker->pool_ready = false;
-}
