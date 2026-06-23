@@ -8,6 +8,11 @@
 // referenced by the instruction's DISPLAY_FIELD / VALUE_FLOW_PORT
 // substructures.
 //
+// The pool descriptor itself is owned by the idl_pool module: provide it with
+// idl_pool_provide() before walking and release it with idl_pool_reset()
+// afterwards. The walker is stateless — it reads the active pool through the
+// idl_pool getters and holds nothing across calls.
+//
 // Output is delivered as the walk progresses: every decoded leaf is handed to
 // a caller-supplied callback, so the consumer can match it against the
 // instruction's DISPLAY_FIELD set and format it immediately, holding on to
@@ -62,59 +67,22 @@ typedef struct idl_leaf_s {
 // idl_walker_run().
 typedef void (*idl_leaf_cb_t)(const idl_leaf_t *leaf, void *callback_context);
 
-// Parsed pool entry view, owned by the walker between provide and reset.
-// Defined privately in idl_walker.c.
-struct entry_s;
-
-// Walker context. Holds the parsed pool across runs. Zero-initialize through
-// idl_walker_init() before use and release the owned pool through
-// idl_walker_reset() afterwards. The instruction data is NOT held here; it is
-// passed directly to idl_walker_run().
-typedef struct idl_walker_s {
-    // The entry array is owned by the walker; its internal pointers borrow
-    // into the caller's pool bytes, which MUST stay alive until reset.
-    struct entry_s *entries;  // owned parsed pool entries, NULL until provided
-    uint8_t entry_count;      // number of parsed entries
-    uint8_t root_index;       // IDL_ROOT_TYPE: pool index of the root arg struct
-    bool pool_ready;          // a pool descriptor has been parsed
-} idl_walker_t;
-
-// Reset the context to a clean, empty state WITHOUT freeing. Call once on a
-// fresh (uninitialized) context before the first use.
-void idl_walker_init(idl_walker_t *walker);
-
-// Parse the IDL type pool descriptor and store it in the walker. The pool
-// bytes are borrowed: the caller MUST keep the buffer alive until
-// idl_walker_reset(), because the parsed entries point into it. Re-forwarding
-// frees any previously parsed pool and replaces it.
-//
-// Returns 0 on success, -1 on invalid arguments, a malformed pool, a
-// root_index out of range, or allocator out-of-space.
-int idl_walker_provide_pool(idl_walker_t *walker,
-                            const uint8_t *pool,
-                            size_t pool_size,
-                            uint8_t root_index);
-
-// Run the walk over `data` (`data_size` bytes) against the parsed pool,
-// delivering each decoded leaf to `leaf_callback` (with `callback_context`
-// threaded through). A pool descriptor must have been provided. `data` may be
-// NULL only when `data_size` is 0. The data buffer is borrowed for the
-// duration of the call only. `leaf_callback` may be NULL to run the walk for
-// its side effects (e.g. cursor validation) without emitting anything.
+// Run the walk over `data` (`data_size` bytes) against the pool currently
+// loaded in the idl_pool module, delivering each decoded leaf to
+// `leaf_callback` (with `callback_context` threaded through). A pool must have
+// been provided via idl_pool_provide(). `data` may be NULL only when
+// `data_size` is 0. The data buffer is borrowed for the duration of the call
+// only. `leaf_callback` may be NULL to run the walk for its side effects (e.g.
+// cursor validation) without emitting anything.
 //
 // The walk returns -1 on any descriptor/data inconsistency:
 // a read past the end of the instruction data, a leftover or missing byte
 // once the walk completes (cursor must land exactly on the end of the data),
-// a malformed pool, or an unsupported kind (e.g. IDL_KIND_ENUM).
+// or an unsupported kind (e.g. IDL_KIND_ENUM).
 //
 // Returns 0 on success, -1 on invalid arguments, a missing pool, a failed
 // walk, or allocator out-of-space.
-int idl_walker_run(idl_walker_t *walker,
-                   const uint8_t *data,
+int idl_walker_run(const uint8_t *data,
                    size_t data_size,
                    idl_leaf_cb_t leaf_callback,
                    void *callback_context);
-
-// Free the owned parsed pool and return the context to the empty state. Safe
-// to call multiple times and on a zero-initialized context.
-void idl_walker_reset(idl_walker_t *walker);

@@ -1,17 +1,11 @@
 #include "idl_walker.h"
+#include "idl_pool.h"
 #include "test_utils.h"
 #include "app_mem_utils.h"  // mock allocator + test controls (mock_mem_*)
 
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-
-// Every test starts from a clean allocator (counters zeroed, no fault
-// injection) and a zero-initialized walker.
-static void setup(idl_walker_t *walker) {
-    mock_mem_reset();
-    idl_walker_init(walker);
-}
 
 // Leaf-callback capture harness. Records each emitted leaf so the test can
 // assert on walk output. `path` is scratch (valid only during the callback),
@@ -46,23 +40,23 @@ static void capture_cb(const idl_leaf_t *leaf, void *ctx) {
 
 // Run a complete walk against an in-memory pool + data, capturing every leaf.
 // Returns the idl_walker_run() result code, or -1 if the pool fails to parse
-// at provide time (parsing now happens in idl_walker_provide_pool). Asserts
-// that the flow left no outstanding allocations behind.
+// (parsing happens in idl_pool_provide). Starts from a clean allocator and an
+// empty pool, and asserts the flow left no outstanding allocations behind.
 static int run_walk(const uint8_t *pool,
                     size_t pool_size,
                     uint8_t root,
                     const uint8_t *data,
                     size_t data_size,
                     capture_t *cap) {
-    idl_walker_t walker;
-    idl_walker_init(&walker);
-    if (idl_walker_provide_pool(&walker, pool, pool_size, root) != 0) {
-        idl_walker_reset(&walker);
+    idl_pool_reset();
+    mock_mem_reset();
+    if (idl_pool_provide(pool, pool_size, root) != 0) {
+        idl_pool_reset();
         assert(mock_mem_outstanding() == 0);
         return -1;
     }
-    int rc = idl_walker_run(&walker, data, data_size, capture_cb, cap);
-    idl_walker_reset(&walker);
+    int rc = idl_walker_run(data, data_size, capture_cb, cap);
+    idl_pool_reset();
     assert(mock_mem_outstanding() == 0);
     return rc;
 }
@@ -83,125 +77,6 @@ static void expect_leaf(const capture_t *cap,
     if (value_size > 0) {
         assert(memcmp(cap->value[i], value, value_size) == 0);
     }
-}
-
-// =============================================================================
-// Input-forwarding / lifecycle preconditions
-// =============================================================================
-
-void test_init_empty() {
-    idl_walker_t walker;
-    setup(&walker);
-
-    assert(walker.entries == NULL);
-    assert(walker.entry_count == 0);
-    assert(walker.root_index == 0);
-    assert(walker.pool_ready == false);
-
-    idl_walker_reset(&walker);
-    assert(mock_mem_outstanding() == 0);
-}
-
-void test_provide_pool() {
-    idl_walker_t walker;
-    setup(&walker);
-
-    const uint8_t pool[] = {0x01, IDL_KIND_U64};
-    assert(idl_walker_provide_pool(&walker, pool, sizeof(pool), 0) == 0);
-
-    assert(walker.pool_ready == true);
-    assert(walker.entry_count == 1);
-    assert(walker.root_index == 0);
-    // Parsing the pool owns one allocation (the parsed entry array).
-    assert(mock_mem_outstanding() == 1);
-
-    idl_walker_reset(&walker);
-    assert(walker.pool_ready == false);
-    assert(walker.entries == NULL);
-    assert(mock_mem_outstanding() == 0);
-}
-
-void test_provide_pool_replaces_previous() {
-    idl_walker_t walker;
-    setup(&walker);
-
-    const uint8_t pool_a[] = {0x01, IDL_KIND_U8};
-    const uint8_t pool_b[] = {0x02, IDL_KIND_U16, IDL_KIND_U32};
-    assert(idl_walker_provide_pool(&walker, pool_a, sizeof(pool_a), 0) == 0);
-    assert(walker.entry_count == 1);
-    assert(mock_mem_outstanding() == 1);
-
-    // Re-providing frees the previous parsed pool and replaces it; no leak.
-    assert(idl_walker_provide_pool(&walker, pool_b, sizeof(pool_b), 1) == 0);
-    assert(walker.entry_count == 2);
-    assert(walker.root_index == 1);
-    assert(mock_mem_outstanding() == 1);
-
-    idl_walker_reset(&walker);
-    assert(mock_mem_outstanding() == 0);
-}
-
-void test_provide_pool_null_with_size_rejected() {
-    idl_walker_t walker;
-    setup(&walker);
-
-    assert(idl_walker_provide_pool(&walker, NULL, 4, 0) == -1);
-    assert(walker.pool_ready == false);
-    assert(mock_mem_outstanding() == 0);
-
-    idl_walker_reset(&walker);
-    assert(mock_mem_outstanding() == 0);
-}
-
-void test_run_requires_pool() {
-    idl_walker_t walker;
-    setup(&walker);
-
-    capture_t cap = {0};
-    const uint8_t data[] = {0x42};
-
-    // No pool provided: the run is refused.
-    assert(idl_walker_run(&walker, data, sizeof(data), capture_cb, &cap) == -1);
-
-    // With a pool, the same data walks.
-    const uint8_t pool[] = {0x01, IDL_KIND_U8};
-    assert(idl_walker_provide_pool(&walker, pool, sizeof(pool), 0) == 0);
-    assert(idl_walker_run(&walker, data, sizeof(data), capture_cb, &cap) == 0);
-    assert(cap.count == 1);
-
-    // NULL data with a non-zero size is rejected.
-    assert(idl_walker_run(&walker, NULL, 4, capture_cb, &cap) == -1);
-
-    idl_walker_reset(&walker);
-    assert(mock_mem_outstanding() == 0);
-}
-
-void test_null_walker_is_safe() {
-    // None of these must crash on a NULL context.
-    idl_walker_init(NULL);
-    assert(idl_walker_provide_pool(NULL, NULL, 0, 0) == -1);
-    assert(idl_walker_run(NULL, NULL, 0, NULL, NULL) == -1);
-    idl_walker_reset(NULL);
-}
-
-void test_reset_is_idempotent() {
-    idl_walker_t walker;
-    setup(&walker);
-
-    idl_walker_reset(&walker);
-    idl_walker_reset(&walker);
-    assert(mock_mem_outstanding() == 0);
-
-    const uint8_t pool[] = {0x01, IDL_KIND_U16};
-    const uint8_t data[] = {0x01, 0x02};
-    assert(idl_walker_provide_pool(&walker, pool, sizeof(pool), 0) == 0);
-    capture_t cap = {0};
-    assert(idl_walker_run(&walker, data, sizeof(data), capture_cb, &cap) == 0);
-    idl_walker_reset(&walker);
-    assert(mock_mem_outstanding() == 0);
-    idl_walker_reset(&walker);
-    assert(mock_mem_outstanding() == 0);
-    assert(walker.pool_ready == false);
 }
 
 // =============================================================================
@@ -679,21 +554,21 @@ void test_null_callback_validates() {
     // A NULL callback still walks and validates the cursor: exact consume.
     {
         const uint8_t data[] = {0x01, 0x02, 0x03, 0x04};
-        idl_walker_t walker;
-        idl_walker_init(&walker);
-        assert(idl_walker_provide_pool(&walker, pool, sizeof(pool), 0) == 0);
-        assert(idl_walker_run(&walker, data, sizeof(data), NULL, NULL) == 0);
-        idl_walker_reset(&walker);
+        idl_pool_reset();
+        mock_mem_reset();
+        assert(idl_pool_provide(pool, sizeof(pool), 0) == 0);
+        assert(idl_walker_run(data, sizeof(data), NULL, NULL) == 0);
+        idl_pool_reset();
         assert(mock_mem_outstanding() == 0);
     }
     // A NULL callback still returns -1 on a length mismatch.
     {
         const uint8_t data[] = {0x01, 0x02, 0x03, 0x04, 0x05};  // one byte too many
-        idl_walker_t walker;
-        idl_walker_init(&walker);
-        assert(idl_walker_provide_pool(&walker, pool, sizeof(pool), 0) == 0);
-        assert(idl_walker_run(&walker, data, sizeof(data), NULL, NULL) == -1);
-        idl_walker_reset(&walker);
+        idl_pool_reset();
+        mock_mem_reset();
+        assert(idl_pool_provide(pool, sizeof(pool), 0) == 0);
+        assert(idl_walker_run(data, sizeof(data), NULL, NULL) == -1);
+        idl_pool_reset();
         assert(mock_mem_outstanding() == 0);
     }
 }
@@ -726,44 +601,6 @@ void test_error_data_too_long() {
     assert(run_walk(pool, sizeof(pool), 0, data, sizeof(data), &cap) == -1);
 }
 
-void test_error_root_index_out_of_range() {
-    const uint8_t pool[] = {0x01, IDL_KIND_U8};
-    const uint8_t data[] = {0xaa};
-    capture_t cap = {0};
-    assert(run_walk(pool, sizeof(pool), 5, data, sizeof(data), &cap) == -1);
-}
-
-void test_error_ref_out_of_range() {
-    // struct field references a non-existent pool entry.
-    const uint8_t pool[] = {0x01, IDL_KIND_STRUCT, 0x01, 0x05};
-    const uint8_t data[] = {0xaa};
-    capture_t cap = {0};
-    assert(run_walk(pool, sizeof(pool), 0, data, sizeof(data), &cap) == -1);
-}
-
-void test_error_unknown_kind() {
-    const uint8_t pool[] = {0x01, 0xFF};
-    const uint8_t data[] = {0xaa};
-    capture_t cap = {0};
-    assert(run_walk(pool, sizeof(pool), 0, data, sizeof(data), &cap) == -1);
-}
-
-void test_error_trailing_pool_bytes() {
-    // count=1 with one u8 entry, plus a stray trailing byte.
-    const uint8_t pool[] = {0x01, IDL_KIND_U8, 0x99};
-    const uint8_t data[] = {0xaa};
-    capture_t cap = {0};
-    assert(run_walk(pool, sizeof(pool), 0, data, sizeof(data), &cap) == -1);
-}
-
-void test_error_truncated_entry() {
-    // count=1 announces an entry but the kind byte is missing.
-    const uint8_t pool[] = {0x01};
-    const uint8_t data[] = {0xaa};
-    capture_t cap = {0};
-    assert(run_walk(pool, sizeof(pool), 0, data, sizeof(data), &cap) == -1);
-}
-
 void test_error_enum_unsupported() {
     // ENUM(disc=U8, total=1, id="") is unsupported and aborts the walk.
     const uint8_t pool[] = {0x01, IDL_KIND_ENUM, IDL_KIND_U8, 0x00, 0x01, 0x00};
@@ -791,20 +628,19 @@ void test_oom_at_each_alloc_site() {
     const uint8_t data[] = {0xab, 0x11, 0x22, 0x33, 0x44};
 
     for (int fail_at = 0; fail_at < 3; fail_at++) {
-        idl_walker_t walker;
-        idl_walker_init(&walker);
+        idl_pool_reset();
 
         mock_mem_fail_after(fail_at);
         int rc;
-        if (idl_walker_provide_pool(&walker, pool_buf, sizeof(pool_buf), 2) != 0) {
+        if (idl_pool_provide(pool_buf, sizeof(pool_buf), 2) != 0) {
             rc = -1;
         } else {
             capture_t cap = {0};
-            rc = idl_walker_run(&walker, data, sizeof(data), capture_cb, &cap);
+            rc = idl_walker_run(data, sizeof(data), capture_cb, &cap);
         }
         assert(rc == -1);
 
-        idl_walker_reset(&walker);
+        idl_pool_reset();
         assert(mock_mem_outstanding() == 0);
         mock_mem_fail_after(-1);
     }
@@ -827,20 +663,19 @@ void test_oom_fixed_size_table() {
     const uint8_t data[] = {0x01, 0xab, 0x11, 0x22, 0x33, 0x44};
 
     for (int fail_at = 0; fail_at < 4; fail_at++) {
-        idl_walker_t walker;
-        idl_walker_init(&walker);
+        idl_pool_reset();
 
         mock_mem_fail_after(fail_at);
         int rc;
-        if (idl_walker_provide_pool(&walker, pool_buf, sizeof(pool_buf), 3) != 0) {
+        if (idl_pool_provide(pool_buf, sizeof(pool_buf), 3) != 0) {
             rc = -1;
         } else {
             capture_t cap = {0};
-            rc = idl_walker_run(&walker, data, sizeof(data), capture_cb, &cap);
+            rc = idl_walker_run(data, sizeof(data), capture_cb, &cap);
         }
         assert(rc == -1);
 
-        idl_walker_reset(&walker);
+        idl_pool_reset();
         assert(mock_mem_outstanding() == 0);
         mock_mem_fail_after(-1);
     }
@@ -1067,17 +902,6 @@ void test_option_zeroable_sentinel_longer_than_data() {
     assert(run_walk(pool, sizeof(pool), 1, data, sizeof(data), &cap) == -1);
 }
 
-void test_zero_size_pool_rejected() {
-    // A pool of size 0 has no count byte: parsing at provide time returns -1.
-    idl_walker_t walker;
-    setup(&walker);
-    const uint8_t dummy = 0x00;
-    assert(idl_walker_provide_pool(&walker, &dummy, 0, 0) == -1);
-    assert(walker.pool_ready == false);
-    idl_walker_reset(&walker);
-    assert(mock_mem_outstanding() == 0);
-}
-
 void test_option_fixed_variable_inner_absent_fails() {
     // option_fixed of string_prefixed: a variable-size inner has no static
     // size, so an absent outer cannot be skipped and the walk returns -1.
@@ -1239,65 +1063,7 @@ void test_error_array_remainder_zero_progress() {
     assert(run_walk(pool_buf, sizeof(pool_buf), 1, data, sizeof(data), &cap) == -1);
 }
 
-// =============================================================================
-// parse_pool per-kind truncation
-// =============================================================================
-
-void test_error_pool_truncated_per_kind() {
-    // Each pool truncates a single entry's inline arguments; parse_pool must
-    // reject every one. The leading byte is the entry count.
-    struct {
-        const char *name;
-        uint8_t pool[8];
-        size_t size;
-    } cases[] = {
-        {"bytes_fixed", {1, IDL_KIND_BYTES_FIXED, 0x00}, 3},
-        {"string_fixed", {1, IDL_KIND_STRING_FIXED, 0x00, 0x01}, 4},
-        {"string_prefixed", {1, IDL_KIND_STRING_PREFIXED, IDL_KIND_U8}, 3},
-        {"struct_no_count", {1, IDL_KIND_STRUCT}, 2},
-        {"struct_refs", {1, IDL_KIND_STRUCT, 0x02, 0x00}, 4},
-        {"option_dynamic", {1, IDL_KIND_OPTION_DYNAMIC, IDL_KIND_U8}, 3},
-        {"option_zeroable_args", {1, IDL_KIND_OPTION_ZEROABLE, 0x00}, 3},
-        {"option_zeroable_sentinel", {1, IDL_KIND_OPTION_ZEROABLE, 0x00, 0x04}, 4},
-        {"array_fixed", {1, IDL_KIND_ARRAY_FIXED, 0x00, 0x02}, 4},
-        {"array_prefixed", {1, IDL_KIND_ARRAY_PREFIXED, IDL_KIND_U8}, 3},
-        {"array_remainder", {1, IDL_KIND_ARRAY_REMAINDER}, 2},
-        {"option_remainder", {1, IDL_KIND_OPTION_REMAINDER}, 2},
-        {"enum_args", {1, IDL_KIND_ENUM, IDL_KIND_U8, 0x00}, 4},
-        {"enum_id", {1, IDL_KIND_ENUM, IDL_KIND_U8, 0x00, 0x01, 0x04}, 6},
-        {"hidden_prefix", {1, IDL_KIND_HIDDEN_PREFIX, 0x00}, 3},
-        {"hidden_suffix", {1, IDL_KIND_HIDDEN_SUFFIX, 0x00}, 3},
-    };
-
-    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-        const uint8_t data[] = {0x00};
-        capture_t cap = {0};
-        int rc = run_walk(cases[i].pool, cases[i].size, 0, data, sizeof(data), &cap);
-        if (rc != -1) {
-            printf("FAIL: truncated pool '%s' was not rejected\n", cases[i].name);
-        }
-        assert(rc == -1);
-    }
-}
-
-void test_empty_pool_rejected() {
-    // count = 0 leaves no root entry to walk; root_index 0 is out of range.
-    const uint8_t pool[] = {0x00};
-    const uint8_t data[] = {0x00};
-    capture_t cap = {0};
-    assert(run_walk(pool, sizeof(pool), 0, data, sizeof(data), &cap) == -1);
-}
-
 int main() {
-    // Lifecycle / preconditions
-    RUN_TEST(test_init_empty);
-    RUN_TEST(test_provide_pool);
-    RUN_TEST(test_provide_pool_replaces_previous);
-    RUN_TEST(test_provide_pool_null_with_size_rejected);
-    RUN_TEST(test_run_requires_pool);
-    RUN_TEST(test_null_walker_is_safe);
-    RUN_TEST(test_reset_is_idempotent);
-
     // Primitive leaves
     RUN_TEST(test_primitive_root_widths);
     RUN_TEST(test_pubkey_leaf);
@@ -1354,11 +1120,6 @@ int main() {
     // Error paths
     RUN_TEST(test_error_data_too_short);
     RUN_TEST(test_error_data_too_long);
-    RUN_TEST(test_error_root_index_out_of_range);
-    RUN_TEST(test_error_ref_out_of_range);
-    RUN_TEST(test_error_unknown_kind);
-    RUN_TEST(test_error_trailing_pool_bytes);
-    RUN_TEST(test_error_truncated_entry);
     RUN_TEST(test_error_enum_unsupported);
     RUN_TEST(test_error_invalid_len_kind);
     RUN_TEST(test_error_invalid_flag_kind);
@@ -1367,9 +1128,6 @@ int main() {
     RUN_TEST(test_error_string_prefixed_value_too_short);
     RUN_TEST(test_error_array_prefixed_len_truncated);
     RUN_TEST(test_error_array_remainder_zero_progress);
-    RUN_TEST(test_error_pool_truncated_per_kind);
-    RUN_TEST(test_empty_pool_rejected);
-    RUN_TEST(test_zero_size_pool_rejected);
 
     // Out-of-space injection
     RUN_TEST(test_oom_at_each_alloc_site);
