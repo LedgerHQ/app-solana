@@ -42,10 +42,20 @@
 // The raw value bytes are kept verbatim; formatting (amount, datetime, enum
 // label, ...) is the consumer's responsibility, driven by the matching
 // DISPLAY_FIELD.
+//
+// `kind` carries the source IDL_TYPE_POOL kind code (U8..U128, I8..I128,
+// SHORT_U16, BOOL_U8/16/32, F32/F64, PUBKEY_32, STRING_*, BYTES_*, ...; see
+// spec/device/idl_descriptor.md). It is REQUIRED to interpret `value`: the raw
+// bytes alone are ambiguous (a 1-byte 0xFF is U8 255 or I8 -1; a 2-byte slice
+// is a little-endian U16 or a SHORT_U16 varint; 4 bytes are U32 or F32), and
+// the DISPLAY_FIELD only says how to *format* the decoded value, not how to
+// decode the bytes into it. The consumer switches on `kind` to read `value`,
+// then applies the formatter.
 typedef struct idl_leaf_s {
     const uint8_t *path;    // packed argument path (u8 step_count || packed steps), scratch
     size_t path_size;       // length of `path` in bytes
-    const uint8_t *value;   // raw little-endian leaf value bytes, borrowed
+    uint8_t kind;           // source IDL_TYPE_POOL kind code (see idl_descriptor.md)
+    const uint8_t *value;   // raw leaf value bytes (encoding per `kind`), borrowed
     size_t value_size;      // length of `value` in bytes
 } idl_leaf_t;
 

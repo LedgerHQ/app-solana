@@ -19,6 +19,10 @@
 
 // Number of leading instruction-data bytes exposed through a mock leaf value.
 #define MOCK_LEAF_VALUE_MAX 4
+// Kind reported for the mock leaf: BYTES_FIXED (0x12), an honest match for the
+// raw fixed-width slice the scaffolding hands back. The real walker reports the
+// actual pool kind it decoded.
+#define MOCK_LEAF_KIND 0x12
 
 void idl_walker_init(idl_walker_t *walker) {
     if (walker == NULL) {
@@ -91,17 +95,24 @@ static int emit_mock_leaves(idl_walker_t *walker, idl_leaf_cb_t cb, void *ctx) {
         value_size = MOCK_LEAF_VALUE_MAX;
     }
 
+    // Borrow into the instruction data; no copy. NULL when data is empty.
+    const uint8_t *value = NULL;
+    if (value_size > 0) {
+        value = walker->data;
+    }
+
     idl_leaf_t leaf = {
         .path = path,
         .path_size = 2,
-        // Borrow into the instruction data; no copy. NULL when data is empty.
-        .value = (value_size > 0) ? walker->data : NULL,
+        .kind = MOCK_LEAF_KIND,
+        .value = value,
         .value_size = value_size,
     };
 
-    PRINTF("idl_walker: leaf path=%.*H value=%.*H\n",
+    PRINTF("idl_walker: leaf path=%.*H kind=0x%02x value=%.*H\n",
            leaf.path_size,
            leaf.path,
+           leaf.kind,
            leaf.value_size,
            leaf.value);
     if (cb != NULL) {
