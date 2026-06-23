@@ -1,22 +1,13 @@
 // IDL walker. See idl_walker.h for the contract.
 //
-// The walker decodes the raw argument bytes of a Solana instruction against
-// the trimmed, kind-driven IDL_TYPE_POOL descriptor and streams every decoded
-// leaf to a caller-supplied callback.
+// Decodes the raw argument bytes of a Solana instruction against the
+// kind-driven IDL_TYPE_POOL descriptor and streams every decoded leaf to a
+// caller-supplied callback. Inputs are borrowed, never copied; all working
+// allocations are released before idl_walker_run() returns.
 //
-// Inputs are borrowed, never copied: the caller keeps the pool and instruction
-// data buffers alive until idl_walker_reset(). The walk itself allocates a
-// parsed-pool view, a growable frame stack, an optional fixed-size table and a
-// reusable scratch path; all are released before idl_walker_run() returns, so
-// the only size-driven failure path is the allocator returning NULL.
-//
-// Descent is iterative over an explicit heap-allocated frame stack (no C
-// recursion), so deeply nested descriptors cannot overflow the device stack.
-//
-// The walk fails closed (returns -1) on any descriptor/data inconsistency: a
-// read past the end of the instruction data, a malformed pool, an unsupported
-// kind (IDL_KIND_ENUM for now), or a final cursor that does not land exactly
-// on the end of the instruction data.
+// Descent is iterative over an explicit heap frame stack (no C recursion), so
+// deeply nested descriptors cannot overflow the device stack. The walk fails
+// closed (returns -1) on any descriptor/data inconsistency.
 
 #include <string.h>
 
@@ -28,9 +19,8 @@
 // Parsed pool entry
 // =============================================================================
 
-// A single IDL_TYPE_POOL entry, parsed into a structured view. Every pointer
-// field borrows into the caller's pool bytes (zero-copy); only the array of
-// entry_t itself is owned (and freed by the walk).
+// A single IDL_TYPE_POOL entry, parsed into a structured view. Pointer fields
+// borrow into the caller's pool bytes; only the entry_t array itself is owned.
 typedef struct entry_s {
     uint8_t kind;             // IDL_KIND_*
     uint16_t fixed_size;      // BYTES_FIXED/STRING_FIXED byte size, ARRAY_FIXED count
@@ -55,35 +45,21 @@ typedef struct entry_s {
 // Pool parsing
 // =============================================================================
 
-// Parse the IDL_TYPE_POOL payload (`u8 count || entries`) into an owned array
-// of entry_t. Mirrors the on-wire layout from spec/device/idl_descriptor.md.
-// Multi-byte descriptor metadata is big-endian. Fails closed on truncation,
-// trailing bytes, an out-of-range ref index, or an unknown kind.
-//
-// Returns 0 on success (caller owns *out_entries), -1 on error.
-static int parse_pool(const uint8_t *buf, size_t size, entry_t **out_entries, uint8_t *out_count) {
-    if (buf == NULL || size < 1) {
-        return -1;
-    }
-    uint8_t count = buf[0];
-    size_t off = 1;
-
-    // malloc(0) is implementation-defined; allocate at least one slot.
-    size_t alloc_count = (count == 0) ? 1 : count;
-    entry_t *entries = APP_MEM_ALLOC(alloc_count * sizeof(entry_t));
-    if (entries == NULL) {
-        PRINTF("idl_walker: pool entry array allocation failed\n");
-        return -1;
-    }
-    memset(entries, 0, alloc_count * sizeof(entry_t));
+// Parse the entries of an IDL_TYPE_POOL payload into the pre-allocated, zeroed
+// `entries` array. Multi-byte descriptor metadata is big-endian. Returns 0 on
+// success, -1 on truncation, trailing bytes, an out-of-range ref, or an
+// unknown kind.
+static int parse_pool_entries(const uint8_t *buf, size_t size, entry_t *entries, uint8_t count) {
+    size_t offset = 1;
 
     for (uint8_t i = 0; i < count; i++) {
-        if (off >= size) {
-            goto fail;
+        if (offset >= size) {
+            PRINTF("idl_walker: pool truncated before entry %d\n", i);
+            return -1;
         }
-        uint8_t kind = buf[off++];
-        entry_t *e = &entries[i];
-        e->kind = kind;
+        uint8_t kind = buf[offset++];
+        entry_t *entry = &entries[i];
+        entry->kind = kind;
 
         switch (kind) {
             case IDL_KIND_U8:
@@ -104,164 +80,200 @@ static int parse_pool(const uint8_t *buf, size_t size, entry_t **out_entries, ui
             case IDL_KIND_BOOL_U32:
             case IDL_KIND_PUBKEY_32:
             case IDL_KIND_BYTES_REMAINDER:
-                // No inline arguments.
                 break;
 
             case IDL_KIND_BYTES_FIXED:
-                if (off + 2 > size) {
-                    goto fail;
+                if (offset + 2 > size) {
+                    PRINTF("idl_walker: BYTES_FIXED entry %d truncated\n", i);
+                    return -1;
                 }
-                e->fixed_size = (uint16_t) ((buf[off] << 8) | buf[off + 1]);
-                off += 2;
+                entry->fixed_size = (uint16_t) ((buf[offset] << 8) | buf[offset + 1]);
+                offset += 2;
                 break;
 
             case IDL_KIND_STRING_FIXED:
-                if (off + 3 > size) {
-                    goto fail;
+                if (offset + 3 > size) {
+                    PRINTF("idl_walker: STRING_FIXED entry %d truncated\n", i);
+                    return -1;
                 }
-                e->fixed_size = (uint16_t) ((buf[off] << 8) | buf[off + 1]);
-                e->encoding = buf[off + 2];
-                off += 3;
+                entry->fixed_size = (uint16_t) ((buf[offset] << 8) | buf[offset + 1]);
+                entry->encoding = buf[offset + 2];
+                offset += 3;
                 break;
 
             case IDL_KIND_STRING_PREFIXED:
-                if (off + 2 > size) {
-                    goto fail;
+                if (offset + 2 > size) {
+                    PRINTF("idl_walker: STRING_PREFIXED entry %d truncated\n", i);
+                    return -1;
                 }
-                e->len_kind = buf[off];
-                e->encoding = buf[off + 1];
-                off += 2;
+                entry->len_kind = buf[offset];
+                entry->encoding = buf[offset + 1];
+                offset += 2;
                 break;
 
             case IDL_KIND_STRUCT:
             case IDL_KIND_TUPLE: {
-                if (off >= size) {
-                    goto fail;
+                if (offset >= size) {
+                    PRINTF("idl_walker: STRUCT/TUPLE entry %d truncated\n", i);
+                    return -1;
                 }
-                uint8_t n = buf[off++];
-                if (off + n > size) {
-                    goto fail;
+                uint8_t field_count = buf[offset++];
+                if (offset + field_count > size) {
+                    PRINTF("idl_walker: STRUCT/TUPLE entry %d refs truncated\n", i);
+                    return -1;
                 }
-                e->refs = &buf[off];
-                e->ref_count = n;
-                off += n;
+                entry->refs = &buf[offset];
+                entry->ref_count = field_count;
+                offset += field_count;
                 break;
             }
 
             case IDL_KIND_OPTION_DYNAMIC:
             case IDL_KIND_OPTION_FIXED:
-                if (off + 2 > size) {
-                    goto fail;
+                if (offset + 2 > size) {
+                    PRINTF("idl_walker: OPTION entry %d truncated\n", i);
+                    return -1;
                 }
-                e->flag_kind = buf[off];
-                e->refs = &buf[off + 1];
-                e->ref_count = 1;
-                off += 2;
+                entry->flag_kind = buf[offset];
+                entry->refs = &buf[offset + 1];
+                entry->ref_count = 1;
+                offset += 2;
                 break;
 
             case IDL_KIND_OPTION_ZEROABLE: {
-                if (off + 2 > size) {
-                    goto fail;
+                if (offset + 2 > size) {
+                    PRINTF("idl_walker: OPTION_ZEROABLE entry %d truncated\n", i);
+                    return -1;
                 }
-                e->refs = &buf[off];  // inner_ref
-                e->ref_count = 1;
-                uint8_t slen = buf[off + 1];
-                off += 2;
-                if (off + slen > size) {
-                    goto fail;
+                entry->refs = &buf[offset];
+                entry->ref_count = 1;
+                uint8_t sentinel_len = buf[offset + 1];
+                offset += 2;
+                if (offset + sentinel_len > size) {
+                    PRINTF("idl_walker: OPTION_ZEROABLE entry %d sentinel truncated\n", i);
+                    return -1;
                 }
-                e->sentinel = &buf[off];
-                e->sentinel_len = slen;
-                off += slen;
+                entry->sentinel = &buf[offset];
+                entry->sentinel_len = sentinel_len;
+                offset += sentinel_len;
                 break;
             }
 
             case IDL_KIND_ARRAY_FIXED:
-                if (off + 3 > size) {
-                    goto fail;
+                if (offset + 3 > size) {
+                    PRINTF("idl_walker: ARRAY_FIXED entry %d truncated\n", i);
+                    return -1;
                 }
-                e->fixed_size = (uint16_t) ((buf[off] << 8) | buf[off + 1]);
-                e->refs = &buf[off + 2];
-                e->ref_count = 1;
-                off += 3;
+                entry->fixed_size = (uint16_t) ((buf[offset] << 8) | buf[offset + 1]);
+                entry->refs = &buf[offset + 2];
+                entry->ref_count = 1;
+                offset += 3;
                 break;
 
             case IDL_KIND_ARRAY_PREFIXED:
-                if (off + 2 > size) {
-                    goto fail;
+                if (offset + 2 > size) {
+                    PRINTF("idl_walker: ARRAY_PREFIXED entry %d truncated\n", i);
+                    return -1;
                 }
-                e->len_kind = buf[off];
-                e->refs = &buf[off + 1];
-                e->ref_count = 1;
-                off += 2;
+                entry->len_kind = buf[offset];
+                entry->refs = &buf[offset + 1];
+                entry->ref_count = 1;
+                offset += 2;
                 break;
 
             case IDL_KIND_ARRAY_REMAINDER:
             case IDL_KIND_OPTION_REMAINDER:
-                if (off + 1 > size) {
-                    goto fail;
+                if (offset + 1 > size) {
+                    PRINTF("idl_walker: REMAINDER entry %d truncated\n", i);
+                    return -1;
                 }
-                e->refs = &buf[off];
-                e->ref_count = 1;
-                off += 1;
+                entry->refs = &buf[offset];
+                entry->ref_count = 1;
+                offset += 1;
                 break;
 
             case IDL_KIND_ENUM: {
-                if (off + 4 > size) {
-                    goto fail;
+                if (offset + 4 > size) {
+                    PRINTF("idl_walker: ENUM entry %d truncated\n", i);
+                    return -1;
                 }
-                e->disc_kind = buf[off];
-                e->total_variants = (uint16_t) ((buf[off + 1] << 8) | buf[off + 2]);
-                uint8_t el = buf[off + 3];
-                off += 4;
-                if (off + el > size) {
-                    goto fail;
+                entry->disc_kind = buf[offset];
+                entry->total_variants = (uint16_t) ((buf[offset + 1] << 8) | buf[offset + 2]);
+                uint8_t id_len = buf[offset + 3];
+                offset += 4;
+                if (offset + id_len > size) {
+                    PRINTF("idl_walker: ENUM entry %d id truncated\n", i);
+                    return -1;
                 }
-                e->enum_id = &buf[off];
-                e->enum_id_len = el;
-                off += el;
+                entry->enum_id = &buf[offset];
+                entry->enum_id_len = id_len;
+                offset += id_len;
                 break;
             }
 
             case IDL_KIND_HIDDEN_PREFIX:
             case IDL_KIND_HIDDEN_SUFFIX:
-                if (off + 2 > size) {
-                    goto fail;
+                if (offset + 2 > size) {
+                    PRINTF("idl_walker: HIDDEN entry %d truncated\n", i);
+                    return -1;
                 }
-                e->refs = &buf[off];  // [skip_ref, inner_ref]
-                e->ref_count = 2;
-                off += 2;
+                entry->refs = &buf[offset];  // [skip_ref, inner_ref]
+                entry->ref_count = 2;
+                offset += 2;
                 break;
 
             default:
                 PRINTF("idl_walker: unknown pool kind 0x%02x\n", kind);
-                goto fail;
+                return -1;
         }
     }
 
-    if (off != size) {
-        PRINTF("idl_walker: %d trailing byte(s) in pool\n", size - off);
-        goto fail;
+    if (offset != size) {
+        PRINTF("idl_walker: %d trailing byte(s) in pool\n", size - offset);
+        return -1;
     }
 
-    // Every ref must point at a valid pool entry.
     for (uint8_t i = 0; i < count; i++) {
-        const entry_t *e = &entries[i];
-        for (uint8_t j = 0; j < e->ref_count; j++) {
-            if (e->refs[j] >= count) {
-                PRINTF("idl_walker: ref %d out of range (count=%d)\n", e->refs[j], count);
-                goto fail;
+        const entry_t *entry = &entries[i];
+        for (uint8_t j = 0; j < entry->ref_count; j++) {
+            if (entry->refs[j] >= count) {
+                PRINTF("idl_walker: ref %d out of range (count=%d)\n", entry->refs[j], count);
+                return -1;
             }
         }
+    }
+    return 0;
+}
+
+// Parse the IDL_TYPE_POOL payload (`u8 count || entries`) into an owned array
+// of entry_t. The owned array is allocated here and freed on parse failure, so
+// parse_pool_entries can return -1 directly without leaking.
+//
+// Returns 0 on success (caller owns *out_entries), -1 on error.
+static int parse_pool(const uint8_t *buf, size_t size, entry_t **out_entries, uint8_t *out_count) {
+    if (buf == NULL || size < 1) {
+        PRINTF("idl_walker: empty pool buffer\n");
+        return -1;
+    }
+    uint8_t count = buf[0];
+
+    // malloc(0) is implementation-defined; allocate at least one slot.
+    size_t alloc_count = (count == 0) ? 1 : count;
+    entry_t *entries = APP_MEM_ALLOC(alloc_count * sizeof(entry_t));
+    if (entries == NULL) {
+        PRINTF("idl_walker: pool entry array allocation failed\n");
+        return -1;
+    }
+    memset(entries, 0, alloc_count * sizeof(entry_t));
+
+    if (parse_pool_entries(buf, size, entries, count) != 0) {
+        APP_MEM_FREE(entries);
+        return -1;
     }
 
     *out_entries = entries;
     *out_count = count;
     return 0;
-
-fail:
-    APP_MEM_FREE(entries);
-    return -1;
 }
 
 // =============================================================================
@@ -299,24 +311,23 @@ static size_t fixed_primitive_width(uint8_t kind) {
     }
 }
 
-// Try to determine the static serialized size of pool[idx] given the partially
-// filled size table `fs`. Writes the result to *out and returns true when it
-// can be decided now; returns false when a child size is still FS_UNKNOWN.
-// The result may be FS_VARIABLE for inherently variable-size kinds.
-static bool try_static_size(const entry_t *pool, uint8_t idx, const size_t *fs, size_t *out) {
-    const entry_t *e = &pool[idx];
-    uint8_t kind = e->kind;
+// Try to determine the static serialized size of pool[idx] from the partially
+// filled size table `sizes`. Writes the result to *out and returns true when
+// it can be decided now; returns false when a child size is still FS_UNKNOWN.
+static bool try_static_size(const entry_t *pool, uint8_t idx, const size_t *sizes, size_t *out) {
+    const entry_t *entry = &pool[idx];
+    uint8_t kind = entry->kind;
 
-    size_t prim = fixed_primitive_width(kind);
-    if (prim != 0) {
-        *out = prim;
+    size_t primitive_width = fixed_primitive_width(kind);
+    if (primitive_width != 0) {
+        *out = primitive_width;
         return true;
     }
 
     switch (kind) {
         case IDL_KIND_BYTES_FIXED:
         case IDL_KIND_STRING_FIXED:
-            *out = e->fixed_size;
+            *out = entry->fixed_size;
             return true;
 
         case IDL_KIND_SHORT_U16:
@@ -333,68 +344,68 @@ static bool try_static_size(const entry_t *pool, uint8_t idx, const size_t *fs, 
         case IDL_KIND_STRUCT:
         case IDL_KIND_TUPLE: {
             size_t total = 0;
-            for (uint8_t j = 0; j < e->ref_count; j++) {
-                size_t cs = fs[e->refs[j]];
-                if (cs == FS_UNKNOWN) {
+            for (uint8_t j = 0; j < entry->ref_count; j++) {
+                size_t child_size = sizes[entry->refs[j]];
+                if (child_size == FS_UNKNOWN) {
                     return false;
                 }
-                if (cs == FS_VARIABLE) {
+                if (child_size == FS_VARIABLE) {
                     *out = FS_VARIABLE;
                     return true;
                 }
-                total += cs;
+                total += child_size;
             }
             *out = total;
             return true;
         }
 
         case IDL_KIND_ARRAY_FIXED: {
-            size_t cs = fs[e->refs[0]];
-            if (cs == FS_UNKNOWN) {
+            size_t child_size = sizes[entry->refs[0]];
+            if (child_size == FS_UNKNOWN) {
                 return false;
             }
-            if (cs == FS_VARIABLE) {
+            if (child_size == FS_VARIABLE) {
                 *out = FS_VARIABLE;
                 return true;
             }
-            *out = (size_t) e->fixed_size * cs;
+            *out = (size_t) entry->fixed_size * child_size;
             return true;
         }
 
         case IDL_KIND_OPTION_FIXED: {
-            size_t cs = fs[e->refs[0]];
-            if (cs == FS_UNKNOWN) {
+            size_t child_size = sizes[entry->refs[0]];
+            if (child_size == FS_UNKNOWN) {
                 return false;
             }
-            if (cs == FS_VARIABLE) {
+            if (child_size == FS_VARIABLE) {
                 *out = FS_VARIABLE;
                 return true;
             }
-            *out = fixed_primitive_width(e->flag_kind) + cs;
+            *out = fixed_primitive_width(entry->flag_kind) + child_size;
             return true;
         }
 
         case IDL_KIND_OPTION_ZEROABLE: {
-            size_t cs = fs[e->refs[0]];
-            if (cs == FS_UNKNOWN) {
+            size_t child_size = sizes[entry->refs[0]];
+            if (child_size == FS_UNKNOWN) {
                 return false;
             }
-            *out = cs;  // sentinel and inner occupy the same width
+            *out = child_size;  // sentinel and inner occupy the same width
             return true;
         }
 
         case IDL_KIND_HIDDEN_PREFIX:
         case IDL_KIND_HIDDEN_SUFFIX: {
-            size_t a = fs[e->refs[0]];
-            size_t b = fs[e->refs[1]];
-            if (a == FS_UNKNOWN || b == FS_UNKNOWN) {
+            size_t skip_size = sizes[entry->refs[0]];
+            size_t inner_size = sizes[entry->refs[1]];
+            if (skip_size == FS_UNKNOWN || inner_size == FS_UNKNOWN) {
                 return false;
             }
-            if (a == FS_VARIABLE || b == FS_VARIABLE) {
+            if (skip_size == FS_VARIABLE || inner_size == FS_VARIABLE) {
                 *out = FS_VARIABLE;
                 return true;
             }
-            *out = a + b;
+            *out = skip_size + inner_size;
             return true;
         }
 
@@ -406,30 +417,30 @@ static bool try_static_size(const entry_t *pool, uint8_t idx, const size_t *fs, 
 
 // Compute the static-size table for every pool entry via a fixpoint pass (no
 // recursion). Entries that cannot be resolved (e.g. reference cycles) are left
-// FS_VARIABLE, which makes any OPTION_FIXED that depends on them fail closed.
+// FS_VARIABLE, so any OPTION_FIXED that depends on them is rejected at walk.
 //
 // Returns 0 on success (caller owns *out_sizes), -1 on out-of-space.
 static int compute_fixed_sizes(const entry_t *pool, uint8_t count, size_t **out_sizes) {
     size_t alloc_count = (count == 0) ? 1 : count;
-    size_t *fs = APP_MEM_ALLOC(alloc_count * sizeof(size_t));
-    if (fs == NULL) {
+    size_t *sizes = APP_MEM_ALLOC(alloc_count * sizeof(size_t));
+    if (sizes == NULL) {
         PRINTF("idl_walker: fixed-size table allocation failed\n");
         return -1;
     }
     for (size_t i = 0; i < alloc_count; i++) {
-        fs[i] = FS_UNKNOWN;
+        sizes[i] = FS_UNKNOWN;
     }
 
     bool changed = true;
     while (changed) {
         changed = false;
         for (uint8_t i = 0; i < count; i++) {
-            if (fs[i] != FS_UNKNOWN) {
+            if (sizes[i] != FS_UNKNOWN) {
                 continue;
             }
-            size_t s;
-            if (try_static_size(pool, i, fs, &s)) {
-                fs[i] = s;
+            size_t size;
+            if (try_static_size(pool, i, sizes, &size)) {
+                sizes[i] = size;
                 changed = true;
             }
         }
@@ -437,12 +448,12 @@ static int compute_fixed_sizes(const entry_t *pool, uint8_t count, size_t **out_
 
     // Anything still unknown is part of a cycle; treat as variable.
     for (uint8_t i = 0; i < count; i++) {
-        if (fs[i] == FS_UNKNOWN) {
-            fs[i] = FS_VARIABLE;
+        if (sizes[i] == FS_UNKNOWN) {
+            sizes[i] = FS_VARIABLE;
         }
     }
 
-    *out_sizes = fs;
+    *out_sizes = sizes;
     return 0;
 }
 
@@ -516,7 +527,7 @@ static size_t step_width(uint8_t parent_kind) {
 
 // Select the (pool ref, step value) the current frame descends into for its
 // `child_i`-th child, honoring the per-kind ordering rules from the spec.
-static void select_child(const entry_t *e,
+static void select_child(const entry_t *entry,
                          uint8_t kind,
                          size_t child_i,
                          uint8_t *ref_idx,
@@ -524,39 +535,39 @@ static void select_child(const entry_t *e,
     switch (kind) {
         case IDL_KIND_STRUCT:
         case IDL_KIND_TUPLE:
-            *ref_idx = e->refs[child_i];
+            *ref_idx = entry->refs[child_i];
             *step_val = child_i;
             break;
         case IDL_KIND_ARRAY_FIXED:
         case IDL_KIND_ARRAY_PREFIXED:
         case IDL_KIND_ARRAY_REMAINDER:
-            *ref_idx = e->refs[0];
+            *ref_idx = entry->refs[0];
             *step_val = child_i;
             break;
         case IDL_KIND_OPTION_DYNAMIC:
         case IDL_KIND_OPTION_FIXED:
         case IDL_KIND_OPTION_ZEROABLE:
         case IDL_KIND_OPTION_REMAINDER:
-            *ref_idx = e->refs[0];
+            *ref_idx = entry->refs[0];
             *step_val = 0;
             break;
         case IDL_KIND_HIDDEN_PREFIX:
             // skip side first (step 1, never displayed), then inner (step 0).
             if (child_i == 0) {
-                *ref_idx = e->refs[0];
+                *ref_idx = entry->refs[0];
                 *step_val = 1;
             } else {
-                *ref_idx = e->refs[1];
+                *ref_idx = entry->refs[1];
                 *step_val = 0;
             }
             break;
         case IDL_KIND_HIDDEN_SUFFIX:
             // inner side first (step 0), then skip (step 1, never displayed).
             if (child_i == 0) {
-                *ref_idx = e->refs[1];
+                *ref_idx = entry->refs[1];
                 *step_val = 0;
             } else {
-                *ref_idx = e->refs[0];
+                *ref_idx = entry->refs[0];
                 *step_val = 1;
             }
             break;
@@ -569,86 +580,89 @@ static void select_child(const entry_t *e,
 
 // Read a Solana ShortU16 varint (1-3 bytes) from the cursor, advancing it.
 // Returns false on a read past the end of the data.
-static bool read_short_u16(walk_ctx_t *c, uint64_t *out) {
-    uint64_t val = 0;
+static bool read_short_u16(walk_ctx_t *walk, uint64_t *out) {
+    uint64_t value = 0;
     for (int i = 0; i < 3; i++) {
-        if (c->cursor >= c->data_size) {
+        if (walk->cursor >= walk->data_size) {
+            PRINTF("idl_walker: SHORT_U16 read past end of data\n");
             return false;
         }
-        uint8_t byte = c->data[c->cursor++];
-        val |= (uint64_t) (byte & 0x7F) << (7 * i);
+        uint8_t byte = walk->data[walk->cursor++];
+        value |= (uint64_t) (byte & 0x7F) << (7 * i);
         if ((byte & 0x80) == 0) {
             break;
         }
     }
-    *out = val;
+    *out = value;
     return true;
 }
 
 // Read a little-endian unsigned integer of the given primitive `kind` (or a
 // SHORT_U16 varint) from the cursor, advancing it. Returns false on a read
 // past the end of the data or an unsupported kind.
-static bool read_uint_le(walk_ctx_t *c, uint8_t kind, uint64_t *out) {
+static bool read_uint_le(walk_ctx_t *walk, uint8_t kind, uint64_t *out) {
     if (kind == IDL_KIND_SHORT_U16) {
-        return read_short_u16(c, out);
+        return read_short_u16(walk, out);
     }
-    size_t w = fixed_primitive_width(kind);
-    if (w == 0 || w > 8) {
+    size_t width = fixed_primitive_width(kind);
+    if (width == 0 || width > 8) {
+        PRINTF("idl_walker: kind 0x%02x is not a readable integer length\n", kind);
         return false;
     }
-    if (c->cursor + w > c->data_size) {
+    if (walk->cursor + width > walk->data_size) {
+        PRINTF("idl_walker: integer read past end of data\n");
         return false;
     }
-    uint64_t val = 0;
-    for (size_t i = 0; i < w; i++) {
-        val |= (uint64_t) c->data[c->cursor + i] << (8 * i);
+    uint64_t value = 0;
+    for (size_t i = 0; i < width; i++) {
+        value |= (uint64_t) walk->data[walk->cursor + i] << (8 * i);
     }
-    c->cursor += w;
-    *out = val;
+    walk->cursor += width;
+    *out = value;
     return true;
 }
 
 // Build the packed argument path for the current leaf (the top frame) into the
 // reusable scratch buffer. Returns 0 on success, 1 when the path cannot be
-// represented (too many steps, or a step value too wide — the leaf is then
-// silently skipped, not an error), and -1 on out-of-space.
-static int build_path(walk_ctx_t *c, size_t *out_len) {
-    size_t steps = c->stack_len - 1;  // every frame but the root contributes one step
+// represented (the leaf is then silently skipped, not an error), -1 on
+// out-of-space.
+static int build_path(walk_ctx_t *walk, size_t *out_len) {
+    size_t steps = walk->stack_len - 1;  // every frame but the root contributes one step
     if (steps > 0xFF) {
         return 1;
     }
 
     size_t total = 1;  // leading step_count byte
-    for (size_t i = 1; i < c->stack_len; i++) {
-        size_t w = step_width(c->stack[i].parent_kind);
-        if (w == 0) {
+    for (size_t i = 1; i < walk->stack_len; i++) {
+        size_t width = step_width(walk->stack[i].parent_kind);
+        if (width == 0) {
             return 1;
         }
-        total += w;
+        total += width;
     }
 
-    if (c->path_cap < total) {
-        uint8_t *np = APP_MEM_REALLOC(c->path, total);
-        if (np == NULL) {
+    if (walk->path_cap < total) {
+        uint8_t *new_path = APP_MEM_REALLOC(walk->path, total);
+        if (new_path == NULL) {
             PRINTF("idl_walker: scratch path allocation failed\n");
             return -1;
         }
-        c->path = np;
-        c->path_cap = total;
+        walk->path = new_path;
+        walk->path_cap = total;
     }
 
-    c->path[0] = (uint8_t) steps;
-    size_t off = 1;
-    for (size_t i = 1; i < c->stack_len; i++) {
-        size_t w = step_width(c->stack[i].parent_kind);
-        size_t val = c->stack[i].step_value;
-        if (w < sizeof(size_t) && (val >> (w * 8)) != 0) {
+    walk->path[0] = (uint8_t) steps;
+    size_t offset = 1;
+    for (size_t i = 1; i < walk->stack_len; i++) {
+        size_t width = step_width(walk->stack[i].parent_kind);
+        size_t value = walk->stack[i].step_value;
+        if (width < sizeof(size_t) && (value >> (width * 8)) != 0) {
             return 1;  // step value does not fit its width
         }
-        for (size_t b = 0; b < w; b++) {
-            c->path[off + b] = (uint8_t) (val >> (8 * (w - 1 - b)));  // big-endian
+        for (size_t byte_i = 0; byte_i < width; byte_i++) {
+            walk->path[offset + byte_i] = (uint8_t) (value >> (8 * (width - 1 - byte_i)));
         }
-        off += w;
+        offset += width;
     }
 
     *out_len = total;
@@ -657,79 +671,80 @@ static int build_path(walk_ctx_t *c, size_t *out_len) {
 
 // Hand one decoded leaf to the callback. Returns 0 on success (including a
 // silently skipped unrepresentable path), -1 on out-of-space.
-static int emit_leaf(walk_ctx_t *c, uint8_t kind, const uint8_t *value, size_t value_size) {
-    if (c->cb == NULL) {
+static int emit_leaf(walk_ctx_t *walk, uint8_t kind, const uint8_t *value, size_t value_size) {
+    if (walk->cb == NULL) {
         return 0;
     }
     size_t path_len;
-    int r = build_path(c, &path_len);
-    if (r < 0) {
+    int result = build_path(walk, &path_len);
+    if (result < 0) {
         return -1;
     }
-    if (r > 0) {
+    if (result > 0) {
         return 0;  // unrepresentable path — skip emission, keep walking
     }
     idl_leaf_t leaf = {
-        .path = c->path,
+        .path = walk->path,
         .path_size = path_len,
         .kind = kind,
         .value = value,
         .value_size = value_size,
     };
-    c->cb(&leaf, c->cb_ctx);
+    walk->cb(&leaf, walk->cb_ctx);
     return 0;
 }
 
-static int push_frame(walk_ctx_t *c, uint8_t entry_idx, uint8_t parent_kind, size_t step_value) {
-    if (entry_idx >= c->pool_count) {
+static int push_frame(walk_ctx_t *walk, uint8_t entry_idx, uint8_t parent_kind, size_t step_value) {
+    if (entry_idx >= walk->pool_count) {
+        PRINTF("idl_walker: push_frame ref %d out of range\n", entry_idx);
         return -1;
     }
-    if (c->stack_len == c->stack_cap) {
-        size_t ncap = c->stack_cap * 2;
-        frame_t *ns = APP_MEM_REALLOC(c->stack, ncap * sizeof(frame_t));
-        if (ns == NULL) {
+    if (walk->stack_len == walk->stack_cap) {
+        size_t new_cap = walk->stack_cap * 2;
+        frame_t *new_stack = APP_MEM_REALLOC(walk->stack, new_cap * sizeof(frame_t));
+        if (new_stack == NULL) {
             PRINTF("idl_walker: frame stack growth failed\n");
             return -1;
         }
-        c->stack = ns;
-        c->stack_cap = ncap;
+        walk->stack = new_stack;
+        walk->stack_cap = new_cap;
     }
-    frame_t *f = &c->stack[c->stack_len++];
-    f->entry_idx = entry_idx;
-    f->kind = c->pool[entry_idx].kind;
-    f->entered = false;
-    f->child_i = 0;
-    f->child_count = 0;
-    f->mark = 0;
-    f->parent_kind = parent_kind;
-    f->step_value = step_value;
+    frame_t *frame = &walk->stack[walk->stack_len++];
+    frame->entry_idx = entry_idx;
+    frame->kind = walk->pool[entry_idx].kind;
+    frame->entered = false;
+    frame->child_i = 0;
+    frame->child_count = 0;
+    frame->mark = 0;
+    frame->parent_kind = parent_kind;
+    frame->step_value = step_value;
     return 0;
 }
 
 // Descend into the current frame's next child, or pop the frame when its
 // children are exhausted. Used by every aggregate/option/hidden kind whose
 // child count is fixed once `entered`.
-static int step_children(walk_ctx_t *c, frame_t *f, const entry_t *e) {
-    if (f->child_i < f->child_count) {
+static int step_children(walk_ctx_t *walk, frame_t *frame, const entry_t *entry) {
+    if (frame->child_i < frame->child_count) {
         uint8_t ref_idx;
         size_t step_val;
-        select_child(e, f->kind, f->child_i, &ref_idx, &step_val);
-        uint8_t parent_kind = f->kind;
-        f->child_i++;
-        // push_frame may reallocate the stack: do not touch `f` afterwards.
-        return push_frame(c, ref_idx, parent_kind, step_val);
+        select_child(entry, frame->kind, frame->child_i, &ref_idx, &step_val);
+        uint8_t parent_kind = frame->kind;
+        frame->child_i++;
+        // push_frame may reallocate the stack: do not touch `frame` afterwards.
+        return push_frame(walk, ref_idx, parent_kind, step_val);
     }
-    c->stack_len--;  // pop
+    walk->stack_len--;  // pop
     return 0;
 }
 
 // Process one unit of work on the top frame: emit a leaf and pop, descend into
 // a child, or pop. Returns 0 on progress, -1 on a fatal error.
-static int walk_top(walk_ctx_t *c) {
-    frame_t *f = &c->stack[c->stack_len - 1];
-    const entry_t *e = &c->pool[f->entry_idx];
+static int walk_top(walk_ctx_t *walk) {
+    frame_t *frame = &walk->stack[walk->stack_len - 1];
+    const entry_t *entry = &walk->pool[frame->entry_idx];
 
-    switch (f->kind) {
+    switch (frame->kind) {
         // ---- fixed-width primitive / pubkey leaves --------------------------
         case IDL_KIND_U8:
         case IDL_KIND_U16:
@@ -747,218 +762,221 @@ static int walk_top(walk_ctx_t *c) {
         case IDL_KIND_BOOL_U16:
         case IDL_KIND_BOOL_U32:
         case IDL_KIND_PUBKEY_32: {
-            size_t w = fixed_primitive_width(f->kind);
-            if (c->cursor + w > c->data_size) {
+            size_t width = fixed_primitive_width(frame->kind);
+            if (walk->cursor + width > walk->data_size) {
+                PRINTF("idl_walker: primitive kind 0x%02x read past end of data\n", frame->kind);
                 return -1;
             }
-            const uint8_t *val = c->data + c->cursor;
-            if (emit_leaf(c, f->kind, val, w) != 0) {
+            const uint8_t *value = walk->data + walk->cursor;
+            if (emit_leaf(walk, frame->kind, value, width) != 0) {
                 return -1;
             }
-            c->cursor += w;
-            c->stack_len--;
+            walk->cursor += width;
+            walk->stack_len--;
             return 0;
         }
 
         // ---- variable-width SHORT_U16 leaf ----------------------------------
         case IDL_KIND_SHORT_U16: {
-            size_t start = c->cursor;
-            uint64_t v;
-            if (!read_short_u16(c, &v)) {
+            size_t start = walk->cursor;
+            uint64_t value;
+            if (!read_short_u16(walk, &value)) {
                 return -1;
             }
-            const uint8_t *val = c->data + start;
-            if (emit_leaf(c, f->kind, val, c->cursor - start) != 0) {
+            if (emit_leaf(walk, frame->kind, walk->data + start, walk->cursor - start) != 0) {
                 return -1;
             }
-            c->stack_len--;
+            walk->stack_len--;
             return 0;
         }
 
         // ---- fixed byte/string leaves ---------------------------------------
         case IDL_KIND_BYTES_FIXED:
         case IDL_KIND_STRING_FIXED: {
-            size_t w = e->fixed_size;
-            if (c->cursor + w > c->data_size) {
+            size_t width = entry->fixed_size;
+            if (walk->cursor + width > walk->data_size) {
+                PRINTF("idl_walker: fixed bytes/string read past end of data\n");
                 return -1;
             }
-            const uint8_t *val = c->data + c->cursor;
-            if (emit_leaf(c, f->kind, val, w) != 0) {
+            const uint8_t *value = walk->data + walk->cursor;
+            if (emit_leaf(walk, frame->kind, value, width) != 0) {
                 return -1;
             }
-            c->cursor += w;
-            c->stack_len--;
+            walk->cursor += width;
+            walk->stack_len--;
             return 0;
         }
 
         // ---- length-prefixed string leaf ------------------------------------
         case IDL_KIND_STRING_PREFIXED: {
             uint64_t len;
-            if (!read_uint_le(c, e->len_kind, &len)) {
+            if (!read_uint_le(walk, entry->len_kind, &len)) {
                 return -1;
             }
-            if (c->cursor + len > c->data_size) {
+            if (walk->cursor + len > walk->data_size) {
+                PRINTF("idl_walker: prefixed string body read past end of data\n");
                 return -1;
             }
-            const uint8_t *val = c->data + c->cursor;
-            if (emit_leaf(c, f->kind, val, (size_t) len) != 0) {
+            const uint8_t *value = walk->data + walk->cursor;
+            if (emit_leaf(walk, frame->kind, value, (size_t) len) != 0) {
                 return -1;
             }
-            c->cursor += len;
-            c->stack_len--;
+            walk->cursor += len;
+            walk->stack_len--;
             return 0;
         }
 
         // ---- tail-of-buffer raw bytes leaf ----------------------------------
         case IDL_KIND_BYTES_REMAINDER: {
-            const uint8_t *val = c->data + c->cursor;
-            size_t w = c->data_size - c->cursor;
-            if (emit_leaf(c, f->kind, val, w) != 0) {
+            const uint8_t *value = walk->data + walk->cursor;
+            size_t width = walk->data_size - walk->cursor;
+            if (emit_leaf(walk, frame->kind, value, width) != 0) {
                 return -1;
             }
-            c->cursor = c->data_size;
-            c->stack_len--;
+            walk->cursor = walk->data_size;
+            walk->stack_len--;
             return 0;
         }
 
         // ---- aggregates with a fixed child count ----------------------------
         case IDL_KIND_STRUCT:
         case IDL_KIND_TUPLE:
-            if (!f->entered) {
-                f->child_count = e->ref_count;
-                f->child_i = 0;
-                f->entered = true;
+            if (!frame->entered) {
+                frame->child_count = entry->ref_count;
+                frame->child_i = 0;
+                frame->entered = true;
             }
-            return step_children(c, f, e);
+            return step_children(walk, frame, entry);
 
         case IDL_KIND_ARRAY_FIXED:
-            if (!f->entered) {
-                f->child_count = e->fixed_size;
-                f->child_i = 0;
-                f->entered = true;
+            if (!frame->entered) {
+                frame->child_count = entry->fixed_size;
+                frame->child_i = 0;
+                frame->entered = true;
             }
-            return step_children(c, f, e);
+            return step_children(walk, frame, entry);
 
         case IDL_KIND_ARRAY_PREFIXED:
-            if (!f->entered) {
+            if (!frame->entered) {
                 uint64_t len;
-                if (!read_uint_le(c, e->len_kind, &len)) {
+                if (!read_uint_le(walk, entry->len_kind, &len)) {
                     return -1;
                 }
-                f->child_count = (size_t) len;
-                f->child_i = 0;
-                f->entered = true;
+                frame->child_count = (size_t) len;
+                frame->child_i = 0;
+                frame->entered = true;
             }
-            return step_children(c, f, e);
+            return step_children(walk, frame, entry);
 
         // ---- remainder array: iterate until the buffer is consumed ----------
         case IDL_KIND_ARRAY_REMAINDER: {
-            if (f->entered && c->cursor == f->mark) {
+            if (frame->entered && walk->cursor == frame->mark) {
                 // The previous element consumed no bytes — would loop forever.
                 PRINTF("idl_walker: ARRAY_REMAINDER element consumed no bytes\n");
                 return -1;
             }
-            if (c->cursor < c->data_size) {
+            if (walk->cursor < walk->data_size) {
                 uint8_t ref_idx;
                 size_t step_val;
-                select_child(e, f->kind, f->child_i, &ref_idx, &step_val);
-                uint8_t parent_kind = f->kind;
-                f->entered = true;
-                f->mark = c->cursor;
-                f->child_i++;
-                return push_frame(c, ref_idx, parent_kind, step_val);
+                select_child(entry, frame->kind, frame->child_i, &ref_idx, &step_val);
+                uint8_t parent_kind = frame->kind;
+                frame->entered = true;
+                frame->mark = walk->cursor;
+                frame->child_i++;
+                return push_frame(walk, ref_idx, parent_kind, step_val);
             }
-            c->stack_len--;
+            walk->stack_len--;
             return 0;
         }
 
         // ---- options --------------------------------------------------------
         case IDL_KIND_OPTION_DYNAMIC:
-            if (!f->entered) {
+            if (!frame->entered) {
                 uint64_t flag;
-                if (!read_uint_le(c, e->flag_kind, &flag)) {
+                if (!read_uint_le(walk, entry->flag_kind, &flag)) {
                     return -1;
                 }
-                f->child_count = (flag != 0) ? 1 : 0;
-                f->child_i = 0;
-                f->entered = true;
+                frame->child_count = (flag != 0) ? 1 : 0;
+                frame->child_i = 0;
+                frame->entered = true;
             }
-            return step_children(c, f, e);
+            return step_children(walk, frame, entry);
 
         case IDL_KIND_OPTION_FIXED:
-            if (!f->entered) {
+            if (!frame->entered) {
                 uint64_t flag;
-                if (!read_uint_le(c, e->flag_kind, &flag)) {
+                if (!read_uint_le(walk, entry->flag_kind, &flag)) {
                     return -1;
                 }
                 if (flag != 0) {
-                    f->child_count = 1;
+                    frame->child_count = 1;
                 } else {
-                    size_t inner = c->fixed_sizes[e->refs[0]];
-                    if (inner == FS_VARIABLE) {
+                    size_t inner_size = walk->fixed_sizes[entry->refs[0]];
+                    if (inner_size == FS_VARIABLE) {
                         PRINTF("idl_walker: OPTION_FIXED with variable-size inner\n");
                         return -1;
                     }
-                    if (c->cursor + inner > c->data_size) {
+                    if (walk->cursor + inner_size > walk->data_size) {
+                        PRINTF("idl_walker: OPTION_FIXED skip past end of data\n");
                         return -1;
                     }
-                    c->cursor += inner;
-                    f->child_count = 0;
+                    walk->cursor += inner_size;
+                    frame->child_count = 0;
                 }
-                f->child_i = 0;
-                f->entered = true;
+                frame->child_i = 0;
+                frame->entered = true;
             }
-            return step_children(c, f, e);
+            return step_children(walk, frame, entry);
 
         case IDL_KIND_OPTION_ZEROABLE:
-            if (!f->entered) {
-                size_t slen = e->sentinel_len;
+            if (!frame->entered) {
+                size_t sentinel_len = entry->sentinel_len;
                 bool match;
-                if (slen == 0) {
+                if (sentinel_len == 0) {
                     match = true;
-                } else if (c->cursor + slen > c->data_size) {
+                } else if (walk->cursor + sentinel_len > walk->data_size) {
                     match = false;
                 } else {
-                    match = (memcmp(c->data + c->cursor, e->sentinel, slen) == 0);
+                    match = (memcmp(walk->data + walk->cursor, entry->sentinel, sentinel_len) == 0);
                 }
                 if (match) {
-                    c->cursor += slen;
-                    f->child_count = 0;
+                    walk->cursor += sentinel_len;
+                    frame->child_count = 0;
                 } else {
-                    f->child_count = 1;
+                    frame->child_count = 1;
                 }
-                f->child_i = 0;
-                f->entered = true;
+                frame->child_i = 0;
+                frame->entered = true;
             }
-            return step_children(c, f, e);
+            return step_children(walk, frame, entry);
 
         case IDL_KIND_OPTION_REMAINDER:
-            if (!f->entered) {
-                f->child_count = (c->cursor < c->data_size) ? 1 : 0;
-                f->child_i = 0;
-                f->entered = true;
+            if (!frame->entered) {
+                frame->child_count = (walk->cursor < walk->data_size) ? 1 : 0;
+                frame->child_i = 0;
+                frame->entered = true;
             }
-            return step_children(c, f, e);
+            return step_children(walk, frame, entry);
 
         // ---- hidden wrappers ------------------------------------------------
         case IDL_KIND_HIDDEN_PREFIX:
         case IDL_KIND_HIDDEN_SUFFIX:
-            if (!f->entered) {
-                f->child_count = 2;
-                f->child_i = 0;
-                f->entered = true;
+            if (!frame->entered) {
+                frame->child_count = 2;
+                frame->child_i = 0;
+                frame->entered = true;
             }
-            return step_children(c, f, e);
+            return step_children(walk, frame, entry);
 
         // ---- deferred / unsupported -----------------------------------------
         case IDL_KIND_ENUM:
             PRINTF("idl_walker: ENUM not supported yet (enum_id=%.*s)\n",
-                   e->enum_id_len,
-                   e->enum_id);
+                   entry->enum_id_len,
+                   entry->enum_id);
             return -1;
 
         default:
-            PRINTF("idl_walker: unhandled kind 0x%02x\n", f->kind);
+            PRINTF("idl_walker: unhandled kind 0x%02x\n", frame->kind);
             return -1;
     }
 }
@@ -1048,38 +1066,38 @@ int idl_walker_run(idl_walker_t *walker, idl_leaf_cb_t cb, void *ctx) {
         }
     }
 
-    walk_ctx_t c = {0};
-    c.data = walker->data;
-    c.data_size = walker->data_size;
-    c.cursor = 0;
-    c.pool = entries;
-    c.pool_count = count;
-    c.fixed_sizes = fixed_sizes;
-    c.cb = cb;
-    c.cb_ctx = ctx;
-    c.stack_cap = 8;
-    c.stack = APP_MEM_ALLOC(c.stack_cap * sizeof(frame_t));
+    walk_ctx_t walk = {0};
+    walk.data = walker->data;
+    walk.data_size = walker->data_size;
+    walk.cursor = 0;
+    walk.pool = entries;
+    walk.pool_count = count;
+    walk.fixed_sizes = fixed_sizes;
+    walk.cb = cb;
+    walk.cb_ctx = ctx;
+    walk.stack_cap = 8;
+    walk.stack = APP_MEM_ALLOC(walk.stack_cap * sizeof(frame_t));
 
     int rc = 0;
-    if (c.stack == NULL) {
+    if (walk.stack == NULL) {
         PRINTF("idl_walker: frame stack allocation failed\n");
         rc = -1;
     } else {
-        rc = push_frame(&c, walker->root_index, 0, 0);
-        while (rc == 0 && c.stack_len > 0) {
-            rc = walk_top(&c);
+        rc = push_frame(&walk, walker->root_index, 0, 0);
+        while (rc == 0 && walk.stack_len > 0) {
+            rc = walk_top(&walk);
         }
         // The walk must land exactly on the end of the instruction data.
-        if (rc == 0 && c.cursor != c.data_size) {
-            PRINTF("idl_walker: cursor %d != data_size %d (fail closed)\n",
-                   c.cursor,
-                   c.data_size);
+        if (rc == 0 && walk.cursor != walk.data_size) {
+            PRINTF("idl_walker: cursor %d != data_size %d, refusing\n",
+                   walk.cursor,
+                   walk.data_size);
             rc = -1;
         }
     }
 
-    APP_MEM_FREE(c.path);
-    APP_MEM_FREE(c.stack);
+    APP_MEM_FREE(walk.path);
+    APP_MEM_FREE(walk.stack);
     APP_MEM_FREE(fixed_sizes);
     APP_MEM_FREE(entries);
     return rc;

@@ -123,6 +123,7 @@ Coding patterns described here are more important than uniformity cross applicat
 - Never use ternary conditional operator
 - Comments are RARE, CONCISE, and STRAIGHT TO THE POINT
 - No goto: if a function needs exit cleaning logic, split in inner / outer.
+- Functions and variables should have clear explicit names without abbreviation. BAD: `idl_leaf_cb_t cb`, GOOD: `idl_leaf_cb_t leaf_callback`.
 
 ### Chain of trust
 
