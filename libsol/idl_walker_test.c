@@ -24,6 +24,7 @@ typedef struct {
     size_t count;
     uint8_t path[CAPTURE_MAX_LEAVES][CAPTURE_MAX_PATH];
     size_t path_size[CAPTURE_MAX_LEAVES];
+    uint8_t kind[CAPTURE_MAX_LEAVES];
     const uint8_t *value[CAPTURE_MAX_LEAVES];
     size_t value_size[CAPTURE_MAX_LEAVES];
 } capture_t;
@@ -37,6 +38,7 @@ static void capture_cb(const idl_leaf_t *leaf, void *ctx) {
         memcpy(cap->path[i], leaf->path, leaf->path_size);
     }
     cap->path_size[i] = leaf->path_size;
+    cap->kind[i] = leaf->kind;
     cap->value[i] = leaf->value;
     cap->value_size[i] = leaf->value_size;
     cap->count++;
@@ -189,6 +191,9 @@ void test_run_produces_mock_leaf() {
     const uint8_t expected_path[] = {0x01, 0x07};
     assert(cap.path_size[0] == sizeof(expected_path));
     assert(memcmp(cap.path[0], expected_path, sizeof(expected_path)) == 0);
+
+    // kind = the scaffolding's BYTES_FIXED placeholder
+    assert(cap.kind[0] == 0x12);
 
     // value = leading 4 bytes of the instruction data, borrowed from `data`
     const uint8_t expected_value[] = {0xde, 0xad, 0xbe, 0xef};
