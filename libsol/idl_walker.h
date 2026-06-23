@@ -15,7 +15,7 @@
 // leaves at once.
 //
 // Enum (IDL_KIND_ENUM) decoding is not implemented yet: hitting an enum entry
-// on a reachable path fails the walk closed (idl_walker_run returns -1).
+// on a reachable path aborts the walk (idl_walker_run returns -1).
 //
 // Sizing policy: there is NO arbitrary cap on any input or output length. The
 // inputs are borrowed (never copied), and leaves are streamed one at a time,
@@ -105,7 +105,7 @@ int idl_walker_provide_instruction_data(idl_walker_t *walker,
 // buffer have been forwarded. `cb` may be NULL to run the walk for its
 // side effects (e.g. cursor validation) without emitting anything.
 //
-// The walk fails closed (returns -1) on any descriptor/data inconsistency:
+// The walk returns -1 on any descriptor/data inconsistency:
 // a read past the end of the instruction data, a leftover or missing byte
 // once the walk completes (cursor must land exactly on the end of the data),
 // a malformed pool, or an unsupported kind (e.g. IDL_KIND_ENUM).

@@ -706,7 +706,7 @@ void test_null_callback_validates() {
         idl_walker_reset(&walker);
         assert(mock_mem_outstanding() == 0);
     }
-    // A NULL callback still fails closed on a length mismatch.
+    // A NULL callback still returns -1 on a length mismatch.
     {
         const uint8_t data[] = {0x01, 0x02, 0x03, 0x04, 0x05};  // one byte too many
         idl_walker_t walker;
@@ -720,7 +720,7 @@ void test_null_callback_validates() {
 }
 
 // =============================================================================
-// Fail-closed error paths
+// Error paths
 // =============================================================================
 
 void test_error_data_too_short() {
@@ -786,7 +786,7 @@ void test_error_truncated_entry() {
 }
 
 void test_error_enum_unsupported() {
-    // ENUM(disc=U8, total=1, id="") fails the walk closed.
+    // ENUM(disc=U8, total=1, id="") is unsupported and aborts the walk.
     const uint8_t pool[] = {0x01, IDL_KIND_ENUM, IDL_KIND_U8, 0x00, 0x01, 0x00};
     const uint8_t data[] = {0x00};
     capture_t cap = {0};
@@ -799,8 +799,8 @@ void test_error_enum_unsupported() {
 
 void test_oom_at_each_alloc_site() {
     // struct { u8, u32 } drives three allocations: the parsed-pool array, the
-    // frame stack, and the first leaf's scratch path. Failing any one must fail
-    // the walk closed and leave nothing allocated.
+    // frame stack, and the first leaf's scratch path. Failing any one must
+    // abort the walk and leave nothing allocated.
     const uint8_t pool[] = {
         IDL_KIND_U8,                  // 0
         IDL_KIND_U32,                 // 1
@@ -830,7 +830,7 @@ void test_oom_at_each_alloc_site() {
 void test_oom_fixed_size_table() {
     // option_fixed of struct{u8,u32} forces the fixed-size table to be built.
     // Allocation order: parsed pool, fixed-size table, frame stack, scratch
-    // path. Failing any one must fail the walk closed with no leak.
+    // path. Failing any one must abort the walk with no leak.
     const uint8_t pool[] = {
         IDL_KIND_U8,                             // 0
         IDL_KIND_U32,                            // 1
@@ -975,7 +975,7 @@ void test_option_fixed_bytes_inner() {
         assert(run_walk(pool_buf, sizeof(pool_buf), 1, data, sizeof(data), &cap) == 0);
         assert(cap.count == 0);
     }
-    // Absent but too few bytes to skip: fail closed.
+    // Absent but too few bytes to skip: the walk returns -1.
     {
         const uint8_t data[] = {0x00, 0x11};  // need 3 more, only 2
         capture_t cap = {0};
@@ -985,7 +985,7 @@ void test_option_fixed_bytes_inner() {
 
 void test_option_fixed_array_variable_child_fails() {
     // option_fixed of array_fixed(2) of string_prefixed: the array inherits the
-    // variable size of its element, so an absent outer fails closed.
+    // variable size of its element, so an absent outer cannot be skipped.
     const uint8_t pool[] = {
         IDL_KIND_STRING_PREFIXED, IDL_KIND_U8, IDL_ENCODING_UTF8,  // 0
         IDL_KIND_ARRAY_FIXED, 0x00, 0x02, 0,                       // 1
@@ -1081,7 +1081,7 @@ void test_option_zeroable_sentinel_longer_than_data() {
 }
 
 void test_zero_size_pool_rejected() {
-    // A forwarded pool of size 0 has no count byte: parse fails closed.
+    // A forwarded pool of size 0 has no count byte: the parse returns -1.
     idl_walker_t walker;
     setup(&walker);
     const uint8_t dummy = 0x00;
@@ -1095,7 +1095,7 @@ void test_zero_size_pool_rejected() {
 
 void test_option_fixed_variable_inner_absent_fails() {
     // option_fixed of string_prefixed: a variable-size inner has no static
-    // size, so an absent outer cannot be skipped and the walk fails closed.
+    // size, so an absent outer cannot be skipped and the walk returns -1.
     const uint8_t pool[] = {
         IDL_KIND_STRING_PREFIXED, IDL_KIND_U8, IDL_ENCODING_UTF8,  // 0
         IDL_KIND_OPTION_FIXED, IDL_KIND_U8, 0,                     // 1
@@ -1121,7 +1121,7 @@ void test_option_fixed_variable_inner_absent_fails() {
 
 void test_option_fixed_struct_variable_child_fails() {
     // option_fixed of struct{u8, string_prefixed}: the struct inherits the
-    // variable size of its string field, so an absent outer fails closed.
+    // variable size of its string field, so an absent outer cannot be skipped.
     const uint8_t pool[] = {
         IDL_KIND_U8,                                               // 0
         IDL_KIND_STRING_PREFIXED, IDL_KIND_U8, IDL_ENCODING_UTF8,  // 1
@@ -1240,7 +1240,7 @@ void test_error_array_prefixed_len_truncated() {
 
 void test_error_array_remainder_zero_progress() {
     // array_remainder of an empty struct: each element consumes zero bytes, so
-    // the progress guard must fail the walk closed instead of looping forever.
+    // the progress guard must abort the walk instead of looping forever.
     const uint8_t pool[] = {
         IDL_KIND_STRUCT, 0x00,         // 0: empty struct
         IDL_KIND_ARRAY_REMAINDER, 0,   // 1
