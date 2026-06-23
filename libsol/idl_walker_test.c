@@ -45,8 +45,9 @@ static void capture_cb(const idl_leaf_t *leaf, void *ctx) {
 }
 
 // Run a complete walk against an in-memory pool + data, capturing every leaf.
-// Returns the idl_walker_run() result code. Asserts that the run left no
-// outstanding allocations behind (no leak on either the success or error path).
+// Returns the idl_walker_run() result code, or -1 if the pool fails to parse
+// at provide time (parsing now happens in idl_walker_provide_pool). Asserts
+// that the flow left no outstanding allocations behind.
 static int run_walk(const uint8_t *pool,
                     size_t pool_size,
                     uint8_t root,
@@ -55,7 +56,11 @@ static int run_walk(const uint8_t *pool,
                     capture_t *cap) {
     idl_walker_t walker;
     idl_walker_init(&walker);
-    assert(idl_walker_provide_pool(&walker, pool, pool_size, root) == 0);
+    if (idl_walker_provide_pool(&walker, pool, pool_size, root) != 0) {
+        idl_walker_reset(&walker);
+        assert(mock_mem_outstanding() == 0);
+        return -1;
+    }
     assert(idl_walker_provide_instruction_data(&walker, data, data_size) == 0);
     int rc = idl_walker_run(&walker, capture_cb, cap);
     idl_walker_reset(&walker);
@@ -89,8 +94,8 @@ void test_init_empty() {
     idl_walker_t walker;
     setup(&walker);
 
-    assert(walker.pool == NULL);
-    assert(walker.pool_size == 0);
+    assert(walker.entries == NULL);
+    assert(walker.entry_count == 0);
     assert(walker.root_index == 0);
     assert(walker.pool_ready == false);
     assert(walker.data == NULL);
@@ -109,13 +114,14 @@ void test_provide_pool() {
     assert(idl_walker_provide_pool(&walker, pool, sizeof(pool), 0) == 0);
 
     assert(walker.pool_ready == true);
-    assert(walker.pool_size == sizeof(pool));
+    assert(walker.entry_count == 1);
     assert(walker.root_index == 0);
-    assert(walker.pool == pool);  // borrowed, aliased to the caller's buffer
-    // Forwarding the pool does not allocate anything.
-    assert(mock_mem_outstanding() == 0);
+    // Parsing the pool owns one allocation (the parsed entry array).
+    assert(mock_mem_outstanding() == 1);
 
     idl_walker_reset(&walker);
+    assert(walker.pool_ready == false);
+    assert(walker.entries == NULL);
     assert(mock_mem_outstanding() == 0);
 }
 
@@ -140,17 +146,17 @@ void test_provide_pool_replaces_previous() {
     idl_walker_t walker;
     setup(&walker);
 
-    const uint8_t pool_a[] = {0x01, 0x02, 0x03};
-    const uint8_t pool_b[] = {0xaa, 0xbb, 0xcc, 0xdd, 0xee};
-    assert(idl_walker_provide_pool(&walker, pool_a, sizeof(pool_a), 1) == 0);
-    assert(walker.pool == pool_a);
+    const uint8_t pool_a[] = {0x01, IDL_KIND_U8};
+    const uint8_t pool_b[] = {0x02, IDL_KIND_U16, IDL_KIND_U32};
+    assert(idl_walker_provide_pool(&walker, pool_a, sizeof(pool_a), 0) == 0);
+    assert(walker.entry_count == 1);
+    assert(mock_mem_outstanding() == 1);
 
-    assert(idl_walker_provide_pool(&walker, pool_b, sizeof(pool_b), 2) == 0);
-    // Re-providing just swaps the borrowed reference; nothing is allocated.
-    assert(walker.pool == pool_b);
-    assert(walker.pool_size == sizeof(pool_b));
-    assert(walker.root_index == 2);
-    assert(mock_mem_outstanding() == 0);
+    // Re-providing frees the previous parsed pool and replaces it; no leak.
+    assert(idl_walker_provide_pool(&walker, pool_b, sizeof(pool_b), 1) == 0);
+    assert(walker.entry_count == 2);
+    assert(walker.root_index == 1);
+    assert(mock_mem_outstanding() == 1);
 
     idl_walker_reset(&walker);
     assert(mock_mem_outstanding() == 0);
@@ -798,9 +804,9 @@ void test_error_enum_unsupported() {
 // =============================================================================
 
 void test_oom_at_each_alloc_site() {
-    // struct { u8, u32 } drives three allocations: the parsed-pool array, the
-    // frame stack, and the first leaf's scratch path. Failing any one must
-    // abort the walk and leave nothing allocated.
+    // struct { u8, u32 } drives three allocations: the parsed-pool array (at
+    // provide time), the frame stack, and the first leaf's scratch path.
+    // Failing any one must abort the flow and leave nothing allocated.
     const uint8_t pool[] = {
         IDL_KIND_U8,                  // 0
         IDL_KIND_U32,                 // 1
@@ -814,12 +820,17 @@ void test_oom_at_each_alloc_site() {
     for (int fail_at = 0; fail_at < 3; fail_at++) {
         idl_walker_t walker;
         idl_walker_init(&walker);
-        assert(idl_walker_provide_pool(&walker, pool_buf, sizeof(pool_buf), 2) == 0);
-        assert(idl_walker_provide_instruction_data(&walker, data, sizeof(data)) == 0);
 
-        capture_t cap = {0};
         mock_mem_fail_after(fail_at);
-        assert(idl_walker_run(&walker, capture_cb, &cap) == -1);
+        int rc;
+        if (idl_walker_provide_pool(&walker, pool_buf, sizeof(pool_buf), 2) != 0) {
+            rc = -1;
+        } else {
+            assert(idl_walker_provide_instruction_data(&walker, data, sizeof(data)) == 0);
+            capture_t cap = {0};
+            rc = idl_walker_run(&walker, capture_cb, &cap);
+        }
+        assert(rc == -1);
 
         idl_walker_reset(&walker);
         assert(mock_mem_outstanding() == 0);
@@ -829,8 +840,8 @@ void test_oom_at_each_alloc_site() {
 
 void test_oom_fixed_size_table() {
     // option_fixed of struct{u8,u32} forces the fixed-size table to be built.
-    // Allocation order: parsed pool, fixed-size table, frame stack, scratch
-    // path. Failing any one must abort the walk with no leak.
+    // Allocation order: parsed pool (at provide time), fixed-size table, frame
+    // stack, scratch path. Failing any one must abort the flow with no leak.
     const uint8_t pool[] = {
         IDL_KIND_U8,                             // 0
         IDL_KIND_U32,                            // 1
@@ -846,12 +857,17 @@ void test_oom_fixed_size_table() {
     for (int fail_at = 0; fail_at < 4; fail_at++) {
         idl_walker_t walker;
         idl_walker_init(&walker);
-        assert(idl_walker_provide_pool(&walker, pool_buf, sizeof(pool_buf), 3) == 0);
-        assert(idl_walker_provide_instruction_data(&walker, data, sizeof(data)) == 0);
 
-        capture_t cap = {0};
         mock_mem_fail_after(fail_at);
-        assert(idl_walker_run(&walker, capture_cb, &cap) == -1);
+        int rc;
+        if (idl_walker_provide_pool(&walker, pool_buf, sizeof(pool_buf), 3) != 0) {
+            rc = -1;
+        } else {
+            assert(idl_walker_provide_instruction_data(&walker, data, sizeof(data)) == 0);
+            capture_t cap = {0};
+            rc = idl_walker_run(&walker, capture_cb, &cap);
+        }
+        assert(rc == -1);
 
         idl_walker_reset(&walker);
         assert(mock_mem_outstanding() == 0);
@@ -1081,14 +1097,12 @@ void test_option_zeroable_sentinel_longer_than_data() {
 }
 
 void test_zero_size_pool_rejected() {
-    // A forwarded pool of size 0 has no count byte: the parse returns -1.
+    // A pool of size 0 has no count byte: parsing at provide time returns -1.
     idl_walker_t walker;
     setup(&walker);
     const uint8_t dummy = 0x00;
-    assert(idl_walker_provide_pool(&walker, &dummy, 0, 0) == 0);
-    assert(idl_walker_provide_instruction_data(&walker, &dummy, 1) == 0);
-    capture_t cap = {0};
-    assert(idl_walker_run(&walker, capture_cb, &cap) == -1);
+    assert(idl_walker_provide_pool(&walker, &dummy, 0, 0) == -1);
+    assert(walker.pool_ready == false);
     idl_walker_reset(&walker);
     assert(mock_mem_outstanding() == 0);
 }

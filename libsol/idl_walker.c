@@ -2,8 +2,10 @@
 //
 // Decodes the raw argument bytes of a Solana instruction against the
 // kind-driven IDL_TYPE_POOL descriptor and streams every decoded leaf to a
-// caller-supplied callback. Inputs are borrowed, never copied; all working
-// allocations are released before idl_walker_run() returns.
+// caller-supplied callback. The pool is parsed once at provide time into an
+// owned entry array (freed at reset); the pool and data bytes are borrowed,
+// never copied. The walk's own scratch (frame stack, path, fixed-size table)
+// is released before idl_walker_run() returns.
 //
 // Descent is iterative over an explicit heap frame stack (no C recursion), so
 // deeply nested descriptors cannot overflow the device stack. The walk fails
@@ -51,6 +53,7 @@ typedef struct entry_s {
 // unknown kind.
 static int parse_pool_entries(const uint8_t *buf, size_t size, entry_t *entries, uint8_t count) {
     size_t offset = 1;
+    PRINTF("idl_walker: parse_pool_entries count=%d size=%d\n", count, size);
 
     for (uint8_t i = 0; i < count; i++) {
         if (offset >= size) {
@@ -60,6 +63,7 @@ static int parse_pool_entries(const uint8_t *buf, size_t size, entry_t *entries,
         uint8_t kind = buf[offset++];
         entry_t *entry = &entries[i];
         entry->kind = kind;
+        PRINTF("idl_walker: parsing entry %d kind=0x%02x at offset=%d\n", i, kind, offset - 1);
 
         switch (kind) {
             case IDL_KIND_U8:
@@ -232,6 +236,7 @@ static int parse_pool_entries(const uint8_t *buf, size_t size, entry_t *entries,
         PRINTF("idl_walker: %d trailing byte(s) in pool\n", size - offset);
         return -1;
     }
+    PRINTF("idl_walker: all %d entries parsed, validating refs\n", count);
 
     for (uint8_t i = 0; i < count; i++) {
         const entry_t *entry = &entries[i];
@@ -242,6 +247,7 @@ static int parse_pool_entries(const uint8_t *buf, size_t size, entry_t *entries,
             }
         }
     }
+    PRINTF("idl_walker: pool refs validated OK\n");
     return 0;
 }
 
@@ -256,6 +262,7 @@ static int parse_pool(const uint8_t *buf, size_t size, entry_t **out_entries, ui
         return -1;
     }
     uint8_t count = buf[0];
+    PRINTF("idl_walker: parse_pool size=%d declared count=%d\n", size, count);
 
     // malloc(0) is implementation-defined; allocate at least one slot.
     size_t alloc_count = (count == 0) ? 1 : count;
@@ -267,12 +274,14 @@ static int parse_pool(const uint8_t *buf, size_t size, entry_t **out_entries, ui
     memset(entries, 0, alloc_count * sizeof(entry_t));
 
     if (parse_pool_entries(buf, size, entries, count) != 0) {
+        PRINTF("idl_walker: parse_pool_entries failed, freeing entries\n");
         APP_MEM_FREE(entries);
         return -1;
     }
 
     *out_entries = entries;
     *out_count = count;
+    PRINTF("idl_walker: parse_pool succeeded with %d entries\n", count);
     return 0;
 }
 
@@ -449,8 +458,10 @@ static int compute_fixed_sizes(const entry_t *pool, uint8_t count, size_t **out_
     // Anything still unknown is part of a cycle; treat as variable.
     for (uint8_t i = 0; i < count; i++) {
         if (sizes[i] == FS_UNKNOWN) {
+            PRINTF("idl_walker: entry %d size unresolved (cycle), marking variable\n", i);
             sizes[i] = FS_VARIABLE;
         }
+        PRINTF("idl_walker: fixed_size[%d]=%d\n", i, sizes[i]);
     }
 
     *out_sizes = sizes;
@@ -499,8 +510,8 @@ typedef struct walk_ctx_s {
     uint8_t *path;     // reusable scratch path buffer
     size_t path_cap;
 
-    idl_leaf_cb_t cb;
-    void *cb_ctx;
+    idl_leaf_cb_t leaf_callback;
+    void *callback_context;
 } walk_ctx_t;
 
 // Byte width of one argument-path step under a parent of `parent_kind`, or 0
@@ -594,9 +605,9 @@ static bool read_short_u16(walk_ctx_t *walk, uint64_t *out) {
         }
     }
     *out = value;
+    PRINTF("idl_walker: read SHORT_U16 value=%d cursor=%d\n", value, walk->cursor);
     return true;
 }
-
 // Read a little-endian unsigned integer of the given primitive `kind` (or a
 // SHORT_U16 varint) from the cursor, advancing it. Returns false on a read
 // past the end of the data or an unsupported kind.
@@ -619,6 +630,11 @@ static bool read_uint_le(walk_ctx_t *walk, uint8_t kind, uint64_t *out) {
     }
     walk->cursor += width;
     *out = value;
+    PRINTF("idl_walker: read uint kind=0x%02x width=%d value=%d cursor=%d\n",
+           kind,
+           width,
+           value,
+           walk->cursor);
     return true;
 }
 
@@ -672,15 +688,18 @@ static int build_path(walk_ctx_t *walk, size_t *out_len) {
 // Hand one decoded leaf to the callback. Returns 0 on success (including a
 // silently skipped unrepresentable path), -1 on out-of-space.
 static int emit_leaf(walk_ctx_t *walk, uint8_t kind, const uint8_t *value, size_t value_size) {
-    if (walk->cb == NULL) {
+    if (walk->leaf_callback == NULL) {
+        PRINTF("idl_walker: no callback, skipping leaf kind=0x%02x\n", kind);
         return 0;
     }
     size_t path_len;
-    int result = build_path(walk, &path_len);
-    if (result < 0) {
+    int build_result = build_path(walk, &path_len);
+    if (build_result < 0) {
+        PRINTF("idl_walker: build_path failed for leaf kind=0x%02x\n", kind);
         return -1;
     }
-    if (result > 0) {
+    if (build_result > 0) {
+        PRINTF("idl_walker: unrepresentable path for leaf kind=0x%02x, skipping\n", kind);
         return 0;  // unrepresentable path — skip emission, keep walking
     }
     idl_leaf_t leaf = {
@@ -690,7 +709,11 @@ static int emit_leaf(walk_ctx_t *walk, uint8_t kind, const uint8_t *value, size_
         .value = value,
         .value_size = value_size,
     };
-    walk->cb(&leaf, walk->cb_ctx);
+    PRINTF("idl_walker: emit leaf kind=0x%02x value_size=%d path_size=%d\n",
+           kind,
+           value_size,
+           path_len);
+    walk->leaf_callback(&leaf, walk->callback_context);
     return 0;
 }
 
@@ -718,6 +741,12 @@ static int push_frame(walk_ctx_t *walk, uint8_t entry_idx, uint8_t parent_kind, 
     frame->mark = 0;
     frame->parent_kind = parent_kind;
     frame->step_value = step_value;
+    PRINTF("idl_walker: push_frame entry_idx=%d kind=0x%02x parent_kind=0x%02x step_value=%d depth=%d\n",
+           entry_idx,
+           frame->kind,
+           parent_kind,
+           step_value,
+           walk->stack_len);
     return 0;
 }
 
@@ -743,6 +772,11 @@ static int step_children(walk_ctx_t *walk, frame_t *frame, const entry_t *entry)
 static int walk_top(walk_ctx_t *walk) {
     frame_t *frame = &walk->stack[walk->stack_len - 1];
     const entry_t *entry = &walk->pool[frame->entry_idx];
+    PRINTF("idl_walker: walk_top entry_idx=%d kind=0x%02x cursor=%d depth=%d\n",
+           frame->entry_idx,
+           frame->kind,
+           walk->cursor,
+           walk->stack_len);
 
     switch (frame->kind) {
         // ---- fixed-width primitive / pubkey leaves --------------------------
@@ -768,6 +802,11 @@ static int walk_top(walk_ctx_t *walk) {
                 return -1;
             }
             const uint8_t *value = walk->data + walk->cursor;
+            PRINTF("idl_walker: primitive leaf kind=0x%02x width=%d value=%.*H\n",
+                   frame->kind,
+                   width,
+                   width,
+                   value);
             if (emit_leaf(walk, frame->kind, value, width) != 0) {
                 return -1;
             }
@@ -799,6 +838,7 @@ static int walk_top(walk_ctx_t *walk) {
                 return -1;
             }
             const uint8_t *value = walk->data + walk->cursor;
+            PRINTF("idl_walker: fixed bytes/string leaf kind=0x%02x width=%d\n", frame->kind, width);
             if (emit_leaf(walk, frame->kind, value, width) != 0) {
                 return -1;
             }
@@ -818,6 +858,7 @@ static int walk_top(walk_ctx_t *walk) {
                 return -1;
             }
             const uint8_t *value = walk->data + walk->cursor;
+            PRINTF("idl_walker: prefixed string leaf len=%d\n", len);
             if (emit_leaf(walk, frame->kind, value, (size_t) len) != 0) {
                 return -1;
             }
@@ -830,6 +871,7 @@ static int walk_top(walk_ctx_t *walk) {
         case IDL_KIND_BYTES_REMAINDER: {
             const uint8_t *value = walk->data + walk->cursor;
             size_t width = walk->data_size - walk->cursor;
+            PRINTF("idl_walker: bytes remainder leaf width=%d\n", width);
             if (emit_leaf(walk, frame->kind, value, width) != 0) {
                 return -1;
             }
@@ -862,6 +904,7 @@ static int walk_top(walk_ctx_t *walk) {
                 if (!read_uint_le(walk, entry->len_kind, &len)) {
                     return -1;
                 }
+                PRINTF("idl_walker: ARRAY_PREFIXED element count=%d\n", len);
                 frame->child_count = (size_t) len;
                 frame->child_i = 0;
                 frame->entered = true;
@@ -896,6 +939,9 @@ static int walk_top(walk_ctx_t *walk) {
                 if (!read_uint_le(walk, entry->flag_kind, &flag)) {
                     return -1;
                 }
+                PRINTF("idl_walker: OPTION_DYNAMIC flag=%d (%s)\n",
+                       flag,
+                       (flag != 0) ? "present" : "absent");
                 frame->child_count = (flag != 0) ? 1 : 0;
                 frame->child_i = 0;
                 frame->entered = true;
@@ -909,9 +955,12 @@ static int walk_top(walk_ctx_t *walk) {
                     return -1;
                 }
                 if (flag != 0) {
+                    PRINTF("idl_walker: OPTION_FIXED flag=%d present, descending\n", flag);
                     frame->child_count = 1;
                 } else {
                     size_t inner_size = walk->fixed_sizes[entry->refs[0]];
+                    PRINTF("idl_walker: OPTION_FIXED flag=0 absent, skipping inner_size=%d\n",
+                           inner_size);
                     if (inner_size == FS_VARIABLE) {
                         PRINTF("idl_walker: OPTION_FIXED with variable-size inner\n");
                         return -1;
@@ -940,9 +989,12 @@ static int walk_top(walk_ctx_t *walk) {
                     match = (memcmp(walk->data + walk->cursor, entry->sentinel, sentinel_len) == 0);
                 }
                 if (match) {
+                    PRINTF("idl_walker: OPTION_ZEROABLE sentinel matched (len=%d), absent\n",
+                           sentinel_len);
                     walk->cursor += sentinel_len;
                     frame->child_count = 0;
                 } else {
+                    PRINTF("idl_walker: OPTION_ZEROABLE sentinel mismatch, present\n");
                     frame->child_count = 1;
                 }
                 frame->child_i = 0;
@@ -987,8 +1039,10 @@ static int walk_top(walk_ctx_t *walk) {
 
 void idl_walker_init(idl_walker_t *walker) {
     if (walker == NULL) {
+        PRINTF("idl_walker_init: NULL walker\n");
         return;
     }
+    PRINTF("idl_walker_init: zeroing walker context\n");
     memset(walker, 0, sizeof(*walker));
 }
 
@@ -997,6 +1051,7 @@ int idl_walker_provide_pool(idl_walker_t *walker,
                             size_t pool_size,
                             uint8_t root_index) {
     if (walker == NULL) {
+        PRINTF("idl_walker_provide_pool: NULL walker\n");
         return -1;
     }
     if (pool == NULL && pool_size > 0) {
@@ -1004,15 +1059,31 @@ int idl_walker_provide_pool(idl_walker_t *walker,
         return -1;
     }
 
-    // Borrow the caller's buffer; it must outlive the walk (until reset).
-    walker->pool = pool;
-    walker->pool_size = pool_size;
+    // Re-providing replaces any previously parsed pool.
+    APP_MEM_FREE(walker->entries);
+    walker->entries = NULL;
+    walker->entry_count = 0;
+    walker->pool_ready = false;
+
+    entry_t *entries = NULL;
+    uint8_t count = 0;
+    if (parse_pool(pool, pool_size, &entries, &count) != 0) {
+        return -1;
+    }
+    if (root_index >= count) {
+        PRINTF("idl_walker: root_index %d out of range (count=%d)\n", root_index, count);
+        APP_MEM_FREE(entries);
+        return -1;
+    }
+
+    // The parsed entries borrow into the caller's pool bytes, which must
+    // outlive the walk (until reset).
+    walker->entries = entries;
+    walker->entry_count = count;
     walker->root_index = root_index;
     walker->pool_ready = true;
 
-    PRINTF("idl_walker: received IDL type pool (size=%d, root_index=%d)\n",
-           walker->pool_size,
-           walker->root_index);
+    PRINTF("idl_walker: parsed IDL type pool (entries=%d, root_index=%d)\n", count, root_index);
     return 0;
 }
 
@@ -1020,6 +1091,7 @@ int idl_walker_provide_instruction_data(idl_walker_t *walker,
                                         const uint8_t *data,
                                         size_t data_size) {
     if (walker == NULL) {
+        PRINTF("idl_walker_provide_instruction_data: NULL walker\n");
         return -1;
     }
     if (data == NULL && data_size > 0) {
@@ -1036,8 +1108,9 @@ int idl_walker_provide_instruction_data(idl_walker_t *walker,
     return 0;
 }
 
-int idl_walker_run(idl_walker_t *walker, idl_leaf_cb_t cb, void *ctx) {
+int idl_walker_run(idl_walker_t *walker, idl_leaf_cb_t leaf_callback, void *callback_context) {
     if (walker == NULL) {
+        PRINTF("idl_walker_run: NULL walker\n");
         return -1;
     }
     if (!walker->pool_ready || !walker->data_ready) {
@@ -1046,22 +1119,19 @@ int idl_walker_run(idl_walker_t *walker, idl_leaf_cb_t cb, void *ctx) {
                walker->data_ready);
         return -1;
     }
+    PRINTF("idl_walker_run: starting (entry_count=%d, root_index=%d, data_size=%d)\n",
+           walker->entry_count,
+           walker->root_index,
+           walker->data_size);
 
-    entry_t *entries = NULL;
-    uint8_t count = 0;
-    if (parse_pool(walker->pool, walker->pool_size, &entries, &count) != 0) {
-        return -1;
-    }
-    if (walker->root_index >= count) {
-        PRINTF("idl_walker: root_index %d out of range (count=%d)\n", walker->root_index, count);
-        APP_MEM_FREE(entries);
-        return -1;
-    }
+    entry_t *entries = walker->entries;
+    uint8_t entry_count = walker->entry_count;
 
     size_t *fixed_sizes = NULL;
-    if (pool_has_option_fixed(entries, count)) {
-        if (compute_fixed_sizes(entries, count, &fixed_sizes) != 0) {
-            APP_MEM_FREE(entries);
+    if (pool_has_option_fixed(entries, entry_count)) {
+        PRINTF("idl_walker_run: pool has OPTION_FIXED, building fixed-size table\n");
+        if (compute_fixed_sizes(entries, entry_count, &fixed_sizes) != 0) {
+            PRINTF("idl_walker_run: fixed-size table build failed\n");
             return -1;
         }
     }
@@ -1071,45 +1141,51 @@ int idl_walker_run(idl_walker_t *walker, idl_leaf_cb_t cb, void *ctx) {
     walk.data_size = walker->data_size;
     walk.cursor = 0;
     walk.pool = entries;
-    walk.pool_count = count;
+    walk.pool_count = entry_count;
     walk.fixed_sizes = fixed_sizes;
-    walk.cb = cb;
-    walk.cb_ctx = ctx;
+    walk.leaf_callback = leaf_callback;
+    walk.callback_context = callback_context;
     walk.stack_cap = 8;
     walk.stack = APP_MEM_ALLOC(walk.stack_cap * sizeof(frame_t));
 
-    int rc = 0;
+    int walk_result = 0;
     if (walk.stack == NULL) {
         PRINTF("idl_walker: frame stack allocation failed\n");
-        rc = -1;
+        walk_result = -1;
     } else {
-        rc = push_frame(&walk, walker->root_index, 0, 0);
-        while (rc == 0 && walk.stack_len > 0) {
-            rc = walk_top(&walk);
+        walk_result = push_frame(&walk, walker->root_index, 0, 0);
+        while (walk_result == 0 && walk.stack_len > 0) {
+            walk_result = walk_top(&walk);
         }
         // The walk must land exactly on the end of the instruction data.
-        if (rc == 0 && walk.cursor != walk.data_size) {
+        if (walk_result == 0 && walk.cursor != walk.data_size) {
             PRINTF("idl_walker: cursor %d != data_size %d, refusing\n",
                    walk.cursor,
                    walk.data_size);
-            rc = -1;
+            walk_result = -1;
         }
     }
 
     APP_MEM_FREE(walk.path);
     APP_MEM_FREE(walk.stack);
     APP_MEM_FREE(fixed_sizes);
-    APP_MEM_FREE(entries);
-    return rc;
+    PRINTF("idl_walker_run: finished with result=%d (cursor=%d, data_size=%d)\n",
+           walk_result,
+           walk.cursor,
+           walk.data_size);
+    return walk_result;
 }
 
 void idl_walker_reset(idl_walker_t *walker) {
     if (walker == NULL) {
+        PRINTF("idl_walker_reset: NULL walker\n");
         return;
     }
-    // pool and data are borrowed; just drop the references, never free them.
-    walker->pool = NULL;
-    walker->pool_size = 0;
+    PRINTF("idl_walker_reset: freeing %d owned entries\n", walker->entry_count);
+    // entries are owned: free them. Their borrowed pool bytes are caller-owned.
+    APP_MEM_FREE(walker->entries);
+    walker->entries = NULL;
+    walker->entry_count = 0;
     walker->root_index = 0;
     walker->pool_ready = false;
 
