@@ -112,6 +112,7 @@ Coding patterns described here are more important than uniformity cross applicat
 - Never assume code is correct on first try, writing logs is mandatory to verify execution flow
 - Trace logs (no variables): Use `PRINTF("Function entered or choice taken\n")` in key dispatch logic (e.g., APDU handlers, main switch cases)
 - Variable logs: Use `PRINTF("variable_name=%d\n", var)` or `PRINTF("buffer=%.*H\n", len, buf)` in calculations and new code
+- Log all error returns.
 - PRINTF are meant to be permanent.
 
 ### Coding conventions
@@ -121,6 +122,7 @@ Coding patterns described here are more important than uniformity cross applicat
 - Global or module variables are prefixed by `G_*`.
 - Never use ternary conditional operator
 - Comments are RARE, CONCISE, and STRAIGHT TO THE POINT
+- No goto: if a function needs exit cleaning logic, split in inner / outer.
 
 ### Chain of trust
 
