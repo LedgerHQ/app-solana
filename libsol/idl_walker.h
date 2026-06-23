@@ -1,6 +1,6 @@
 #pragma once
 
-// IDL walker (scaffolding).
+// IDL walker.
 //
 // The walker decodes the raw argument bytes of a Solana instruction using the
 // trimmed, kind-driven "IDL type pool" descriptor shipped by the CAL backend
@@ -8,19 +8,14 @@
 // referenced by the instruction's DISPLAY_FIELD / VALUE_FLOW_PORT
 // substructures.
 //
-// This file currently provides ONLY the scaffolding around the future walk:
-//   - forwarding of the IDL type pool descriptor (from TLV reception),
-//   - forwarding of the instruction data buffer (from transaction reception),
-//   - forwarding of the produced leaves to the consumer via a per-leaf
-//     callback (mock output for now).
-// The actual type-tree walk and enum-variant handling are intentionally left
-// unimplemented.
-//
 // Output is delivered as the walk progresses: every decoded leaf is handed to
 // a caller-supplied callback, so the consumer can match it against the
 // instruction's DISPLAY_FIELD set and format it immediately, holding on to
 // nothing it does not display. The walker never materializes the full set of
 // leaves at once.
+//
+// Enum (IDL_KIND_ENUM) decoding is not implemented yet: hitting an enum entry
+// on a reachable path fails the walk closed (idl_walker_run returns -1).
 //
 // Sizing policy: there is NO arbitrary cap on any input or output length. The
 // inputs are borrowed (never copied), and leaves are streamed one at a time,
@@ -29,6 +24,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+#include "idl_kinds.h"
 
 // One decoded output leaf: a value located at a packed argument path.
 //
@@ -108,10 +105,13 @@ int idl_walker_provide_instruction_data(idl_walker_t *walker,
 // buffer have been forwarded. `cb` may be NULL to run the walk for its
 // side effects (e.g. cursor validation) without emitting anything.
 //
-// SCAFFOLDING: the real type-tree walk is not implemented yet, so this emits
-// deterministic mock leaves derived from the forwarded inputs.
+// The walk fails closed (returns -1) on any descriptor/data inconsistency:
+// a read past the end of the instruction data, a leftover or missing byte
+// once the walk completes (cursor must land exactly on the end of the data),
+// a malformed pool, or an unsupported kind (e.g. IDL_KIND_ENUM).
 //
-// Returns 0 on success, -1 on missing inputs or allocator out-of-space.
+// Returns 0 on success, -1 on missing inputs, a failed walk, or allocator
+// out-of-space.
 int idl_walker_run(idl_walker_t *walker, idl_leaf_cb_t cb, void *ctx);
 
 // Drop the borrowed input references and return the context to the empty

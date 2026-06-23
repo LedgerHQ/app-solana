@@ -9,6 +9,7 @@ dev-env
 gitignore
 .vagrant
 libsol/target
+*.gcov
 
 # Python
 __pycache__
