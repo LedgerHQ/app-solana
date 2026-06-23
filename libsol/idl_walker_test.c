@@ -61,8 +61,7 @@ static int run_walk(const uint8_t *pool,
         assert(mock_mem_outstanding() == 0);
         return -1;
     }
-    assert(idl_walker_provide_instruction_data(&walker, data, data_size) == 0);
-    int rc = idl_walker_run(&walker, capture_cb, cap);
+    int rc = idl_walker_run(&walker, data, data_size, capture_cb, cap);
     idl_walker_reset(&walker);
     assert(mock_mem_outstanding() == 0);
     return rc;
@@ -98,9 +97,6 @@ void test_init_empty() {
     assert(walker.entry_count == 0);
     assert(walker.root_index == 0);
     assert(walker.pool_ready == false);
-    assert(walker.data == NULL);
-    assert(walker.data_size == 0);
-    assert(walker.data_ready == false);
 
     idl_walker_reset(&walker);
     assert(mock_mem_outstanding() == 0);
@@ -122,23 +118,6 @@ void test_provide_pool() {
     idl_walker_reset(&walker);
     assert(walker.pool_ready == false);
     assert(walker.entries == NULL);
-    assert(mock_mem_outstanding() == 0);
-}
-
-void test_provide_instruction_data() {
-    idl_walker_t walker;
-    setup(&walker);
-
-    const uint8_t data[] = {0xde, 0xad, 0xbe, 0xef, 0x11, 0x22};
-    assert(idl_walker_provide_instruction_data(&walker, data, sizeof(data)) == 0);
-
-    assert(walker.data_ready == true);
-    assert(walker.data_size == sizeof(data));
-    assert(walker.data == data);  // borrowed, aliased to the caller's buffer
-    // Forwarding the data does not allocate anything.
-    assert(mock_mem_outstanding() == 0);
-
-    idl_walker_reset(&walker);
     assert(mock_mem_outstanding() == 0);
 }
 
@@ -174,25 +153,24 @@ void test_provide_pool_null_with_size_rejected() {
     assert(mock_mem_outstanding() == 0);
 }
 
-void test_run_requires_both_inputs() {
+void test_run_requires_pool() {
     idl_walker_t walker;
     setup(&walker);
 
     capture_t cap = {0};
+    const uint8_t data[] = {0x42};
 
-    // No inputs at all.
-    assert(idl_walker_run(&walker, capture_cb, &cap) == -1);
+    // No pool provided: the run is refused.
+    assert(idl_walker_run(&walker, data, sizeof(data), capture_cb, &cap) == -1);
 
-    // Pool only.
+    // With a pool, the same data walks.
     const uint8_t pool[] = {0x01, IDL_KIND_U8};
     assert(idl_walker_provide_pool(&walker, pool, sizeof(pool), 0) == 0);
-    assert(idl_walker_run(&walker, capture_cb, &cap) == -1);
-
-    // Pool + data: now the walk runs.
-    const uint8_t data[] = {0x42};
-    assert(idl_walker_provide_instruction_data(&walker, data, sizeof(data)) == 0);
-    assert(idl_walker_run(&walker, capture_cb, &cap) == 0);
+    assert(idl_walker_run(&walker, data, sizeof(data), capture_cb, &cap) == 0);
     assert(cap.count == 1);
+
+    // NULL data with a non-zero size is rejected.
+    assert(idl_walker_run(&walker, NULL, 4, capture_cb, &cap) == -1);
 
     idl_walker_reset(&walker);
     assert(mock_mem_outstanding() == 0);
@@ -202,8 +180,7 @@ void test_null_walker_is_safe() {
     // None of these must crash on a NULL context.
     idl_walker_init(NULL);
     assert(idl_walker_provide_pool(NULL, NULL, 0, 0) == -1);
-    assert(idl_walker_provide_instruction_data(NULL, NULL, 0) == -1);
-    assert(idl_walker_run(NULL, NULL, NULL) == -1);
+    assert(idl_walker_run(NULL, NULL, 0, NULL, NULL) == -1);
     idl_walker_reset(NULL);
 }
 
@@ -218,15 +195,13 @@ void test_reset_is_idempotent() {
     const uint8_t pool[] = {0x01, IDL_KIND_U16};
     const uint8_t data[] = {0x01, 0x02};
     assert(idl_walker_provide_pool(&walker, pool, sizeof(pool), 0) == 0);
-    assert(idl_walker_provide_instruction_data(&walker, data, sizeof(data)) == 0);
     capture_t cap = {0};
-    assert(idl_walker_run(&walker, capture_cb, &cap) == 0);
+    assert(idl_walker_run(&walker, data, sizeof(data), capture_cb, &cap) == 0);
     idl_walker_reset(&walker);
     assert(mock_mem_outstanding() == 0);
     idl_walker_reset(&walker);
     assert(mock_mem_outstanding() == 0);
     assert(walker.pool_ready == false);
-    assert(walker.data_ready == false);
 }
 
 // =============================================================================
@@ -707,8 +682,7 @@ void test_null_callback_validates() {
         idl_walker_t walker;
         idl_walker_init(&walker);
         assert(idl_walker_provide_pool(&walker, pool, sizeof(pool), 0) == 0);
-        assert(idl_walker_provide_instruction_data(&walker, data, sizeof(data)) == 0);
-        assert(idl_walker_run(&walker, NULL, NULL) == 0);
+        assert(idl_walker_run(&walker, data, sizeof(data), NULL, NULL) == 0);
         idl_walker_reset(&walker);
         assert(mock_mem_outstanding() == 0);
     }
@@ -718,8 +692,7 @@ void test_null_callback_validates() {
         idl_walker_t walker;
         idl_walker_init(&walker);
         assert(idl_walker_provide_pool(&walker, pool, sizeof(pool), 0) == 0);
-        assert(idl_walker_provide_instruction_data(&walker, data, sizeof(data)) == 0);
-        assert(idl_walker_run(&walker, NULL, NULL) == -1);
+        assert(idl_walker_run(&walker, data, sizeof(data), NULL, NULL) == -1);
         idl_walker_reset(&walker);
         assert(mock_mem_outstanding() == 0);
     }
@@ -826,9 +799,8 @@ void test_oom_at_each_alloc_site() {
         if (idl_walker_provide_pool(&walker, pool_buf, sizeof(pool_buf), 2) != 0) {
             rc = -1;
         } else {
-            assert(idl_walker_provide_instruction_data(&walker, data, sizeof(data)) == 0);
             capture_t cap = {0};
-            rc = idl_walker_run(&walker, capture_cb, &cap);
+            rc = idl_walker_run(&walker, data, sizeof(data), capture_cb, &cap);
         }
         assert(rc == -1);
 
@@ -863,9 +835,8 @@ void test_oom_fixed_size_table() {
         if (idl_walker_provide_pool(&walker, pool_buf, sizeof(pool_buf), 3) != 0) {
             rc = -1;
         } else {
-            assert(idl_walker_provide_instruction_data(&walker, data, sizeof(data)) == 0);
             capture_t cap = {0};
-            rc = idl_walker_run(&walker, capture_cb, &cap);
+            rc = idl_walker_run(&walker, data, sizeof(data), capture_cb, &cap);
         }
         assert(rc == -1);
 
@@ -1321,10 +1292,9 @@ int main() {
     // Lifecycle / preconditions
     RUN_TEST(test_init_empty);
     RUN_TEST(test_provide_pool);
-    RUN_TEST(test_provide_instruction_data);
     RUN_TEST(test_provide_pool_replaces_previous);
     RUN_TEST(test_provide_pool_null_with_size_rejected);
-    RUN_TEST(test_run_requires_both_inputs);
+    RUN_TEST(test_run_requires_pool);
     RUN_TEST(test_null_walker_is_safe);
     RUN_TEST(test_reset_is_idempotent);
 
