@@ -1087,42 +1087,27 @@ int idl_walker_provide_pool(idl_walker_t *walker,
     return 0;
 }
 
-int idl_walker_provide_instruction_data(idl_walker_t *walker,
-                                        const uint8_t *data,
-                                        size_t data_size) {
-    if (walker == NULL) {
-        PRINTF("idl_walker_provide_instruction_data: NULL walker\n");
-        return -1;
-    }
-    if (data == NULL && data_size > 0) {
-        PRINTF("idl_walker_provide_instruction_data: NULL data with non-zero size\n");
-        return -1;
-    }
-
-    // Borrow the caller's buffer; it must outlive the walk (until reset).
-    walker->data = data;
-    walker->data_size = data_size;
-    walker->data_ready = true;
-
-    PRINTF("idl_walker: received instruction data (size=%d)\n", walker->data_size);
-    return 0;
-}
-
-int idl_walker_run(idl_walker_t *walker, idl_leaf_cb_t leaf_callback, void *callback_context) {
+int idl_walker_run(idl_walker_t *walker,
+                   const uint8_t *data,
+                   size_t data_size,
+                   idl_leaf_cb_t leaf_callback,
+                   void *callback_context) {
     if (walker == NULL) {
         PRINTF("idl_walker_run: NULL walker\n");
         return -1;
     }
-    if (!walker->pool_ready || !walker->data_ready) {
-        PRINTF("idl_walker_run: missing inputs (pool_ready=%d, data_ready=%d)\n",
-               walker->pool_ready,
-               walker->data_ready);
+    if (!walker->pool_ready) {
+        PRINTF("idl_walker_run: no pool provided\n");
+        return -1;
+    }
+    if (data == NULL && data_size > 0) {
+        PRINTF("idl_walker_run: NULL data with non-zero size (data_size=%d)\n", data_size);
         return -1;
     }
     PRINTF("idl_walker_run: starting (entry_count=%d, root_index=%d, data_size=%d)\n",
            walker->entry_count,
            walker->root_index,
-           walker->data_size);
+           data_size);
 
     entry_t *entries = walker->entries;
     uint8_t entry_count = walker->entry_count;
@@ -1137,8 +1122,8 @@ int idl_walker_run(idl_walker_t *walker, idl_leaf_cb_t leaf_callback, void *call
     }
 
     walk_ctx_t walk = {0};
-    walk.data = walker->data;
-    walk.data_size = walker->data_size;
+    walk.data = data;
+    walk.data_size = data_size;
     walk.cursor = 0;
     walk.pool = entries;
     walk.pool_count = entry_count;
@@ -1188,8 +1173,4 @@ void idl_walker_reset(idl_walker_t *walker) {
     walker->entry_count = 0;
     walker->root_index = 0;
     walker->pool_ready = false;
-
-    walker->data = NULL;
-    walker->data_size = 0;
-    walker->data_ready = false;
 }
