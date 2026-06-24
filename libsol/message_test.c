@@ -149,6 +149,15 @@ static void process_message_body_and_sanity_check(const uint8_t* message, size_t
     }
 }
 
+static void process_message_body_and_expect_refusal(const uint8_t* message, size_t message_length) {
+    PrintConfig print_config = {0};
+    print_config.expert_mode = true;
+    Parser parser = { message, message_length };
+    assert(parse_message_header(&parser, &print_config.header) == 0);
+    transaction_summary_reset();
+    assert(process_message_body(parser.buffer, parser.buffer_length, &print_config) == -1);
+}
+
 /**
  * Transfer 6 lamports with compute budget limit instruction
  */
@@ -876,6 +885,74 @@ void test_process_message_body_stake_authorize_both_checked() {
     process_message_body_and_sanity_check(message, sizeof(message), 5);
 }
 
+// Two stake authorize instructions targeting DIFFERENT stake accounts must not
+// be collapsed into the composite "Set stake auth" screen, which would only
+// show the first account and hide the second target. The composite printer
+// must refuse to render and the message must be rejected.
+void test_process_message_body_stake_authorize_both_mismatched_accounts() {
+    uint8_t message[] = {
+        1, 1, 2,
+        4,
+            18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+            112, 173, 25, 161, 89, 143, 220, 223, 128, 33, 149, 41, 12, 152, 202, 202, 203, 163, 182, 246, 158, 15, 22, 77, 171, 71, 63, 249, 10, 117, 172, 52,
+            6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182, 139, 94, 184, 163, 155, 75, 109, 92, 115, 85, 91, 33, 0, 0, 0, 0,
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2,
+            // stake - authorize staker on account index 1
+            3,
+            3,
+                1, 2, 0,
+            40,
+                1, 0, 0, 0,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                0, 0, 0, 0, // staker
+            // stake - authorize withdrawer on account index 0 (mismatch)
+            3,
+            3,
+                0, 2, 0,
+            40,
+                1, 0, 0, 0,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                1, 0, 0, 0 // withdrawer
+    };
+
+    process_message_body_and_expect_refusal(message, sizeof(message));
+}
+
+// Same as above but for the checked authorize variant, which routes to the same
+// composite printer.
+void test_process_message_body_stake_authorize_both_checked_mismatched_accounts() {
+    uint8_t message[] = {
+        3, 2, 2,
+        6,
+            18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            112, 173, 25, 161, 89, 143, 220, 223, 128, 33, 149, 41, 12, 152, 202, 202, 203, 163, 182, 246, 158, 15, 22, 77, 171, 71, 63, 249, 10, 117, 172, 52,
+            6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182, 139, 94, 184, 163, 155, 75, 109, 92, 115, 85, 91, 33, 0, 0, 0, 0,
+            PROGRAM_ID_STAKE,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2,
+            // stake - authorize staker checked on account index 3
+            5,
+            4,
+                3, 4, 0, 1,
+            8,
+                10, 0, 0, 0,
+                0, 0, 0, 0, // staker
+            // stake - authorize withdrawer checked on account index 0 (mismatch)
+            5,
+            4,
+                0, 4, 0, 2,
+            8,
+                10, 0, 0, 0,
+                1, 0, 0, 0 // withdrawer
+    };
+
+    process_message_body_and_expect_refusal(message, sizeof(message));
+}
+
 void test_process_message_body_vote_authorize_voter() {
     uint8_t message[] = {
         1, 1, 2,
@@ -1028,6 +1105,73 @@ void test_process_message_body_vote_authorize_both_checked() {
     };
 
     process_message_body_and_sanity_check(message, sizeof(message), 5);
+}
+
+// Two vote authorize instructions targeting DIFFERENT vote accounts must not be
+// collapsed into the composite "Set vote auth" screen, which would only show
+// the first account and hide the second target.
+void test_process_message_body_vote_authorize_both_mismatched_accounts() {
+    uint8_t message[] = {
+        1, 1, 2,
+        4,
+            18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+            112, 173, 25, 161, 89, 143, 220, 223, 128, 33, 149, 41, 12, 152, 202, 202, 203, 163, 182, 246, 158, 15, 22, 77, 171, 71, 63, 249, 10, 117, 172, 52,
+            6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182, 139, 94, 184, 163, 155, 75, 109, 92, 115, 85, 91, 33, 0, 0, 0, 0,
+            7, 97, 72, 29, 53, 116, 116, 187, 124, 77, 118, 36, 235, 211, 189, 179, 216, 53, 94, 115, 209, 16, 67, 252, 13, 163, 83, 128, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2,
+            // vote - authorize voter on account index 1
+            3,
+            3,
+                1, 2, 0,
+            40,
+                1, 0, 0, 0,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                0, 0, 0, 0, // voter
+            // vote - authorize withdrawer on account index 0 (mismatch)
+            3,
+            3,
+                0, 2, 0,
+            40,
+                1, 0, 0, 0,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                1, 0, 0, 0 // withdrawer
+    };
+
+    process_message_body_and_expect_refusal(message, sizeof(message));
+}
+
+// Same as above but for the checked authorize variant, which routes to the same
+// composite printer.
+void test_process_message_body_vote_authorize_both_checked_mismatched_accounts() {
+    uint8_t message[] = {
+        2, 1, 2,
+        6,
+            18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            112, 173, 25, 161, 89, 143, 220, 223, 128, 33, 149, 41, 12, 152, 202, 202, 203, 163, 182, 246, 158, 15, 22, 77, 171, 71, 63, 249, 10, 117, 172, 52,
+            6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182, 139, 94, 184, 163, 155, 75, 109, 92, 115, 85, 91, 33, 0, 0, 0, 0,
+            7, 97, 72, 29, 53, 116, 116, 187, 124, 77, 118, 36, 235, 211, 189, 179, 216, 53, 94, 115, 209, 16, 67, 252, 13, 163, 83, 128, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2,
+            // vote - authorize voter checked on account index 3
+            5,
+            4,
+                3, 4, 0, 1,
+            8,
+                7, 0, 0, 0,
+                0, 0, 0, 0, // voter
+            // vote - authorize withdrawer checked on account index 0 (mismatch)
+            5,
+            4,
+                0, 4, 0, 2,
+            8,
+                7, 0, 0, 0,
+                1, 0, 0, 0 // withdrawer
+    };
+
+    process_message_body_and_expect_refusal(message, sizeof(message));
 }
 
 void test_process_message_body_vote_update_node_v1_0_7() {
@@ -2108,12 +2252,16 @@ int main() {
     RUN_TEST(test_process_message_body_stake_authorize_withdrawer_checked);
     RUN_TEST(test_process_message_body_stake_authorize_withdrawer_with_custodian_checked);
     RUN_TEST(test_process_message_body_stake_authorize_both_checked);
+    RUN_TEST(test_process_message_body_stake_authorize_both_mismatched_accounts);
+    RUN_TEST(test_process_message_body_stake_authorize_both_checked_mismatched_accounts);
     RUN_TEST(test_process_message_body_vote_authorize_voter);
     RUN_TEST(test_process_message_body_vote_authorize_withdrawer);
     RUN_TEST(test_process_message_body_vote_authorize_both);
     RUN_TEST(test_process_message_body_vote_authorize_voter_checked);
     RUN_TEST(test_process_message_body_vote_authorize_withdrawer_checked);
     RUN_TEST(test_process_message_body_vote_authorize_both_checked);
+    RUN_TEST(test_process_message_body_vote_authorize_both_mismatched_accounts);
+    RUN_TEST(test_process_message_body_vote_authorize_both_checked_mismatched_accounts);
     RUN_TEST(test_process_message_body_vote_update_commission);
     RUN_TEST(test_process_message_body_vote_update_node_v1_0_7);
     RUN_TEST(test_process_message_body_vote_update_node_v1_0_8);
