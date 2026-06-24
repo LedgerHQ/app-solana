@@ -31,6 +31,8 @@ class INS(IntEnum):
     INS_SIGN_OFFCHAIN_MESSAGE = 0x07
     INS_SIGN_MESSAGE_PREVIEW = 0x08
     INS_SIGN_MESSAGE_DELAYED = 0x09
+    INS_SIGN_MESSAGE_GENERIC_PREVIEW = 0x0A
+    INS_PROMPT_UI_DISPLAY = 0x0B
     INS_INSTRUCTION_DESCRIPTOR = 0x16
     INS_GET_CHALLENGE = 0x20
     INS_TRUSTED_INFO = 0x21
@@ -101,6 +103,8 @@ class ErrorType:
     INVALID_ENUM_VARIANT = 0x6ce0
     INVALID_TOKEN_ACCOUNT_STATE = 0x6cf0
     INVALID_ALT_RESOLUTION = 0x6d10
+    INVALID_GENERIC_PREVIEW = 0x6d20
+    CLEAR_SIGNING_INCOMPLETE = 0x6d21
     UNIMPLEMENTED_INSTRUCTION = 0x6d00
     SOLANA_SUMMARY_FINALIZE_FAILED = 0x6f00
     SOLANA_SUMMARY_UPDATE_FAILED = 0x6f01
@@ -548,6 +552,32 @@ class SolanaClient:
 
         self.send_pki_certificate(INSTRUCTION_DESCRIPTOR_PARTNER)
         self._exchange_split(CLA, INS.INS_INSTRUCTION_INFO, P1_NON_CONFIRM, payload)
+
+
+    def provide_instruction_substructure(self, substructure_type: int, tlv: bytes) -> RAPDU:
+        # First payload byte selects the substructure type; the rest is its raw TLV.
+        # The substructure is not individually signed: its authenticity is verified
+        # against the parent INSTRUCTION_INFO's SUBSTRUCTURES_HASH.
+        payload = bytes([substructure_type]) + tlv
+        return self._exchange_split(CLA, INS.INS_INSTRUCTION_SUBSTRUCTURE, P1_NON_CONFIRM, payload)
+
+
+    def sign_message_generic_preview(self, derivation_path: bytes, message: bytes) -> RAPDU:
+        chunks = self.split_and_prefix_message(derivation_path, message)
+        rapdu = None
+        for i, chunk in enumerate(chunks):
+            p2 = P2_NONE
+            if i != len(chunks) - 1:
+                p2 |= P2_MORE
+            if i != 0:
+                p2 |= P2_EXTEND
+            rapdu = self._client.exchange(CLA, INS.INS_SIGN_MESSAGE_GENERIC_PREVIEW,
+                                          P1_NON_CONFIRM, p2, chunk)
+        return rapdu
+
+
+    def prompt_ui_display(self) -> RAPDU:
+        return self._client.exchange(CLA, INS.INS_PROMPT_UI_DISPLAY, P1_NON_CONFIRM, P2_NONE, b"")
 
 
     def get_public_key(self, derivation_path: bytes) -> bytes:

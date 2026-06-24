@@ -32,6 +32,8 @@
 #include "clear_signing/handle_provide_enum_variant.h"
 #include "clear_signing/handle_provide_token_account_state.h"
 #include "clear_signing/handle_provide_alt_resolution.h"
+#include "clear_signing/handle_sign_message_generic_preview.h"
+#include "clear_signing/handle_prompt_ui_display.h"
 #include "apdu.h"
 #include "ui_api.h"
 #include "nbgl_use_case.h"
@@ -111,6 +113,20 @@ static int handle_apdu(int rx) {
 
         case InsSignMessageDelayed:
             return handle_sign_message_delayed();
+
+        case InsSignMessageGenericPreview:
+            if (G_called_from_swap) {
+                PRINTF("Generic preview not supported in swap context\n");
+                return io_send_sw(ApduReplySdkNotSupported);
+            }
+            return handle_sign_message_generic_preview();
+
+        case InsPromptUiDisplay:
+            if (G_called_from_swap) {
+                PRINTF("Prompt UI display not supported in swap context\n");
+                return io_send_sw(ApduReplySdkNotSupported);
+            }
+            return handle_prompt_ui_display();
 
         case InsSignOffchainMessage:
             return handle_sign_offchain_message();

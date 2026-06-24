@@ -1,21 +1,68 @@
+import hashlib
+import struct
+
 import pytest
 
 from ragger.error import ExceptionRAPDU
+
+from solders.pubkey import Pubkey
+from solders.instruction import Instruction, AccountMeta
 
 from application_client.solana import (SolanaClient, INS, CLA, P2_NONE, P1_NON_CONFIRM, ErrorType,
                                       TokenAccountStateTag, AltResolutionTag, EnumVariantTag,
                                       InstructionInfoTag, ValueTag)
 from application_client.solana_signing_partners import INSTRUCTION_DESCRIPTOR_PARTNER
 from application_client.tlv import format_tlv
+from application_client import solana_utils as SOL
 
 
-# All new clear signing INS codes should reject with UNIMPLEMENTED_INSTRUCTION
-# (only INSTRUCTION_SUBSTRUCTURE remains a stub)
-def test_clear_signing_stub_rejects(backend):
+# DISPLAY_FIELD / PARAM / VALUE source tag values (spec/device/tlv_structs.md)
+DISPLAY_FIELD_TAG_VERSION = 0x00
+DISPLAY_FIELD_TAG_NAME = 0x01
+DISPLAY_FIELD_TAG_PARAM_TYPE = 0x02
+DISPLAY_FIELD_TAG_PARAM = 0x03
+PARAM_TYPE_RAW = 0x00
+PARAM_TAG_VERSION = 0x00
+PARAM_TAG_VALUE = 0x01
+VALUE_SOURCE_ARGUMENT_PATH = 0x00
+SUBSTRUCTURE_TYPE_DISPLAY_FIELD = 0x00
+
+
+def _begin_session(sol: SolanaClient, message: bytes) -> None:
+    """Open a clear-signing context by sending SIGN MESSAGE GENERIC PREVIEW (0x0A)."""
+    sol.sign_message_generic_preview(SOL.SOL_PACKED_DERIVATION_PATH, message)
+
+
+def _craft_single_instruction_message(sol: SolanaClient, program_id: bytes, data: bytes) -> bytes:
+    sender = Pubkey.from_bytes(sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH))
+    instruction = Instruction(
+        program_id=Pubkey.from_bytes(program_id),
+        accounts=[AccountMeta(pubkey=sender, is_signer=True, is_writable=True)],
+        data=data,
+    )
+    return sol.craft_tx([instruction], sender)
+
+
+def _build_display_field(argument_path: bytes) -> bytes:
+    """A minimal DISPLAY_FIELD (PARAM_RAW) pointing at one ARGUMENT_PATH leaf."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, argument_path))
+    param_raw = (format_tlv(PARAM_TAG_VERSION, 1)
+                 + format_tlv(PARAM_TAG_VALUE, value_tlv))
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, "Amount")
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_RAW)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_raw))
+
+
+# Sending a substructure without an open clear-signing session must fail closed.
+def test_substructure_without_session_rejected(backend):
     sol = SolanaClient(backend)
     with pytest.raises(ExceptionRAPDU) as exc_info:
-        backend.exchange(CLA, ins=INS.INS_INSTRUCTION_SUBSTRUCTURE, p1=P1_NON_CONFIRM, p2=P2_NONE, data=b"\x00")
-    assert exc_info.value.status == ErrorType.UNIMPLEMENTED_INSTRUCTION
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD,
+                                             _build_display_field(b'\x01\x00'))
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+
 
 
 # ── TOKEN_ACCOUNT_STATE ──────────────────────────────────────────────────────
@@ -254,6 +301,7 @@ def test_enum_variant_raw_size_wrong_length_rejected(backend):
 
 def test_instruction_info_valid_minimal(backend):
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     sol.provide_instruction_info(
         program_id=b'\x01' * 32,
         discriminator=b'\xab\xcd\xef\x01',
@@ -266,6 +314,7 @@ def test_instruction_info_valid_minimal(backend):
 
 def test_instruction_info_with_mint_assoc(backend):
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     sol.provide_instruction_info(
         program_id=b'\x02' * 32,
         discriminator=b'\x01\x02',
@@ -314,6 +363,7 @@ def test_instruction_info_owner_assoc_incomplete(backend):
 def test_instruction_info_with_owner_assoc(backend):
     """OWNER_ASSOC_ACCOUNT + OWNER_ASSOC_OWNER (VALUE sub-TLV)."""
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     # Build a VALUE sub-TLV: ACCOUNT_PATH source, account index 2
     value_sub_tlv = format_tlv(ValueTag.SOURCE, 0x01) + format_tlv(ValueTag.PAYLOAD, b'\x02')
     sol.provide_instruction_info(
@@ -325,3 +375,93 @@ def test_instruction_info_with_owner_assoc(backend):
         owner_assoc_account=5,
         owner_assoc_owner_value=value_sub_tlv,
     )
+
+
+# ── BRIDGE: GENERIC PREVIEW → INFO → SUBSTRUCTURE → PROMPT UI DISPLAY ─────────
+
+# Synthetic program whose single instruction argument struct is {u32, u64},
+# preceded by a 1-byte discriminator consumed by a BYTES_FIXED root field.
+BRIDGE_PROGRAM_ID = b'\x07' * 32
+BRIDGE_DISCRIMINATOR = b'\x07'
+
+# IDL type pool: u8 count || entries.
+#   [0] STRUCT(0x20) field_count=3 refs=[1,2,3]
+#   [1] BYTES_FIXED(0x12) fixed_size=1   (consumes the discriminator)
+#   [2] U32(0x03)
+#   [3] U64(0x04)
+BRIDGE_POOL = bytes([4, 0x20, 3, 1, 2, 3, 0x12, 0x00, 0x01, 0x03, 0x04])
+
+# Packed argument paths (u8 step_count || packed steps); STRUCT steps are 1 byte.
+BRIDGE_PATH_DISC = b'\x01\x00'
+BRIDGE_PATH_U32 = b'\x01\x01'
+BRIDGE_PATH_U64 = b'\x01\x02'
+
+
+def _bridge_instruction_data(u32_value: int, u64_value: int) -> bytes:
+    return BRIDGE_DISCRIMINATOR + struct.pack("<I", u32_value) + struct.pack("<Q", u64_value)
+
+
+def test_bridge_walks_instruction(backend):
+    """End-to-end MVP bridge: the walker decodes the synthetic instruction and the
+    leaf callback resolves the DISPLAY_FIELD for the u32 leaf. No UI yet, so every
+    step returns 0x9000."""
+    sol = SolanaClient(backend)
+
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.prompt_ui_display()
+    assert rapdu.status == 0x9000
+
+
+def test_bridge_prompt_without_complete_substructures_rejected(backend):
+    """PROMPT UI DISPLAY before the substructure stream matches SUBSTRUCTURES_HASH
+    must fail closed."""
+    sol = SolanaClient(backend)
+
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    # No substructure provided: the template never completes.
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.prompt_ui_display()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+
+
+def test_bridge_prompt_without_session_rejected(backend):
+    """PROMPT UI DISPLAY with no open session must fail closed."""
+    sol = SolanaClient(backend)
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.prompt_ui_display()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+
