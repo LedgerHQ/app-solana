@@ -59,6 +59,9 @@ typedef enum ApduReply {
     ApduReplySolanaInvalidTokenAccountState = 0x6cf0,
     ApduReplySolanaInvalidAltResolution = 0x6d10,
 
+    ApduReplySolanaInvalidGenericPreview = 0x6d20,
+    ApduReplySolanaClearSigningIncomplete = 0x6d21,
+
     ApduReplySolanaDelayedPreviewNotFound = 0x6f10,
     ApduReplySolanaDelayedHashMismatch = 0x6f11,
     ApduReplySolanaDelayedLengthMismatch = 0x6f12,

@@ -40,6 +40,8 @@ static int parse_apdu_header(const uint8_t *apdu_message,
         case InsSignOffchainMessage:
         case InsSignMessagePreview:
         case InsSignMessageDelayed:
+        case InsSignMessageGenericPreview:
+        case InsPromptUiDisplay:
         case InsTrustedInfoProvideInstructionDescriptor:
         case InsTrustedInfoGetChallenge:
         case InsTrustedInfoProvideInfo:
@@ -106,6 +108,7 @@ static bool split_allowed_for_instruction(uint8_t instruction) {
             instruction == InsSignOffchainMessage ||
             instruction == InsSignMessagePreview ||
             instruction == InsSignMessageDelayed ||
+            instruction == InsSignMessageGenericPreview ||
             instruction == InsTrustedInfoProvideInfo ||
             instruction == InsTrustedInfoProvideDynamicDescriptor ||
             instruction == InsProvideInstructionSubstructure ||
@@ -124,6 +127,7 @@ static bool instruction_with_derivation_path_in_first_apdu(uint8_t instruction) 
     return (instruction != InsTrustedInfoProvideInfo &&
             instruction != InsTrustedInfoProvideDynamicDescriptor &&
             instruction != InsTrustedInfoProvideInstructionDescriptor &&
+            instruction != InsPromptUiDisplay &&
             instruction != InsProvideInstructionSubstructure &&
             instruction != InsProvideEnumVariant &&
             instruction != InsProvideInstructionInfo &&
@@ -137,6 +141,7 @@ static bool instruction_with_derivation_path_in_first_apdu(uint8_t instruction) 
 
 static bool instruction_without_payload(uint8_t instruction) {
     return (instruction == InsDeprecatedGetAppConfiguration ||
+            instruction == InsPromptUiDisplay ||
             instruction == InsGetAppConfiguration ||
             instruction == InsTrustedInfoGetChallenge);
 }

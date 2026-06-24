@@ -61,6 +61,8 @@ typedef enum InstructionCode {
     InsSignOffchainMessage = 0x07,
     InsSignMessagePreview = 0x08,
     InsSignMessageDelayed = 0x09,
+    InsSignMessageGenericPreview = 0x0A,
+    InsPromptUiDisplay = 0x0B,
     InsTrustedInfoProvideInstructionDescriptor = 0x16,
     InsTrustedInfoGetChallenge = 0x20,
     InsTrustedInfoProvideInfo = 0x21,

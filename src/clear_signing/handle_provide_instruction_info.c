@@ -12,6 +12,7 @@
 #include "ledger_pki.h"
 #include "tlv_library.h"
 #include "cs_value.h"
+#include "clear_signing_context.h"
 
 #define MAX_DISCRIMINATOR_SIZE    8
 #define MAX_OPERATION_TYPE_LENGTH 64
@@ -233,6 +234,24 @@ int handle_provide_instruction_info(void) {
     PRINTF("substructures_hash = %.*H\n", 32, tlv_extracted.substructures_hash);
     PRINTF("idl_type_pool_size = %d\n", tlv_extracted.idl_type_pool_size);
     PRINTF("idl_root_type      = %d\n", tlv_extracted.idl_root_type);
+
+    // A SIGN MESSAGE GENERIC PREVIEW (0x0A) must have opened the context first.
+    cs_instruction_template_t *template = clear_signing_context_new_template();
+    if (template == NULL) {
+        PRINTF("Error: no clear-signing context or template capacity exhausted\n");
+        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+    }
+
+    memcpy(template->program_id, tlv_extracted.program_id, sizeof(template->program_id));
+    memcpy(template->discriminator, tlv_extracted.discriminator, tlv_extracted.discriminator_size);
+    template->discriminator_size = (uint8_t) tlv_extracted.discriminator_size;
+    memcpy(template->idl_type_pool, tlv_extracted.idl_type_pool, tlv_extracted.idl_type_pool_size);
+    template->idl_type_pool_size = tlv_extracted.idl_type_pool_size;
+    template->idl_root_type = tlv_extracted.idl_root_type;
+    memcpy(template->substructures_hash,
+           tlv_extracted.substructures_hash,
+           sizeof(template->substructures_hash));
+    cx_sha256_init(&template->substructures_ctx);
 
     return io_send_sw(ApduReplySuccess);
 }

@@ -1,9 +1,168 @@
+#include <os.h>
+#include <cx.h>
+#include <string.h>
+
 #include "handle_provide_instruction_substructure.h"
 #include "io.h"
 #include "apdu.h"
 #include "globals.h"
+#include "tlv_library.h"
+#include "cs_value.h"
+#include "clear_signing_context.h"
+
+#define SUBSTRUCTURE_TYPE_DISPLAY_FIELD   0x00
+#define SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT 0x01
+#define SUBSTRUCTURE_TYPE_HIDE_RULE       0x02
+#define SUBSTRUCTURE_TYPE_ACCOUNT_RESET   0x03
+
+// PARAM_* parser. VALUE always sits at tag 0x01; the type-specific tags
+// (0x00, 0x02..0x06 across the PARAM_* variants) are accepted and ignored so a
+// single parser handles every formatter type.
+typedef struct param_out_s {
+    TLV_reception_t received_tags;
+    buffer_t value;
+} param_out_t;
+
+static bool param_handle_value(const tlv_data_t *data, param_out_t *out) {
+    out->value = data->value;
+    return true;
+}
+
+static bool param_handle_ignore(const tlv_data_t *data, param_out_t *out) {
+    UNUSED(data);
+    UNUSED(out);
+    return true;
+}
+
+// clang-format off
+#define PARAM_TAGS(X) \
+    X(0x00, PARAM_TAG_VERSION, param_handle_ignore, ENFORCE_UNIQUE_TAG) \
+    X(0x01, PARAM_TAG_VALUE,   param_handle_value,  ENFORCE_UNIQUE_TAG) \
+    X(0x02, PARAM_TAG_OPT_2,   param_handle_ignore, ALLOW_MULTIPLE_TAG) \
+    X(0x03, PARAM_TAG_OPT_3,   param_handle_ignore, ALLOW_MULTIPLE_TAG) \
+    X(0x04, PARAM_TAG_OPT_4,   param_handle_ignore, ALLOW_MULTIPLE_TAG) \
+    X(0x05, PARAM_TAG_OPT_5,   param_handle_ignore, ALLOW_MULTIPLE_TAG) \
+    X(0x06, PARAM_TAG_OPT_6,   param_handle_ignore, ALLOW_MULTIPLE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(PARAM_TAGS, NULL, parse_param)
+
+// DISPLAY_FIELD parser. Only PARAM (tag 0x03) is captured; the others are
+// accepted and ignored.
+typedef struct display_field_out_s {
+    TLV_reception_t received_tags;
+    buffer_t param;
+} display_field_out_t;
+
+static bool display_field_handle_param(const tlv_data_t *data, display_field_out_t *out) {
+    out->param = data->value;
+    return true;
+}
+
+static bool display_field_handle_ignore(const tlv_data_t *data, display_field_out_t *out) {
+    UNUSED(data);
+    UNUSED(out);
+    return true;
+}
+
+// clang-format off
+#define DISPLAY_FIELD_TAGS(X) \
+    X(0x00, DISPLAY_FIELD_TAG_VERSION,    display_field_handle_ignore, ENFORCE_UNIQUE_TAG) \
+    X(0x01, DISPLAY_FIELD_TAG_NAME,       display_field_handle_ignore, ENFORCE_UNIQUE_TAG) \
+    X(0x02, DISPLAY_FIELD_TAG_PARAM_TYPE, display_field_handle_ignore, ENFORCE_UNIQUE_TAG) \
+    X(0x03, DISPLAY_FIELD_TAG_PARAM,      display_field_handle_param,  ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(DISPLAY_FIELD_TAGS, NULL, parse_display_field)
+
+// Extract the ARGUMENT_PATH of a DISPLAY_FIELD (if any) and record it on the
+// current template so PROMPT UI DISPLAY can match walker leaves against it.
+static int register_display_field(const uint8_t *tlv, size_t tlv_size) {
+    display_field_out_t display_field = {0};
+    buffer_t display_field_payload = {.ptr = (uint8_t *) tlv, .size = tlv_size};
+    if (!parse_display_field(&display_field_payload,
+                             &display_field,
+                             &display_field.received_tags)) {
+        PRINTF("substructure: DISPLAY_FIELD parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(display_field.received_tags, DISPLAY_FIELD_TAG_PARAM)) {
+        PRINTF("substructure: DISPLAY_FIELD missing PARAM\n");
+        return -1;
+    }
+
+    param_out_t param = {0};
+    if (!parse_param(&display_field.param, &param, &param.received_tags)) {
+        PRINTF("substructure: PARAM parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_TAG_VALUE)) {
+        PRINTF("substructure: PARAM missing VALUE\n");
+        return -1;
+    }
+
+    cs_value_t value;
+    if (!cs_parse_value_from_buffer(param.value.ptr, param.value.size, &value)) {
+        PRINTF("substructure: VALUE parsing failed\n");
+        return -1;
+    }
+
+    // Only ARGUMENT_PATH-sourced fields carry a walker path to match against.
+    if (value.source != VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("substructure: DISPLAY_FIELD source %d carries no argument path\n", value.source);
+        return 0;
+    }
+
+    if (clear_signing_context_add_display_path(value.payload, value.payload_size) != 0) {
+        return -1;
+    }
+    PRINTF("substructure: registered display path %.*H\n", value.payload_size, value.payload);
+    return 0;
+}
 
 int handle_provide_instruction_substructure(void) {
-    PRINTF("handle_provide_instruction_substructure stub\n");
-    return io_send_sw(ApduReplyUnimplementedInstruction);
+    PRINTF("handle_provide_instruction_substructure\n");
+
+    cs_instruction_template_t *template = clear_signing_context_current_template();
+    if (template == NULL) {
+        PRINTF("substructure: no instruction template open\n");
+        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+    }
+    if (template->complete) {
+        PRINTF("substructure: current template already complete\n");
+        return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
+    }
+    if (G_command.message_length < 1) {
+        PRINTF("substructure: empty payload\n");
+        return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
+    }
+
+    uint8_t type = G_command.message[0];
+    const uint8_t *tlv = G_command.message + 1;
+    size_t tlv_size = (size_t) G_command.message_length - 1;
+
+    // Accumulate the substructure TLV (type byte excluded) into the running hash.
+    CX_ASSERT(cx_hash_update((cx_hash_t *) &template->substructures_ctx, tlv, tlv_size));
+
+    // Only DISPLAY_FIELD is interpreted in this slice; the other substructure
+    // types contribute to the hash but are not decoded.
+    if (type == SUBSTRUCTURE_TYPE_DISPLAY_FIELD) {
+        if (register_display_field(tlv, tlv_size) != 0) {
+            return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
+        }
+    }
+
+    // Clone the accumulator, finalize, and compare against the signed target.
+    cx_sha256_t finalize_ctx;
+    memcpy(&finalize_ctx, &template->substructures_ctx, sizeof(finalize_ctx));
+    uint8_t running_hash[CX_SHA256_SIZE];
+    CX_ASSERT(cx_hash_final((cx_hash_t *) &finalize_ctx, running_hash));
+    if (memcmp(running_hash, template->substructures_hash, CX_SHA256_SIZE) == 0) {
+        template->complete = true;
+        PRINTF("substructure: running hash matched, template complete\n");
+    } else {
+        PRINTF("substructure: hash not yet matched, awaiting more substructures\n");
+    }
+
+    return io_send_sw(ApduReplySuccess);
 }
