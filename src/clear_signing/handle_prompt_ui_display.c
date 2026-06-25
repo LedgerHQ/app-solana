@@ -37,8 +37,10 @@ static void cs_leaf_callback(const idl_leaf_t *leaf, void *callback_context) {
            has_display);
 }
 
-// Walk each transaction instruction whose (program_id, discriminator) matches a
-// stored template against that template's IDL type pool.
+// Walk every transaction instruction against the IDL type pool of its matching
+// template. Every instruction must resolve to a template: an instruction with no
+// descriptor would otherwise be signed without ever being decoded or displayed,
+// so a missing template aborts the whole session.
 static int walk_transaction(void) {
     Parser parser = {G_clear_signing_context->transaction,
                      G_clear_signing_context->transaction_size};
@@ -66,8 +68,8 @@ static int walk_transaction(void) {
                                                 instruction.data,
                                                 instruction.data_length);
         if (template == NULL) {
-            PRINTF("prompt ui: no template for instruction %d, skipping\n", i);
-            continue;
+            PRINTF("prompt ui: no template for instruction %d, refusing to sign\n", i);
+            return -1;
         }
 
         if (idl_pool_provide(template->idl_type_pool,
