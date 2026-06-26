@@ -540,4 +540,3 @@ def test_substruct_type_mismatch_rejected(backend):
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, bad_display_field)
     assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
-
