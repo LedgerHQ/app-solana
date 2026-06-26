@@ -17,13 +17,16 @@ void cs_merge_engine_reset(void) {
     }
 }
 
-int cs_merge_engine_run(void) {
+int cs_merge_engine_run(const cs_instruction_result_t *results, size_t result_count) {
     cs_merge_engine_reset();
 
     if (!APP_MEM_CALLOC((void **) &G_cs_merge_engine, sizeof(cs_merge_engine_t))) {
         PRINTF("cs_merge_engine_run: allocation failed\n");
         return -1;
     }
+
+    (void) results;
+    (void) result_count;
 
     cs_display_element_t *element = &G_cs_merge_engine->elements[0];
     strlcpy(element->title, "Transaction", sizeof(element->title));

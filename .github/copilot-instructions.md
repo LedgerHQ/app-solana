@@ -124,6 +124,7 @@ Coding patterns described here are more important than uniformity cross applicat
 - No goto: if a function needs exit cleaning logic, split in inner / outer.
 - Functions and variables should have clear explicit names without abbreviation. BAD: `idl_leaf_cb_t cb`, GOOD: `idl_leaf_cb_t leaf_callback`.
 - Functions called in a wrong context shall return an error, not ignore or skip
+- Do not use shortcut variables to avoid writing long access path.
 
 ### Chain of trust
 

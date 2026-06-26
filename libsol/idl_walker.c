@@ -1,11 +1,11 @@
 // IDL walker. See idl_walker.h for the contract.
 //
 // Decodes the raw argument bytes of a Solana instruction against the
-// kind-driven IDL_TYPE_POOL descriptor and streams every decoded leaf to a
-// caller-supplied callback. The pool descriptor is owned by the idl_pool
-// module and read here through its getters; the data bytes are borrowed,
-// never copied. The walk's own scratch (frame stack, path, fixed-size table)
-// is released before idl_walker_run() returns.
+// kind-driven IDL_TYPE_POOL descriptor and delivers matched leaves to the
+// collector. The pool descriptor is owned by the idl_pool module and read here
+// through its getters; the data bytes are borrowed, never copied. The walk's
+// own scratch (frame stack, path, fixed-size table) is released before
+// idl_walker_run() returns.
 //
 // Descent is iterative over an explicit heap frame stack (no C recursion), so
 // deeply nested descriptors cannot overflow the device stack. The walk fails
@@ -247,8 +247,7 @@ typedef struct walk_ctx_s {
     uint8_t *path;     // reusable scratch path buffer
     size_t path_cap;
 
-    idl_leaf_cb_t leaf_callback;
-    void *callback_context;
+    idl_leaf_collector_t *collector;
 } walk_ctx_t;
 
 // Byte width of one argument-path step under a parent of `parent_kind`, or 0
@@ -376,20 +375,21 @@ static bool read_uint_le(walk_ctx_t *walk, uint8_t kind, uint64_t *out) {
 }
 
 // Build the packed argument path for the current leaf (the top frame) into the
-// reusable scratch buffer. Returns 0 on success, 1 when the path cannot be
-// represented (the leaf is then silently skipped, not an error), -1 on
-// out-of-space.
+// reusable scratch buffer. Returns 0 on success, -1 on error.
 static int build_path(walk_ctx_t *walk, size_t *out_len) {
-    size_t steps = walk->stack_len - 1;  // every frame but the root contributes one step
+    size_t steps = walk->stack_len - 1;
     if (steps > 0xFF) {
-        return 1;
+        PRINTF("idl_walker: path depth %d exceeds u8 limit\n", steps);
+        return -1;
     }
 
-    size_t total = 1;  // leading step_count byte
+    size_t total = 1;
     for (size_t i = 1; i < walk->stack_len; i++) {
         size_t width = step_width(walk->stack[i].parent_kind);
         if (width == 0) {
-            return 1;
+            PRINTF("idl_walker: parent kind 0x%02x has no step width\n",
+                   walk->stack[i].parent_kind);
+            return -1;
         }
         total += width;
     }
@@ -410,7 +410,8 @@ static int build_path(walk_ctx_t *walk, size_t *out_len) {
         size_t width = step_width(walk->stack[i].parent_kind);
         size_t value = walk->stack[i].step_value;
         if (width < sizeof(size_t) && (value >> (width * 8)) != 0) {
-            return 1;  // step value does not fit its width
+            PRINTF("idl_walker: step value %d overflows width %d\n", value, width);
+            return -1;
         }
         for (size_t byte_i = 0; byte_i < width; byte_i++) {
             walk->path[offset + byte_i] = (uint8_t) (value >> (8 * (width - 1 - byte_i)));
@@ -422,35 +423,37 @@ static int build_path(walk_ctx_t *walk, size_t *out_len) {
     return 0;
 }
 
-// Hand one decoded leaf to the callback. Returns 0 on success (including a
-// silently skipped unrepresentable path), -1 on out-of-space.
+// Hand one decoded leaf to the collector. Matches the built path against the
+// collector's pre-loaded match_paths; on match, stores kind/value/size into the
+// corresponding resolved slot. Unmatched leaves are silently discarded.
+// Returns 0 on success, -1 on error.
 static int emit_leaf(walk_ctx_t *walk, uint8_t kind, const uint8_t *value, size_t value_size) {
-    if (walk->leaf_callback == NULL) {
-        PRINTF("idl_walker: no callback, skipping leaf kind=0x%02x\n", kind);
-        return 0;
-    }
     size_t path_len;
-    int build_result = build_path(walk, &path_len);
-    if (build_result < 0) {
+    if (build_path(walk, &path_len) != 0) {
         PRINTF("idl_walker: build_path failed for leaf kind=0x%02x\n", kind);
         return -1;
     }
-    if (build_result > 0) {
-        PRINTF("idl_walker: unrepresentable path for leaf kind=0x%02x, skipping\n", kind);
-        return 0;  // unrepresentable path — skip emission, keep walking
-    }
-    idl_leaf_t leaf = {
-        .path = walk->path,
-        .path_size = path_len,
-        .kind = kind,
-        .value = value,
-        .value_size = value_size,
-    };
+
     PRINTF("idl_walker: emit leaf kind=0x%02x value_size=%d path_size=%d\n",
            kind,
            value_size,
            path_len);
-    walk->leaf_callback(&leaf, walk->callback_context);
+
+    // Check if we have a display rule for this leaf
+    for (uint8_t i = 0; i < walk->collector->match_count; i++) {
+        if (walk->collector->match_paths[i].size != path_len) {
+            continue;
+        }
+        if (memcmp(walk->collector->match_paths[i].data, walk->path, path_len) == 0) {
+            PRINTF("idl_walker: leaf matched slot %d\n", i);
+            walk->collector->resolved[i].kind = kind;
+            walk->collector->resolved[i].value = value;
+            walk->collector->resolved[i].value_size = value_size;
+            walk->collector->resolved_count++;
+            return 0;
+        }
+    }
+    PRINTF("idl_walker: leaf did not match any slot, discarding\n");
     return 0;
 }
 
@@ -777,8 +780,7 @@ static int walk_top(walk_ctx_t *walk) {
 
 int idl_walker_run(const uint8_t *data,
                    size_t data_size,
-                   idl_leaf_cb_t leaf_callback,
-                   void *callback_context) {
+                   idl_leaf_collector_t *collector) {
     if (!idl_pool_ready()) {
         PRINTF("idl_walker_run: no pool provided\n");
         return -1;
@@ -809,8 +811,7 @@ int idl_walker_run(const uint8_t *data,
     walk.data_size = data_size;
     walk.cursor = 0;
     walk.fixed_sizes = fixed_sizes;
-    walk.leaf_callback = leaf_callback;
-    walk.callback_context = callback_context;
+    walk.collector = collector;
     walk.stack_cap = 8;
     walk.stack = APP_MEM_ALLOC(walk.stack_cap * sizeof(frame_t));
 
@@ -823,7 +824,6 @@ int idl_walker_run(const uint8_t *data,
         while (walk_result == 0 && walk.stack_len > 0) {
             walk_result = walk_top(&walk);
         }
-        // The walk must land exactly on the end of the instruction data.
         if (walk_result == 0 && walk.cursor != walk.data_size) {
             PRINTF("idl_walker: cursor %d != data_size %d, refusing\n",
                    walk.cursor,
@@ -841,4 +841,3 @@ int idl_walker_run(const uint8_t *data,
            walk.data_size);
     return walk_result;
 }
-

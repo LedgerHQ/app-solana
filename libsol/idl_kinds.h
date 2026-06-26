@@ -3,8 +3,8 @@
 // IDL type-pool kind codes, as carried verbatim in the leading byte of every
 // IDL_TYPE_POOL entry (and inline *_kind markers) shipped inside an
 // INSTRUCTION_INFO TLV. Mirrors spec/device/idl_descriptor.md "Type-pool
-// kinds". These values are also surfaced on `idl_leaf_t.kind` so the consumer
-// knows how to interpret a leaf's raw value bytes.
+// kinds". These values are also surfaced on `idl_resolved_leaf_t.kind` so the
+// consumer knows how to interpret a leaf's raw value bytes.
 //
 // Convention reminders (enforced by the walker, not this header):
 //   - multi-byte descriptor metadata (sizes, counts) is big-endian;
