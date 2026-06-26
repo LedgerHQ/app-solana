@@ -2,11 +2,13 @@
 #include <string.h>
 
 #include "clear_signing_context.h"
+#include "cs_substructure.h"
 #include "app_mem_utils.h"
 
 clear_signing_context_t *G_clear_signing_context;
 
 void clear_signing_context_reset(void) {
+    cs_substructure_reset();
     if (G_clear_signing_context == NULL) {
         return;
     }
