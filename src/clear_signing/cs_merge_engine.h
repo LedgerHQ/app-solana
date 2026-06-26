@@ -10,7 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "idl_leaf_collector.h"
+#include "idl_walker.h"
 #include "cs_instruction_template.h"
 
 #define CS_MAX_DISPLAY_ELEMENTS 8
@@ -23,16 +23,18 @@ typedef struct cs_display_element_s {
     char value[CS_DISPLAY_VALUE_SIZE];
 } cs_display_element_t;
 
-// Per-instruction walk result: the template that matched and the collected
-// display-field leaf values resolved during the walk.
+// Per-instruction walk result: the template that matched and the resolved
+// display-field leaf values.
 typedef struct cs_instruction_result_s {
     const cs_instruction_template_t *template;
-    idl_leaf_collector_t collected;
+    idl_resolved_leaf_t resolved[CS_MAX_DISPLAY_FIELDS];
+    uint8_t resolved_count;
 } cs_instruction_result_t;
 
 // Build the display elements from instruction results. Returns 0 on success,
 // -1 on failure (engine left empty). Discards any previous output.
-int cs_merge_engine_run(const cs_instruction_result_t *results, size_t result_count);
+int cs_merge_engine_run(const cs_instruction_result_t *walked_instructions,
+                       size_t walked_instructions_count);
 
 // Number of produced display elements. Zero means the engine has not run, which
 // the session treats as "not finalized".
