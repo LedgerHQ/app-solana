@@ -1,7 +1,7 @@
 #include <os.h>
 
 #include "handle_sign_message_generic_preview.h"
-#include "clear_signing_context.h"
+#include "cs_transaction.h"
 #include "apdu.h"
 #include "globals.h"
 #include "io.h"
@@ -25,7 +25,7 @@ int handle_sign_message_generic_preview(void) {
 
     // The descriptor stream that follows reuses G_command.message, so the
     // transaction must be copied into the clear-signing context now.
-    if (clear_signing_context_begin(G_command.message, G_command.message_length) != 0) {
+    if (cs_transaction_begin(G_command.message, G_command.message_length) != 0) {
         PRINTF("generic preview: failed to buffer transaction\n");
         return io_send_sw(ApduReplySolanaInvalidGenericPreview);
     }

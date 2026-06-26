@@ -2,7 +2,8 @@
 #include <string.h>
 
 #include "handle_finalize_generic_clear_signing.h"
-#include "clear_signing_context.h"
+#include "cs_transaction.h"
+#include "cs_merge_engine.h"
 #include "cs_instruction_template.h"
 #include "apdu.h"
 #include "globals.h"
@@ -16,8 +17,8 @@
 // descriptor would otherwise be signed without ever being decoded or displayed,
 // so a missing template aborts the whole session.
 static int walk_transaction(void) {
-    Parser parser = {G_clear_signing_context->transaction,
-                     G_clear_signing_context->transaction_size};
+    Parser parser = {G_cs_transaction->transaction,
+                     G_cs_transaction->transaction_size};
     MessageHeader header;
     if (parse_message_header(&parser, &header) != 0) {
         PRINTF("finalize cs: failed to parse buffered transaction\n");
@@ -74,11 +75,11 @@ int handle_finalize_generic_clear_signing(void) {
         return io_send_sw(ApduReplySdkInvalidParameter);
     }
 
-    if (G_clear_signing_context == NULL) {
+    if (G_cs_transaction == NULL) {
         PRINTF("finalize cs: no clear-signing context\n");
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);
     }
-    if (G_clear_signing_context->finalized) {
+    if (cs_merge_engine_element_count() > 0) {
         PRINTF("finalize cs: already finalized\n");
         return io_send_sw(ApduReplySdkInvalidParameter);
     }
@@ -93,10 +94,15 @@ int handle_finalize_generic_clear_signing(void) {
 
     int status = walk_transaction();
     if (status != 0) {
-        clear_signing_context_reset();
+        cs_transaction_reset();
         return io_send_sw(ApduReplySolanaInvalidGenericPreview);
     }
 
-    G_clear_signing_context->finalized = true;
+    if (cs_merge_engine_run() != 0) {
+        PRINTF("finalize cs: merge engine failed\n");
+        cs_transaction_reset();
+        return io_send_sw(ApduReplySolanaInvalidGenericPreview);
+    }
+
     return io_send_sw(ApduReplySuccess);
 }

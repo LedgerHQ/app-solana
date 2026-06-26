@@ -15,7 +15,7 @@
 // that never completes is never visible to PROMPT UI DISPLAY.
 //
 // The table lives on the heap (allocated on first open, released on reset) and
-// is session-scoped, mirroring clear_signing_context_t.
+// is session-scoped, mirroring cs_transaction_t.
 
 #include <stdbool.h>
 #include <stddef.h>
