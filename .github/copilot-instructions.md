@@ -53,6 +53,7 @@ venv && pytest tests/python/ --device flex -s 2>&1 | tools/valground.py -q
 - tests can timeout in case of errors, if that happens be smart when iterating to avoid wasting too much time.
 - debuging a test is done by adding logs in the C code, rebuilding, and re-running the test with `-s` option so Speculos prints PRINTF in stdout.
 - There is NO SUCH THING as a "pre-existing failure". All tests are presumed correct and failures are ALWAYS caused by latest changes. Suggesting otherwise is entirely FORBIDDEN. ALL TESTS SHALL ALWAYS PASS.
+- Do NOT pipe test output in a tail command, it makes debugging timeouts impossible.
 
 ## Architecture
 

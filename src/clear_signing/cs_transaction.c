@@ -4,11 +4,13 @@
 #include "cs_transaction.h"
 #include "cs_instruction_template.h"
 #include "cs_merge_engine.h"
+#include "cs_display_renderer.h"
 #include "app_mem_utils.h"
 
 cs_transaction_t *G_cs_transaction;
 
 void cs_transaction_reset(void) {
+    cs_display_renderer_reset();
     cs_merge_engine_reset();
     cs_instruction_template_table_reset();
     if (G_cs_transaction != NULL) {
