@@ -15,7 +15,8 @@
 // Walk every transaction instruction against the IDL type pool of its matching
 // template, collecting the display-field leaf values into per-instruction
 // results for the merge engine. Every instruction must resolve to a template.
-static int walk_transaction(cs_instruction_result_t *results, size_t *result_count) {
+static int walk_transaction(cs_instruction_result_t *walked_instructions,
+                            size_t *walked_instructions_count) {
     Parser parser = {G_cs_transaction->transaction,
                      G_cs_transaction->transaction_size};
     MessageHeader header;
@@ -24,7 +25,7 @@ static int walk_transaction(cs_instruction_result_t *results, size_t *result_cou
         return -1;
     }
 
-    *result_count = 0;
+    *walked_instructions_count = 0;
 
     for (size_t i = 0; i < header.instructions_length; i++) {
         Instruction instruction;
@@ -55,31 +56,27 @@ static int walk_transaction(cs_instruction_result_t *results, size_t *result_cou
             return -1;
         }
 
-        cs_instruction_result_t *result = &results[*result_count];
-        memset(result, 0, sizeof(*result));
-        result->template = template;
+        // Run walker on received instruction, take as input the instruction + display template
+        int walk_status = idl_walker_run(
+            instruction.data,
+            instruction.data_length,
+            template->display_fields,
+            template->display_field_count,
+            walked_instructions[*walked_instructions_count].resolved,
+            &walked_instructions[*walked_instructions_count].resolved_count);
 
-        idl_leaf_collector_t collector;
-        memset(&collector, 0, sizeof(collector));
-        for (uint8_t f = 0; f < template->display_field_count; f++) {
-            memcpy(collector.match_paths[f].data,
-                   template->display_fields[f].path,
-                   template->display_fields[f].path_size);
-            collector.match_paths[f].size = template->display_fields[f].path_size;
-        }
-        collector.match_count = template->display_field_count;
-
-        int walk_status = idl_walker_run(instruction.data,
-                                         instruction.data_length,
-                                         &collector);
+        // IDL pool has been used for this descriptor.
+        // we can free the memory now because host is required to re-provide even if same
         idl_pool_reset();
+
         if (walk_status != 0) {
             PRINTF("finalize cs: walk failed for instruction %d\n", i);
             return -1;
         }
 
-        result->collected = collector;
-        (*result_count)++;
+        // Forward the template that matched for the merge engine down the line
+        walked_instructions[*walked_instructions_count].template = template;
+        (*walked_instructions_count)++;
     }
     return 0;
 }
@@ -109,16 +106,16 @@ int handle_finalize_generic_clear_signing(void) {
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);
     }
 
-    cs_instruction_result_t results[CS_MAX_INSTRUCTION_TEMPLATES];
-    size_t result_count = 0;
+    cs_instruction_result_t walked_instructions[CS_MAX_INSTRUCTION_TEMPLATES];
+    size_t walked_instructions_count = 0;
 
-    int status = walk_transaction(results, &result_count);
-    if (status != 0) {
+    if (walk_transaction(walked_instructions, &walked_instructions_count) != 0) {
+        PRINTF("finalize cs: walk engine failed\n");
         cs_transaction_reset();
         return io_send_sw(ApduReplySolanaInvalidGenericPreview);
     }
 
-    if (cs_merge_engine_run(results, result_count) != 0) {
+    if (cs_merge_engine_run(walked_instructions, walked_instructions_count) != 0) {
         PRINTF("finalize cs: merge engine failed\n");
         cs_transaction_reset();
         return io_send_sw(ApduReplySolanaInvalidGenericPreview);
