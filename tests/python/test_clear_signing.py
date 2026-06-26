@@ -18,9 +18,10 @@ from application_client import solana_utils as SOL
 
 # DISPLAY_FIELD / PARAM / VALUE source tag values (spec/device/tlv_structs.md)
 DISPLAY_FIELD_TAG_VERSION = 0x00
-DISPLAY_FIELD_TAG_NAME = 0x01
-DISPLAY_FIELD_TAG_PARAM_TYPE = 0x02
-DISPLAY_FIELD_TAG_PARAM = 0x03
+DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE = 0x01
+DISPLAY_FIELD_TAG_NAME = 0x02
+DISPLAY_FIELD_TAG_PARAM_TYPE = 0x03
+DISPLAY_FIELD_TAG_PARAM = 0x04
 PARAM_TYPE_RAW = 0x00
 PARAM_TAG_VERSION = 0x00
 PARAM_TAG_VALUE = 0x01
@@ -50,6 +51,7 @@ def _build_display_field(argument_path: bytes) -> bytes:
     param_raw = (format_tlv(PARAM_TAG_VERSION, 1)
                  + format_tlv(PARAM_TAG_VALUE, value_tlv))
     return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
             + format_tlv(DISPLAY_FIELD_TAG_NAME, "Amount")
             + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_RAW)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_raw))
@@ -426,12 +428,15 @@ def test_bridge_walks_instruction(backend):
 
     sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
 
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
     rapdu = sol.prompt_ui_display()
     assert rapdu.status == 0x9000
 
 
 def test_bridge_prompt_without_complete_substructures_rejected(backend):
-    """PROMPT UI DISPLAY before the substructure stream matches SUBSTRUCTURES_HASH
+    """FINALIZE before the substructure stream matches SUBSTRUCTURES_HASH
     must fail closed."""
     sol = SolanaClient(backend)
 
@@ -454,7 +459,7 @@ def test_bridge_prompt_without_complete_substructures_rejected(backend):
 
     # No substructure provided: the template never completes.
     with pytest.raises(ExceptionRAPDU) as exc_info:
-        sol.prompt_ui_display()
+        sol.finalize_generic_clear_signing()
     assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
 
 
@@ -464,4 +469,75 @@ def test_bridge_prompt_without_session_rejected(backend):
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.prompt_ui_display()
     assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+
+
+def test_finalize_without_session_rejected(backend):
+    """FINALIZE GENERIC CLEAR SIGNING with no open session must fail closed."""
+    sol = SolanaClient(backend)
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+
+
+def test_prompt_without_finalize_rejected(backend):
+    """PROMPT UI DISPLAY without prior FINALIZE must fail closed."""
+    sol = SolanaClient(backend)
+
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    # Skip FINALIZE, go straight to PROMPT — must be rejected
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.prompt_ui_display()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+
+
+def test_substruct_type_mismatch_rejected(backend):
+    """SUBSTRUCT_TYPE in the TLV must match the APDU type byte."""
+    sol = SolanaClient(backend)
+
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        substructures_hash=b'\x00' * 32,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    # Build a DISPLAY_FIELD with SUBSTRUCT_TYPE=0x01 (VALUE_FLOW_PORT) mismatch
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, BRIDGE_PATH_U32))
+    param_raw = (format_tlv(PARAM_TAG_VERSION, 1)
+                 + format_tlv(PARAM_TAG_VALUE, value_tlv))
+    bad_display_field = (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+                         + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, 0x01)  # wrong!
+                         + format_tlv(DISPLAY_FIELD_TAG_NAME, "Amount")
+                         + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_RAW)
+                         + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_raw))
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, bad_display_field)
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
 

@@ -33,6 +33,7 @@
 #include "clear_signing/handle_provide_token_account_state.h"
 #include "clear_signing/handle_provide_alt_resolution.h"
 #include "clear_signing/handle_sign_message_generic_preview.h"
+#include "clear_signing/handle_finalize_generic_clear_signing.h"
 #include "clear_signing/handle_prompt_ui_display.h"
 #include "apdu.h"
 #include "ui_api.h"
@@ -127,6 +128,13 @@ static int handle_apdu(int rx) {
                 return io_send_sw(ApduReplySdkNotSupported);
             }
             return handle_prompt_ui_display();
+
+        case InsFinalizeGenericClearSigning:
+            if (G_called_from_swap) {
+                PRINTF("Finalize generic clear signing not supported in swap context\n");
+                return io_send_sw(ApduReplySdkNotSupported);
+            }
+            return handle_finalize_generic_clear_signing();
 
         case InsSignOffchainMessage:
             return handle_sign_offchain_message();
