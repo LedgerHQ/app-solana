@@ -7,7 +7,7 @@
 #include "globals.h"
 #include "tlv_library.h"
 #include "cs_value.h"
-#include "clear_signing_context.h"
+#include "cs_instruction_template.h"
 #include "cs_substructure.h"
 
 #define SUBSTRUCTURE_TYPE_DISPLAY_FIELD   0x00
@@ -113,7 +113,7 @@ static int register_display_field(const uint8_t *tlv, size_t tlv_size) {
         return 0;
     }
 
-    if (clear_signing_context_add_display_path(value.payload, value.payload_size) != 0) {
+    if (cs_instruction_template_add_display_path(value.payload, value.payload_size) != 0) {
         return -1;
     }
     PRINTF("substructure: registered display path %.*H\n", value.payload_size, value.payload);
@@ -123,14 +123,9 @@ static int register_display_field(const uint8_t *tlv, size_t tlv_size) {
 int handle_provide_instruction_substructure(void) {
     PRINTF("handle_provide_instruction_substructure\n");
 
-    cs_instruction_template_t *template = clear_signing_context_current_template();
-    if (template == NULL) {
+    if (cs_instruction_template_current() == NULL) {
         PRINTF("substructure: no instruction template open\n");
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);
-    }
-    if (template->complete) {
-        PRINTF("substructure: current template already complete\n");
-        return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
     }
     if (G_command.message_length < 1) {
         PRINTF("substructure: empty payload\n");
@@ -161,8 +156,11 @@ int handle_provide_instruction_substructure(void) {
         return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
     }
     if (complete) {
-        template->complete = true;
-        PRINTF("substructure: running hash matched, template complete\n");
+        if (cs_instruction_template_commit() != 0) {
+            PRINTF("substructure: template commit refused\n");
+            return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
+        }
+        PRINTF("substructure: running hash matched, template committed\n");
     } else {
         PRINTF("substructure: hash not yet matched, awaiting more substructures\n");
     }

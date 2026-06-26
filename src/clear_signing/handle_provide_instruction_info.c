@@ -12,8 +12,7 @@
 #include "ledger_pki.h"
 #include "tlv_library.h"
 #include "cs_value.h"
-#include "clear_signing_context.h"
-#include "cs_substructure.h"
+#include "cs_instruction_template.h"
 
 #define MAX_DISCRIMINATOR_SIZE    8
 #define MAX_OPERATION_TYPE_LENGTH 64
@@ -237,7 +236,8 @@ int handle_provide_instruction_info(void) {
     PRINTF("idl_root_type      = %d\n", tlv_extracted.idl_root_type);
 
     // A SIGN MESSAGE GENERIC PREVIEW (0x0A) must have opened the context first.
-    cs_instruction_template_t *template = clear_signing_context_new_template();
+    cs_instruction_template_t *template =
+        cs_instruction_template_open(tlv_extracted.substructures_hash);
     if (template == NULL) {
         PRINTF("Error: no clear-signing context or template capacity exhausted\n");
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);
@@ -249,7 +249,6 @@ int handle_provide_instruction_info(void) {
     memcpy(template->idl_type_pool, tlv_extracted.idl_type_pool, tlv_extracted.idl_type_pool_size);
     template->idl_type_pool_size = tlv_extracted.idl_type_pool_size;
     template->idl_root_type = tlv_extracted.idl_root_type;
-    cs_substructure_begin(tlv_extracted.substructures_hash);
 
     return io_send_sw(ApduReplySuccess);
 }

@@ -3,6 +3,7 @@
 
 #include "handle_prompt_ui_display.h"
 #include "clear_signing_context.h"
+#include "cs_instruction_template.h"
 #include "apdu.h"
 #include "globals.h"
 #include "io.h"
@@ -64,9 +65,9 @@ static int walk_transaction(void) {
         const uint8_t *program_id = header.pubkeys[instruction.program_id_index].data;
 
         const cs_instruction_template_t *template =
-            clear_signing_context_find_template(program_id,
-                                                instruction.data,
-                                                instruction.data_length);
+            cs_instruction_template_find(program_id,
+                                         instruction.data,
+                                         instruction.data_length);
         if (template == NULL) {
             PRINTF("prompt ui: no template for instruction %d, refusing to sign\n", i);
             return -1;
@@ -100,16 +101,17 @@ int handle_prompt_ui_display(void) {
         return io_send_sw(ApduReplySdkInvalidParameter);
     }
 
-    if (G_clear_signing_context == NULL || G_clear_signing_context->template_count == 0) {
+    if (G_clear_signing_context == NULL) {
         PRINTF("prompt ui: no clear-signing context\n");
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);
     }
-
-    for (uint8_t i = 0; i < G_clear_signing_context->template_count; i++) {
-        if (!G_clear_signing_context->templates[i].complete) {
-            PRINTF("prompt ui: template %d incomplete\n", i);
-            return io_send_sw(ApduReplySolanaClearSigningIncomplete);
-        }
+    if (cs_instruction_template_pending()) {
+        PRINTF("prompt ui: an instruction template was never completed\n");
+        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+    }
+    if (cs_instruction_template_committed_count() == 0) {
+        PRINTF("prompt ui: no instruction templates provided\n");
+        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
     }
 
     int status = walk_transaction();
