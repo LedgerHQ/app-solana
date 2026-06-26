@@ -66,7 +66,7 @@ venv && pytest tests/python/ --device flex -s 2>&1 | tools/valground.py -q
 
 ### Pure Solana code (libsol)
 The Libsol is independent of the SDK features (PKI, NBGL, etc) and contains code purely related to the Solana blockchain. (except `libsol/mock/` for tests).
-Despite PRINTF being a SDK API, they are available in libsol and shall be used as in other modules
+PRINTF, dynamic allocation, and hashing are available in libsol by mock.
 
 1. `message.c` → parse header/accounts
 2. `instruction.c` → identify programs
@@ -109,11 +109,10 @@ Coding patterns described here are more important than uniformity cross applicat
 
 ### Logging
 
-- Never assume code is correct on first try, writing logs is mandatory to verify execution flow
+- Never assume code is correct on first try, writing logs is mandatory to verify execution flow, `PRINTF` are the only way to trace execution and are meant to be permanent
 - Trace logs (no variables): Use `PRINTF("Function entered or choice taken\n")` in key dispatch logic (e.g., APDU handlers, main switch cases)
 - Variable logs: Use `PRINTF("variable_name=%d\n", var)` or `PRINTF("buffer=%.*H\n", len, buf)` in calculations and new code
-- Log all error returns.
-- PRINTF are meant to be permanent.
+- Log ALL error returns. No `return -1` shall exist without an associated `PRINTF`
 
 ### Coding conventions
 
@@ -124,6 +123,7 @@ Coding patterns described here are more important than uniformity cross applicat
 - Comments are RARE, CONCISE, and STRAIGHT TO THE POINT
 - No goto: if a function needs exit cleaning logic, split in inner / outer.
 - Functions and variables should have clear explicit names without abbreviation. BAD: `idl_leaf_cb_t cb`, GOOD: `idl_leaf_cb_t leaf_callback`.
+- Functions called in a wrong context shall return an error, not ignore or skip
 
 ### Chain of trust
 

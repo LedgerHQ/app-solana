@@ -13,6 +13,7 @@
 #include "tlv_library.h"
 #include "cs_value.h"
 #include "clear_signing_context.h"
+#include "cs_substructure.h"
 
 #define MAX_DISCRIMINATOR_SIZE    8
 #define MAX_OPERATION_TYPE_LENGTH 64
@@ -248,10 +249,7 @@ int handle_provide_instruction_info(void) {
     memcpy(template->idl_type_pool, tlv_extracted.idl_type_pool, tlv_extracted.idl_type_pool_size);
     template->idl_type_pool_size = tlv_extracted.idl_type_pool_size;
     template->idl_root_type = tlv_extracted.idl_root_type;
-    memcpy(template->substructures_hash,
-           tlv_extracted.substructures_hash,
-           sizeof(template->substructures_hash));
-    cx_sha256_init(&template->substructures_ctx);
+    cs_substructure_begin(tlv_extracted.substructures_hash);
 
     return io_send_sw(ApduReplySuccess);
 }

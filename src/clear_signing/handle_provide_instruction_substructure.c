@@ -1,5 +1,4 @@
 #include <os.h>
-#include <cx.h>
 #include <string.h>
 
 #include "handle_provide_instruction_substructure.h"
@@ -9,6 +8,7 @@
 #include "tlv_library.h"
 #include "cs_value.h"
 #include "clear_signing_context.h"
+#include "cs_substructure.h"
 
 #define SUBSTRUCTURE_TYPE_DISPLAY_FIELD   0x00
 #define SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT 0x01
@@ -142,7 +142,10 @@ int handle_provide_instruction_substructure(void) {
     size_t tlv_size = (size_t) G_command.message_length - 1;
 
     // Accumulate the substructure TLV (type byte excluded) into the running hash.
-    CX_ASSERT(cx_hash_update((cx_hash_t *) &template->substructures_ctx, tlv, tlv_size));
+    if (cs_substructure_update(tlv, tlv_size) != 0) {
+        PRINTF("substructure: hash accumulation refused\n");
+        return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
+    }
 
     // Only DISPLAY_FIELD is interpreted in this slice; the other substructure
     // types contribute to the hash but are not decoded.
@@ -152,12 +155,12 @@ int handle_provide_instruction_substructure(void) {
         }
     }
 
-    // Clone the accumulator, finalize, and compare against the signed target.
-    cx_sha256_t finalize_ctx;
-    memcpy(&finalize_ctx, &template->substructures_ctx, sizeof(finalize_ctx));
-    uint8_t running_hash[CX_SHA256_SIZE];
-    CX_ASSERT(cx_hash_final((cx_hash_t *) &finalize_ctx, running_hash));
-    if (memcmp(running_hash, template->substructures_hash, CX_SHA256_SIZE) == 0) {
+    bool complete = false;
+    if (cs_substructure_check_complete(&complete) != 0) {
+        PRINTF("substructure: completeness check refused\n");
+        return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
+    }
+    if (complete) {
         template->complete = true;
         PRINTF("substructure: running hash matched, template complete\n");
     } else {

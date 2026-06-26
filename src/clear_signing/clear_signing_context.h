@@ -18,8 +18,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "cx.h"
-
 // Fixed capacities. Inputs exceeding these fail closed rather than truncate.
 #define CS_MAX_INSTRUCTION_TEMPLATES 4
 #define CS_MAX_IDL_TYPE_POOL_SIZE    512
@@ -44,11 +42,9 @@ typedef struct cs_instruction_template_s {
     uint8_t idl_type_pool[CS_MAX_IDL_TYPE_POOL_SIZE];
     size_t idl_type_pool_size;
     uint8_t idl_root_type;
-    uint8_t substructures_hash[32];   // target hash from the signed INSTRUCTION_INFO
-    cx_sha256_t substructures_ctx;    // running accumulator over received substructures
     cs_display_field_t display_fields[CS_MAX_DISPLAY_FIELDS];
     uint8_t display_field_count;
-    bool complete;                    // running hash has matched substructures_hash
+    bool complete;                    // substructure hash accumulator matched the committed target
 } cs_instruction_template_t;
 
 typedef struct clear_signing_context_s {
