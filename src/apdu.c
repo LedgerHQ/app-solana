@@ -42,6 +42,7 @@ static int parse_apdu_header(const uint8_t *apdu_message,
         case InsSignMessageDelayed:
         case InsSignMessageGenericPreview:
         case InsPromptUiDisplay:
+        case InsFinalizeGenericClearSigning:
         case InsTrustedInfoProvideInstructionDescriptor:
         case InsTrustedInfoGetChallenge:
         case InsTrustedInfoProvideInfo:
@@ -128,6 +129,7 @@ static bool instruction_with_derivation_path_in_first_apdu(uint8_t instruction) 
             instruction != InsTrustedInfoProvideDynamicDescriptor &&
             instruction != InsTrustedInfoProvideInstructionDescriptor &&
             instruction != InsPromptUiDisplay &&
+            instruction != InsFinalizeGenericClearSigning &&
             instruction != InsProvideInstructionSubstructure &&
             instruction != InsProvideEnumVariant &&
             instruction != InsProvideInstructionInfo &&
@@ -142,6 +144,7 @@ static bool instruction_with_derivation_path_in_first_apdu(uint8_t instruction) 
 static bool instruction_without_payload(uint8_t instruction) {
     return (instruction == InsDeprecatedGetAppConfiguration ||
             instruction == InsPromptUiDisplay ||
+            instruction == InsFinalizeGenericClearSigning ||
             instruction == InsGetAppConfiguration ||
             instruction == InsTrustedInfoGetChallenge);
 }

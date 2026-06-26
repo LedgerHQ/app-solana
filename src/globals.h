@@ -63,6 +63,7 @@ typedef enum InstructionCode {
     InsSignMessageDelayed = 0x09,
     InsSignMessageGenericPreview = 0x0A,
     InsPromptUiDisplay = 0x0B,
+    InsFinalizeGenericClearSigning = 0x0C,
     InsTrustedInfoProvideInstructionDescriptor = 0x16,
     InsTrustedInfoGetChallenge = 0x20,
     InsTrustedInfoProvideInfo = 0x21,
@@ -70,9 +71,9 @@ typedef enum InstructionCode {
 #ifdef HAVE_TRANSACTION_CHECKS
     InsProvideTransactionCheck = 0x23,
 #endif
-    InsProvideInstructionSubstructure = 0x24,
-    InsProvideEnumVariant = 0x25,
-    InsProvideInstructionInfo = 0x26,
+    InsProvideInstructionInfo = 0x24,
+    InsProvideInstructionSubstructure = 0x25,
+    InsProvideEnumVariant = 0x26,
     InsProvideTokenAccountState = 0x27,
     InsProvideAltResolution = 0x28,
 } InstructionCode;

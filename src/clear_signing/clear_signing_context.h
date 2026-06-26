@@ -9,12 +9,14 @@
 // are consumed at PROMPT UI DISPLAY (0x0B) time and released together by
 // clear_signing_context_reset().
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 typedef struct clear_signing_context_s {
     uint8_t *transaction;   // heap copy of the serialized message captured at 0x0A
     size_t transaction_size;
+    bool finalized;         // set by FINALIZE GENERIC CLEAR SIGNING after validation
 } clear_signing_context_t;
 
 extern clear_signing_context_t *G_clear_signing_context;

@@ -33,14 +33,15 @@ class INS(IntEnum):
     INS_SIGN_MESSAGE_DELAYED = 0x09
     INS_SIGN_MESSAGE_GENERIC_PREVIEW = 0x0A
     INS_PROMPT_UI_DISPLAY = 0x0B
+    INS_FINALIZE_GENERIC_CLEAR_SIGNING = 0x0C
     INS_INSTRUCTION_DESCRIPTOR = 0x16
     INS_GET_CHALLENGE = 0x20
     INS_TRUSTED_INFO = 0x21
     INS_DYNAMIC_TOKEN = 0x22
     INS_TRANSACTION_CHECK = 0x23
-    INS_INSTRUCTION_SUBSTRUCTURE = 0x24
-    INS_ENUM_VARIANT = 0x25
-    INS_INSTRUCTION_INFO = 0x26
+    INS_INSTRUCTION_INFO = 0x24
+    INS_INSTRUCTION_SUBSTRUCTURE = 0x25
+    INS_ENUM_VARIANT = 0x26
     INS_TOKEN_ACCOUNT_STATE = 0x27
     INS_ALT_RESOLUTION = 0x28
 
@@ -575,6 +576,9 @@ class SolanaClient:
                                           P1_NON_CONFIRM, p2, chunk)
         return rapdu
 
+
+    def finalize_generic_clear_signing(self) -> RAPDU:
+        return self._client.exchange(CLA, INS.INS_FINALIZE_GENERIC_CLEAR_SIGNING, P1_NON_CONFIRM, P2_NONE, b"")
 
     def prompt_ui_display(self) -> RAPDU:
         return self._client.exchange(CLA, INS.INS_PROMPT_UI_DISPLAY, P1_NON_CONFIRM, P2_NONE, b"")
