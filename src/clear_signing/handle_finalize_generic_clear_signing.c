@@ -4,6 +4,7 @@
 #include "handle_finalize_generic_clear_signing.h"
 #include "cs_transaction.h"
 #include "cs_merge_engine.h"
+#include "cs_display_renderer.h"
 #include "cs_instruction_template.h"
 #include "apdu.h"
 #include "globals.h"
@@ -60,7 +61,7 @@ static int walk_transaction(cs_instruction_result_t *walked_instructions,
         int walk_status = idl_walker_run(
             instruction.data,
             instruction.data_length,
-            template->display_fields,
+            (const idl_match_path_t *) template->display_fields,
             template->display_field_count,
             walked_instructions[*walked_instructions_count].resolved,
             &walked_instructions[*walked_instructions_count].resolved_count);
@@ -93,7 +94,7 @@ int handle_finalize_generic_clear_signing(void) {
         PRINTF("finalize cs: no clear-signing context\n");
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);
     }
-    if (cs_merge_engine_element_count() > 0) {
+    if (cs_merge_engine_finalized()) {
         PRINTF("finalize cs: already finalized\n");
         return io_send_sw(ApduReplySdkInvalidParameter);
     }
@@ -117,6 +118,13 @@ int handle_finalize_generic_clear_signing(void) {
 
     if (cs_merge_engine_run(walked_instructions, walked_instructions_count) != 0) {
         PRINTF("finalize cs: merge engine failed\n");
+        cs_transaction_reset();
+        return io_send_sw(ApduReplySolanaInvalidGenericPreview);
+    }
+
+    // MVP: all instructions survived merge — render them all
+    if (cs_display_renderer_run(walked_instructions, walked_instructions_count) != 0) {
+        PRINTF("finalize cs: display renderer failed\n");
         cs_transaction_reset();
         return io_send_sw(ApduReplySolanaInvalidGenericPreview);
     }
