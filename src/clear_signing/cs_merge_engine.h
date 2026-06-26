@@ -2,16 +2,16 @@
 
 // Display merge engine for clear signing.
 //
-// Folds the captured transaction and its matched instruction templates into the
-// key/value elements rendered at PROMPT UI DISPLAY (0x0B). The presence of at
+// Receives the per-instruction resolved leaf values produced by walking the
+// transaction and decides which display elements to emit. The presence of at
 // least one produced element is the session's "finalized" marker: PROMPT UI
 // DISPLAY refuses to render until the engine has run.
-//
-// This is a shell. It currently emits a single element with hardcoded strings;
-// the real engine will merge walked argument values into the template display
-// fields.
 
 #include <stddef.h>
+#include <stdint.h>
+
+#include "idl_leaf_collector.h"
+#include "cs_instruction_template.h"
 
 #define CS_MAX_DISPLAY_ELEMENTS 8
 #define CS_DISPLAY_TITLE_SIZE   32
@@ -23,9 +23,16 @@ typedef struct cs_display_element_s {
     char value[CS_DISPLAY_VALUE_SIZE];
 } cs_display_element_t;
 
-// Build the display elements for the current session. Returns 0 on success, -1
-// on allocation failure (engine left empty). Discards any previous output.
-int cs_merge_engine_run(void);
+// Per-instruction walk result: the template that matched and the collected
+// display-field leaf values resolved during the walk.
+typedef struct cs_instruction_result_s {
+    const cs_instruction_template_t *template;
+    idl_leaf_collector_t collected;
+} cs_instruction_result_t;
+
+// Build the display elements from instruction results. Returns 0 on success,
+// -1 on failure (engine left empty). Discards any previous output.
+int cs_merge_engine_run(const cs_instruction_result_t *results, size_t result_count);
 
 // Number of produced display elements. Zero means the engine has not run, which
 // the session treats as "not finalized".
