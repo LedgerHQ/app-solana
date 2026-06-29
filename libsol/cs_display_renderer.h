@@ -11,8 +11,8 @@
 
 #include "cs_merge_engine.h"
 
-#define CS_MAX_DISPLAY_ELEMENTS 8
-#define CS_DISPLAY_TITLE_SIZE   32
+#define CS_MAX_DISPLAY_ELEMENTS 20
+#define CS_DISPLAY_TITLE_SIZE   48
 #define CS_DISPLAY_VALUE_SIZE   64
 
 // One key/value pair rendered on the review screen.

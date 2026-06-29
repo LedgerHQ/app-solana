@@ -126,6 +126,7 @@ Coding patterns described here are more important than uniformity cross applicat
 - Functions and variables should have clear explicit names without abbreviation. BAD: `idl_leaf_cb_t cb`, GOOD: `idl_leaf_cb_t leaf_callback`.
 - Functions called in a wrong context shall return an error, not ignore or skip
 - Do not use shortcut variables to avoid writing long access path.
+- Always write the full access path at each use site. Do not introduce a local pointer or variable solely to shorten repeated access ; if a long access path is repeated, it is a sign that a sub function should handle the logic.
 - Never write functions in header files.
 - Do not rely on C implicit struct copy, use a memcpy to highlight deep copy behavior.
 

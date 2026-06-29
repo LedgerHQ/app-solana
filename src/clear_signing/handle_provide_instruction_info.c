@@ -246,6 +246,9 @@ int handle_provide_instruction_info(void) {
     memcpy(template->program_id, tlv_extracted.program_id, sizeof(template->program_id));
     memcpy(template->discriminator, tlv_extracted.discriminator, tlv_extracted.discriminator_size);
     template->discriminator_size = (uint8_t) tlv_extracted.discriminator_size;
+    strlcpy(template->operation_type,
+            tlv_extracted.operation_type,
+            sizeof(template->operation_type));
     memcpy(template->idl_type_pool, tlv_extracted.idl_type_pool, tlv_extracted.idl_type_pool_size);
     template->idl_type_pool_size = tlv_extracted.idl_type_pool_size;
     template->idl_root_type = tlv_extracted.idl_root_type;

@@ -65,7 +65,9 @@ cs_instruction_template_t *cs_instruction_template_current(void) {
     return G_template_table->builder;
 }
 
-int cs_instruction_template_add_display_path(const uint8_t *path, size_t path_size) {
+int cs_instruction_template_add_display_path(const uint8_t *path,
+                                             size_t path_size,
+                                             const char *name) {
     cs_instruction_template_t *builder = cs_instruction_template_current();
     if (builder == NULL) {
         PRINTF("cs_instruction_template_add_display_path: no builder open\n");
@@ -86,6 +88,11 @@ int cs_instruction_template_add_display_path(const uint8_t *path, size_t path_si
     cs_display_field_t *field = &builder->display_fields[builder->display_field_count];
     memcpy(field->path, path, path_size);
     field->path_size = (uint8_t) path_size;
+    if (name != NULL) {
+        strlcpy(field->name, name, sizeof(field->name));
+    } else {
+        field->name[0] = '\0';
+    }
     builder->display_field_count++;
     return 0;
 }

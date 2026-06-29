@@ -583,6 +583,11 @@ class SolanaClient:
     def prompt_ui_display(self) -> RAPDU:
         return self._client.exchange(CLA, INS.INS_PROMPT_UI_DISPLAY, P1_NON_CONFIRM, P2_NONE, b"")
 
+    @contextmanager
+    def send_prompt_ui_display(self) -> Generator[None, None, None]:
+        with self._client.exchange_async(CLA, INS.INS_PROMPT_UI_DISPLAY, P1_NON_CONFIRM, P2_NONE, b""):
+            yield
+
 
     def get_public_key(self, derivation_path: bytes) -> bytes:
         public_key: RAPDU = self._client.exchange(CLA, INS.INS_GET_PUBKEY,

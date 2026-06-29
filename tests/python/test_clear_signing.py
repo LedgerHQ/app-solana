@@ -403,11 +403,9 @@ def _bridge_instruction_data(u32_value: int, u64_value: int) -> bytes:
     return BRIDGE_DISCRIMINATOR + struct.pack("<I", u32_value) + struct.pack("<Q", u64_value)
 
 
-def test_bridge_walks_instruction(backend):
-    """End-to-end MVP bridge: the walker decodes the synthetic instruction and the
-    leaf callback resolves the DISPLAY_FIELD for the u32 leaf. No UI yet, so every
-    step returns 0x9000."""
-    sol = SolanaClient(backend)
+def test_bridge_walks_instruction(backend, sol, scenario_navigator, root_pytest_dir):
+    """End-to-end MVP bridge: the walker decodes the synthetic instruction,
+    the display renderer formats the u32 leaf, and NBGL review is navigated."""
 
     message = _craft_single_instruction_message(sol,
                                                 BRIDGE_PROGRAM_ID,
@@ -431,8 +429,10 @@ def test_bridge_walks_instruction(backend):
     rapdu = sol.finalize_generic_clear_signing()
     assert rapdu.status == 0x9000
 
-    rapdu = sol.prompt_ui_display()
-    assert rapdu.status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
 
 
 def test_bridge_prompt_without_complete_substructures_rejected(backend):
