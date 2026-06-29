@@ -16,10 +16,10 @@
 // Walk every transaction instruction against the IDL type pool of its matching
 // template, collecting the display-field leaf values into per-instruction
 // results for the merge engine. Every instruction must resolve to a template.
-static int walk_transaction(cs_instruction_result_t *walked_instructions,
+static int walk_transaction(const cs_transaction_t *cs_tx,
+                            cs_instruction_result_t *walked_instructions,
                             size_t *walked_instructions_count) {
-    Parser parser = {G_cs_transaction->transaction,
-                     G_cs_transaction->transaction_size};
+    Parser parser = {cs_tx->transaction, cs_tx->transaction_size};
     MessageHeader header;
     if (parse_message_header(&parser, &header) != 0) {
         PRINTF("finalize cs: failed to parse buffered transaction\n");
@@ -90,13 +90,10 @@ int handle_finalize_generic_clear_signing(void) {
         return io_send_sw(ApduReplySdkInvalidParameter);
     }
 
-    if (G_cs_transaction == NULL) {
+    const cs_transaction_t *cs_tx = cs_transaction_get();
+    if (cs_tx == NULL) {
         PRINTF("finalize cs: no clear-signing context\n");
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);
-    }
-    if (cs_merge_engine_finalized()) {
-        PRINTF("finalize cs: already finalized\n");
-        return io_send_sw(ApduReplySdkInvalidParameter);
     }
     if (cs_instruction_template_pending()) {
         PRINTF("finalize cs: an instruction template was never completed\n");
@@ -110,20 +107,20 @@ int handle_finalize_generic_clear_signing(void) {
     cs_instruction_result_t walked_instructions[CS_MAX_INSTRUCTION_TEMPLATES];
     size_t walked_instructions_count = 0;
 
-    if (walk_transaction(walked_instructions, &walked_instructions_count) != 0) {
+    if (walk_transaction(cs_tx, walked_instructions, &walked_instructions_count) != 0) {
         PRINTF("finalize cs: walk engine failed\n");
         cs_transaction_reset();
         return io_send_sw(ApduReplySolanaInvalidGenericPreview);
     }
 
-    if (cs_merge_engine_run(walked_instructions, walked_instructions_count) != 0) {
+    bool survivors[CS_MAX_INSTRUCTION_TEMPLATES];
+    if (cs_merge_engine_run(walked_instructions, walked_instructions_count, survivors) != 0) {
         PRINTF("finalize cs: merge engine failed\n");
         cs_transaction_reset();
         return io_send_sw(ApduReplySolanaInvalidGenericPreview);
     }
 
-    // MVP: all instructions survived merge — render them all
-    if (cs_display_renderer_run(walked_instructions, walked_instructions_count) != 0) {
+    if (cs_display_renderer_run(walked_instructions, walked_instructions_count, survivors) != 0) {
         PRINTF("finalize cs: display renderer failed\n");
         cs_transaction_reset();
         return io_send_sw(ApduReplySolanaInvalidGenericPreview);

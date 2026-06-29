@@ -18,14 +18,6 @@ int handle_prompt_ui_display(void) {
         return io_send_sw(ApduReplySdkInvalidParameter);
     }
 
-    if (G_cs_transaction == NULL) {
-        PRINTF("prompt ui: no clear-signing context\n");
-        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
-    }
-    if (!cs_merge_engine_finalized()) {
-        PRINTF("prompt ui: session not finalized\n");
-        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
-    }
     if (cs_display_renderer_element_count() == 0) {
         PRINTF("prompt ui: no display elements produced\n");
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);
