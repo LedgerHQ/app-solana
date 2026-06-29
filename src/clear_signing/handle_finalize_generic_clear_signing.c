@@ -12,6 +12,7 @@
 #include "sol/parser.h"
 #include "idl_pool.h"
 #include "idl_walker.h"
+#include "idl_kinds.h"
 
 // Walk every transaction instruction against the IDL type pool of its matching
 // template, collecting the display-field leaf values into per-instruction
@@ -57,17 +58,33 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
             return -1;
         }
 
-        // Run walker on received instruction, take as input the instruction + display template
-        int walk_status = idl_walker_run(
-            instruction.data,
-            instruction.data_length,
-            (const idl_match_path_t *) template->display_fields,
-            template->display_field_count,
-            walked_instructions[*walked_instructions_count].resolved,
-            &walked_instructions[*walked_instructions_count].resolved_count);
+        // Build a compact array of only ARGUMENT_PATH entries for the walker,
+        // tracking which original indices they came from.
+        idl_match_path_t argument_paths[CS_MAX_DISPLAY_FIELDS];
+        uint8_t argument_indices[CS_MAX_DISPLAY_FIELDS];
+        uint8_t argument_count = 0;
+        for (uint8_t f = 0; f < template->display_field_count; f++) {
+            if (template->display_fields[f].source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+                memcpy(argument_paths[argument_count].path,
+                       template->display_fields[f].argument.path,
+                       template->display_fields[f].argument.path_size);
+                argument_paths[argument_count].path_size =
+                    template->display_fields[f].argument.path_size;
+                argument_indices[argument_count] = f;
+                argument_count++;
+            }
+        }
 
-        // IDL pool has been used for this descriptor.
-        // we can free the memory now because host is required to re-provide even if same
+        // Run walker only on the ARGUMENT_PATH subset
+        idl_resolved_leaf_t walker_results[CS_MAX_DISPLAY_FIELDS];
+        uint8_t walker_resolved_count = 0;
+        int walk_status = idl_walker_run(instruction.data,
+                                         instruction.data_length,
+                                         argument_paths,
+                                         argument_count,
+                                         walker_results,
+                                         &walker_resolved_count);
+
         idl_pool_reset();
 
         if (walk_status != 0) {
@@ -75,8 +92,42 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
             return -1;
         }
 
-        // Forward the template that matched for the merge engine down the line
-        walked_instructions[*walked_instructions_count].template = template;
+        // Initialize full resolved array then scatter walker results back
+        cs_instruction_result_t *result = &walked_instructions[*walked_instructions_count];
+        memset(result->resolved, 0, sizeof(result->resolved));
+        result->resolved_count = template->display_field_count;
+
+        for (uint8_t w = 0; w < argument_count; w++) {
+            result->resolved[argument_indices[w]] = walker_results[w];
+        }
+
+        // Resolve ACCOUNT_PATH fields from the instruction's accounts array
+        for (uint8_t f = 0; f < template->display_field_count; f++) {
+            if (template->display_fields[f].source != CS_VALUE_SOURCE_ACCOUNT_PATH) {
+                continue;
+            }
+            uint8_t account_index = template->display_fields[f].account.index;
+            if (account_index >= instruction.accounts_length) {
+                PRINTF("finalize cs: instruction %d account_index %d out of range (%d)\n",
+                       i,
+                       account_index,
+                       instruction.accounts_length);
+                return -1;
+            }
+            uint8_t pubkey_index = instruction.accounts[account_index];
+            if (pubkey_index >= header.pubkeys_header.pubkeys_length) {
+                PRINTF("finalize cs: instruction %d pubkey_index %d out of range (%d)\n",
+                       i,
+                       pubkey_index,
+                       header.pubkeys_header.pubkeys_length);
+                return -1;
+            }
+            result->resolved[f].kind = IDL_KIND_PUBKEY_32;
+            result->resolved[f].value = header.pubkeys[pubkey_index].data;
+            result->resolved[f].value_size = 32;
+        }
+
+        result->template = template;
         (*walked_instructions_count)++;
     }
     return 0;

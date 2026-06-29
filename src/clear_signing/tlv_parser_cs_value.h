@@ -6,9 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define VALUE_SOURCE_ARGUMENT_PATH 0x00
-#define VALUE_SOURCE_ACCOUNT_PATH  0x01
-#define VALUE_SOURCE_CONSTANT      0x02
+#include "sol/cs_value_source.h"
 
 #define CS_VALUE_MAX_PAYLOAD_LENGTH 64
 

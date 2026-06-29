@@ -144,6 +144,118 @@ static void test_alloc_failure(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+static void test_header_value_with_program_name(void) {
+    printf("  test_header_value_with_program_name\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+    init_dummy_template();
+    strlcpy(G_dummy_template.program_name, "Jupiter", sizeof(G_dummy_template.program_name));
+
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &G_dummy_template;
+    instr.resolved_count = 0;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 1);
+
+    const cs_display_element_t *header = cs_display_renderer_element(0);
+    assert(strcmp(header->title, "[1/1] Transfer") == 0);
+    assert(strcmp(header->value, "Program: Jupiter") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_header_value_fallback_to_program_address(void) {
+    printf("  test_header_value_fallback_to_program_address\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+    init_dummy_template();
+    // program_name left empty (zeroed by init_dummy_template)
+    // Set a known program_id: all-ones gives a deterministic base58
+    memset(G_dummy_template.program_id, 1, 32);
+
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &G_dummy_template;
+    instr.resolved_count = 0;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 1);
+
+    const cs_display_element_t *header = cs_display_renderer_element(0);
+    assert(strcmp(header->title, "[1/1] Transfer") == 0);
+    // Verify it starts with "Program: " and contains a base58 address
+    assert(strncmp(header->value, "Program: ", 9) == 0);
+    // The address part should be non-empty
+    assert(strlen(header->value) > 9);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_mixed_argument_and_account_fields(void) {
+    printf("  test_render_mixed_argument_and_account_fields\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    memset(&template, 0, sizeof(template));
+    strlcpy(template.operation_type, "Swap", sizeof(template.operation_type));
+    strlcpy(template.program_name, "Jupiter", sizeof(template.program_name));
+
+    // Field 0: ACCOUNT_PATH (resolved to pubkey externally)
+    template.display_fields[0].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
+    template.display_fields[0].account.index = 2;
+    strlcpy(template.display_fields[0].name, "Destination", sizeof(template.display_fields[0].name));
+
+    // Field 1: ARGUMENT_PATH (resolved by walker to u32)
+    template.display_fields[1].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    strlcpy(template.display_fields[1].name, "Amount", sizeof(template.display_fields[1].name));
+
+    template.display_field_count = 2;
+
+    // Build the resolved array as walk_transaction would produce it
+    uint8_t pubkey[32];
+    memset(pubkey, 0x42, 32);
+    uint8_t amount_bytes[] = {0xE8, 0x03, 0x00, 0x00};  // 1000
+
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved_count = 2;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = pubkey;
+    instr.resolved[0].value_size = 32;
+    instr.resolved[1].kind = IDL_KIND_U32;
+    instr.resolved[1].value = amount_bytes;
+    instr.resolved[1].value_size = 4;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    // 1 header + 2 content fields = 3 elements
+    assert(cs_display_renderer_element_count() == 3);
+
+    const cs_display_element_t *header = cs_display_renderer_element(0);
+    assert(strcmp(header->title, "[1/1] Swap") == 0);
+    assert(strcmp(header->value, "Program: Jupiter") == 0);
+
+    const cs_display_element_t *dest = cs_display_renderer_element(1);
+    assert(strcmp(dest->title, "Destination") == 0);
+    // Value should be a base58-encoded pubkey (all 0x42 bytes)
+    assert(strlen(dest->value) > 0);
+
+    const cs_display_element_t *amount = cs_display_renderer_element(2);
+    assert(strcmp(amount->title, "Amount") == 0);
+    assert(strcmp(amount->value, "1000") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 int main(void) {
     printf("cs_display_renderer_test\n");
     test_initial_state();
@@ -152,6 +264,9 @@ int main(void) {
     test_render_skips_null_value();
     test_render_empty_input();
     test_alloc_failure();
+    test_header_value_with_program_name();
+    test_header_value_fallback_to_program_address();
+    test_render_mixed_argument_and_account_fields();
     printf("  All passed!\n");
     return 0;
 }

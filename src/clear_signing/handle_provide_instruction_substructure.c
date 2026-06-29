@@ -140,8 +140,23 @@ static int register_display_field(uint8_t apdu_type, const uint8_t *tlv, size_t 
     }
 
     // Only ARGUMENT_PATH-sourced fields carry a walker path to match against.
-    if (value.source != VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: DISPLAY_FIELD source %d carries no argument path\n", value.source);
+    // ACCOUNT_PATH fields carry a single account_index resolved at finalize time.
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        if (value.payload_size != 1) {
+            PRINTF("substructure: ACCOUNT_PATH payload size %d != 1\n", value.payload_size);
+            return -1;
+        }
+        const char *field_name = display_field.name[0] != '\0' ? display_field.name : NULL;
+        if (cs_instruction_template_add_account_field(value.payload[0], field_name) != 0) {
+            return -1;
+        }
+        PRINTF("substructure: registered account field index=%d name=%s\n",
+               value.payload[0],
+               field_name ? field_name : "(none)");
+        return 0;
+    }
+    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("substructure: DISPLAY_FIELD source %d not supported\n", value.source);
         return 0;
     }
 
