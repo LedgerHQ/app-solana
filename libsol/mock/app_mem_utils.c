@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "app_mem_utils.h"
 
@@ -77,4 +78,22 @@ void mock_mem_free_and_null(void **ptr) {
     }
     mock_mem_free(*ptr);
     *ptr = NULL;
+}
+
+bool mock_mem_calloc(void **ptr, size_t size) {
+    if (ptr == NULL) {
+        return false;
+    }
+    // Free any previous allocation before allocating a new one
+    if (*ptr != NULL) {
+        mock_mem_free(*ptr);
+        *ptr = NULL;
+    }
+    void *new_ptr = mock_mem_alloc(size);
+    if (new_ptr == NULL) {
+        return false;
+    }
+    memset(new_ptr, 0, size);
+    *ptr = new_ptr;
+    return true;
 }

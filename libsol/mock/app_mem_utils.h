@@ -8,6 +8,7 @@
 // APP_MEM_* macros onto a malloc-backed allocator that supports out-of-space
 // fault injection and outstanding-allocation accounting (for leak detection).
 
+#include <stdbool.h>
 #include <stddef.h>
 
 void *mock_mem_alloc(size_t size);
@@ -31,3 +32,6 @@ size_t mock_mem_outstanding(void);
 #define APP_MEM_REALLOC(ptr, size) mock_mem_realloc(ptr, size)
 #define APP_MEM_FREE(ptr)          mock_mem_free(ptr)
 #define APP_MEM_FREE_AND_NULL(ptr) mock_mem_free_and_null(ptr)
+#define APP_MEM_CALLOC(ptr, size)  mock_mem_calloc(ptr, size)
+
+bool mock_mem_calloc(void **ptr, size_t size);
