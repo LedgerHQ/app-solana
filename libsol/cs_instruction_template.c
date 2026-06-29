@@ -5,7 +5,6 @@
 // matched the descriptor's committed target, so committed templates are always
 // whole and walker-ready.
 
-#include <os.h>
 #include <string.h>
 
 #include "cs_instruction_template.h"
