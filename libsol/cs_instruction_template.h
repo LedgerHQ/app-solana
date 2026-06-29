@@ -21,6 +21,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "sol/cs_value_source.h"
+
 // Fixed capacities. Inputs exceeding these fail closed rather than truncate.
 #define CS_MAX_INSTRUCTION_TEMPLATES 4
 #define CS_MAX_IDL_TYPE_POOL_SIZE    512
@@ -28,15 +30,27 @@
 #define CS_MAX_DISPLAY_FIELDS        8
 #define CS_MAX_ARGUMENT_PATH_SIZE    16
 #define CS_MAX_OPERATION_TYPE_SIZE   32
+#define CS_MAX_PROGRAM_NAME_SIZE     32
 #define CS_MAX_DISPLAY_FIELD_NAME    32
 
-// One displayed field's argument path and display name. Only fields sourced
-// from an ARGUMENT_PATH are stored here; ACCOUNT_PATH / CONSTANT sources carry
-// no walker path and are not recorded.
+// One displayed field. Two source types are supported:
+//   - ARGUMENT_PATH (source == 0x00): the field value is extracted from the
+//     instruction data via the IDL walker using `argument.path`/`argument.path_size`.
+//   - ACCOUNT_PATH  (source == 0x01): the field value is the pubkey at
+//     `account.index` in the instruction's accounts array.
+// Both share the same array so streaming order equals display order.
 typedef struct cs_display_field_s {
-    uint8_t path[CS_MAX_ARGUMENT_PATH_SIZE];
-    uint8_t path_size;
+    uint8_t source;
     char name[CS_MAX_DISPLAY_FIELD_NAME];
+    union {
+        struct {
+            uint8_t path[CS_MAX_ARGUMENT_PATH_SIZE];
+            uint8_t path_size;
+        } argument;
+        struct {
+            uint8_t index;
+        } account;
+    };
 } cs_display_field_t;
 
 // One complete instruction template, keyed by (program_id, discriminator).
@@ -46,6 +60,7 @@ typedef struct cs_instruction_template_s {
     uint8_t discriminator[CS_MAX_DISCRIMINATOR_SIZE];
     uint8_t discriminator_size;
     char operation_type[CS_MAX_OPERATION_TYPE_SIZE];
+    char program_name[CS_MAX_PROGRAM_NAME_SIZE];
     uint8_t idl_type_pool[CS_MAX_IDL_TYPE_POOL_SIZE];
     size_t idl_type_pool_size;
     uint8_t idl_root_type;
@@ -71,6 +86,13 @@ cs_instruction_template_t *cs_instruction_template_current(void);
 int cs_instruction_template_add_display_path(const uint8_t *path,
                                              size_t path_size,
                                              const char *name);
+
+// Append one account-path field to the in-flight builder's display-field list.
+// `account_index` is the index into the instruction's accounts array.
+// `name` is the human-readable field label (may be NULL or empty).
+// Returns 0 on success, -1 when no builder is open or the slot is full.
+int cs_instruction_template_add_account_field(uint8_t account_index,
+                                              const char *name);
 
 // Promote the in-flight builder into the committed array. Must be called only
 // once the substructure accumulation has matched the committed target. Returns 0

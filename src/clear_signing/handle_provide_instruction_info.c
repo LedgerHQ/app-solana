@@ -249,6 +249,9 @@ int handle_provide_instruction_info(void) {
     strlcpy(template->operation_type,
             tlv_extracted.operation_type,
             sizeof(template->operation_type));
+    strlcpy(template->program_name,
+            tlv_extracted.program_name,
+            sizeof(template->program_name));
     memcpy(template->idl_type_pool, tlv_extracted.idl_type_pool, tlv_extracted.idl_type_pool_size);
     template->idl_type_pool_size = tlv_extracted.idl_type_pool_size;
     template->idl_root_type = tlv_extracted.idl_root_type;

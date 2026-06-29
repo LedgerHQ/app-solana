@@ -26,6 +26,7 @@ PARAM_TYPE_RAW = 0x00
 PARAM_TAG_VERSION = 0x00
 PARAM_TAG_VALUE = 0x01
 VALUE_SOURCE_ARGUMENT_PATH = 0x00
+VALUE_SOURCE_ACCOUNT_PATH = 0x01
 SUBSTRUCTURE_TYPE_DISPLAY_FIELD = 0x00
 
 
@@ -44,6 +45,22 @@ def _craft_single_instruction_message(sol: SolanaClient, program_id: bytes, data
     return sol.craft_tx([instruction], sender)
 
 
+def _craft_instruction_with_accounts(sol: SolanaClient, program_id: bytes, data: bytes,
+                                     extra_accounts: list) -> bytes:
+    """Build a message with one instruction carrying extra non-signer accounts."""
+    sender = Pubkey.from_bytes(sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH))
+    accounts = [AccountMeta(pubkey=sender, is_signer=True, is_writable=True)]
+    for pubkey_bytes in extra_accounts:
+        accounts.append(AccountMeta(pubkey=Pubkey.from_bytes(pubkey_bytes),
+                                    is_signer=False, is_writable=True))
+    instruction = Instruction(
+        program_id=Pubkey.from_bytes(program_id),
+        accounts=accounts,
+        data=data,
+    )
+    return sol.craft_tx([instruction], sender)
+
+
 def _build_display_field(argument_path: bytes) -> bytes:
     """A minimal DISPLAY_FIELD (PARAM_RAW) pointing at one ARGUMENT_PATH leaf."""
     value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
@@ -53,6 +70,19 @@ def _build_display_field(argument_path: bytes) -> bytes:
     return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
             + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
             + format_tlv(DISPLAY_FIELD_TAG_NAME, "Amount")
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_RAW)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_raw))
+
+
+def _build_account_display_field(account_index: int, name: str) -> bytes:
+    """A DISPLAY_FIELD (PARAM_RAW) pointing at one ACCOUNT_PATH."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ACCOUNT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, bytes([account_index])))
+    param_raw = (format_tlv(PARAM_TAG_VERSION, 1)
+                 + format_tlv(PARAM_TAG_VALUE, value_tlv))
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_RAW)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_raw))
 
@@ -419,12 +449,54 @@ def test_bridge_walks_instruction(backend, sol, scenario_navigator, root_pytest_
         program_id=BRIDGE_PROGRAM_ID,
         discriminator=BRIDGE_DISCRIMINATOR,
         operation_type="Transfer",
+        program_name="Bridge",
         substructures_hash=substructures_hash,
         idl_type_pool=BRIDGE_POOL,
         idl_root_type=0,
     )
 
     sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_bridge_with_account_path_field(backend, sol, scenario_navigator, root_pytest_dir):
+    """An instruction with both ARGUMENT_PATH and ACCOUNT_PATH display fields.
+    The ACCOUNT_PATH field should resolve to the base58 pubkey of the referenced account."""
+
+    destination_pubkey = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+    message = _craft_instruction_with_accounts(
+        sol,
+        BRIDGE_PROGRAM_ID,
+        _bridge_instruction_data(42, 7_000_000),
+        extra_accounts=[destination_pubkey],
+    )
+    _begin_session(sol, message)
+
+    # Two display fields: first an ACCOUNT_PATH (account index 1 = destination),
+    # then an ARGUMENT_PATH (the u32 value from instruction data).
+    account_field = _build_account_display_field(1, "Destination")
+    argument_field = _build_display_field(BRIDGE_PATH_U32)
+    substructures_hash = hashlib.sha256(account_field + argument_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, account_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, argument_field)
 
     rapdu = sol.finalize_generic_clear_signing()
     assert rapdu.status == 0x9000

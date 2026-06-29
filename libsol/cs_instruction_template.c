@@ -85,13 +85,41 @@ int cs_instruction_template_add_display_path(const uint8_t *path,
         return -1;
     }
 
-    cs_display_field_t *field = &builder->display_fields[builder->display_field_count];
-    memcpy(field->path, path, path_size);
-    field->path_size = (uint8_t) path_size;
+    builder->display_fields[builder->display_field_count].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    memcpy(builder->display_fields[builder->display_field_count].argument.path, path, path_size);
+    builder->display_fields[builder->display_field_count].argument.path_size = (uint8_t) path_size;
     if (name != NULL) {
-        strlcpy(field->name, name, sizeof(field->name));
+        strlcpy(builder->display_fields[builder->display_field_count].name,
+                name,
+                sizeof(builder->display_fields[builder->display_field_count].name));
     } else {
-        field->name[0] = '\0';
+        builder->display_fields[builder->display_field_count].name[0] = '\0';
+    }
+    builder->display_field_count++;
+    return 0;
+}
+
+int cs_instruction_template_add_account_field(uint8_t account_index,
+                                              const char *name) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL) {
+        PRINTF("cs_instruction_template_add_account_field: no builder open\n");
+        return -1;
+    }
+    if (builder->display_field_count >= CS_MAX_DISPLAY_FIELDS) {
+        PRINTF("cs_instruction_template_add_account_field: too many display fields (max %d)\n",
+               CS_MAX_DISPLAY_FIELDS);
+        return -1;
+    }
+
+    builder->display_fields[builder->display_field_count].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
+    builder->display_fields[builder->display_field_count].account.index = account_index;
+    if (name != NULL) {
+        strlcpy(builder->display_fields[builder->display_field_count].name,
+                name,
+                sizeof(builder->display_fields[builder->display_field_count].name));
+    } else {
+        builder->display_fields[builder->display_field_count].name[0] = '\0';
     }
     builder->display_field_count++;
     return 0;

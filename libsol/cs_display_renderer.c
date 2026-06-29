@@ -153,44 +153,65 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
             continue;
         }
         survivor_index++;
-        const cs_instruction_result_t *instr = &walked_instructions[ix];
 
         // Instruction header element: "[ix/total] operation_type"
         if (element_index >= CS_MAX_DISPLAY_ELEMENTS) {
             PRINTF("cs_display_renderer_run: too many display elements\n");
             return -1;
         }
-        cs_display_element_t *header = &G_cs_display_renderer->elements[element_index];
-        snprintf(header->title,
+        snprintf(G_cs_display_renderer->elements[element_index].title,
                  CS_DISPLAY_TITLE_SIZE,
                  "[%u/%u] %s",
                  (unsigned) survivor_index,
                  (unsigned) survivor_count,
-                 instr->template->operation_type);
-        header->value[0] = '\0';
+                 walked_instructions[ix].template->operation_type);
+
+        // Display Program, as name if the template told us, as address otherwise
+        if (walked_instructions[ix].template->program_name[0] != '\0') {
+            snprintf(G_cs_display_renderer->elements[element_index].value,
+                     CS_DISPLAY_VALUE_SIZE,
+                     "Program: %s",
+                     walked_instructions[ix].template->program_name);
+        } else {
+            char address[45];
+            if (encode_base58(walked_instructions[ix].template->program_id,
+                              32,
+                              address,
+                              sizeof(address)) < 0) {
+                PRINTF("cs_display_renderer_run: base58 encode program_id failed\n");
+                return -1;
+            }
+            snprintf(G_cs_display_renderer->elements[element_index].value,
+                     CS_DISPLAY_VALUE_SIZE,
+                     "Program: %s",
+                     address);
+        }
         element_index++;
 
-        for (uint8_t field = 0; field < instr->resolved_count; field++) {
+        for (uint8_t field = 0; field < walked_instructions[ix].resolved_count; field++) {
             if (element_index >= CS_MAX_DISPLAY_ELEMENTS) {
                 PRINTF("cs_display_renderer_run: too many display elements\n");
                 return -1;
             }
 
-            const idl_resolved_leaf_t *leaf = &instr->resolved[field];
-            if (leaf->value == NULL) {
+            if (walked_instructions[ix].resolved[field].value == NULL) {
                 continue;
             }
 
-            cs_display_element_t *element = &G_cs_display_renderer->elements[element_index];
-
-            const char *field_name = instr->template->display_fields[field].name;
-            if (field_name[0] != '\0') {
-                strlcpy(element->title, field_name, CS_DISPLAY_TITLE_SIZE);
+            if (walked_instructions[ix].template->display_fields[field].name[0] != '\0') {
+                strlcpy(G_cs_display_renderer->elements[element_index].title,
+                        walked_instructions[ix].template->display_fields[field].name,
+                        CS_DISPLAY_TITLE_SIZE);
             } else {
-                snprintf(element->title, CS_DISPLAY_TITLE_SIZE, "Field %u", field + 1);
+                snprintf(G_cs_display_renderer->elements[element_index].title,
+                         CS_DISPLAY_TITLE_SIZE,
+                         "Field %u",
+                         field + 1);
             }
 
-            if (format_leaf(leaf, element->value, CS_DISPLAY_VALUE_SIZE) != 0) {
+            if (format_leaf(&walked_instructions[ix].resolved[field],
+                            G_cs_display_renderer->elements[element_index].value,
+                            CS_DISPLAY_VALUE_SIZE) != 0) {
                 PRINTF("cs_display_renderer_run: format failed ix=%u field=%u\n",
                        (unsigned) ix,
                        field);

@@ -149,9 +149,9 @@ static void test_add_display_path(void) {
     assert(cs_instruction_template_add_display_path(path1, sizeof(path1), "Field1") == 0);
     assert(cs_instruction_template_add_display_path(path2, sizeof(path2), "Field2") == 0);
     assert(builder->display_field_count == 2);
-    assert(memcmp(builder->display_fields[0].path, path1, sizeof(path1)) == 0);
-    assert(builder->display_fields[0].path_size == sizeof(path1));
-    assert(memcmp(builder->display_fields[1].path, path2, sizeof(path2)) == 0);
+    assert(memcmp(builder->display_fields[0].argument.path, path1, sizeof(path1)) == 0);
+    assert(builder->display_fields[0].argument.path_size == sizeof(path1));
+    assert(memcmp(builder->display_fields[1].argument.path, path2, sizeof(path2)) == 0);
 
     assert(cs_instruction_template_commit() == 0);
     cs_instruction_template_table_reset();
@@ -303,6 +303,59 @@ static void test_alloc_failure_on_table(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+static void test_add_account_field(void) {
+    printf("  test_add_account_field\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
+    assert(builder != NULL);
+
+    assert(cs_instruction_template_add_account_field(3, "Destination") == 0);
+    assert(builder->display_field_count == 1);
+    assert(builder->display_fields[0].source == CS_VALUE_SOURCE_ACCOUNT_PATH);
+    assert(builder->display_fields[0].account.index == 3);
+    assert(strcmp(builder->display_fields[0].name, "Destination") == 0);
+
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_add_account_field_no_builder(void) {
+    printf("  test_add_account_field_no_builder\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    assert(cs_instruction_template_add_account_field(0, "Test") == -1);
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_mixed_display_fields_order(void) {
+    printf("  test_mixed_display_fields_order\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
+    assert(builder != NULL);
+
+    // Add ACCOUNT_PATH first, then ARGUMENT_PATH, then ACCOUNT_PATH again
+    assert(cs_instruction_template_add_account_field(2, "Owner") == 0);
+    const uint8_t path[] = {0x20, 0x01};
+    assert(cs_instruction_template_add_display_path(path, sizeof(path), "Amount") == 0);
+    assert(cs_instruction_template_add_account_field(0, "Recipient") == 0);
+
+    assert(builder->display_field_count == 3);
+    assert(builder->display_fields[0].source == CS_VALUE_SOURCE_ACCOUNT_PATH);
+    assert(builder->display_fields[0].account.index == 2);
+    assert(builder->display_fields[1].source == CS_VALUE_SOURCE_ARGUMENT_PATH);
+    assert(builder->display_fields[1].argument.path_size == 2);
+    assert(builder->display_fields[2].source == CS_VALUE_SOURCE_ACCOUNT_PATH);
+    assert(builder->display_fields[2].account.index == 0);
+
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 // ---- Main -------------------------------------------------------------------
 
 int main(void) {
@@ -323,6 +376,9 @@ int main(void) {
     test_reset_cleans_everything();
     test_alloc_failure_on_open();
     test_alloc_failure_on_table();
+    test_add_account_field();
+    test_add_account_field_no_builder();
+    test_mixed_display_fields_order();
     printf("  All passed!\n");
     return 0;
 }
