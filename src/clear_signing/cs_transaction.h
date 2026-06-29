@@ -18,7 +18,8 @@ typedef struct cs_transaction_s {
     size_t transaction_size;
 } cs_transaction_t;
 
-extern cs_transaction_t *G_cs_transaction;
+// Returns the current transaction context, or NULL if no session is active.
+const cs_transaction_t *cs_transaction_get(void);
 
 // Release the captured transaction and the whole clear-signing session (instruction
 // templates and merge engine) and return to the empty state. Safe when none is loaded.

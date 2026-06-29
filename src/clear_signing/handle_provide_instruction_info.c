@@ -11,7 +11,7 @@
 #include "os_pki.h"
 #include "ledger_pki.h"
 #include "tlv_library.h"
-#include "cs_value.h"
+#include "tlv_parser_cs_value.h"
 #include "cs_instruction_template.h"
 
 #define MAX_DISCRIMINATOR_SIZE    8

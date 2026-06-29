@@ -1,10 +1,11 @@
-#include <os.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "cs_display_renderer.h"
 #include "app_mem_utils.h"
 #include "idl_kinds.h"
 #include "sol/printer.h"
+#include "os_print.h"
 
 typedef struct cs_display_renderer_s {
     cs_display_element_t elements[CS_MAX_DISPLAY_ELEMENTS];
@@ -127,7 +128,8 @@ static int format_leaf(const idl_resolved_leaf_t *leaf,
 }
 
 int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
-                            size_t walked_instructions_count) {
+                            size_t walked_instructions_count,
+                            const bool *survivors) {
     cs_display_renderer_reset();
 
     if (!APP_MEM_CALLOC((void **) &G_cs_display_renderer, sizeof(cs_display_renderer_t))) {
@@ -138,6 +140,9 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
     uint8_t element_index = 0;
 
     for (size_t ix = 0; ix < walked_instructions_count; ix++) {
+        if (!survivors[ix]) {
+            continue;
+        }
         const cs_instruction_result_t *instr = &walked_instructions[ix];
         for (uint8_t field = 0; field < instr->resolved_count; field++) {
             if (element_index >= CS_MAX_DISPLAY_ELEMENTS) {

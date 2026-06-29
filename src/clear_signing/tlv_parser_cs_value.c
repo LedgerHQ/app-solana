@@ -1,6 +1,6 @@
 #include <string.h>
 
-#include "cs_value.h"
+#include "tlv_parser_cs_value.h"
 #include "tlv_library.h"
 
 // Internal wrapper coupling the output value with TLV parse state.

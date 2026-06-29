@@ -22,9 +22,11 @@ typedef struct cs_display_element_s {
 } cs_display_element_t;
 
 // Format all resolved leaves from survived instructions into display elements.
+// Only instructions where survivors[i] == true are rendered.
 // Returns 0 on success, -1 on failure. Discards any previous output.
 int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
-                            size_t walked_instructions_count);
+                            size_t walked_instructions_count,
+                            const bool *survivors);
 
 // Number of produced display elements. Zero means not yet rendered.
 size_t cs_display_renderer_element_count(void);

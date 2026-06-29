@@ -3,15 +3,13 @@
 
 #include "cs_transaction.h"
 #include "cs_instruction_template.h"
-#include "cs_merge_engine.h"
 #include "cs_display_renderer.h"
 #include "app_mem_utils.h"
 
-cs_transaction_t *G_cs_transaction;
+static cs_transaction_t *G_cs_transaction;
 
 void cs_transaction_reset(void) {
     cs_display_renderer_reset();
-    cs_merge_engine_reset();
     cs_instruction_template_table_reset();
     if (G_cs_transaction != NULL) {
         if (G_cs_transaction->transaction != NULL) {
@@ -44,4 +42,8 @@ int cs_transaction_begin(const uint8_t *transaction, size_t transaction_size) {
     memcpy(G_cs_transaction->transaction, transaction, transaction_size);
     G_cs_transaction->transaction_size = transaction_size;
     return 0;
+}
+
+const cs_transaction_t *cs_transaction_get(void) {
+    return G_cs_transaction;
 }
