@@ -52,6 +52,7 @@ DEFINE_TLV_PARSER(PARAM_TAGS, NULL, parse_param)
 typedef struct display_field_out_s {
     TLV_reception_t received_tags;
     uint8_t substruct_type;
+    char name[CS_MAX_DISPLAY_FIELD_NAME];
     buffer_t param;
 } display_field_out_t;
 
@@ -69,6 +70,16 @@ static bool display_field_handle_param(const tlv_data_t *data, display_field_out
     return true;
 }
 
+static bool display_field_handle_name(const tlv_data_t *data, display_field_out_t *out) {
+    size_t len = data->value.size;
+    if (len >= sizeof(out->name)) {
+        len = sizeof(out->name) - 1;
+    }
+    memcpy(out->name, data->value.ptr, len);
+    out->name[len] = '\0';
+    return true;
+}
+
 static bool display_field_handle_ignore(const tlv_data_t *data, display_field_out_t *out) {
     UNUSED(data);
     UNUSED(out);
@@ -79,7 +90,7 @@ static bool display_field_handle_ignore(const tlv_data_t *data, display_field_ou
 #define DISPLAY_FIELD_TAGS(X) \
     X(0x00, DISPLAY_FIELD_TAG_VERSION,       display_field_handle_ignore,        ENFORCE_UNIQUE_TAG) \
     X(0x01, DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, display_field_handle_substruct_type, ENFORCE_UNIQUE_TAG) \
-    X(0x02, DISPLAY_FIELD_TAG_NAME,          display_field_handle_ignore,        ENFORCE_UNIQUE_TAG) \
+    X(0x02, DISPLAY_FIELD_TAG_NAME,          display_field_handle_name,          ENFORCE_UNIQUE_TAG) \
     X(0x03, DISPLAY_FIELD_TAG_PARAM_TYPE,    display_field_handle_ignore,        ENFORCE_UNIQUE_TAG) \
     X(0x04, DISPLAY_FIELD_TAG_PARAM,         display_field_handle_param,         ENFORCE_UNIQUE_TAG)
 // clang-format on
@@ -134,10 +145,15 @@ static int register_display_field(uint8_t apdu_type, const uint8_t *tlv, size_t 
         return 0;
     }
 
-    if (cs_instruction_template_add_display_path(value.payload, value.payload_size) != 0) {
+    const char *field_name = display_field.name[0] != '\0' ? display_field.name : NULL;
+    if (cs_instruction_template_add_display_path(value.payload, value.payload_size, field_name) !=
+        0) {
         return -1;
     }
-    PRINTF("substructure: registered display path %.*H\n", value.payload_size, value.payload);
+    PRINTF("substructure: registered display path %.*H name=%s\n",
+           value.payload_size,
+           value.payload,
+           field_name ? field_name : "(none)");
     return 0;
 }
 

@@ -146,8 +146,8 @@ static void test_add_display_path(void) {
 
     const uint8_t path1[] = {0x20, 0x00};
     const uint8_t path2[] = {0x20, 0x01};
-    assert(cs_instruction_template_add_display_path(path1, sizeof(path1)) == 0);
-    assert(cs_instruction_template_add_display_path(path2, sizeof(path2)) == 0);
+    assert(cs_instruction_template_add_display_path(path1, sizeof(path1), "Field1") == 0);
+    assert(cs_instruction_template_add_display_path(path2, sizeof(path2), "Field2") == 0);
     assert(builder->display_field_count == 2);
     assert(memcmp(builder->display_fields[0].path, path1, sizeof(path1)) == 0);
     assert(builder->display_fields[0].path_size == sizeof(path1));
@@ -164,7 +164,7 @@ static void test_add_display_path_no_builder(void) {
     cs_instruction_template_table_reset();
 
     const uint8_t path[] = {0x20, 0x00};
-    assert(cs_instruction_template_add_display_path(path, sizeof(path)) == -1);
+    assert(cs_instruction_template_add_display_path(path, sizeof(path), NULL) == -1);
     assert(mock_mem_outstanding() == 0);
 }
 
@@ -178,7 +178,7 @@ static void test_add_display_path_too_long(void) {
 
     uint8_t long_path[CS_MAX_ARGUMENT_PATH_SIZE + 1];
     memset(long_path, 0x20, sizeof(long_path));
-    assert(cs_instruction_template_add_display_path(long_path, sizeof(long_path)) == -1);
+    assert(cs_instruction_template_add_display_path(long_path, sizeof(long_path), NULL) == -1);
     assert(builder->display_field_count == 0);
 
     cs_instruction_template_table_reset();
@@ -195,10 +195,10 @@ static void test_add_display_path_slots_full(void) {
 
     const uint8_t path[] = {0x20, 0x00};
     for (int i = 0; i < CS_MAX_DISPLAY_FIELDS; i++) {
-        assert(cs_instruction_template_add_display_path(path, sizeof(path)) == 0);
+        assert(cs_instruction_template_add_display_path(path, sizeof(path), NULL) == 0);
     }
     // One more should fail
-    assert(cs_instruction_template_add_display_path(path, sizeof(path)) == -1);
+    assert(cs_instruction_template_add_display_path(path, sizeof(path), NULL) == -1);
 
     cs_instruction_template_table_reset();
     assert(mock_mem_outstanding() == 0);

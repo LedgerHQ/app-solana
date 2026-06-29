@@ -9,6 +9,7 @@
 #include "apdu.h"
 #include "globals.h"
 #include "io.h"
+#include "ui_api.h"
 
 int handle_prompt_ui_display(void) {
     PRINTF("handle_prompt_ui_display\n");
@@ -23,7 +24,6 @@ int handle_prompt_ui_display(void) {
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);
     }
 
-    // TODO: display review UI using cs_display_renderer_element(i)
-    cs_transaction_reset();
-    return io_send_sw(ApduReplySuccess);
+    ui_clear_signing_review();
+    return 0;
 }

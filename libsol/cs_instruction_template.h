@@ -27,14 +27,16 @@
 #define CS_MAX_DISCRIMINATOR_SIZE    8
 #define CS_MAX_DISPLAY_FIELDS        8
 #define CS_MAX_ARGUMENT_PATH_SIZE    16
+#define CS_MAX_OPERATION_TYPE_SIZE   32
+#define CS_MAX_DISPLAY_FIELD_NAME    32
 
-// One displayed field's argument path, in the packed
-// `u8 step_count || packed steps` encoding emitted by the IDL walker. Only
-// fields sourced from an ARGUMENT_PATH are stored here; ACCOUNT_PATH / CONSTANT
-// sources carry no walker path and are not recorded.
+// One displayed field's argument path and display name. Only fields sourced
+// from an ARGUMENT_PATH are stored here; ACCOUNT_PATH / CONSTANT sources carry
+// no walker path and are not recorded.
 typedef struct cs_display_field_s {
     uint8_t path[CS_MAX_ARGUMENT_PATH_SIZE];
     uint8_t path_size;
+    char name[CS_MAX_DISPLAY_FIELD_NAME];
 } cs_display_field_t;
 
 // One complete instruction template, keyed by (program_id, discriminator).
@@ -43,6 +45,7 @@ typedef struct cs_instruction_template_s {
     uint8_t program_id[32];
     uint8_t discriminator[CS_MAX_DISCRIMINATOR_SIZE];
     uint8_t discriminator_size;
+    char operation_type[CS_MAX_OPERATION_TYPE_SIZE];
     uint8_t idl_type_pool[CS_MAX_IDL_TYPE_POOL_SIZE];
     size_t idl_type_pool_size;
     uint8_t idl_root_type;
@@ -62,9 +65,12 @@ cs_instruction_template_t *cs_instruction_template_open(
 cs_instruction_template_t *cs_instruction_template_current(void);
 
 // Append one argument path to the in-flight builder's display-field list.
+// `name` is the human-readable field label (may be NULL or empty).
 // Returns 0 on success, -1 when no builder is open, the path is too long, or
 // the slot is full.
-int cs_instruction_template_add_display_path(const uint8_t *path, size_t path_size);
+int cs_instruction_template_add_display_path(const uint8_t *path,
+                                             size_t path_size,
+                                             const char *name);
 
 // Promote the in-flight builder into the committed array. Must be called only
 // once the substructure accumulation has matched the committed target. Returns 0

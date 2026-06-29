@@ -137,13 +137,39 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
         return -1;
     }
 
+    // Count surviving instructions for the [ix/total] header
+    size_t survivor_count = 0;
+    for (size_t i = 0; i < walked_instructions_count; i++) {
+        if (survivors[i]) {
+            survivor_count++;
+        }
+    }
+
     uint8_t element_index = 0;
+    size_t survivor_index = 0;
 
     for (size_t ix = 0; ix < walked_instructions_count; ix++) {
         if (!survivors[ix]) {
             continue;
         }
+        survivor_index++;
         const cs_instruction_result_t *instr = &walked_instructions[ix];
+
+        // Instruction header element: "[ix/total] operation_type"
+        if (element_index >= CS_MAX_DISPLAY_ELEMENTS) {
+            PRINTF("cs_display_renderer_run: too many display elements\n");
+            return -1;
+        }
+        cs_display_element_t *header = &G_cs_display_renderer->elements[element_index];
+        snprintf(header->title,
+                 CS_DISPLAY_TITLE_SIZE,
+                 "[%u/%u] %s",
+                 (unsigned) survivor_index,
+                 (unsigned) survivor_count,
+                 instr->template->operation_type);
+        header->value[0] = '\0';
+        element_index++;
+
         for (uint8_t field = 0; field < instr->resolved_count; field++) {
             if (element_index >= CS_MAX_DISPLAY_ELEMENTS) {
                 PRINTF("cs_display_renderer_run: too many display elements\n");
@@ -157,8 +183,12 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
 
             cs_display_element_t *element = &G_cs_display_renderer->elements[element_index];
 
-            // MVP: no field names stored yet, use positional title
-            snprintf(element->title, CS_DISPLAY_TITLE_SIZE, "Field %u.%u", (unsigned) ix + 1, field + 1);
+            const char *field_name = instr->template->display_fields[field].name;
+            if (field_name[0] != '\0') {
+                strlcpy(element->title, field_name, CS_DISPLAY_TITLE_SIZE);
+            } else {
+                snprintf(element->title, CS_DISPLAY_TITLE_SIZE, "Field %u", field + 1);
+            }
 
             if (format_leaf(leaf, element->value, CS_DISPLAY_VALUE_SIZE) != 0) {
                 PRINTF("cs_display_renderer_run: format failed ix=%u field=%u\n",
