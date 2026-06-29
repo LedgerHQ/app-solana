@@ -2,9 +2,11 @@
 #include <stdio.h>
 
 #include "cs_display_renderer.h"
+#include "cs_instruction_template.h"
 #include "app_mem_utils.h"
 #include "idl_kinds.h"
 #include "sol/printer.h"
+#include "util.h"
 #include "os_print.h"
 
 typedef struct cs_display_renderer_s {
@@ -107,23 +109,147 @@ static int format_leaf(const idl_resolved_leaf_t *leaf,
         }
 
         default:
-            // For unhandled kinds, show hex summary
-            if (leaf->value_size <= 8) {
-                // Short hex
-                for (size_t i = 0; i < leaf->value_size && (2 * i + 2) < value_out_size; i++) {
-                    snprintf(value_out + 2 * i, value_out_size - 2 * i, "%02x", leaf->value[i]);
-                }
-            } else {
-                snprintf(value_out,
-                         value_out_size,
-                         "%02x%02x...%02x%02x (%u B)",
-                         leaf->value[0],
-                         leaf->value[1],
-                         leaf->value[leaf->value_size - 2],
-                         leaf->value[leaf->value_size - 1],
-                         (unsigned) leaf->value_size);
-            }
-            return 0;
+            PRINTF("format_leaf: unsupported kind %d\n", leaf->kind);
+            return -1;
+    }
+}
+
+// Read a little-endian unsigned integer from leaf bytes into a u64.
+// Returns 0 on success, -1 on unsupported kind.
+static int read_leaf_u64(const idl_resolved_leaf_t *leaf, uint64_t *out) {
+    size_t width = 0;
+
+    switch (leaf->kind) {
+        case IDL_KIND_U8:
+            width = 1;
+            break;
+        case IDL_KIND_U16:
+            width = 2;
+            break;
+        case IDL_KIND_U32:
+            width = 4;
+            break;
+        case IDL_KIND_U64:
+            width = 8;
+            break;
+        default:
+            PRINTF("read_leaf_u64: unsupported kind=%d\n", leaf->kind);
+            return -1;
+    }
+
+    if (leaf->value_size < width) {
+        PRINTF("read_leaf_u64: value truncated (size=%u < width=%u)\n",
+               (unsigned) leaf->value_size,
+               (unsigned) width);
+        return -1;
+    }
+
+    *out = 0;
+    for (size_t i = 0; i < width; i++) {
+        *out |= (uint64_t) leaf->value[i] << (8 * i);
+    }
+    return 0;
+}
+
+// PARAM_AMOUNT: numeric value with fixed decimal scaling.
+static int format_amount(const idl_resolved_leaf_t *leaf,
+                         uint8_t decimals,
+                         char *value_out,
+                         size_t value_out_size) {
+    uint64_t amount;
+    if (read_leaf_u64(leaf, &amount) != 0) {
+        PRINTF("format_amount: unsupported leaf kind %d\n", leaf->kind);
+        return -1;
+    }
+    return print_token_amount(amount, NULL, decimals, value_out, value_out_size);
+}
+
+// PARAM_TOKEN_AMOUNT: token amount with ticker. Native SOL uses built-in
+// metadata. Unresolved tokens render as "123456 ???" with no decimal scaling.
+static int format_token_amount(const idl_resolved_leaf_t *leaf,
+                               const cs_format_token_amount_t *fmt,
+                               char *value_out,
+                               size_t value_out_size) {
+    uint64_t amount;
+    if (read_leaf_u64(leaf, &amount) != 0) {
+        PRINTF("format_token_amount: unsupported leaf kind %d\n", leaf->kind);
+        return -1;
+    }
+    if (fmt->is_native) {
+        return print_token_amount(amount, "SOL", SOL_DECIMALS, value_out, value_out_size);
+    }
+    return print_token_amount(amount, "???", 0, value_out, value_out_size);
+}
+
+// ACCOUNT_PATH: full base58 address.
+static int format_account(const idl_resolved_leaf_t *leaf,
+                          char *value_out,
+                          size_t value_out_size) {
+    if (leaf->value_size < 32) {
+        PRINTF("format_account: value too short (%u < 32)\n", (unsigned) leaf->value_size);
+        return -1;
+    }
+    if (encode_base58(leaf->value, 32, value_out, value_out_size) < 0) {
+        PRINTF("format_account: base58 encode failed\n");
+        return -1;
+    }
+    return 0;
+}
+
+// Format an ARGUMENT_PATH field based on its param_type.
+static int format_argument_field(const cs_display_field_t *field,
+                                 const idl_resolved_leaf_t *leaf,
+                                 char *value_out,
+                                 size_t value_out_size) {
+    switch (field->argument.param_type) {
+        case CS_PARAM_TYPE_RAW:
+            return format_leaf(leaf, value_out, value_out_size);
+
+        case CS_PARAM_TYPE_AMOUNT:
+            return format_amount(leaf,
+                                field->argument.format.amount.decimals,
+                                value_out,
+                                value_out_size);
+
+        case CS_PARAM_TYPE_TOKEN_AMOUNT:
+            return format_token_amount(leaf,
+                                       &field->argument.format.token_amount,
+                                       value_out,
+                                       value_out_size);
+
+        default:
+            PRINTF("format_argument_field: unsupported param_type %d\n",
+                   field->argument.param_type);
+            return -1;
+    }
+}
+
+// Dispatch formatting based on the display field's source.
+// ARGUMENT_PATH fields use param_type for semantic formatting.
+// ACCOUNT_PATH fields always render as full base58 addresses.
+// CONSTANT fields always use format_leaf with their IDL kind.
+static int format_field(const cs_display_field_t *field,
+                        const idl_resolved_leaf_t *leaf,
+                        char *value_out,
+                        size_t value_out_size) {
+    if (leaf->value == NULL || leaf->value_size == 0) {
+        strlcpy(value_out, "<empty>", value_out_size);
+        return 0;
+    }
+
+    switch (field->source) {
+        case CS_VALUE_SOURCE_ARGUMENT_PATH:
+            return format_argument_field(field, leaf, value_out, value_out_size);
+
+        case CS_VALUE_SOURCE_ACCOUNT_PATH:
+            return format_account(leaf, value_out, value_out_size);
+
+        case CS_VALUE_SOURCE_CONSTANT:
+            return format_leaf(leaf, value_out, value_out_size);
+
+        default:
+            PRINTF("format_field: unsupported source %d\n", field->source);
+            return -1;
     }
 }
 
@@ -209,7 +335,8 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
                          field + 1);
             }
 
-            if (format_leaf(&walked_instructions[ix].resolved[field],
+            if (format_field(&walked_instructions[ix].template->display_fields[field],
+                            &walked_instructions[ix].resolved[field],
                             G_cs_display_renderer->elements[element_index].value,
                             CS_DISPLAY_VALUE_SIZE) != 0) {
                 PRINTF("cs_display_renderer_run: format failed ix=%u field=%u\n",

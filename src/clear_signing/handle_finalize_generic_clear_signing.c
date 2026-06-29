@@ -127,6 +127,16 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
             result->resolved[f].value_size = 32;
         }
 
+        // Resolve CONSTANT fields directly from the template
+        for (uint8_t f = 0; f < template->display_field_count; f++) {
+            if (template->display_fields[f].source != CS_VALUE_SOURCE_CONSTANT) {
+                continue;
+            }
+            result->resolved[f].kind = template->display_fields[f].constant.kind;
+            result->resolved[f].value = template->display_fields[f].constant.data;
+            result->resolved[f].value_size = template->display_fields[f].constant.data_size;
+        }
+
         result->template = template;
         (*walked_instructions_count)++;
     }

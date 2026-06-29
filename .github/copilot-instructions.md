@@ -129,6 +129,7 @@ Coding patterns described here are more important than uniformity cross applicat
 - Always write the full access path at each use site. Do not introduce a local pointer or variable solely to shorten repeated access ; if a long access path is repeated, it is a sign that a sub function should handle the logic.
 - Never write functions in header files.
 - Do not rely on C implicit struct copy, use a memcpy to highlight deep copy behavior.
+- Avoid enum-like defines. Prefer real enum definition.
 
 ### Chain of trust
 
