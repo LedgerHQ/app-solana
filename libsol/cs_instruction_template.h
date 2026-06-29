@@ -23,22 +23,54 @@
 
 #include "sol/cs_value_source.h"
 
+// Param types (spec/device/tlv_structs.md FieldParamType enum).
+// Determines how the renderer formats the resolved value.
+enum cs_param_type {
+    CS_PARAM_TYPE_RAW          = 0x00,
+    CS_PARAM_TYPE_AMOUNT       = 0x01,
+    CS_PARAM_TYPE_TOKEN_AMOUNT = 0x02,
+    CS_PARAM_TYPE_DATETIME     = 0x03,
+    CS_PARAM_TYPE_DURATION     = 0x04,
+    CS_PARAM_TYPE_UNIT         = 0x05,
+    CS_PARAM_TYPE_ENUM         = 0x06,
+    CS_PARAM_TYPE_TRUSTED_NAME = 0x07,
+    CS_PARAM_TYPE_ACCOUNT      = 0x08,
+    CS_PARAM_TYPE_STRING       = 0x09,
+};
+
+// Format-specific parameters for PARAM_AMOUNT.
+typedef struct cs_format_amount_s {
+    uint8_t decimals;
+} cs_format_amount_t;
+
+// Format-specific parameters for PARAM_TOKEN_AMOUNT.
+typedef struct cs_format_token_amount_s {
+    bool is_native;
+} cs_format_token_amount_t;
+
 // Fixed capacities. Inputs exceeding these fail closed rather than truncate.
 #define CS_MAX_INSTRUCTION_TEMPLATES 4
 #define CS_MAX_IDL_TYPE_POOL_SIZE    512
 #define CS_MAX_DISCRIMINATOR_SIZE    8
 #define CS_MAX_DISPLAY_FIELDS        8
 #define CS_MAX_ARGUMENT_PATH_SIZE    16
+#define CS_MAX_CONSTANT_SIZE         32
 #define CS_MAX_OPERATION_TYPE_SIZE   32
 #define CS_MAX_PROGRAM_NAME_SIZE     32
 #define CS_MAX_DISPLAY_FIELD_NAME    32
 
-// One displayed field. Two source types are supported:
+// One displayed field. Three source types are supported:
 //   - ARGUMENT_PATH (source == 0x00): the field value is extracted from the
 //     instruction data via the IDL walker using `argument.path`/`argument.path_size`.
+//     Only ARGUMENT_PATH fields carry a `param_type` (how to format the value)
+//     and optional format parameters (decimals, is_native, etc.).
 //   - ACCOUNT_PATH  (source == 0x01): the field value is the pubkey at
-//     `account.index` in the instruction's accounts array.
-// Both share the same array so streaming order equals display order.
+//     `account.index` in the instruction's accounts array. Always rendered as
+//     a short-form base58 address.
+//   - CONSTANT      (source == 0x02): the field value is embedded directly in
+//     the descriptor. `constant.data`/`constant.data_size` hold the raw bytes
+//     and `constant.kind` the IDL kind for formatting via format_leaf.
+// All share the same array so streaming order equals display order.
 typedef struct cs_display_field_s {
     uint8_t source;
     char name[CS_MAX_DISPLAY_FIELD_NAME];
@@ -46,10 +78,20 @@ typedef struct cs_display_field_s {
         struct {
             uint8_t path[CS_MAX_ARGUMENT_PATH_SIZE];
             uint8_t path_size;
+            uint8_t param_type;
+            union {
+                cs_format_amount_t amount;
+                cs_format_token_amount_t token_amount;
+            } format;
         } argument;
         struct {
             uint8_t index;
         } account;
+        struct {
+            uint8_t data[CS_MAX_CONSTANT_SIZE];
+            uint8_t data_size;
+            uint8_t kind;
+        } constant;
     };
 } cs_display_field_t;
 
@@ -85,14 +127,33 @@ cs_instruction_template_t *cs_instruction_template_current(void);
 // the slot is full.
 int cs_instruction_template_add_display_path(const uint8_t *path,
                                              size_t path_size,
+                                             uint8_t param_type,
                                              const char *name);
 
 // Append one account-path field to the in-flight builder's display-field list.
 // `account_index` is the index into the instruction's accounts array.
 // `name` is the human-readable field label (may be NULL or empty).
+// Always rendered as a short-form base58 address; no param_type needed.
 // Returns 0 on success, -1 when no builder is open or the slot is full.
 int cs_instruction_template_add_account_field(uint8_t account_index,
                                               const char *name);
+
+// Append a CONSTANT display field. The value is embedded directly from the
+// descriptor payload. `kind` is the IDL kind code for formatting at render time.
+// Always rendered via format_leaf using the IDL kind; no param_type needed.
+// Returns 0 on success, -1 when no builder is open or the slot is full.
+int cs_instruction_template_add_constant_field(const uint8_t *data,
+                                               size_t data_size,
+                                               uint8_t kind,
+                                               const char *name);
+
+// Set AMOUNT format parameters on the last added display field.
+// Must be called immediately after adding a field with param_type == AMOUNT.
+int cs_instruction_template_set_format_amount(uint8_t decimals);
+
+// Set TOKEN_AMOUNT format parameters on the last added display field.
+// Must be called immediately after adding a field with param_type == TOKEN_AMOUNT.
+int cs_instruction_template_set_format_token_amount(bool is_native);
 
 // Promote the in-flight builder into the committed array. Must be called only
 // once the substructure accumulation has matched the committed target. Returns 0

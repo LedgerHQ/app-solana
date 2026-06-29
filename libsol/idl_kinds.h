@@ -13,44 +13,48 @@
 #include <stdint.h>
 
 // --- Numeric primitives ------------------------------------------------------
-#define IDL_KIND_U8         0x01
-#define IDL_KIND_U16        0x02
-#define IDL_KIND_U32        0x03
-#define IDL_KIND_U64        0x04
-#define IDL_KIND_U128       0x05
-#define IDL_KIND_I8         0x06
-#define IDL_KIND_I16        0x07
-#define IDL_KIND_I32        0x08
-#define IDL_KIND_I64        0x09
-#define IDL_KIND_I128       0x0A
-#define IDL_KIND_F32        0x0B
-#define IDL_KIND_F64        0x0C
-#define IDL_KIND_SHORT_U16  0x0D
-#define IDL_KIND_BOOL_U8    0x0E
-#define IDL_KIND_BOOL_U16   0x0F
-#define IDL_KIND_BOOL_U32   0x10
+enum idl_kind {
+    IDL_KIND_U8         = 0x01,
+    IDL_KIND_U16        = 0x02,
+    IDL_KIND_U32        = 0x03,
+    IDL_KIND_U64        = 0x04,
+    IDL_KIND_U128       = 0x05,
+    IDL_KIND_I8         = 0x06,
+    IDL_KIND_I16        = 0x07,
+    IDL_KIND_I32        = 0x08,
+    IDL_KIND_I64        = 0x09,
+    IDL_KIND_I128       = 0x0A,
+    IDL_KIND_F32        = 0x0B,
+    IDL_KIND_F64        = 0x0C,
+    IDL_KIND_SHORT_U16  = 0x0D,
+    IDL_KIND_BOOL_U8    = 0x0E,
+    IDL_KIND_BOOL_U16   = 0x0F,
+    IDL_KIND_BOOL_U32   = 0x10,
 
-// --- Fixed / variable byte leaves --------------------------------------------
-#define IDL_KIND_PUBKEY_32       0x11
-#define IDL_KIND_BYTES_FIXED     0x12
-#define IDL_KIND_STRING_FIXED    0x13
-#define IDL_KIND_STRING_PREFIXED 0x14
-#define IDL_KIND_BYTES_REMAINDER 0x15
+    // --- Fixed / variable byte leaves ----------------------------------------
+    IDL_KIND_PUBKEY_32       = 0x11,
+    IDL_KIND_BYTES_FIXED     = 0x12,
+    IDL_KIND_STRING_FIXED    = 0x13,
+    IDL_KIND_STRING_PREFIXED = 0x14,
+    IDL_KIND_BYTES_REMAINDER = 0x15,
 
-// --- Aggregates / composites -------------------------------------------------
-#define IDL_KIND_STRUCT          0x20
-#define IDL_KIND_TUPLE           0x21
-#define IDL_KIND_OPTION_DYNAMIC  0x22
-#define IDL_KIND_OPTION_FIXED    0x23
-#define IDL_KIND_OPTION_ZEROABLE 0x24
-#define IDL_KIND_ARRAY_FIXED     0x25
-#define IDL_KIND_ARRAY_PREFIXED  0x26
-#define IDL_KIND_ARRAY_REMAINDER 0x27
-#define IDL_KIND_ENUM            0x28
-#define IDL_KIND_HIDDEN_PREFIX   0x29
-#define IDL_KIND_HIDDEN_SUFFIX   0x2A
-#define IDL_KIND_OPTION_REMAINDER 0x2B
+    // --- Aggregates / composites ---------------------------------------------
+    IDL_KIND_STRUCT          = 0x20,
+    IDL_KIND_TUPLE           = 0x21,
+    IDL_KIND_OPTION_DYNAMIC  = 0x22,
+    IDL_KIND_OPTION_FIXED    = 0x23,
+    IDL_KIND_OPTION_ZEROABLE = 0x24,
+    IDL_KIND_ARRAY_FIXED     = 0x25,
+    IDL_KIND_ARRAY_PREFIXED  = 0x26,
+    IDL_KIND_ARRAY_REMAINDER = 0x27,
+    IDL_KIND_ENUM            = 0x28,
+    IDL_KIND_HIDDEN_PREFIX   = 0x29,
+    IDL_KIND_HIDDEN_SUFFIX   = 0x2A,
+    IDL_KIND_OPTION_REMAINDER = 0x2B,
+};
 
 // --- String encodings (STRING_FIXED / STRING_PREFIXED `encoding` arg) --------
-#define IDL_ENCODING_UTF8   0x00
-#define IDL_ENCODING_BASE16 0x01
+enum idl_encoding {
+    IDL_ENCODING_UTF8   = 0x00,
+    IDL_ENCODING_BASE16 = 0x01,
+};

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "cs_display_renderer.h"
+#include "cs_instruction_template.h"
 #include "idl_kinds.h"
 #include "app_mem_utils.h"
 
@@ -256,6 +257,203 @@ static void test_render_mixed_argument_and_account_fields(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+static void test_render_amount_with_decimals(void) {
+    printf("  test_render_amount_with_decimals\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    memset(&template, 0, sizeof(template));
+    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
+    strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_AMOUNT;
+    template.display_fields[0].argument.format.amount.decimals = 9;
+    template.display_field_count = 1;
+
+    // 1_000_000_000 lamports = 1 SOL (9 decimals)
+    uint8_t value[] = {0x00, 0xCA, 0x9A, 0x3B, 0x00, 0x00, 0x00, 0x00};
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
+    assert(strcmp(cs_display_renderer_element(1)->title, "Amount") == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "1") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_amount_zero_decimals(void) {
+    printf("  test_render_amount_zero_decimals\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    memset(&template, 0, sizeof(template));
+    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
+    strlcpy(template.display_fields[0].name, "Count", sizeof(template.display_fields[0].name));
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_AMOUNT;
+    template.display_fields[0].argument.format.amount.decimals = 0;
+    template.display_field_count = 1;
+
+    uint8_t value[] = {0xE8, 0x03, 0x00, 0x00};  // 1000 in u32 LE
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U32;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 4;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
+    assert(strcmp(cs_display_renderer_element(1)->value, "1000") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_token_amount_native(void) {
+    printf("  test_render_token_amount_native\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    memset(&template, 0, sizeof(template));
+    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
+    strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
+    template.display_fields[0].argument.format.token_amount.is_native = true;
+    template.display_field_count = 1;
+
+    // 1_000_000_000 lamports = 1 SOL
+    uint8_t value[] = {0x00, 0xCA, 0x9A, 0x3B, 0x00, 0x00, 0x00, 0x00};
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
+    assert(strcmp(cs_display_renderer_element(1)->value, "1 SOL") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_token_amount_unknown(void) {
+    printf("  test_render_token_amount_unknown\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    memset(&template, 0, sizeof(template));
+    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
+    strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
+    template.display_fields[0].argument.format.token_amount.is_native = false;
+    template.display_field_count = 1;
+
+    // 1000000 in u64 LE
+    uint8_t value[] = {0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00};
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
+    assert(strcmp(cs_display_renderer_element(1)->value, "1000000 ???") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_account_full_address(void) {
+    printf("  test_render_account_full_address\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    memset(&template, 0, sizeof(template));
+    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
+    strlcpy(template.display_fields[0].name, "To", sizeof(template.display_fields[0].name));
+    template.display_fields[0].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
+    template.display_field_count = 1;
+
+    uint8_t pubkey[32];
+    memset(pubkey, 0x42, 32);
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = pubkey;
+    instr.resolved[0].value_size = 32;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
+
+    const char *val = cs_display_renderer_element(1)->value;
+    // Full base58 address (32 bytes all-0x42 encodes to a ~44 char string)
+    assert(strlen(val) > 30);
+    // Must not be truncated short form
+    assert(val[7] != '.' || val[8] != '.');
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_unsupported_param_type(void) {
+    printf("  test_render_unsupported_param_type\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    memset(&template, 0, sizeof(template));
+    strlcpy(template.operation_type, "Test", sizeof(template.operation_type));
+    strlcpy(template.display_fields[0].name, "Field", sizeof(template.display_fields[0].name));
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_ENUM;  // Not supported yet
+    template.display_field_count = 1;
+
+    uint8_t value = 1;
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U8;
+    instr.resolved[0].value = &value;
+    instr.resolved[0].value_size = 1;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 int main(void) {
     printf("cs_display_renderer_test\n");
     test_initial_state();
@@ -267,6 +465,12 @@ int main(void) {
     test_header_value_with_program_name();
     test_header_value_fallback_to_program_address();
     test_render_mixed_argument_and_account_fields();
+    test_render_amount_with_decimals();
+    test_render_amount_zero_decimals();
+    test_render_token_amount_native();
+    test_render_token_amount_unknown();
+    test_render_account_full_address();
+    test_render_unsupported_param_type();
     printf("  All passed!\n");
     return 0;
 }

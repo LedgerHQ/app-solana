@@ -10,48 +10,125 @@
 #include "cs_instruction_template.h"
 #include "cs_substructure.h"
 
-#define SUBSTRUCTURE_TYPE_DISPLAY_FIELD   0x00
-#define SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT 0x01
-#define SUBSTRUCTURE_TYPE_HIDE_RULE       0x02
-#define SUBSTRUCTURE_TYPE_ACCOUNT_RESET   0x03
+enum substructure_type {
+    SUBSTRUCTURE_TYPE_DISPLAY_FIELD   = 0x00,
+    SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT = 0x01,
+    SUBSTRUCTURE_TYPE_HIDE_RULE       = 0x02,
+    SUBSTRUCTURE_TYPE_ACCOUNT_RESET   = 0x03,
+};
 
-// PARAM_* parser. VALUE always sits at tag 0x01; the type-specific tags
-// (0x00, 0x02..0x06 across the PARAM_* variants) are accepted and ignored so a
-// single parser handles every formatter type.
-typedef struct param_out_s {
+// ---- PARAM_RAW parser -------------------------------------------------------
+// Used for ARGUMENT_PATH with CS_PARAM_TYPE_RAW, ACCOUNT_PATH, and CONSTANT.
+// CONSTANT source uses tag 0x02 to carry the IDL kind for format_leaf.
+
+typedef struct param_raw_out_s {
     TLV_reception_t received_tags;
     buffer_t value;
-} param_out_t;
+    buffer_t kind;
+} param_raw_out_t;
 
-static bool param_handle_value(const tlv_data_t *data, param_out_t *out) {
+static bool param_raw_handle_value(const tlv_data_t *data, param_raw_out_t *out) {
     out->value = data->value;
     return true;
 }
 
-static bool param_handle_ignore(const tlv_data_t *data, param_out_t *out) {
+static bool param_raw_handle_kind(const tlv_data_t *data, param_raw_out_t *out) {
+    out->kind = data->value;
+    return true;
+}
+
+static bool param_raw_handle_ignore(const tlv_data_t *data, param_raw_out_t *out) {
     UNUSED(data);
     UNUSED(out);
     return true;
 }
 
 // clang-format off
-#define PARAM_TAGS(X) \
-    X(0x00, PARAM_TAG_VERSION, param_handle_ignore, ENFORCE_UNIQUE_TAG) \
-    X(0x01, PARAM_TAG_VALUE,   param_handle_value,  ENFORCE_UNIQUE_TAG) \
-    X(0x02, PARAM_TAG_OPT_2,   param_handle_ignore, ALLOW_MULTIPLE_TAG) \
-    X(0x03, PARAM_TAG_OPT_3,   param_handle_ignore, ALLOW_MULTIPLE_TAG) \
-    X(0x04, PARAM_TAG_OPT_4,   param_handle_ignore, ALLOW_MULTIPLE_TAG) \
-    X(0x05, PARAM_TAG_OPT_5,   param_handle_ignore, ALLOW_MULTIPLE_TAG) \
-    X(0x06, PARAM_TAG_OPT_6,   param_handle_ignore, ALLOW_MULTIPLE_TAG)
+#define PARAM_RAW_TAGS(X) \
+    X(0x00, PARAM_RAW_TAG_VERSION, param_raw_handle_ignore, ENFORCE_UNIQUE_TAG) \
+    X(0x01, PARAM_RAW_TAG_VALUE,   param_raw_handle_value,  ENFORCE_UNIQUE_TAG) \
+    X(0x02, PARAM_RAW_TAG_KIND,    param_raw_handle_kind,   ENFORCE_UNIQUE_TAG)
 // clang-format on
 
-DEFINE_TLV_PARSER(PARAM_TAGS, NULL, parse_param)
+DEFINE_TLV_PARSER(PARAM_RAW_TAGS, NULL, parse_param_raw)
+
+// ---- PARAM_AMOUNT parser ----------------------------------------------------
+// Used for ARGUMENT_PATH with CS_PARAM_TYPE_AMOUNT.
+
+typedef struct param_amount_out_s {
+    TLV_reception_t received_tags;
+    buffer_t value;
+    buffer_t decimals;
+} param_amount_out_t;
+
+static bool param_amount_handle_value(const tlv_data_t *data, param_amount_out_t *out) {
+    out->value = data->value;
+    return true;
+}
+
+static bool param_amount_handle_decimals(const tlv_data_t *data, param_amount_out_t *out) {
+    out->decimals = data->value;
+    return true;
+}
+
+static bool param_amount_handle_ignore(const tlv_data_t *data, param_amount_out_t *out) {
+    UNUSED(data);
+    UNUSED(out);
+    return true;
+}
+
+// clang-format off
+#define PARAM_AMOUNT_TAGS(X) \
+    X(0x00, PARAM_AMOUNT_TAG_VERSION,  param_amount_handle_ignore,   ENFORCE_UNIQUE_TAG) \
+    X(0x01, PARAM_AMOUNT_TAG_VALUE,    param_amount_handle_value,    ENFORCE_UNIQUE_TAG) \
+    X(0x02, PARAM_AMOUNT_TAG_DECIMALS, param_amount_handle_decimals, ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(PARAM_AMOUNT_TAGS, NULL, parse_param_amount)
+
+// ---- PARAM_TOKEN_AMOUNT parser -----------------------------------------------
+// Used for ARGUMENT_PATH with CS_PARAM_TYPE_TOKEN_AMOUNT.
+
+typedef struct param_token_amount_out_s {
+    TLV_reception_t received_tags;
+    buffer_t value;
+    buffer_t is_native;
+} param_token_amount_out_t;
+
+static bool param_token_amount_handle_value(const tlv_data_t *data,
+                                            param_token_amount_out_t *out) {
+    out->value = data->value;
+    return true;
+}
+
+static bool param_token_amount_handle_is_native(const tlv_data_t *data,
+                                                param_token_amount_out_t *out) {
+    out->is_native = data->value;
+    return true;
+}
+
+static bool param_token_amount_handle_ignore(const tlv_data_t *data,
+                                             param_token_amount_out_t *out) {
+    UNUSED(data);
+    UNUSED(out);
+    return true;
+}
+
+// clang-format off
+#define PARAM_TOKEN_AMOUNT_TAGS(X) \
+    X(0x00, PARAM_TOKEN_AMOUNT_TAG_VERSION,   param_token_amount_handle_ignore,    ENFORCE_UNIQUE_TAG) \
+    X(0x01, PARAM_TOKEN_AMOUNT_TAG_VALUE,     param_token_amount_handle_value,     ENFORCE_UNIQUE_TAG) \
+    X(0x04, PARAM_TOKEN_AMOUNT_TAG_IS_NATIVE, param_token_amount_handle_is_native, ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(PARAM_TOKEN_AMOUNT_TAGS, NULL, parse_param_token_amount)
 
 // DISPLAY_FIELD parser. PARAM (tag 0x04) and SUBSTRUCT_TYPE (tag 0x01) are
 // captured; the others are accepted and ignored.
 typedef struct display_field_out_s {
     TLV_reception_t received_tags;
     uint8_t substruct_type;
+    uint8_t param_type;
     char name[CS_MAX_DISPLAY_FIELD_NAME];
     buffer_t param;
 } display_field_out_t;
@@ -80,6 +157,14 @@ static bool display_field_handle_name(const tlv_data_t *data, display_field_out_
     return true;
 }
 
+static bool display_field_handle_param_type(const tlv_data_t *data, display_field_out_t *out) {
+    if (data->value.size != 1) {
+        return false;
+    }
+    out->param_type = data->value.ptr[0];
+    return true;
+}
+
 static bool display_field_handle_ignore(const tlv_data_t *data, display_field_out_t *out) {
     UNUSED(data);
     UNUSED(out);
@@ -88,88 +173,234 @@ static bool display_field_handle_ignore(const tlv_data_t *data, display_field_ou
 
 // clang-format off
 #define DISPLAY_FIELD_TAGS(X) \
-    X(0x00, DISPLAY_FIELD_TAG_VERSION,       display_field_handle_ignore,        ENFORCE_UNIQUE_TAG) \
+    X(0x00, DISPLAY_FIELD_TAG_VERSION,       display_field_handle_ignore,         ENFORCE_UNIQUE_TAG) \
     X(0x01, DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, display_field_handle_substruct_type, ENFORCE_UNIQUE_TAG) \
-    X(0x02, DISPLAY_FIELD_TAG_NAME,          display_field_handle_name,          ENFORCE_UNIQUE_TAG) \
-    X(0x03, DISPLAY_FIELD_TAG_PARAM_TYPE,    display_field_handle_ignore,        ENFORCE_UNIQUE_TAG) \
-    X(0x04, DISPLAY_FIELD_TAG_PARAM,         display_field_handle_param,         ENFORCE_UNIQUE_TAG)
+    X(0x02, DISPLAY_FIELD_TAG_NAME,          display_field_handle_name,           ENFORCE_UNIQUE_TAG) \
+    X(0x03, DISPLAY_FIELD_TAG_PARAM_TYPE,    display_field_handle_param_type,     ENFORCE_UNIQUE_TAG) \
+    X(0x04, DISPLAY_FIELD_TAG_PARAM,         display_field_handle_param,          ENFORCE_UNIQUE_TAG)
 // clang-format on
 
 DEFINE_TLV_PARSER(DISPLAY_FIELD_TAGS, NULL, parse_display_field)
 
-// Extract the ARGUMENT_PATH of a DISPLAY_FIELD (if any) and record it on the
-// current template so PROMPT UI DISPLAY can match walker leaves against it.
-static int register_display_field(uint8_t apdu_type, const uint8_t *tlv, size_t tlv_size) {
-    display_field_out_t display_field = {0};
-    buffer_t display_field_payload = {.ptr = (uint8_t *) tlv, .size = tlv_size};
-    if (!parse_display_field(&display_field_payload,
-                             &display_field,
-                             &display_field.received_tags)) {
+// Parse the common DISPLAY_FIELD envelope (substruct_type, name, param_type, param buffer).
+// Returns 0 on success, -1 on failure.
+static int parse_display_field_envelope(uint8_t apdu_type,
+                                        const uint8_t *tlv,
+                                        size_t tlv_size,
+                                        display_field_out_t *out) {
+    memset(out, 0, sizeof(*out));
+    buffer_t payload = {.ptr = (uint8_t *) tlv, .size = tlv_size};
+    if (!parse_display_field(&payload, out, &out->received_tags)) {
         PRINTF("substructure: DISPLAY_FIELD parsing failed\n");
         return -1;
     }
-    if (!TLV_CHECK_RECEIVED_TAGS(display_field.received_tags, DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE)) {
+    if (!TLV_CHECK_RECEIVED_TAGS(out->received_tags, DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE)) {
         PRINTF("substructure: DISPLAY_FIELD missing SUBSTRUCT_TYPE\n");
         return -1;
     }
-    if (display_field.substruct_type != apdu_type) {
+    if (out->substruct_type != apdu_type) {
         PRINTF("substructure: SUBSTRUCT_TYPE=%d != APDU type=%d\n",
-               display_field.substruct_type,
+               out->substruct_type,
                apdu_type);
         return -1;
     }
-    if (!TLV_CHECK_RECEIVED_TAGS(display_field.received_tags, DISPLAY_FIELD_TAG_PARAM)) {
+    if (!TLV_CHECK_RECEIVED_TAGS(out->received_tags, DISPLAY_FIELD_TAG_PARAM)) {
         PRINTF("substructure: DISPLAY_FIELD missing PARAM\n");
         return -1;
     }
+    return 0;
+}
 
-    param_out_t param = {0};
-    if (!parse_param(&display_field.param, &param, &param.received_tags)) {
-        PRINTF("substructure: PARAM parsing failed\n");
+// Extract the VALUE (source + payload) from a parsed PARAM buffer.
+static int extract_value(const buffer_t *value_buf, cs_value_t *out) {
+    if (!cs_parse_value_from_buffer(value_buf->ptr, value_buf->size, out)) {
+        PRINTF("substructure: VALUE parsing failed\n");
         return -1;
     }
-    if (!TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_TAG_VALUE)) {
-        PRINTF("substructure: PARAM missing VALUE\n");
+    return 0;
+}
+
+// Register a PARAM_RAW display field (also handles ACCOUNT_PATH and CONSTANT sources).
+static int register_param_raw(const display_field_out_t *display_field, const char *field_name) {
+    param_raw_out_t param = {0};
+    if (!parse_param_raw(&display_field->param, &param, &param.received_tags)) {
+        PRINTF("substructure: PARAM_RAW parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_RAW_TAG_VALUE)) {
+        PRINTF("substructure: PARAM_RAW missing VALUE\n");
         return -1;
     }
 
     cs_value_t value;
-    if (!cs_parse_value_from_buffer(param.value.ptr, param.value.size, &value)) {
-        PRINTF("substructure: VALUE parsing failed\n");
+    if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
 
-    // Only ARGUMENT_PATH-sourced fields carry a walker path to match against.
-    // ACCOUNT_PATH fields carry a single account_index resolved at finalize time.
-    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+    if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        if (cs_instruction_template_add_display_path(value.payload,
+                                                     value.payload_size,
+                                                     CS_PARAM_TYPE_RAW,
+                                                     field_name) != 0) {
+            return -1;
+        }
+        PRINTF("substructure: registered RAW argument path %.*H name=%s\n",
+               value.payload_size,
+               value.payload,
+               field_name ? field_name : "(none)");
+    } else if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
         if (value.payload_size != 1) {
             PRINTF("substructure: ACCOUNT_PATH payload size %d != 1\n", value.payload_size);
             return -1;
         }
-        const char *field_name = display_field.name[0] != '\0' ? display_field.name : NULL;
         if (cs_instruction_template_add_account_field(value.payload[0], field_name) != 0) {
             return -1;
         }
         PRINTF("substructure: registered account field index=%d name=%s\n",
                value.payload[0],
                field_name ? field_name : "(none)");
-        return 0;
-    }
-    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: DISPLAY_FIELD source %d not supported\n", value.source);
-        return 0;
-    }
-
-    const char *field_name = display_field.name[0] != '\0' ? display_field.name : NULL;
-    if (cs_instruction_template_add_display_path(value.payload, value.payload_size, field_name) !=
-        0) {
+    } else if (value.source == CS_VALUE_SOURCE_CONSTANT) {
+        uint8_t kind = 0;
+        if (param.kind.ptr != NULL && param.kind.size == 1) {
+            kind = param.kind.ptr[0];
+        }
+        if (cs_instruction_template_add_constant_field(value.payload,
+                                                      value.payload_size,
+                                                      kind,
+                                                      field_name) != 0) {
+            return -1;
+        }
+        PRINTF("substructure: registered constant field kind=%d size=%d name=%s\n",
+               kind,
+               value.payload_size,
+               field_name ? field_name : "(none)");
+    } else {
+        PRINTF("substructure: PARAM_RAW source %d not supported\n", value.source);
         return -1;
     }
-    PRINTF("substructure: registered display path %.*H name=%s\n",
+    return 0;
+}
+
+// Register a PARAM_AMOUNT display field (ARGUMENT_PATH only).
+static int register_param_amount(const display_field_out_t *display_field,
+                                 const char *field_name) {
+    param_amount_out_t param = {0};
+    if (!parse_param_amount(&display_field->param, &param, &param.received_tags)) {
+        PRINTF("substructure: PARAM_AMOUNT parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_AMOUNT_TAG_VALUE)) {
+        PRINTF("substructure: PARAM_AMOUNT missing VALUE\n");
+        return -1;
+    }
+
+    cs_value_t value;
+    if (extract_value(&param.value, &value) != 0) {
+        return -1;
+    }
+    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("substructure: PARAM_AMOUNT requires ARGUMENT_PATH source, got %d\n",
+               value.source);
+        return -1;
+    }
+
+    if (cs_instruction_template_add_display_path(value.payload,
+                                                 value.payload_size,
+                                                 CS_PARAM_TYPE_AMOUNT,
+                                                 field_name) != 0) {
+        return -1;
+    }
+
+    uint8_t decimals = 0;
+    if (param.decimals.ptr != NULL && param.decimals.size == 1) {
+        decimals = param.decimals.ptr[0];
+    }
+    if (cs_instruction_template_set_format_amount(decimals) != 0) {
+        PRINTF("substructure: set_format_amount failed\n");
+        return -1;
+    }
+    PRINTF("substructure: registered AMOUNT path %.*H decimals=%d name=%s\n",
            value.payload_size,
            value.payload,
+           decimals,
            field_name ? field_name : "(none)");
     return 0;
+}
+
+// Register a PARAM_TOKEN_AMOUNT display field (ARGUMENT_PATH only).
+static int register_param_token_amount(const display_field_out_t *display_field,
+                                       const char *field_name) {
+    param_token_amount_out_t param = {0};
+    if (!parse_param_token_amount(&display_field->param, &param, &param.received_tags)) {
+        PRINTF("substructure: PARAM_TOKEN_AMOUNT parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_TOKEN_AMOUNT_TAG_VALUE)) {
+        PRINTF("substructure: PARAM_TOKEN_AMOUNT missing VALUE\n");
+        return -1;
+    }
+
+    cs_value_t value;
+    if (extract_value(&param.value, &value) != 0) {
+        return -1;
+    }
+    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("substructure: PARAM_TOKEN_AMOUNT requires ARGUMENT_PATH source, got %d\n",
+               value.source);
+        return -1;
+    }
+
+    if (cs_instruction_template_add_display_path(value.payload,
+                                                 value.payload_size,
+                                                 CS_PARAM_TYPE_TOKEN_AMOUNT,
+                                                 field_name) != 0) {
+        return -1;
+    }
+
+    bool is_native = false;
+    if (param.is_native.ptr != NULL && param.is_native.size == 1 &&
+        param.is_native.ptr[0] == 1) {
+        is_native = true;
+    }
+    if (cs_instruction_template_set_format_token_amount(is_native) != 0) {
+        PRINTF("substructure: set_format_token_amount failed\n");
+        return -1;
+    }
+    PRINTF("substructure: registered TOKEN_AMOUNT path %.*H is_native=%d name=%s\n",
+           value.payload_size,
+           value.payload,
+           is_native,
+           field_name ? field_name : "(none)");
+    return 0;
+}
+
+// Parse a DISPLAY_FIELD substructure and register it on the current template.
+// Dispatches to the correct PARAM parser based on the declared param_type.
+static int register_display_field(uint8_t apdu_type, const uint8_t *tlv, size_t tlv_size) {
+    display_field_out_t display_field;
+    if (parse_display_field_envelope(apdu_type, tlv, tlv_size, &display_field) != 0) {
+        return -1;
+    }
+
+    const char *field_name = NULL;
+    if (display_field.name[0] != '\0') {
+        field_name = display_field.name;
+    }
+
+    switch (display_field.param_type) {
+        case CS_PARAM_TYPE_RAW:
+            return register_param_raw(&display_field, field_name);
+
+        case CS_PARAM_TYPE_AMOUNT:
+            return register_param_amount(&display_field, field_name);
+
+        case CS_PARAM_TYPE_TOKEN_AMOUNT:
+            return register_param_token_amount(&display_field, field_name);
+
+        default:
+            PRINTF("substructure: unsupported param_type %d\n", display_field.param_type);
+            return -1;
+    }
 }
 
 int handle_provide_instruction_substructure(void) {
@@ -198,6 +429,7 @@ int handle_provide_instruction_substructure(void) {
     // types contribute to the hash but are not decoded.
     if (type == SUBSTRUCTURE_TYPE_DISPLAY_FIELD) {
         if (register_display_field(type, tlv, tlv_size) != 0) {
+            PRINTF("substructure: register_display_field failed\n");
             return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
         }
     }

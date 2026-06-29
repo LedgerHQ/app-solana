@@ -67,6 +67,7 @@ cs_instruction_template_t *cs_instruction_template_current(void) {
 
 int cs_instruction_template_add_display_path(const uint8_t *path,
                                              size_t path_size,
+                                             uint8_t param_type,
                                              const char *name) {
     cs_instruction_template_t *builder = cs_instruction_template_current();
     if (builder == NULL) {
@@ -86,6 +87,7 @@ int cs_instruction_template_add_display_path(const uint8_t *path,
     }
 
     builder->display_fields[builder->display_field_count].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    builder->display_fields[builder->display_field_count].argument.param_type = param_type;
     memcpy(builder->display_fields[builder->display_field_count].argument.path, path, path_size);
     builder->display_fields[builder->display_field_count].argument.path_size = (uint8_t) path_size;
     if (name != NULL) {
@@ -122,6 +124,84 @@ int cs_instruction_template_add_account_field(uint8_t account_index,
         builder->display_fields[builder->display_field_count].name[0] = '\0';
     }
     builder->display_field_count++;
+    return 0;
+}
+
+int cs_instruction_template_add_constant_field(const uint8_t *data,
+                                               size_t data_size,
+                                               uint8_t kind,
+                                               const char *name) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL) {
+        PRINTF("cs_instruction_template_add_constant_field: no builder open\n");
+        return -1;
+    }
+    if (data_size > CS_MAX_CONSTANT_SIZE) {
+        PRINTF("cs_instruction_template_add_constant_field: data too long (%d > %d)\n",
+               (int) data_size,
+               CS_MAX_CONSTANT_SIZE);
+        return -1;
+    }
+    if (builder->display_field_count >= CS_MAX_DISPLAY_FIELDS) {
+        PRINTF("cs_instruction_template_add_constant_field: too many display fields (max %d)\n",
+               CS_MAX_DISPLAY_FIELDS);
+        return -1;
+    }
+
+    builder->display_fields[builder->display_field_count].source = CS_VALUE_SOURCE_CONSTANT;
+    memcpy(builder->display_fields[builder->display_field_count].constant.data, data, data_size);
+    builder->display_fields[builder->display_field_count].constant.data_size = (uint8_t) data_size;
+    builder->display_fields[builder->display_field_count].constant.kind = kind;
+    if (name != NULL) {
+        strlcpy(builder->display_fields[builder->display_field_count].name,
+                name,
+                sizeof(builder->display_fields[builder->display_field_count].name));
+    } else {
+        builder->display_fields[builder->display_field_count].name[0] = '\0';
+    }
+    builder->display_field_count++;
+    return 0;
+}
+
+int cs_instruction_template_set_format_amount(uint8_t decimals) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL || builder->display_field_count == 0) {
+        PRINTF("cs_instruction_template_set_format_amount: no field to configure\n");
+        return -1;
+    }
+    cs_display_field_t *field = &builder->display_fields[builder->display_field_count - 1];
+    if (field->source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("cs_instruction_template_set_format_amount: source %d != ARGUMENT_PATH\n",
+               field->source);
+        return -1;
+    }
+    if (field->argument.param_type != CS_PARAM_TYPE_AMOUNT) {
+        PRINTF("cs_instruction_template_set_format_amount: param_type %d != AMOUNT\n",
+               field->argument.param_type);
+        return -1;
+    }
+    field->argument.format.amount.decimals = decimals;
+    return 0;
+}
+
+int cs_instruction_template_set_format_token_amount(bool is_native) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL || builder->display_field_count == 0) {
+        PRINTF("cs_instruction_template_set_format_token_amount: no field to configure\n");
+        return -1;
+    }
+    cs_display_field_t *field = &builder->display_fields[builder->display_field_count - 1];
+    if (field->source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("cs_instruction_template_set_format_token_amount: source %d != ARGUMENT_PATH\n",
+               field->source);
+        return -1;
+    }
+    if (field->argument.param_type != CS_PARAM_TYPE_TOKEN_AMOUNT) {
+        PRINTF("cs_instruction_template_set_format_token_amount: param_type %d != TOKEN_AMOUNT\n",
+               field->argument.param_type);
+        return -1;
+    }
+    field->argument.format.token_amount.is_native = is_native;
     return 0;
 }
 

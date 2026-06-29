@@ -23,10 +23,17 @@ DISPLAY_FIELD_TAG_NAME = 0x02
 DISPLAY_FIELD_TAG_PARAM_TYPE = 0x03
 DISPLAY_FIELD_TAG_PARAM = 0x04
 PARAM_TYPE_RAW = 0x00
+PARAM_TYPE_AMOUNT = 0x01
+PARAM_TYPE_TOKEN_AMOUNT = 0x02
 PARAM_TAG_VERSION = 0x00
 PARAM_TAG_VALUE = 0x01
+PARAM_TAG_DECIMALS = 0x02  # PARAM_AMOUNT tag for decimals
+PARAM_TAG_KIND = 0x02      # PARAM_RAW/CONSTANT tag for IDL kind
+PARAM_TAG_IS_NATIVE = 0x04  # PARAM_TOKEN_AMOUNT tag for is_native flag
 VALUE_SOURCE_ARGUMENT_PATH = 0x00
 VALUE_SOURCE_ACCOUNT_PATH = 0x01
+VALUE_SOURCE_CONSTANT = 0x02
+IDL_KIND_U32 = 0x03
 SUBSTRUCTURE_TYPE_DISPLAY_FIELD = 0x00
 
 
@@ -85,6 +92,50 @@ def _build_account_display_field(account_index: int, name: str) -> bytes:
             + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_RAW)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_raw))
+
+
+def _build_constant_display_field(data: bytes, kind: int, name: str) -> bytes:
+    """A DISPLAY_FIELD with a CONSTANT source — value embedded in the descriptor.
+    The IDL kind is sent via PARAM tag 0x02 for format_leaf rendering."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_CONSTANT)
+                 + format_tlv(ValueTag.PAYLOAD, data))
+    param_raw = (format_tlv(PARAM_TAG_VERSION, 1)
+                 + format_tlv(PARAM_TAG_VALUE, value_tlv)
+                 + format_tlv(PARAM_TAG_KIND, kind))
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_RAW)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_raw))
+
+
+def _build_amount_display_field(argument_path: bytes, decimals: int, name: str) -> bytes:
+    """A DISPLAY_FIELD with PARAM_AMOUNT: numeric value with fixed decimal scaling."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, argument_path))
+    param_amount = (format_tlv(PARAM_TAG_VERSION, 1)
+                    + format_tlv(PARAM_TAG_VALUE, value_tlv)
+                    + format_tlv(PARAM_TAG_DECIMALS, decimals))
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_AMOUNT)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_amount))
+
+
+def _build_token_amount_display_field(argument_path: bytes, is_native: bool, name: str) -> bytes:
+    """A DISPLAY_FIELD with PARAM_TOKEN_AMOUNT: native SOL or unknown token."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, argument_path))
+    param_token = (format_tlv(PARAM_TAG_VERSION, 1)
+                   + format_tlv(PARAM_TAG_VALUE, value_tlv))
+    if is_native:
+        param_token += format_tlv(PARAM_TAG_IS_NATIVE, 1)
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_TOKEN_AMOUNT)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_token))
 
 
 # Sending a substructure without an open clear-signing session must fail closed.
@@ -507,6 +558,44 @@ def test_bridge_with_account_path_field(backend, sol, scenario_navigator, root_p
     assert sol.get_async_response().status == 0x9000
 
 
+def test_bridge_with_constant_field(backend, sol, scenario_navigator, root_pytest_dir):
+    """An instruction with an ARGUMENT_PATH and a CONSTANT display field.
+    The CONSTANT field carries a u32 value (99) embedded in the descriptor,
+    rendered via format_leaf using its IDL kind (U32)."""
+
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    # Two display fields: an ARGUMENT_PATH (u32 from instruction data),
+    # then a CONSTANT (u32 value 99 embedded in the descriptor).
+    argument_field = _build_display_field(BRIDGE_PATH_U32)
+    constant_field = _build_constant_display_field(struct.pack("<I", 99), IDL_KIND_U32, "Fee")
+    substructures_hash = hashlib.sha256(argument_field + constant_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, argument_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, constant_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
 def test_bridge_prompt_without_complete_substructures_rejected(backend):
     """FINALIZE before the substructure stream matches SUBSTRUCTURES_HASH
     must fail closed."""
@@ -612,3 +701,134 @@ def test_substruct_type_mismatch_rejected(backend):
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, bad_display_field)
     assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
+
+
+# ── PARAM_TYPE formatting tests ──────────────────────────────────────────────
+
+def test_bridge_amount_with_decimals(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_AMOUNT: a u64 value with 9 decimals displays as scaled amount."""
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 1_000_000_000))
+    _begin_session(sol, message)
+
+    # Path to the u64 field (index 2 in the struct)
+    display_field = _build_amount_display_field(BRIDGE_PATH_U64, 9, "Amount")
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_bridge_token_amount_native(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_TOKEN_AMOUNT with is_native=1: displays as 'X SOL'."""
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 1_000_000_000))
+    _begin_session(sol, message)
+
+    display_field = _build_token_amount_display_field(BRIDGE_PATH_U64, True, "Amount")
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_bridge_token_amount_unknown(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_TOKEN_AMOUNT without is_native: displays as 'X ???'."""
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 1_000_000))
+    _begin_session(sol, message)
+
+    display_field = _build_token_amount_display_field(BRIDGE_PATH_U64, False, "Amount")
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_bridge_account_param_type(backend, sol, scenario_navigator, root_pytest_dir):
+    """ACCOUNT_PATH source: displays as base58 short form (7..7)."""
+    destination_pubkey = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+    message = _craft_instruction_with_accounts(
+        sol,
+        BRIDGE_PROGRAM_ID,
+        _bridge_instruction_data(42, 7_000_000),
+        extra_accounts=[destination_pubkey],
+    )
+    _begin_session(sol, message)
+
+    display_field = _build_account_display_field(1, "Destination")
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
