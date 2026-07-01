@@ -16,7 +16,8 @@ from . import cal_helper as cal
 
 from solders.pubkey import Pubkey
 from spl.token.constants import TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID
-from spl.token.instructions import TransferCheckedParams, transfer_checked, get_associated_token_address, create_associated_token_account
+from spl.token.instructions import transfer_checked, get_associated_token_address, create_associated_token_account
+from spl.token.models import TransferCheckedParams
 from solders.instruction import Instruction, AccountMeta
 
 # A bit hacky but way less hassle than actually writing an actual address decoder
