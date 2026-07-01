@@ -107,7 +107,10 @@ static void review_choice(bool confirm) {
     if (confirm) {
         if (G_command.is_preview_mode) {
             // In preview mode, store fingerprint instead of signing
-            if (store_preview_fingerprint() == 0) {
+            if (store_preview_fingerprint(G_command.message,
+                                              G_command.message_length,
+                                              G_command.derivation_path,
+                                              G_command.derivation_path_length) == 0) {
                 io_send_sw(ApduReplySuccess);
                 // We don't display the "Message signed" status page in preview mode as we have not
                 // actually signed. The delayed signing step will sign and display it

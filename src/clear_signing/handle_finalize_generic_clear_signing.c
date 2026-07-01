@@ -138,6 +138,30 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
         }
 
         result->template = template;
+        result->mint_pubkey = NULL;
+
+        // Resolve the mint pubkey from the template's mint association indices
+        // so the renderer can look up token symbol and decimals.
+        if (template->has_mint_assoc) {
+            if (template->mint_assoc_mint >= instruction.accounts_length) {
+                PRINTF("finalize cs: instruction %d mint_assoc_mint %d out of range (%d)\n",
+                       i,
+                       template->mint_assoc_mint,
+                       instruction.accounts_length);
+                return -1;
+            }
+            if (instruction.accounts[template->mint_assoc_mint] >=
+                header.pubkeys_header.pubkeys_length) {
+                PRINTF("finalize cs: instruction %d mint pubkey_index %d out of range (%d)\n",
+                       i,
+                       instruction.accounts[template->mint_assoc_mint],
+                       header.pubkeys_header.pubkeys_length);
+                return -1;
+            }
+            result->mint_pubkey =
+                header.pubkeys[instruction.accounts[template->mint_assoc_mint]].data;
+        }
+
         (*walked_instructions_count)++;
     }
     return 0;

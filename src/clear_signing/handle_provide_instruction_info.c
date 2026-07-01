@@ -256,5 +256,13 @@ int handle_provide_instruction_info(void) {
     template->idl_type_pool_size = tlv_extracted.idl_type_pool_size;
     template->idl_root_type = tlv_extracted.idl_root_type;
 
+    if (has_mint_account) {
+        if (cs_instruction_template_set_mint_assoc(tlv_extracted.mint_assoc_account,
+                                                   tlv_extracted.mint_assoc_mint) != 0) {
+            PRINTF("Error: failed to set mint association\n");
+            return io_send_sw(ApduReplySolanaInvalidInstructionInfo);
+        }
+    }
+
     return io_send_sw(ApduReplySuccess);
 }

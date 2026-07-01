@@ -6,17 +6,48 @@
 #include "main_std_app.h"
 #include "cs_display_renderer.h"
 #include "cs_transaction.h"
+#include "handle_sign_message_preview.h"
+#include "dynamic_token_info.h"
+#include "trusted_info.h"
 
 static nbgl_contentTagValueList_t G_cs_review_content;
 static nbgl_layoutTagValue_t G_cs_review_pair;
 
+static int cs_review_confirm_internal(void) {
+    const cs_transaction_t *cs_tx = cs_transaction_get();
+    if (cs_tx == NULL) {
+        PRINTF("cs_review_confirm: no transaction context\n");
+        return -1;
+    }
+    if (store_preview_fingerprint(cs_tx->transaction,
+                                  cs_tx->transaction_size,
+                                  cs_tx->derivation_path,
+                                  cs_tx->derivation_path_length) != 0) {
+        PRINTF("cs_review_confirm: failed to store fingerprint\n");
+        return -1;
+    }
+    return 0;
+}
+
 static void cs_review_choice(bool confirm) {
-    cs_transaction_reset();
     if (confirm) {
-        PRINTF("Clear signing review confirmed\n");
+        int ret = cs_review_confirm_internal();
+        cs_transaction_reset();
+        reset_trusted_info();
+        reset_dynamic_token_info();
+        if (ret != 0) {
+            io_send_sw(ApduReplySolanaInvalidMessage);
+            nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_idle);
+            return;
+        }
+        PRINTF("Clear signing review confirmed, fingerprint armed\n");
         io_send_sw(ApduReplySuccess);
         nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_SIGNED, ui_idle);
     } else {
+        cs_transaction_reset();
+        reset_trusted_info();
+        reset_dynamic_token_info();
+        clear_preview_state();
         PRINTF("Clear signing review rejected\n");
         io_send_sw(ApduReplyUserRefusal);
         nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_idle);

@@ -205,6 +205,20 @@ int cs_instruction_template_set_format_token_amount(bool is_native) {
     return 0;
 }
 
+// Record which instruction accounts carry the token account and the mint,
+// so the finalize step can resolve the mint pubkey for TOKEN_AMOUNT display.
+int cs_instruction_template_set_mint_assoc(uint8_t account_idx, uint8_t mint_idx) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL) {
+        PRINTF("cs_instruction_template_set_mint_assoc: no builder open\n");
+        return -1;
+    }
+    builder->mint_assoc_account = account_idx;
+    builder->mint_assoc_mint = mint_idx;
+    builder->has_mint_assoc = true;
+    return 0;
+}
+
 int cs_instruction_template_commit(void) {
     if (G_template_table == NULL || G_template_table->builder == NULL) {
         PRINTF("cs_instruction_template_commit: no builder open\n");

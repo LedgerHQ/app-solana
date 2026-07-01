@@ -12,10 +12,13 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "globals.h"
 
 typedef struct cs_transaction_s {
     uint8_t *transaction;   // heap copy of the serialized message captured at 0x0A
     size_t transaction_size;
+    uint32_t derivation_path[MAX_BIP32_PATH_LENGTH];
+    uint32_t derivation_path_length;
 } cs_transaction_t;
 
 // Returns the current transaction context, or NULL if no session is active.
@@ -26,6 +29,9 @@ const cs_transaction_t *cs_transaction_get(void);
 void cs_transaction_reset(void);
 
 // Reset any previous session, allocate a fresh context, and store a copy of the
-// serialized transaction. Returns 0 on success, -1 on invalid input or
-// allocation failure (session left empty).
-int cs_transaction_begin(const uint8_t *transaction, size_t transaction_size);
+// serialized transaction and derivation path. Returns 0 on success, -1 on invalid
+// input or allocation failure (session left empty).
+int cs_transaction_begin(const uint8_t *transaction,
+                         size_t transaction_size,
+                         const uint32_t *derivation_path,
+                         uint32_t derivation_path_length);

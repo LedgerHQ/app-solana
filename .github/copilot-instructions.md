@@ -104,6 +104,10 @@ Preview (INS 0x08) stores SHA-512 fingerprint of message with zeroed blockhash, 
 
 - You do NOT have the possibility to regenerate the PKI certificates for new keys. As a result NEVER try to generate new .pem files. If a new use cases requires new keys, reuse the existing test keys and their corresponding .pem files for development purposes and flag so in the result summary.
 
+## Generic Clear Signing
+
+The generic clear signing does not replace nor deprecate the existing sign flows. InsSignMessage is NOT legacy.
+
 ## Code Patterns
 
 Coding patterns described here are more important than uniformity cross applications.
@@ -120,16 +124,19 @@ Coding patterns described here are more important than uniformity cross applicat
 - bool return is used to indicate the result of a CHECK, NOT a success or failure.
 - int return is used to report a success or failure of a function by using -1 or 0.
 - Global or module variables are prefixed by `G_*`.
-- Never use ternary conditional operator
 - Comments are concise and straightforward
-- No goto: if a function needs exit cleaning logic, split in inner / outer.
 - Functions and variables should have clear explicit names without abbreviation. BAD: `idl_leaf_cb_t cb`, GOOD: `idl_leaf_cb_t leaf_callback`.
 - Functions called in a wrong context shall return an error, not ignore or skip
-- Do not use shortcut variables to avoid writing long access path.
-- Always write the full access path at each use site. Do not introduce a local pointer or variable solely to shorten repeated access ; if a long access path is repeated, it is a sign that a sub function should handle the logic.
 - Never write functions in header files.
 - Do not rely on C implicit struct copy, use a memcpy to highlight deep copy behavior.
 - Avoid enum-like defines. Prefer real enum definition.
+
+### FORBIDDEN patterns
+
+The following patterns are STRICLY forbidden and shall never be used :
+- NEVER introduce a local pointer or variable solely to shorten repeated access ; always write the full access path at each use site, even in loops. If a long access path is repeated, it is a sign that a sub function should handle the logic.
+- NEVER use ternary conditional operator
+- NO goto: if a function needs exit cleaning logic, split in inner / outer.
 
 ### Chain of trust
 
