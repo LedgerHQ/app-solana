@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "cx.h"
 #include "globals.h"
 
 // Preview state for delayed signing
@@ -22,6 +23,9 @@ typedef struct {
 
 extern preview_state_t *G_preview_state;
 
-int store_preview_fingerprint(void);
+int store_preview_fingerprint(const uint8_t *message,
+                              size_t message_length,
+                              const uint32_t *derivation_path,
+                              uint32_t derivation_path_length);
 int handle_sign_message_delayed(void);
 void clear_preview_state(void);

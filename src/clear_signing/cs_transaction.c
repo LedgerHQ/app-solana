@@ -19,11 +19,20 @@ void cs_transaction_reset(void) {
     }
 }
 
-int cs_transaction_begin(const uint8_t *transaction, size_t transaction_size) {
+int cs_transaction_begin(const uint8_t *transaction,
+                         size_t transaction_size,
+                         const uint32_t *derivation_path,
+                         uint32_t derivation_path_length) {
     cs_transaction_reset();
 
     if (transaction == NULL || transaction_size == 0) {
         PRINTF("cs_transaction_begin: empty transaction\n");
+        return -1;
+    }
+
+    if (derivation_path == NULL || derivation_path_length == 0 ||
+        derivation_path_length > MAX_BIP32_PATH_LENGTH) {
+        PRINTF("cs_transaction_begin: invalid derivation path\n");
         return -1;
     }
 
@@ -41,6 +50,8 @@ int cs_transaction_begin(const uint8_t *transaction, size_t transaction_size) {
 
     memcpy(G_cs_transaction->transaction, transaction, transaction_size);
     G_cs_transaction->transaction_size = transaction_size;
+    memcpy(G_cs_transaction->derivation_path, derivation_path, derivation_path_length * sizeof(uint32_t));
+    G_cs_transaction->derivation_path_length = derivation_path_length;
     return 0;
 }
 

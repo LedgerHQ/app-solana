@@ -8,6 +8,7 @@
 #include "cs_instruction_template.h"
 #include "idl_kinds.h"
 #include "app_mem_utils.h"
+#include "dynamic_token_info.h"
 
 // Dummy template used by tests that don't care about operation_type/names.
 static cs_instruction_template_t G_dummy_template;
@@ -454,6 +455,47 @@ static void test_render_unsupported_param_type(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+static void test_render_token_amount_resolved_mint(void) {
+    printf("  test_render_token_amount_resolved_mint\n");
+    mock_mem_reset();
+    mock_dynamic_token_info_reset();
+    cs_display_renderer_reset();
+
+    // Register a mock token: USDC with 6 decimals
+    uint8_t usdc_mint[32];
+    memset(usdc_mint, 0xAA, 32);
+    mock_dynamic_token_info_set(usdc_mint, "USDC", 6);
+
+    cs_instruction_template_t template;
+    memset(&template, 0, sizeof(template));
+    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
+    strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
+    template.display_fields[0].argument.format.token_amount.is_native = false;
+    template.display_field_count = 1;
+
+    // 1_500_000 = 1.5 USDC (6 decimals)
+    uint8_t value[] = {0x60, 0xE3, 0x16, 0x00, 0x00, 0x00, 0x00, 0x00};
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+    instr.mint_pubkey = usdc_mint;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
+    assert(strcmp(cs_display_renderer_element(1)->value, "1.5 USDC") == 0);
+
+    cs_display_renderer_reset();
+    mock_dynamic_token_info_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 int main(void) {
     printf("cs_display_renderer_test\n");
     test_initial_state();
@@ -469,6 +511,7 @@ int main(void) {
     test_render_amount_zero_decimals();
     test_render_token_amount_native();
     test_render_token_amount_unknown();
+    test_render_token_amount_resolved_mint();
     test_render_account_full_address();
     test_render_unsupported_param_type();
     printf("  All passed!\n");

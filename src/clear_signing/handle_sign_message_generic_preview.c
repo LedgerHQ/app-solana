@@ -1,6 +1,7 @@
 #include <os.h>
 
 #include "handle_sign_message_generic_preview.h"
+#include "handle_sign_message_preview.h"
 #include "cs_transaction.h"
 #include "apdu.h"
 #include "globals.h"
@@ -23,9 +24,16 @@ int handle_sign_message_generic_preview(void) {
         return io_send_sw(ApduReplySolanaInvalidMessage);
     }
 
+    // Discard any previous preview fingerprint.
+    clear_preview_state();
+
     // The descriptor stream that follows reuses G_command.message, so the
-    // transaction must be copied into the clear-signing context now.
-    if (cs_transaction_begin(G_command.message, G_command.message_length) != 0) {
+    // transaction and derivation path must be copied into the clear-signing
+    // context now. The fingerprint is computed later at user approval time.
+    if (cs_transaction_begin(G_command.message,
+                             G_command.message_length,
+                             G_command.derivation_path,
+                             G_command.derivation_path_length) != 0) {
         PRINTF("generic preview: failed to buffer transaction\n");
         return io_send_sw(ApduReplySolanaInvalidGenericPreview);
     }

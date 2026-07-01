@@ -4,14 +4,17 @@ import struct
 import pytest
 
 from ragger.error import ExceptionRAPDU
+from ragger.navigator import NavInsID
 
 from solders.pubkey import Pubkey
+from solders.hash import Hash
 from solders.instruction import Instruction, AccountMeta
 
 from application_client.solana import (SolanaClient, INS, CLA, P2_NONE, P1_NON_CONFIRM, ErrorType,
                                       TokenAccountStateTag, AltResolutionTag, EnumVariantTag,
                                       InstructionInfoTag, ValueTag)
 from application_client.solana_signing_partners import INSTRUCTION_DESCRIPTOR_PARTNER
+from application_client.solana_cmd_builder import verify_signature
 from application_client.tlv import format_tlv
 from application_client import solana_utils as SOL
 
@@ -832,3 +835,135 @@ def test_bridge_account_param_type(backend, sol, scenario_navigator, root_pytest
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+
+
+# ─── End-to-end: clear signing + delayed signing ─────────────────────────────
+
+def _craft_message_with_blockhash(sol: SolanaClient, program_id: bytes,
+                                  data: bytes, blockhash: bytes,
+                                  sender_pubkey: bytes) -> bytes:
+    """Build a single-instruction message with a specific blockhash."""
+    sender = Pubkey.from_bytes(sender_pubkey)
+    instruction = Instruction(
+        program_id=Pubkey.from_bytes(program_id),
+        accounts=[AccountMeta(pubkey=sender, is_signer=True, is_writable=True)],
+        data=data,
+    )
+    return sol.craft_tx([instruction], sender, blockhash=Hash.from_bytes(blockhash))
+
+
+def test_clear_signing_delayed_sign_valid(backend, sol, navigator,
+                                          scenario_navigator, root_pytest_dir):
+    """Full end-to-end: generic preview → descriptors → finalize → UI approve →
+    delayed sign. Verifies the Ed25519 signature over the final message."""
+
+    from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+    # Build message with ZEROED blockhash (for preview fingerprint)
+    preview_message = _craft_message_with_blockhash(
+        sol, BRIDGE_PROGRAM_ID,
+        _bridge_instruction_data(1000, 5_000_000),
+        blockhash=bytes(32),
+        sender_pubkey=from_public_key,
+    )
+
+    # Phase 0: Open clear-signing session (INS 0x0A)
+    _begin_session(sol, preview_message)
+
+    # Phase B: Provide instruction template
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    # Finalize (INS 0x0C) — validates descriptors
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    # Prompt UI (INS 0x0B) — user approves, fingerprint armed
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+    # Delayed sign (INS 0x09) — same message but with REAL blockhash
+    real_blockhash = bytes([0xAB] * 32)
+    final_message = _craft_message_with_blockhash(
+        sol, BRIDGE_PROGRAM_ID,
+        _bridge_instruction_data(1000, 5_000_000),
+        blockhash=real_blockhash,
+        sender_pubkey=from_public_key,
+    )
+
+    signature = sol.sign_previewed_message(SOL.SOL_PACKED_DERIVATION_PATH, final_message).data
+    assert len(signature) == 64
+    verify_signature(from_public_key, final_message, signature)
+
+    # Dismiss the "Transaction signed" status screen shown by delayed sign
+    navigator.navigate_and_compare(
+        path=root_pytest_dir,
+        instructions=[NavInsID.USE_CASE_STATUS_DISMISS],
+        test_case_name="delayed_sign_status",
+        screen_change_before_first_instruction=False,
+    )
+
+
+def test_clear_signing_delayed_sign_rejected(backend, sol, navigator,
+                                             scenario_navigator, root_pytest_dir):
+    """Clear signing review rejected → delayed sign fails with no-preview error."""
+
+    from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+    # Build message with zeroed blockhash
+    preview_message = _craft_message_with_blockhash(
+        sol, BRIDGE_PROGRAM_ID,
+        _bridge_instruction_data(1000, 5_000_000),
+        blockhash=bytes(32),
+        sender_pubkey=from_public_key,
+    )
+
+    _begin_session(sol, preview_message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    # User REJECTS the review → fingerprint discarded
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        with sol.send_prompt_ui_display():
+            scenario_navigator.review_reject(path=root_pytest_dir)
+    assert exc_info.value.status == ErrorType.USER_CANCEL
+
+    # Delayed sign should fail — no armed fingerprint
+    real_blockhash = bytes([0xAB] * 32)
+    final_message = _craft_message_with_blockhash(
+        sol, BRIDGE_PROGRAM_ID,
+        _bridge_instruction_data(1000, 5_000_000),
+        blockhash=real_blockhash,
+        sender_pubkey=from_public_key,
+    )
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.sign_previewed_message(SOL.SOL_PACKED_DERIVATION_PATH, final_message)
+    assert exc_info.value.status == ErrorType.SOLANA_DELAYED_PREVIEW_NOT_FOUND

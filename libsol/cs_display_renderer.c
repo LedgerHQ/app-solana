@@ -8,6 +8,7 @@
 #include "sol/printer.h"
 #include "util.h"
 #include "os_print.h"
+#include "dynamic_token_info.h"
 
 typedef struct cs_display_renderer_s {
     cs_display_element_t elements[CS_MAX_DISPLAY_ELEMENTS];
@@ -165,9 +166,12 @@ static int format_amount(const idl_resolved_leaf_t *leaf,
 }
 
 // PARAM_TOKEN_AMOUNT: token amount with ticker. Native SOL uses built-in
-// metadata. Unresolved tokens render as "123456 ???" with no decimal scaling.
+// metadata. When a mint pubkey is available, the dynamic token info pool and
+// hardcoded registry are queried for symbol and decimals. Unresolved tokens
+// render with no ticker and no decimal scaling.
 static int format_token_amount(const idl_resolved_leaf_t *leaf,
                                const cs_format_token_amount_t *fmt,
+                               const uint8_t *mint_pubkey,
                                char *value_out,
                                size_t value_out_size) {
     uint64_t amount;
@@ -178,6 +182,15 @@ static int format_token_amount(const idl_resolved_leaf_t *leaf,
     if (fmt->is_native) {
         return print_token_amount(amount, "SOL", SOL_DECIMALS, value_out, value_out_size);
     }
+    if (mint_pubkey != NULL) {
+        const char *symbol = get_token_symbol(mint_pubkey, false);
+        int magnitude = get_token_magnitude(mint_pubkey, false);
+        if (symbol != NULL && magnitude >= 0) {
+            return print_token_amount(amount, symbol, (uint8_t) magnitude,
+                                      value_out, value_out_size);
+        }
+    }
+    PRINTF("format_token_amount: no token info for mint, rendering as unknown\n");
     return print_token_amount(amount, "???", 0, value_out, value_out_size);
 }
 
@@ -199,6 +212,7 @@ static int format_account(const idl_resolved_leaf_t *leaf,
 // Format an ARGUMENT_PATH field based on its param_type.
 static int format_argument_field(const cs_display_field_t *field,
                                  const idl_resolved_leaf_t *leaf,
+                                 const uint8_t *mint_pubkey,
                                  char *value_out,
                                  size_t value_out_size) {
     switch (field->argument.param_type) {
@@ -214,6 +228,7 @@ static int format_argument_field(const cs_display_field_t *field,
         case CS_PARAM_TYPE_TOKEN_AMOUNT:
             return format_token_amount(leaf,
                                        &field->argument.format.token_amount,
+                                       mint_pubkey,
                                        value_out,
                                        value_out_size);
 
@@ -230,6 +245,7 @@ static int format_argument_field(const cs_display_field_t *field,
 // CONSTANT fields always use format_leaf with their IDL kind.
 static int format_field(const cs_display_field_t *field,
                         const idl_resolved_leaf_t *leaf,
+                        const uint8_t *mint_pubkey,
                         char *value_out,
                         size_t value_out_size) {
     if (leaf->value == NULL || leaf->value_size == 0) {
@@ -239,7 +255,7 @@ static int format_field(const cs_display_field_t *field,
 
     switch (field->source) {
         case CS_VALUE_SOURCE_ARGUMENT_PATH:
-            return format_argument_field(field, leaf, value_out, value_out_size);
+            return format_argument_field(field, leaf, mint_pubkey, value_out, value_out_size);
 
         case CS_VALUE_SOURCE_ACCOUNT_PATH:
             return format_account(leaf, value_out, value_out_size);
@@ -337,6 +353,7 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
 
             if (format_field(&walked_instructions[ix].template->display_fields[field],
                             &walked_instructions[ix].resolved[field],
+                            walked_instructions[ix].mint_pubkey,
                             G_cs_display_renderer->elements[element_index].value,
                             CS_DISPLAY_VALUE_SIZE) != 0) {
                 PRINTF("cs_display_renderer_run: format failed ix=%u field=%u\n",

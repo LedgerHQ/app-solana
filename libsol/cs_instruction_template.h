@@ -108,6 +108,9 @@ typedef struct cs_instruction_template_s {
     uint8_t idl_root_type;
     cs_display_field_t display_fields[CS_MAX_DISPLAY_FIELDS];
     uint8_t display_field_count;
+    uint8_t mint_assoc_account;
+    uint8_t mint_assoc_mint;
+    bool has_mint_assoc;
 } cs_instruction_template_t;
 
 // Open a fresh in-flight builder committed to `target_hash` (the SHA-256 the
@@ -154,6 +157,12 @@ int cs_instruction_template_set_format_amount(uint8_t decimals);
 // Set TOKEN_AMOUNT format parameters on the last added display field.
 // Must be called immediately after adding a field with param_type == TOKEN_AMOUNT.
 int cs_instruction_template_set_format_token_amount(bool is_native);
+
+// Set mint association indices on the in-flight builder. Both indices refer to
+// the instruction's accounts array: `account_idx` is the token account,
+// `mint_idx` is the mint account whose pubkey identifies the token.
+// Returns 0 on success, -1 when no builder is open.
+int cs_instruction_template_set_mint_assoc(uint8_t account_idx, uint8_t mint_idx);
 
 // Promote the in-flight builder into the committed array. Must be called only
 // once the substructure accumulation has matched the committed target. Returns 0

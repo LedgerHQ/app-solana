@@ -103,16 +103,17 @@ static uint16_t verify_delayed_message_matches_preview(void) {
     return ApduReplySuccess;
 }
 
-int store_preview_fingerprint(void) {
+int store_preview_fingerprint(const uint8_t *message,
+                              size_t message_length,
+                              const uint32_t *derivation_path,
+                              uint32_t derivation_path_length) {
     if (!APP_MEM_CALLOC((void **) &G_preview_state, sizeof(preview_state_t))) {
         PRINTF("Failed to allocate preview state\n");
         return -1;
     }
 
-    // Compute SHA-512 hash of the message with blockhash treated as zeros
-    // without modifying the input buffer
-    if (hash_message_with_zeroed_blockhash(G_command.message,
-                                           G_command.message_length,
+    if (hash_message_with_zeroed_blockhash(message,
+                                           message_length,
                                            G_preview_state->message_hash_with_zero_blockhash) !=
         0) {
         PRINTF("Failed to compute message hash\n");
@@ -124,20 +125,14 @@ int store_preview_fingerprint(void) {
            sizeof(G_preview_state->message_hash_with_zero_blockhash),
            G_preview_state->message_hash_with_zero_blockhash);
 
-    // Store derivation path
-    PRINTF("Storing derivation path (length=%d)\n", G_command.derivation_path_length);
-    G_preview_state->derivation_path_length = G_command.derivation_path_length;
-    for (size_t i = 0; i < G_command.derivation_path_length; i++) {
-        G_preview_state->derivation_path[i] = G_command.derivation_path[i];
-        PRINTF("  path[%d] = %08x\n", i, G_command.derivation_path[i]);
-    }
+    G_preview_state->derivation_path_length = derivation_path_length;
+    memcpy(G_preview_state->derivation_path,
+           derivation_path,
+           derivation_path_length * sizeof(uint32_t));
 
-    // Store message length for verification
-    G_preview_state->message_length = G_command.message_length;
-    PRINTF("Storing message length: %d bytes\n", G_preview_state->message_length);
-
+    G_preview_state->message_length = message_length;
     G_preview_state->initialized = true;
-    PRINTF("Preview fingerprint initialized\n");
+    PRINTF("Preview fingerprint stored and armed\n");
 
     return 0;
 }
