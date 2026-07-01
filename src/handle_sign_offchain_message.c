@@ -21,14 +21,7 @@ void ui_application_domain(const OffchainMessageHeader *header) {
         return;
     }
 
-    const uint8_t empty_application_domain[OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH] = {
-        OFFCHAIN_EMPTY_APPLICATION_DOMAIN};
-
-    // Check if application domain buffer contains only zeroes
-    if (memcmp(header->application_domain,
-               empty_application_domain,
-               OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH) == 0) {
-        // Application buffer contains only zeroes - displaying base58 encoded string not needed
+    if (is_offchain_application_domain_empty(header->application_domain)) {
         summary_item_set_string(transaction_summary_general_item(),
                                 "Application",
                                 "Domain not provided");
@@ -132,7 +125,7 @@ int handle_sign_offchain_message(void) {
 
     // Compute start of message content for later use in UI
     G_command.message_text_start = (const char *) G_command.message +
-                                   offchain_message_header_length(&header);
+                                   get_offchain_message_header_length(&header);
     PRINTF("Offchain message %s\n", G_command.message_text_start);
 
     // validate message
