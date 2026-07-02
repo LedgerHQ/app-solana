@@ -30,24 +30,21 @@ static int cs_review_confirm_internal(void) {
 }
 
 static void cs_review_choice(bool confirm) {
-    if (confirm) {
-        int ret = cs_review_confirm_internal();
-        cs_transaction_reset();
-        reset_trusted_info();
-        reset_dynamic_token_info();
-        if (ret != 0) {
-            io_send_sw(ApduReplySolanaInvalidMessage);
-            nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_idle);
-            return;
-        }
+    int ret = confirm ? cs_review_confirm_internal() : -1;
+
+    cs_transaction_reset();
+    reset_trusted_info();
+    reset_dynamic_token_info();
+
+    if (confirm && ret == 0) {
         PRINTF("Clear signing review confirmed, fingerprint armed\n");
         io_send_sw(ApduReplySuccess);
         nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_SIGNED, ui_idle);
+    } else if (confirm) {
+        PRINTF("Clear signing review confirm failed\n");
+        io_send_sw(ApduReplySolanaInvalidMessage);
+        nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_idle);
     } else {
-        cs_transaction_reset();
-        reset_trusted_info();
-        reset_dynamic_token_info();
-        clear_preview_state();
         PRINTF("Clear signing review rejected\n");
         io_send_sw(ApduReplyUserRefusal);
         nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_idle);
