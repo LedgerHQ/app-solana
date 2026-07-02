@@ -4,9 +4,24 @@
 #include "cs_transaction.h"
 #include "cs_instruction_template.h"
 #include "cs_display_renderer.h"
+#include "apdu.h"
 #include "app_mem_utils.h"
 
 static cs_transaction_t *G_cs_transaction;
+
+void cs_session_reset(void) {
+    cs_transaction_reset();
+    G_cs_session_state = CS_SESSION_IDLE;
+}
+
+int cs_check_state(cs_session_state_t expected) {
+    if (G_cs_session_state != expected) {
+        PRINTF("cs state: expected %d, got %d\n", expected, G_cs_session_state);
+        cs_session_reset();
+        return ApduReplySolanaClearSigningInvalidState;
+    }
+    return 0;
+}
 
 void cs_transaction_reset(void) {
     cs_display_renderer_reset();

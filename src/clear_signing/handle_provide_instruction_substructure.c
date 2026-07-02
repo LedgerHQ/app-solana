@@ -406,6 +406,11 @@ static int register_display_field(uint8_t apdu_type, const uint8_t *tlv, size_t 
 int handle_provide_instruction_substructure(void) {
     PRINTF("handle_provide_instruction_substructure\n");
 
+    int state_err = cs_check_state(CS_SESSION_STREAMING);
+    if (state_err != 0) {
+        return io_send_sw(state_err);
+    }
+
     if (cs_instruction_template_current() == NULL) {
         PRINTF("substructure: no instruction template open\n");
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);

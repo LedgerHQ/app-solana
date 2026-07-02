@@ -1,6 +1,6 @@
 #include <os.h>
 
-#include "handle_sign_message_generic_preview.h"
+#include "handle_start_generic_clear_signing_session.h"
 #include "handle_sign_message_preview.h"
 #include "cs_transaction.h"
 #include "apdu.h"
@@ -8,11 +8,17 @@
 #include "io.h"
 #include "sol/parser.h"
 
-int handle_sign_message_generic_preview(void) {
-    PRINTF("handle_sign_message_generic_preview\n");
+int handle_start_generic_clear_signing_session(void) {
+    PRINTF("handle_start_generic_clear_signing_session\n");
 
-    if (G_command.instruction != InsSignMessageGenericPreview ||
+    int state_err = cs_check_state(CS_SESSION_IDLE);
+    if (state_err != 0) {
+        return io_send_sw(state_err);
+    }
+
+    if (G_command.instruction != InsStartGenericClearSigningSession ||
         G_command.state != ApduStatePayloadComplete) {
+        G_cs_session_state = CS_SESSION_IDLE;
         return io_send_sw(ApduReplySdkInvalidParameter);
     }
 
@@ -20,7 +26,8 @@ int handle_sign_message_generic_preview(void) {
     Parser parser = {G_command.message, G_command.message_length};
     MessageHeader header;
     if (parse_message_header(&parser, &header) != 0) {
-        PRINTF("generic preview: invalid Solana message\n");
+        PRINTF("start cs session: invalid Solana message\n");
+        G_cs_session_state = CS_SESSION_IDLE;
         return io_send_sw(ApduReplySolanaInvalidMessage);
     }
 
@@ -34,12 +41,14 @@ int handle_sign_message_generic_preview(void) {
                              G_command.message_length,
                              G_command.derivation_path,
                              G_command.derivation_path_length) != 0) {
-        PRINTF("generic preview: failed to buffer transaction\n");
+        PRINTF("start cs session: failed to buffer transaction\n");
+        G_cs_session_state = CS_SESSION_IDLE;
         return io_send_sw(ApduReplySolanaInvalidGenericPreview);
     }
 
-    PRINTF("generic preview: buffered %d-byte transaction, %d instructions\n",
+    PRINTF("start cs session: buffered %d-byte transaction, %d instructions\n",
            G_command.message_length,
            header.instructions_length);
+    G_cs_session_state = CS_SESSION_STREAMING;
     return io_send_sw(ApduReplySuccess);
 }

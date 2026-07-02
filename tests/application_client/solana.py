@@ -31,7 +31,7 @@ class INS(IntEnum):
     INS_SIGN_OFFCHAIN_MESSAGE = 0x07
     INS_SIGN_MESSAGE_PREVIEW = 0x08
     INS_SIGN_MESSAGE_DELAYED = 0x09
-    INS_SIGN_MESSAGE_GENERIC_PREVIEW = 0x0A
+    INS_START_GENERIC_CLEAR_SIGNING_SESSION = 0x0A
     INS_PROMPT_UI_DISPLAY = 0x0B
     INS_FINALIZE_GENERIC_CLEAR_SIGNING = 0x0C
     INS_INSTRUCTION_DESCRIPTOR = 0x16
@@ -106,6 +106,7 @@ class ErrorType:
     INVALID_ALT_RESOLUTION = 0x6d10
     INVALID_GENERIC_PREVIEW = 0x6d20
     CLEAR_SIGNING_INCOMPLETE = 0x6d21
+    CLEAR_SIGNING_INVALID_STATE = 0x6d22
     UNIMPLEMENTED_INSTRUCTION = 0x6d00
     SOLANA_SUMMARY_FINALIZE_FAILED = 0x6f00
     SOLANA_SUMMARY_UPDATE_FAILED = 0x6f01
@@ -563,7 +564,7 @@ class SolanaClient:
         return self._exchange_split(CLA, INS.INS_INSTRUCTION_SUBSTRUCTURE, P1_NON_CONFIRM, payload)
 
 
-    def sign_message_generic_preview(self, derivation_path: bytes, message: bytes) -> RAPDU:
+    def start_generic_clear_signing_session(self, derivation_path: bytes, message: bytes) -> RAPDU:
         chunks = self.split_and_prefix_message(derivation_path, message)
         rapdu = None
         for i, chunk in enumerate(chunks):
@@ -572,7 +573,7 @@ class SolanaClient:
                 p2 |= P2_MORE
             if i != 0:
                 p2 |= P2_EXTEND
-            rapdu = self._client.exchange(CLA, INS.INS_SIGN_MESSAGE_GENERIC_PREVIEW,
+            rapdu = self._client.exchange(CLA, INS.INS_START_GENERIC_CLEAR_SIGNING_SESSION,
                                           P1_NON_CONFIRM, p2, chunk)
         return rapdu
 

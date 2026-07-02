@@ -61,7 +61,7 @@ typedef enum InstructionCode {
     InsSignOffchainMessage = 0x07,
     InsSignMessagePreview = 0x08,
     InsSignMessageDelayed = 0x09,
-    InsSignMessageGenericPreview = 0x0A,
+    InsStartGenericClearSigningSession = 0x0A,
     InsPromptUiDisplay = 0x0B,
     InsFinalizeGenericClearSigning = 0x0C,
     InsTrustedInfoProvideInstructionDescriptor = 0x16,
@@ -78,6 +78,16 @@ typedef enum InstructionCode {
     InsProvideAltResolution = 0x28,
 } InstructionCode;
 
+// Generic clear signing
+typedef enum cs_session_state_e {
+    CS_SESSION_IDLE,
+    CS_SESSION_STREAMING,
+    CS_SESSION_FINALIZED,
+} cs_session_state_t;
+
+extern cs_session_state_t G_cs_session_state;
+
+// SWAP flow globals, defined in SDK
 extern volatile bool G_called_from_swap;
 extern volatile bool G_swap_response_ready;
 

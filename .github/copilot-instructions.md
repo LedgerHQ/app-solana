@@ -27,12 +27,12 @@ Run only one pytest per command line, do not chain them with `&&`
 
 ```bash
 # Python UI tests (Speculos)
-venv && pytest tests/python/ --device flex
-venv && pytest tests/python/ --device stax --golden_run  # Regenerate snapshots, use conservatively
+venv_ai && pytest tests/python/ --device flex
+venv_ai && pytest tests/python/ --device stax --golden_run  # Regenerate snapshots, use conservatively
 
 # Swap tests (Exchange + Ethereum apps)
-venv && pytest tests/swap/ --device flex
-venv && pytest tests/swap/ --device flex --golden_run  # Regenerate snapshots, use conservatively
+venv_ai && pytest tests/swap/ --device flex
+venv_ai && pytest tests/swap/ --device flex --golden_run  # Regenerate snapshots, use conservatively
 
 # libsol unit tests
 qb_run_in_docker make -C libsol QUIET=1
@@ -43,7 +43,7 @@ qb_run_in_docker COVERAGE=1 make -C libsol QUIET=1
 # Build with memory_profiling flag, run pytest with -s to capture allocator logs, pipe to valground.py
 # Clean if previous compilation was with a different flag, e.g. from dbg_trusted_name_test to memory_profiling
 qb -ce -f memory_profiling
-venv && pytest tests/python/ --device flex -s 2>&1 | tools/valground.py -q
+venv_ai && pytest tests/python/ --device flex -s 2>&1 | tools/valground.py -q
 ```
 
 ### Test pitfals
@@ -130,6 +130,7 @@ Coding patterns described here are more important than uniformity cross applicat
 - Never write functions in header files.
 - Do not rely on C implicit struct copy, use a memcpy to highlight deep copy behavior.
 - Avoid enum-like defines. Prefer real enum definition.
+- Do NOT use early returns to separate different valid feature paths. Use `if/else` chains so branches are visually parallel and mutually exclusive. Early returns are fine ONLY for error guards, not for splitting valid execution paths.
 
 ### FORBIDDEN patterns
 

@@ -41,8 +41,8 @@ SUBSTRUCTURE_TYPE_DISPLAY_FIELD = 0x00
 
 
 def _begin_session(sol: SolanaClient, message: bytes) -> None:
-    """Open a clear-signing context by sending SIGN MESSAGE GENERIC PREVIEW (0x0A)."""
-    sol.sign_message_generic_preview(SOL.SOL_PACKED_DERIVATION_PATH, message)
+    """Open a clear-signing context by sending START GENERIC CLEAR SIGNING SESSION (0x0A)."""
+    sol.start_generic_clear_signing_session(SOL.SOL_PACKED_DERIVATION_PATH, message)
 
 
 def _craft_single_instruction_message(sol: SolanaClient, program_id: bytes, data: bytes) -> bytes:
@@ -147,7 +147,7 @@ def test_substructure_without_session_rejected(backend):
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD,
                                              _build_display_field(b'\x01\x00'))
-    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
 
 
 
@@ -415,7 +415,8 @@ def test_instruction_info_with_mint_assoc(backend):
 
 
 def test_instruction_info_mint_assoc_incomplete(backend):
-    """MINT_ASSOC_ACCOUNT without MINT_ASSOC_MINT should fail."""
+    """MINT_ASSOC_ACCOUNT without MINT_ASSOC_MINT should fail.
+    Without an active CS session, the state machine rejects the APDU first."""
     sol = SolanaClient(backend)
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.provide_instruction_info(
@@ -427,11 +428,12 @@ def test_instruction_info_mint_assoc_incomplete(backend):
             mint_assoc_account=3,
             # mint_assoc_mint intentionally omitted
         )
-    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_INFO
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
 
 
 def test_instruction_info_owner_assoc_incomplete(backend):
-    """OWNER_ASSOC_ACCOUNT without OWNER_ASSOC_OWNER should fail."""
+    """OWNER_ASSOC_ACCOUNT without OWNER_ASSOC_OWNER should fail.
+    Without an active CS session, the state machine rejects the APDU first."""
     sol = SolanaClient(backend)
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.provide_instruction_info(
@@ -443,7 +445,7 @@ def test_instruction_info_owner_assoc_incomplete(backend):
             owner_assoc_account=5,
             # owner_assoc_owner_value intentionally omitted
         )
-    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_INFO
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
 
 
 def test_instruction_info_with_owner_assoc(backend):
@@ -632,7 +634,7 @@ def test_bridge_prompt_without_session_rejected(backend):
     sol = SolanaClient(backend)
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.prompt_ui_display()
-    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
 
 
 def test_finalize_without_session_rejected(backend):
@@ -640,7 +642,7 @@ def test_finalize_without_session_rejected(backend):
     sol = SolanaClient(backend)
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.finalize_generic_clear_signing()
-    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
 
 
 def test_prompt_without_finalize_rejected(backend):
@@ -653,7 +655,7 @@ def test_prompt_without_finalize_rejected(backend):
     _begin_session(sol, message)
 
     display_field = _build_display_field(BRIDGE_PATH_U32)
-    substructures_hash = hashlib.sha256(display_field).digest()
+    substructures_hash = hashlib.sha256(display_field).digest()  # noqa: F841
 
     sol.provide_instruction_info(
         program_id=BRIDGE_PROGRAM_ID,
@@ -669,7 +671,7 @@ def test_prompt_without_finalize_rejected(backend):
     # Skip FINALIZE, go straight to PROMPT — must be rejected
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.prompt_ui_display()
-    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
 
 
 def test_substruct_type_mismatch_rejected(backend):
@@ -967,3 +969,97 @@ def test_clear_signing_delayed_sign_rejected(backend, sol, navigator,
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.sign_previewed_message(SOL.SOL_PACKED_DERIVATION_PATH, final_message)
     assert exc_info.value.status == ErrorType.SOLANA_DELAYED_PREVIEW_NOT_FOUND
+
+
+# ── CS SESSION STATE MACHINE ─────────────────────────────────────────────────
+
+# Helper: craft a valid message suitable for opening a CS session.
+def _dummy_cs_message(sol: SolanaClient) -> bytes:
+    program_id = b'\x01' * 32
+    data = b'\xDE\xAD' + b'\x00' * 4
+    return _craft_single_instruction_message(sol, program_id, data)
+
+
+# APDUs that require STREAMING but are sent from IDLE (no session opened).
+@pytest.mark.parametrize("apdu_name, send_fn", [
+    ("INSTRUCTION_INFO", lambda sol: sol._client.exchange(
+        CLA, INS.INS_INSTRUCTION_INFO, P1_NON_CONFIRM, P2_NONE, b"\x00")),
+    ("INSTRUCTION_SUBSTRUCTURE", lambda sol: sol._client.exchange(
+        CLA, INS.INS_INSTRUCTION_SUBSTRUCTURE, P1_NON_CONFIRM, P2_NONE, b"\x00")),
+    ("FINALIZE", lambda sol: sol.finalize_generic_clear_signing()),
+])
+def test_cs_streaming_apdu_rejected_from_idle(backend, apdu_name, send_fn):
+    sol = SolanaClient(backend)
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        send_fn(sol)
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
+
+
+# PROMPT_UI_DISPLAY requires FINALIZED but is sent from IDLE.
+def test_cs_prompt_rejected_from_idle(backend):
+    sol = SolanaClient(backend)
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.prompt_ui_display()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
+
+
+# PROMPT_UI_DISPLAY sent from STREAMING (session opened, not finalized).
+def test_cs_prompt_rejected_from_streaming(backend):
+    sol = SolanaClient(backend)
+    message = _dummy_cs_message(sol)
+    _begin_session(sol, message)
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.prompt_ui_display()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
+
+
+# START SESSION sent twice — second one should fail (state is STREAMING, not IDLE).
+def test_cs_double_start_session_rejected(backend):
+    sol = SolanaClient(backend)
+    message = _dummy_cs_message(sol)
+    _begin_session(sol, message)
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        _begin_session(sol, message)
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
+
+
+# FINALIZE sent from FINALIZED (double finalize after a session was finalized).
+# Reaching FINALIZED requires a fully valid session, so we use IDLE instead —
+# state was reset by the first failing FINALIZE attempt.
+# Instead, test that FINALIZE from IDLE is rejected (covered above).
+
+# APDUs that require STREAMING sent from FINALIZED — not easily testable without
+# a full end-to-end session. Test that a non-CS APDU resets the session instead.
+
+# Non-CS APDU resets a STREAMING session.
+@pytest.mark.parametrize("reset_fn", [
+    lambda sol: sol.get_app_configuration(),
+    lambda sol: sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH),
+])
+def test_cs_non_cs_apdu_resets_streaming_session(backend, reset_fn):
+    sol = SolanaClient(backend)
+    message = _dummy_cs_message(sol)
+    _begin_session(sol, message)
+    # Send a non-CS APDU — should succeed and silently reset the session
+    reset_fn(sol)
+    # Now FINALIZE should fail with INVALID_STATE (back to IDLE)
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
+
+
+# Stateless APDUs do NOT reset a STREAMING session.
+@pytest.mark.parametrize("stateless_fn", [
+    lambda sol: sol.get_challenge(),
+])
+def test_cs_stateless_apdu_preserves_streaming_session(backend, stateless_fn):
+    sol = SolanaClient(backend)
+    message = _dummy_cs_message(sol)
+    _begin_session(sol, message)
+    # Send a stateless APDU — should succeed without resetting the session
+    stateless_fn(sol)
+    # FINALIZE should still be reachable (state is still STREAMING)
+    # It will fail for content reasons (no templates), not for state reasons
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
