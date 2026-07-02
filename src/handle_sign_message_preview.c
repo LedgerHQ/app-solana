@@ -13,6 +13,7 @@
 #include "ui_api.h"
 #include "io.h"
 #include "app_mem_utils.h"
+#include "cs_transaction.h"
 
 // Preview state for delayed signing
 typedef struct {
@@ -151,6 +152,18 @@ int store_preview_fingerprint(const uint8_t *message,
     PRINTF("Preview fingerprint stored and armed\n");
 
     return 0;
+}
+
+// Wrapper reading fingerprint inputs from the clear-signing session context
+int store_cs_preview_fingerprint(void) {
+    if (cs_transaction_get() == NULL) {
+        PRINTF("store_cs_preview_fingerprint: no transaction context\n");
+        return -1;
+    }
+    return store_preview_fingerprint(cs_transaction_get()->transaction,
+                                     cs_transaction_get()->transaction_size,
+                                     cs_transaction_get()->derivation_path,
+                                     cs_transaction_get()->derivation_path_length);
 }
 
 static int handle_sign_message_delayed_internal(void) {

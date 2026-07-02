@@ -32,9 +32,10 @@
 #include "clear_signing/handle_provide_enum_variant.h"
 #include "clear_signing/handle_provide_token_account_state.h"
 #include "clear_signing/handle_provide_alt_resolution.h"
-#include "clear_signing/handle_sign_message_generic_preview.h"
+#include "clear_signing/handle_start_generic_clear_signing_session.h"
 #include "clear_signing/handle_finalize_generic_clear_signing.h"
 #include "clear_signing/handle_prompt_ui_display.h"
+#include "clear_signing/cs_transaction.h"
 #include "apdu.h"
 #include "ui_api.h"
 #include "nbgl_use_case.h"
@@ -49,13 +50,17 @@
 #include "handle_check_address.h"
 
 apdu_command_t G_command;
+cs_session_state_t G_cs_session_state;
 
 const internalStorage_t N_storage_real;
 
 static void reset_main_globals(void) {
     MEMCLEAR(G_command);
     MEMCLEAR(G_io_seproxyhal_spi_buffer);
+    G_cs_session_state = CS_SESSION_IDLE;
 }
+
+
 
 static int handle_apdu(int rx) {
     if (rx < 0) {
@@ -77,6 +82,25 @@ static int handle_apdu(int rx) {
     if (G_command.instruction != InsSignMessageDelayed) {
         PRINTF("Clearing preview state for non-delayed sign instruction\n");
         clear_preview_state();
+    }
+
+    // Any non-CS, non-stateless APDU resets an active CS session
+    if (G_cs_session_state != CS_SESSION_IDLE
+        // CS instructions
+        && G_command.instruction != InsStartGenericClearSigningSession
+        && G_command.instruction != InsProvideInstructionInfo
+        && G_command.instruction != InsProvideInstructionSubstructure
+        && G_command.instruction != InsProvideEnumVariant
+        && G_command.instruction != InsProvideTokenAccountState
+        && G_command.instruction != InsProvideAltResolution
+        && G_command.instruction != InsFinalizeGenericClearSigning
+        && G_command.instruction != InsPromptUiDisplay
+
+        // Token CAL info
+        && G_command.instruction != InsTrustedInfoGetChallenge
+        && G_command.instruction != InsTrustedInfoProvideInfo
+        && G_command.instruction != InsTrustedInfoProvideDynamicDescriptor) {
+        cs_session_reset();
     }
 
     switch (G_command.instruction) {
@@ -108,19 +132,22 @@ static int handle_apdu(int rx) {
                 PRINTF("Preview mode not supported in swap context\n");
                 return io_send_sw(ApduReplySdkNotSupported);
             }
-            // Set preview flag and call same handler as message signing
             G_command.is_preview_mode = true;
             return handle_sign_message_parse_message();
 
         case InsSignMessageDelayed:
-            return handle_sign_message_delayed();
-
-        case InsSignMessageGenericPreview:
             if (G_called_from_swap) {
-                PRINTF("Generic preview not supported in swap context\n");
+                PRINTF("Delayed signing is not supported in swap context\n");
                 return io_send_sw(ApduReplySdkNotSupported);
             }
-            return handle_sign_message_generic_preview();
+            return handle_sign_message_delayed();
+
+        case InsStartGenericClearSigningSession:
+            if (G_called_from_swap) {
+                PRINTF("Start generic clear signing session not supported in swap context\n");
+                return io_send_sw(ApduReplySdkNotSupported);
+            }
+            return handle_start_generic_clear_signing_session();
 
         case InsPromptUiDisplay:
             if (G_called_from_swap) {

@@ -40,7 +40,7 @@ static int parse_apdu_header(const uint8_t *apdu_message,
         case InsSignOffchainMessage:
         case InsSignMessagePreview:
         case InsSignMessageDelayed:
-        case InsSignMessageGenericPreview:
+        case InsStartGenericClearSigningSession:
         case InsPromptUiDisplay:
         case InsFinalizeGenericClearSigning:
         case InsTrustedInfoProvideInstructionDescriptor:
@@ -109,7 +109,7 @@ static bool split_allowed_for_instruction(uint8_t instruction) {
             instruction == InsSignOffchainMessage ||
             instruction == InsSignMessagePreview ||
             instruction == InsSignMessageDelayed ||
-            instruction == InsSignMessageGenericPreview ||
+            instruction == InsStartGenericClearSigningSession ||
             instruction == InsTrustedInfoProvideInfo ||
             instruction == InsTrustedInfoProvideDynamicDescriptor ||
             instruction == InsProvideInstructionSubstructure ||

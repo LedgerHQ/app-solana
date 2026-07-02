@@ -159,6 +159,11 @@ static bool handle_common(const tlv_data_t *data, tlv_out_t *out) {
 int handle_provide_instruction_info(void) {
     PRINTF("handle_provide_instruction_info\n");
 
+    int state_err = cs_check_state(CS_SESSION_STREAMING);
+    if (state_err != 0) {
+        return io_send_sw(state_err);
+    }
+
     tlv_out_t tlv_extracted = {0};
     cx_sha256_init(&tlv_extracted.hash_ctx);
 

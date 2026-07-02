@@ -170,22 +170,34 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
 int handle_finalize_generic_clear_signing(void) {
     PRINTF("handle_finalize_generic_clear_signing\n");
 
+    int state_err = cs_check_state(CS_SESSION_STREAMING);
+    if (state_err != 0) {
+        return io_send_sw(state_err);
+    }
+
     if (G_command.instruction != InsFinalizeGenericClearSigning ||
         G_command.state != ApduStatePayloadComplete) {
+        cs_transaction_reset();
+        G_cs_session_state = CS_SESSION_IDLE;
         return io_send_sw(ApduReplySdkInvalidParameter);
     }
 
     const cs_transaction_t *cs_tx = cs_transaction_get();
     if (cs_tx == NULL) {
         PRINTF("finalize cs: no clear-signing context\n");
+        G_cs_session_state = CS_SESSION_IDLE;
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);
     }
     if (cs_instruction_template_pending()) {
         PRINTF("finalize cs: an instruction template was never completed\n");
+        cs_transaction_reset();
+        G_cs_session_state = CS_SESSION_IDLE;
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);
     }
     if (cs_instruction_template_committed_count() == 0) {
         PRINTF("finalize cs: no instruction templates provided\n");
+        cs_transaction_reset();
+        G_cs_session_state = CS_SESSION_IDLE;
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);
     }
 
@@ -195,6 +207,7 @@ int handle_finalize_generic_clear_signing(void) {
     if (walk_transaction(cs_tx, walked_instructions, &walked_instructions_count) != 0) {
         PRINTF("finalize cs: walk engine failed\n");
         cs_transaction_reset();
+        G_cs_session_state = CS_SESSION_IDLE;
         return io_send_sw(ApduReplySolanaInvalidGenericPreview);
     }
 
@@ -202,14 +215,17 @@ int handle_finalize_generic_clear_signing(void) {
     if (cs_merge_engine_run(walked_instructions, walked_instructions_count, survivors) != 0) {
         PRINTF("finalize cs: merge engine failed\n");
         cs_transaction_reset();
+        G_cs_session_state = CS_SESSION_IDLE;
         return io_send_sw(ApduReplySolanaInvalidGenericPreview);
     }
 
     if (cs_display_renderer_run(walked_instructions, walked_instructions_count, survivors) != 0) {
         PRINTF("finalize cs: display renderer failed\n");
         cs_transaction_reset();
+        G_cs_session_state = CS_SESSION_IDLE;
         return io_send_sw(ApduReplySolanaInvalidGenericPreview);
     }
 
+    G_cs_session_state = CS_SESSION_FINALIZED;
     return io_send_sw(ApduReplySuccess);
 }
