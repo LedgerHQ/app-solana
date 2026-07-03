@@ -12,6 +12,8 @@
 #include "os_pki.h"
 #include "ledger_pki.h"
 #include "tlv_library.h"
+#include "cs_transaction.h"
+#include "cs_token_account_cache.h"
 
 #define TYPE_TOKEN_ACCOUNT_STATE 0x15
 
@@ -106,6 +108,11 @@ static bool handle_common(const tlv_data_t *data, tlv_out_t *out) {
 int handle_provide_token_account_state(void) {
     PRINTF("handle_provide_token_account_state\n");
 
+    int state_err = cs_check_state(CS_SESSION_STREAMING);
+    if (state_err != 0) {
+        return io_send_sw(state_err);
+    }
+
     tlv_out_t tlv_extracted = {0};
     cx_sha256_init(&tlv_extracted.hash_ctx);
 
@@ -172,6 +179,14 @@ int handle_provide_token_account_state(void) {
     PRINTF("mint            = %.*H\n", 32, tlv_extracted.mint);
     PRINTF("owner           = %.*H\n", 32, tlv_extracted.owner);
     PRINTF("pre_balance     = %llu\n", tlv_extracted.pre_balance);
+
+    if (cs_token_account_cache_add(tlv_extracted.account_address,
+                                   tlv_extracted.mint,
+                                   tlv_extracted.owner,
+                                   tlv_extracted.pre_balance) != 0) {
+        PRINTF("Error: cs_token_account_cache_add rejected account\n");
+        return io_send_sw(ApduReplySolanaInvalidTokenAccountState);
+    }
 
     return io_send_sw(ApduReplySuccess);
 }

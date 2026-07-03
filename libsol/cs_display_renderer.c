@@ -163,13 +163,16 @@ static int format_amount(const idl_resolved_leaf_t *leaf,
         PRINTF("format_amount: unsupported leaf kind %d\n", leaf->kind);
         return -1;
     }
-    return print_token_amount(amount, NULL, decimals, value_out, value_out_size);
+    if (print_token_amount(amount, NULL, decimals, value_out, value_out_size) != 0) {
+        PRINTF("format_amount: print_token_amount failed\n");
+        return -1;
+    }
+    return 0;
 }
 
-// PARAM_TOKEN_AMOUNT: token amount with ticker. Native SOL uses built-in
-// metadata. When a mint pubkey is available, the dynamic token info pool and
-// hardcoded registry are queried for symbol and decimals. Unresolved tokens
-// render with no ticker and no decimal scaling.
+// PARAM_TOKEN_AMOUNT: renders a raw amount with the ticker and decimal scaling
+// implied by the descriptor's mint_source. A resolved mint reference is looked
+// up in the registry; NATIVE and NONE need no lookup.
 static int format_token_amount(const idl_resolved_leaf_t *leaf,
                                const cs_format_token_amount_t *fmt,
                                const uint8_t *mint_pubkey,
@@ -180,22 +183,62 @@ static int format_token_amount(const idl_resolved_leaf_t *leaf,
         PRINTF("format_token_amount: unsupported leaf kind %d\n", leaf->kind);
         return -1;
     }
-    if (fmt->is_native) {
-        return print_token_amount(amount, "SOL", SOL_DECIMALS, value_out, value_out_size);
+
+    const char *symbol;
+    int magnitude;
+
+    switch (fmt->mint_source) {
+        case CS_TOKEN_MINT_NATIVE:
+            PRINTF("format_token_amount: native SOL\n");
+            symbol = "SOL";
+            magnitude = SOL_DECIMALS;
+            break;
+
+        case CS_TOKEN_MINT_NONE:
+            symbol = NULL;
+            magnitude = 0;
+            if (fmt->has_decimals) {
+                magnitude = fmt->decimals;
+            }
+            PRINTF("format_token_amount: no mint, bare render decimals=%d\n", magnitude);
+            break;
+
+        case CS_TOKEN_MINT_ACCOUNT_INDEX:
+        case CS_TOKEN_MINT_CONSTANT:
+            // finalize resolves referenced mints; a NULL here is an upstream bug.
+            if (mint_pubkey == NULL) {
+                PRINTF("format_token_amount: mint_source %d has no resolved mint\n",
+                       fmt->mint_source);
+                return -1;
+            }
+            symbol = get_token_symbol(mint_pubkey, false);
+            magnitude = get_token_magnitude(mint_pubkey, false);
+            PRINTF("format_token_amount: registry symbol=%s magnitude=%d\n",
+                   symbol == NULL ? "(none)" : symbol,
+                   magnitude);
+            // An explicit override wins over the registry magnitude.
+            if (fmt->has_decimals) {
+                magnitude = fmt->decimals;
+                PRINTF("format_token_amount: decimals overridden to %d\n", magnitude);
+            }
+            // Keep the amount visible when the mint is unknown to the registry.
+            if (magnitude < 0) {
+                PRINTF("format_token_amount: mint unknown, ticker=???\n");
+                symbol = "???";
+                magnitude = 0;
+            }
+            break;
+
+        default:
+            PRINTF("format_token_amount: unknown mint_source %d\n", fmt->mint_source);
+            return -1;
     }
-    if (mint_pubkey != NULL) {
-        const char *symbol = get_token_symbol(mint_pubkey, false);
-        int magnitude = get_token_magnitude(mint_pubkey, false);
-        if (symbol != NULL && magnitude >= 0) {
-            return print_token_amount(amount,
-                                      symbol,
-                                      (uint8_t) magnitude,
-                                      value_out,
-                                      value_out_size);
-        }
+
+    if (print_token_amount(amount, symbol, (uint8_t) magnitude, value_out, value_out_size) != 0) {
+        PRINTF("format_token_amount: print_token_amount failed\n");
+        return -1;
     }
-    PRINTF("format_token_amount: no token info for mint, rendering as unknown\n");
-    return print_token_amount(amount, "???", 0, value_out, value_out_size);
+    return 0;
 }
 
 // ACCOUNT_PATH: full base58 address.
@@ -359,7 +402,7 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
 
             if (format_field(&walked_instructions[ix].template->display_fields[field],
                              &walked_instructions[ix].resolved[field],
-                             walked_instructions[ix].mint_pubkey,
+                             walked_instructions[ix].field_mint[field],
                              G_cs_display_renderer->elements[element_index].value,
                              CS_DISPLAY_VALUE_SIZE) != 0) {
                 PRINTF("cs_display_renderer_run: format failed ix=%u field=%u\n",

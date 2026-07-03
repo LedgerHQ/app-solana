@@ -182,7 +182,7 @@ int cs_instruction_template_set_format_amount(uint8_t decimals) {
     return 0;
 }
 
-int cs_instruction_template_set_format_token_amount(bool is_native) {
+int cs_instruction_template_set_format_token_amount(const cs_format_token_amount_t *format) {
     cs_instruction_template_t *builder = cs_instruction_template_current();
     if (builder == NULL || builder->display_field_count == 0) {
         PRINTF("cs_instruction_template_set_format_token_amount: no field to configure\n");
@@ -199,7 +199,7 @@ int cs_instruction_template_set_format_token_amount(bool is_native) {
                field->argument.param_type);
         return -1;
     }
-    field->argument.format.token_amount.is_native = is_native;
+    memcpy(&field->argument.format.token_amount, format, sizeof(*format));
     return 0;
 }
 

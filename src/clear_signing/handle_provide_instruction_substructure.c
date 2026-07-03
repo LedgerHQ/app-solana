@@ -92,12 +92,26 @@ DEFINE_TLV_PARSER(PARAM_AMOUNT_TAGS, NULL, parse_param_amount)
 typedef struct param_token_amount_out_s {
     TLV_reception_t received_tags;
     buffer_t value;
+    buffer_t token;
+    buffer_t decimals;
     buffer_t is_native;
 } param_token_amount_out_t;
 
 static bool param_token_amount_handle_value(const tlv_data_t *data,
                                             param_token_amount_out_t *out) {
     out->value = data->value;
+    return true;
+}
+
+static bool param_token_amount_handle_token(const tlv_data_t *data,
+                                            param_token_amount_out_t *out) {
+    out->token = data->value;
+    return true;
+}
+
+static bool param_token_amount_handle_decimals(const tlv_data_t *data,
+                                               param_token_amount_out_t *out) {
+    out->decimals = data->value;
     return true;
 }
 
@@ -118,6 +132,8 @@ static bool param_token_amount_handle_ignore(const tlv_data_t *data,
 #define PARAM_TOKEN_AMOUNT_TAGS(X) \
     X(0x00, PARAM_TOKEN_AMOUNT_TAG_VERSION,   param_token_amount_handle_ignore,    ENFORCE_UNIQUE_TAG) \
     X(0x01, PARAM_TOKEN_AMOUNT_TAG_VALUE,     param_token_amount_handle_value,     ENFORCE_UNIQUE_TAG) \
+    X(0x02, PARAM_TOKEN_AMOUNT_TAG_TOKEN,     param_token_amount_handle_token,     ENFORCE_UNIQUE_TAG) \
+    X(0x03, PARAM_TOKEN_AMOUNT_TAG_DECIMALS,  param_token_amount_handle_decimals,  ENFORCE_UNIQUE_TAG) \
     X(0x04, PARAM_TOKEN_AMOUNT_TAG_IS_NATIVE, param_token_amount_handle_is_native, ENFORCE_UNIQUE_TAG)
 // clang-format on
 
@@ -392,19 +408,76 @@ static int register_param_token_amount(const display_field_out_t *display_field,
         return -1;
     }
 
-    bool is_native = false;
-    if (param.is_native.ptr != NULL && param.is_native.size == 1 &&
-        param.is_native.ptr[0] == 1) {
-        is_native = true;
+    bool is_native = (param.is_native.ptr != NULL && param.is_native.size == 1 &&
+                      param.is_native.ptr[0] == 1);
+    bool has_token = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_TOKEN_AMOUNT_TAG_TOKEN);
+    bool has_decimals =
+        TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_TOKEN_AMOUNT_TAG_DECIMALS);
+
+    // Native SOL carries its own built-in metadata; a mint reference or decimals
+    // override alongside it is contradictory.
+    if (is_native && (has_token || has_decimals)) {
+        PRINTF("substructure: TOKEN_AMOUNT native cannot carry a TOKEN reference or DECIMALS\n");
+        return -1;
     }
-    if (cs_instruction_template_set_format_token_amount(is_native) != 0) {
+
+    cs_format_token_amount_t format = {0};
+    if (is_native) {
+        format.mint_source = CS_TOKEN_MINT_NATIVE;
+    } else if (has_token) {
+        cs_value_t token;
+        if (extract_value(&param.token, &token) != 0) {
+            return -1;
+        }
+        if (token.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+            if (token.payload_size != 1) {
+                PRINTF("substructure: TOKEN ACCOUNT_PATH payload size %d != 1\n",
+                       token.payload_size);
+                return -1;
+            }
+            format.mint_source = CS_TOKEN_MINT_ACCOUNT_INDEX;
+            format.ref.account_index = token.payload[0];
+        } else if (token.source == CS_VALUE_SOURCE_CONSTANT) {
+            if (token.payload_size != 32) {
+                PRINTF("substructure: TOKEN CONSTANT payload size %d != 32\n", token.payload_size);
+                return -1;
+            }
+            format.mint_source = CS_TOKEN_MINT_CONSTANT;
+            memcpy(format.ref.mint, token.payload, 32);
+        } else {
+            PRINTF("substructure: TOKEN source %d unsupported\n", token.source);
+            return -1;
+        }
+    } else {
+        format.mint_source = CS_TOKEN_MINT_NONE;
+    }
+
+    // Optional DECIMALS override: replaces the mint's default magnitude. Only a
+    // CONSTANT single byte is a usable override; anything else is refused.
+    if (has_decimals) {
+        cs_value_t decimals;
+        if (extract_value(&param.decimals, &decimals) != 0) {
+            return -1;
+        }
+        if (decimals.source != CS_VALUE_SOURCE_CONSTANT || decimals.payload_size != 1) {
+            PRINTF("substructure: DECIMALS must be a 1-byte CONSTANT (source %d size %d)\n",
+                   decimals.source,
+                   decimals.payload_size);
+            return -1;
+        }
+        format.has_decimals = true;
+        format.decimals = decimals.payload[0];
+    }
+
+    if (cs_instruction_template_set_format_token_amount(&format) != 0) {
         PRINTF("substructure: set_format_token_amount failed\n");
         return -1;
     }
-    PRINTF("substructure: registered TOKEN_AMOUNT path %.*H is_native=%d name=%s\n",
+
+    PRINTF("substructure: registered TOKEN_AMOUNT path %.*H mint_source=%d name=%s\n",
            value.payload_size,
            value.payload,
-           is_native,
+           format.mint_source,
            field_name ? field_name : "(none)");
     return 0;
 }

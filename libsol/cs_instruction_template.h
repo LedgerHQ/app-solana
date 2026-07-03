@@ -43,9 +43,32 @@ typedef struct cs_format_amount_s {
     uint8_t decimals;
 } cs_format_amount_t;
 
+// Where a TOKEN_AMOUNT's ticker/decimals metadata comes from. Exactly one
+// applies, so contradictory combinations (native carrying a mint reference, a
+// stale payload behind an absent reference) are unrepresentable. ARGUMENT_PATH
+// is intentionally absent: a token reference read from instruction data is
+// refused at ingest and never stored.
+enum cs_token_mint_source {
+    CS_TOKEN_MINT_NATIVE = 0,     // built-in "SOL" / SOL_DECIMALS, no lookup
+    CS_TOKEN_MINT_NONE,           // no reference: rendered without a ticker
+    CS_TOKEN_MINT_ACCOUNT_INDEX,  // mint is the pubkey at an accounts-array index
+    CS_TOKEN_MINT_CONSTANT,       // mint embedded as a 32-byte pubkey
+};
+
 // Format-specific parameters for PARAM_TOKEN_AMOUNT.
+//
+// `mint_source` selects which `ref` arm (if any) identifies the mint whose
+// ticker/decimals describe this amount; the mint is resolved at finalize time.
+// The DECIMALS override is orthogonal: when `has_decimals` is set it replaces
+// the resolved magnitude while the ticker still comes from TOKEN_INFO.
 typedef struct cs_format_token_amount_s {
-    bool is_native;
+    uint8_t mint_source;  // enum cs_token_mint_source
+    union {
+        uint8_t account_index;  // CS_TOKEN_MINT_ACCOUNT_INDEX
+        uint8_t mint[32];       // CS_TOKEN_MINT_CONSTANT
+    } ref;
+    bool has_decimals;
+    uint8_t decimals;
 } cs_format_token_amount_t;
 
 // Fixed capacities. Inputs exceeding these fail closed rather than truncate.
@@ -63,7 +86,7 @@ typedef struct cs_format_token_amount_s {
 //   - ARGUMENT_PATH (source == 0x00): the field value is extracted from the
 //     instruction data via the IDL walker using `argument.path`/`argument.path_size`.
 //     Only ARGUMENT_PATH fields carry a `param_type` (how to format the value)
-//     and optional format parameters (decimals, is_native, etc.).
+//     and optional format parameters (decimals, token mint source, etc.).
 //   - ACCOUNT_PATH  (source == 0x01): the field value is the pubkey at
 //     `account.index` in the instruction's accounts array. Always rendered as
 //     a short-form base58 address.
@@ -152,9 +175,12 @@ int cs_instruction_template_add_constant_field(const uint8_t *data,
 // Must be called immediately after adding a field with param_type == AMOUNT.
 int cs_instruction_template_set_format_amount(uint8_t decimals);
 
-// Set TOKEN_AMOUNT format parameters on the last added display field.
+// Set TOKEN_AMOUNT format parameters on the last added display field. The
+// caller builds a fully-validated `format` (mint source, optional embedded mint
+// or account index, optional decimals override) and hands it over atomically.
 // Must be called immediately after adding a field with param_type == TOKEN_AMOUNT.
-int cs_instruction_template_set_format_token_amount(bool is_native);
+// Returns 0 on success, -1 when no matching field is open.
+int cs_instruction_template_set_format_token_amount(const cs_format_token_amount_t *format);
 
 // Set mint association indices on the in-flight builder. Both indices refer to
 // the instruction's accounts array: `account_idx` is the token account,
