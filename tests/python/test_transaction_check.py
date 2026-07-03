@@ -20,10 +20,14 @@ TRANSFER_CHECKED = 12
 
 FAKE_HASH = b'\xff' * 32
 
+# Solana chain IDs as used by the swap backend / Transaction Check.
+# 900=mainnet-beta, 901=devnet, 902=testnet.
+SOLANA_MAINNET_CHAIN_ID = 900
+
 DEFAULT_TX_CHECK_PARAMS = {
     "address": base58.b58encode(b'\x22' * 32),
     "tx_hash": b'\xab' * 32,
-    "chain_id": 1,
+    "chain_id": SOLANA_MAINNET_CHAIN_ID,
     "risk": 0,
     "category": 0,
     "tiny_url": "https://ledger.com/tx",
@@ -62,7 +66,7 @@ class TestTransactionCheck:
         # First sign with matching TX check
         sol.provide_transaction_check(address=address,
                                       tx_hash=tx_hash,
-                                      chain_id=1,
+                                      chain_id=SOLANA_MAINNET_CHAIN_ID,
                                       risk=0,
                                       category=0,
                                       tiny_url="https://ledger.com/tx")
@@ -88,7 +92,7 @@ class TestTransactionCheck:
         if report_type != "NA":
             risk = {"invalid_hash": 0, "invalid_chain_id": 0, "benign": 0, "warn": 1, "threat": 2}[report_type]
             tx_hash = FAKE_HASH if report_type == "invalid_hash" else hashlib.sha256(message).digest()
-            chain_id = 99 if report_type == "invalid_chain_id" else 1
+            chain_id = 99 if report_type == "invalid_chain_id" else SOLANA_MAINNET_CHAIN_ID
             sol.provide_transaction_check(
                 address=base58.b58encode(from_public_key),
                 tx_hash=tx_hash,
@@ -122,7 +126,7 @@ class TestTransactionCheck:
         if report_type != "NA":
             risk = {"invalid_hash": 0, "invalid_chain_id": 0, "benign": 0, "warn": 1, "threat": 2}[report_type]
             tx_hash = FAKE_HASH if report_type == "invalid_hash" else hashlib.sha256(message).digest()
-            chain_id = 99 if report_type == "invalid_chain_id" else 1
+            chain_id = 99 if report_type == "invalid_chain_id" else SOLANA_MAINNET_CHAIN_ID
             sol.provide_transaction_check(
                 address=base58.b58encode(from_public_key),
                 tx_hash=tx_hash,
@@ -259,7 +263,7 @@ class TestTransactionCheck:
 
         sol.provide_transaction_check(address=address,
                                       tx_hash=tx_hash,
-                                      chain_id=1,
+                                      chain_id=SOLANA_MAINNET_CHAIN_ID,
                                       risk=1,
                                       category=0x03,
                                       tiny_url="https://ledger.com/tx")
@@ -298,7 +302,7 @@ class TestTransactionCheck:
 
         sol.provide_transaction_check(address=base58.b58encode(from_public_key),
                                       tx_hash=hashlib.sha256(message).digest(),
-                                      chain_id=1,
+                                      chain_id=SOLANA_MAINNET_CHAIN_ID,
                                       risk=1,
                                       category=0x03,
                                       tiny_url="https://ledger.com/tx")
@@ -309,7 +313,7 @@ class TestTransactionCheck:
         # -- Step 5: Threat (risk=2) → review with "Threat detected" warning --
         sol.provide_transaction_check(address=base58.b58encode(from_public_key),
                                       tx_hash=hashlib.sha256(message).digest(),
-                                      chain_id=1,
+                                      chain_id=SOLANA_MAINNET_CHAIN_ID,
                                       risk=2,
                                       category=0x02,
                                       tiny_url="https://ledger.com/tx")
@@ -369,7 +373,7 @@ class TestTransactionCheckBlindSigning:
             sol.provide_transaction_check(
                 address=base58.b58encode(from_public_key),
                 tx_hash=tx_hash,
-                chain_id=1,
+                chain_id=SOLANA_MAINNET_CHAIN_ID,
                 risk=risk,
                 category=0,
                 tiny_url="https://ledger.com/tx"
@@ -415,7 +419,7 @@ class TestTransactionCheckOffchainMessage:
         sol.provide_transaction_check(
             address=base58.b58encode(from_public_key),
             tx_hash=FAKE_HASH,
-            chain_id=1,
+            chain_id=SOLANA_MAINNET_CHAIN_ID,
             risk=2,
             category=0x02,
             tiny_url="https://ledger.com/tx"

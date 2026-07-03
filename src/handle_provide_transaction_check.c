@@ -136,12 +136,14 @@ static bool check_transaction_check_report_validity(void) {
         return false;
     }
 
-    // Check chain_id refers to a Solana chain: 1=mainnet-beta, 2=devnet, 3=testnet
+    // Check chain_id refers to a Solana chain: 900=mainnet-beta, 901=devnet, 902=testnet
     if (!G_transaction_check_info.chain_id_received) {
         PRINTF("[TX CHECK] No chain_id in report\n");
         return false;
     }
-    if (G_transaction_check_info.chain_id < 1 || G_transaction_check_info.chain_id > 3) {
+    if (G_transaction_check_info.chain_id != SOLANA_CHAIN_ID_MAINNET &&
+        G_transaction_check_info.chain_id != SOLANA_CHAIN_ID_DEVNET &&
+        G_transaction_check_info.chain_id != SOLANA_CHAIN_ID_TESTNET) {
         PRINTF("[TX CHECK] Unknown chain_id: %llu\n", G_transaction_check_info.chain_id);
         return false;
     }

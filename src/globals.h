@@ -24,6 +24,11 @@
 #define P2_MORE                    (0x01 << 1)
 #define P2_IS_ATA_OR_TOKEN_ACCOUNT (0x01 << 3)
 
+// Solana chain IDs as used by the swap backend (LiFi / Transaction Check)
+#define SOLANA_CHAIN_ID_MAINNET 900
+#define SOLANA_CHAIN_ID_DEVNET  901
+#define SOLANA_CHAIN_ID_TESTNET 902
+
 #define ROUND_TO_NEXT(x, next) (((x) == 0) ? 0 : ((((x - 1) / (next)) + 1) * (next)))
 
 /* See constant by same name in sdk/src/packet.rs */

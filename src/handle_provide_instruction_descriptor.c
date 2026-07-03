@@ -27,9 +27,6 @@
 #include "sol/safe_math.h"
 #include "app_mem_utils.h"
 
-#define LIFI_SOLANA_MAIN_NET 900
-#define LIFI_SOLANA_TEST_NET 901
-
 // https://ledgerhq.atlassian.net/wiki/spaces/TA/pages/5764022544/ARCH+Solana+LiFi+swap+support
 
 #define MAX_DISCRIMINATOR_NUMBER 15
@@ -137,11 +134,12 @@ static bool handle_chain_id(const tlv_data_t *data, tlv_out_t *out) {
     if (!get_uint32_t_from_tlv_data(data, &chain_id)) {
         return false;
     }
-    if (chain_id != LIFI_SOLANA_MAIN_NET && chain_id != LIFI_SOLANA_TEST_NET) {
+    if (chain_id != SOLANA_CHAIN_ID_MAINNET && chain_id != SOLANA_CHAIN_ID_DEVNET &&
+        chain_id != SOLANA_CHAIN_ID_TESTNET) {
         PRINTF("Error, invalid chain_id %u\n", chain_id);
         return false;
     }
-    out->is_main_net = (chain_id == LIFI_SOLANA_MAIN_NET);
+    out->is_main_net = (chain_id == SOLANA_CHAIN_ID_MAINNET);
     return true;
 }
 
