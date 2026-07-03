@@ -12,6 +12,8 @@
 #include "os_pki.h"
 #include "ledger_pki.h"
 #include "tlv_library.h"
+#include "cs_transaction.h"
+#include "cs_alt_cache.h"
 
 #define TYPE_ALT_RESOLUTION 0x16
 
@@ -95,6 +97,11 @@ static bool handle_common(const tlv_data_t *data, tlv_out_t *out) {
 int handle_provide_alt_resolution(void) {
     PRINTF("handle_provide_alt_resolution\n");
 
+    int state_err = cs_check_state(CS_SESSION_STREAMING);
+    if (state_err != 0) {
+        return io_send_sw(state_err);
+    }
+
     tlv_out_t tlv_extracted = {0};
     cx_sha256_init(&tlv_extracted.hash_ctx);
 
@@ -159,6 +166,13 @@ int handle_provide_alt_resolution(void) {
     PRINTF("alt_address      = %.*H\n", 32, tlv_extracted.alt_address);
     PRINTF("entry_index      = %d\n", tlv_extracted.entry_index);
     PRINTF("resolved_address = %.*H\n", 32, tlv_extracted.resolved_address);
+
+    if (cs_alt_cache_add(tlv_extracted.alt_address,
+                         tlv_extracted.entry_index,
+                         tlv_extracted.resolved_address) != 0) {
+        PRINTF("Error: ALT resolution cache rejected entry (full or duplicate)\n");
+        return io_send_sw(ApduReplySolanaInvalidAltResolution);
+    }
 
     return io_send_sw(ApduReplySuccess);
 }

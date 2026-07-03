@@ -241,6 +241,153 @@ int skip_address_table_lookups(Parser *parser) {
     return 0;
 }
 
+// Parse one address-table-lookup entry, advancing the parser past it and
+// exposing borrowed pointers to its ALT account key and its writable/readonly
+// index lists. Every out-pointer references bytes inside the parser buffer.
+static int parse_alt_table(Parser *parser,
+                           const uint8_t **alt_address,
+                           const uint8_t **writable_indexes,
+                           size_t *num_writable,
+                           const uint8_t **readonly_indexes,
+                           size_t *num_readonly) {
+    // ALT account key: the 32-byte address of the on-chain lookup table.
+    BAIL_IF(check_buffer_length(parser, PUBKEY_SIZE));
+    *alt_address = parser->buffer;
+    advance(parser, PUBKEY_SIZE);
+
+    // Writable index list: compact-u16 count followed by that many 1-byte entries.
+    BAIL_IF(parse_length(parser, num_writable));
+    BAIL_IF(check_buffer_length(parser, *num_writable));
+    *writable_indexes = parser->buffer;
+    advance(parser, *num_writable);
+
+    // Readonly index list: same layout, immediately after the writable list.
+    BAIL_IF(parse_length(parser, num_readonly));
+    BAIL_IF(check_buffer_length(parser, *num_readonly));
+    *readonly_indexes = parser->buffer;
+    advance(parser, *num_readonly);
+
+    PRINTF("parse_alt_table: alt_address=%.*H num_writable=%d num_readonly=%d\n",
+           PUBKEY_SIZE,
+           *alt_address,
+           *num_writable,
+           *num_readonly);
+    return 0;
+}
+
+int resolve_alt_loaded_index(const uint8_t *transaction,
+                             size_t transaction_size,
+                             uint16_t global_index,
+                             const uint8_t **out_alt_address,
+                             uint8_t *out_entry_index) {
+    Parser parser = {transaction, transaction_size};
+    MessageHeader header;
+    BAIL_IF(parse_message_header(&parser, &header));
+    PRINTF("resolve_alt_loaded_index: global_index=%d pubkeys_length=%d versioned=%d\n",
+           global_index,
+           header.pubkeys_header.pubkeys_length,
+           header.versioned);
+
+    // ALT-loaded accounts only exist in versioned (v0) transactions, and only
+    // for global indices beyond the statically listed keys.
+    BAIL_IF(!header.versioned);
+    BAIL_IF(global_index < header.pubkeys_header.pubkeys_length);
+
+    // Walk past every instruction so the parser lands on the address-table-lookup
+    // section, which is the last part of a v0 message body.
+    for (size_t i = 0; i < header.instructions_length; i++) {
+        Instruction instruction;
+        BAIL_IF(parse_instruction(&parser, &instruction));
+    }
+    PRINTF("resolve_alt_loaded_index: reached ALT section, remaining_bytes=%d\n",
+           parser.buffer_length);
+
+    // The resolved key ordering places every writable loaded account (across
+    // tables in order, each table's writable indices in order) before every
+    // readonly loaded account. A readonly position must therefore be offset
+    // past the total writable count, which the first scan computes.
+    size_t loaded_index = global_index - header.pubkeys_header.pubkeys_length;
+    // Capture the ALT section bounds so both scans below start from a fresh parser
+    // over the exact same bytes, without mutating the walk parser.
+    const uint8_t *section_start = parser.buffer;
+    size_t section_length = parser.buffer_length;
+
+    // First scan: sum the writable indices across all tables to learn the boundary
+    // between the writable block and the readonly block in the resolved ordering.
+    size_t total_writable = 0;
+    Parser count_scan = {section_start, section_length};
+    size_t table_count;
+    BAIL_IF(parse_length(&count_scan, &table_count));
+    PRINTF("resolve_alt_loaded_index: table_count=%d\n", table_count);
+    for (size_t i = 0; i < table_count; i++) {
+        const uint8_t *alt_address;
+        const uint8_t *writable_indexes;
+        size_t num_writable;
+        const uint8_t *readonly_indexes;
+        size_t num_readonly;
+        BAIL_IF(parse_alt_table(&count_scan,
+                                &alt_address,
+                                &writable_indexes,
+                                &num_writable,
+                                &readonly_indexes,
+                                &num_readonly));
+        total_writable += num_writable;
+    }
+
+    bool want_writable = (loaded_index < total_writable);
+    size_t target;
+    if (want_writable) {
+        target = loaded_index;
+    } else {
+        target = loaded_index - total_writable;
+    }
+    PRINTF("resolve_alt_loaded_index: loaded_index=%d total_writable=%d want_writable=%d target=%d\n",
+           loaded_index,
+           total_writable,
+           want_writable,
+           target);
+
+    // Second scan: replay the same tables and consume entries from the selected
+    // list (writable or readonly) until the target position lands inside a table.
+    Parser scan = {section_start, section_length};
+    BAIL_IF(parse_length(&scan, &table_count));
+    for (size_t i = 0; i < table_count; i++) {
+        const uint8_t *alt_address;
+        const uint8_t *writable_indexes;
+        size_t num_writable;
+        const uint8_t *readonly_indexes;
+        size_t num_readonly;
+        BAIL_IF(parse_alt_table(&scan,
+                                &alt_address,
+                                &writable_indexes,
+                                &num_writable,
+                                &readonly_indexes,
+                                &num_readonly));
+        // Select the index list this table contributes to the chosen block.
+        const uint8_t *entry_list;
+        size_t entry_count;
+        if (want_writable) {
+            entry_list = writable_indexes;
+            entry_count = num_writable;
+        } else {
+            entry_list = readonly_indexes;
+            entry_count = num_readonly;
+        }
+        // Target falls in this table: the entry byte is the ALT slot to resolve.
+        if (target < entry_count) {
+            *out_alt_address = alt_address;
+            *out_entry_index = entry_list[target];
+            PRINTF("resolve_alt_loaded_index: hit table %d, entry_index=%d\n", i, entry_list[target]);
+            return 0;
+        }
+        target -= entry_count;
+    }
+
+    PRINTF("resolve_alt_loaded_index: global index %u beyond loaded range\n", global_index);
+    return -1;
+}
+
+
 int parse_instruction(Parser *parser, Instruction *instruction) {
     BAIL_IF(parse_u8(parser, &instruction->program_id_index));
     BAIL_IF(parse_data(parser, &instruction->accounts, &instruction->accounts_length));
