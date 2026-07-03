@@ -90,3 +90,17 @@ int parse_offchain_message_header(Parser *parser, OffchainMessageHeader *header)
 int parse_instruction(Parser *parser, Instruction *instruction);
 
 int skip_address_table_lookups(Parser *parser);
+
+// Resolve a versioned (v0) transaction global account index that references an
+// ALT-loaded account back to the (alt_address, entry_index) pair that supplies
+// it. `transaction` is the full serialized message; `global_index` must be at
+// least the static pubkeys length. On success returns 0, sets `*out_alt_address`
+// to a borrowed pointer into `transaction` (the 32-byte ALT account key) and
+// `*out_entry_index` to the index within that ALT. Returns non-zero when the
+// message is not versioned, the index is static, the index is beyond the loaded
+// range, or the message is malformed.
+int resolve_alt_loaded_index(const uint8_t *transaction,
+                             size_t transaction_size,
+                             uint16_t global_index,
+                             const uint8_t **out_alt_address,
+                             uint8_t *out_entry_index);

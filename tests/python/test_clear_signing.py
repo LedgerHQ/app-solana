@@ -320,6 +320,7 @@ def test_token_account_state_challenge_consumed(backend):
 
 def test_alt_resolution_valid(backend):
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     challenge = sol.get_challenge()
     sol.provide_alt_resolution(
         challenge=challenge,
@@ -329,8 +330,23 @@ def test_alt_resolution_valid(backend):
     )
 
 
+def test_alt_resolution_without_session_rejected(backend):
+    """ALT_RESOLUTION outside an open streaming session is refused."""
+    sol = SolanaClient(backend)
+    challenge = sol.get_challenge()
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_alt_resolution(
+            challenge=challenge,
+            alt_address=b'\xaa' * 32,
+            entry_index=0,
+            resolved_address=b'\xbb' * 32,
+        )
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
+
+
 def test_alt_resolution_bad_challenge(backend):
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     sol.get_challenge()
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.provide_alt_resolution(
@@ -345,6 +361,7 @@ def test_alt_resolution_bad_challenge(backend):
 def test_alt_resolution_challenge_consumed(backend):
     """After a successful ALT_RESOLUTION, the challenge should be rolled."""
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     challenge = sol.get_challenge()
     sol.provide_alt_resolution(
         challenge=challenge,
@@ -358,6 +375,29 @@ def test_alt_resolution_challenge_consumed(backend):
             alt_address=b'\xaa' * 32,
             entry_index=0,
             resolved_address=b'\xbb' * 32,
+        )
+    assert exc_info.value.status == ErrorType.INVALID_ALT_RESOLUTION
+
+
+def test_alt_resolution_duplicate_rejected(backend):
+    """Providing the same (alt_address, entry_index) twice is refused as a duplicate."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    challenge = sol.get_challenge()
+    sol.provide_alt_resolution(
+        challenge=challenge,
+        alt_address=b'\xaa' * 32,
+        entry_index=7,
+        resolved_address=b'\xbb' * 32,
+    )
+    # A fresh challenge, same key: the cache must reject the duplicate.
+    challenge = sol.get_challenge()
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_alt_resolution(
+            challenge=challenge,
+            alt_address=b'\xaa' * 32,
+            entry_index=7,
+            resolved_address=b'\xcc' * 32,
         )
     assert exc_info.value.status == ErrorType.INVALID_ALT_RESOLUTION
 
@@ -869,7 +909,8 @@ def test_bridge_token_amount_native(backend, sol, scenario_navigator, root_pytes
 
 
 def test_bridge_token_amount_unknown(backend, sol, scenario_navigator, root_pytest_dir):
-    """PARAM_TOKEN_AMOUNT without is_native: displays as 'X ???'."""
+    """PARAM_TOKEN_AMOUNT with no mint reference (MINT_NONE): the amount is a
+    plain number with no ticker, so it renders bare as 'X'."""
     message = _craft_single_instruction_message(sol,
                                                 BRIDGE_PROGRAM_ID,
                                                 _bridge_instruction_data(1000, 1_000_000))

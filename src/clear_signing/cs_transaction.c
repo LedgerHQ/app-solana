@@ -6,6 +6,7 @@
 #include "cs_display_renderer.h"
 #include "cs_enum_cache.h"
 #include "cs_token_account_cache.h"
+#include "cs_alt_cache.h"
 #include "apdu.h"
 #include "app_mem_utils.h"
 
@@ -30,6 +31,7 @@ void cs_transaction_reset(void) {
     cs_instruction_template_table_reset();
     cs_enum_cache_reset();
     cs_token_account_cache_reset();
+    cs_alt_cache_reset();
     if (G_cs_transaction != NULL) {
         if (G_cs_transaction->transaction != NULL) {
             APP_MEM_FREE_AND_NULL((void **) &G_cs_transaction->transaction);

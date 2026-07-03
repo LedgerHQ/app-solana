@@ -7,6 +7,7 @@
 #include "cs_display_renderer.h"
 #include "cs_instruction_template.h"
 #include "cs_token_account_cache.h"
+#include "cs_alt_cache.h"
 #include "apdu.h"
 #include "globals.h"
 #include "io.h"
@@ -43,9 +44,14 @@ static const uint8_t *resolve_field_mint(const mint_binding_t *bindings,
     return token_ref;
 }
 
-// Resolve an instruction accounts-array index to its pubkey in the message.
-// Returns NULL when either index is out of range.
-static const uint8_t *pubkey_from_account_index(const MessageHeader *header,
+// Resolve an instruction accounts-array index to its pubkey. A static index
+// reads directly from the message's key list. An ALT-loaded index (beyond the
+// static keys, only possible in versioned transactions) is mapped back to its
+// (alt_address, entry_index) origin and looked up in the ALT resolution cache;
+// without a matching attested resolution it returns NULL so finalize refuses to
+// sign. Returns NULL when the index is out of range or unresolved.
+static const uint8_t *pubkey_from_account_index(const cs_transaction_t *cs_tx,
+                                                 const MessageHeader *header,
                                                  const Instruction *instruction,
                                                  uint8_t account_index) {
     if (account_index >= instruction->accounts_length) {
@@ -55,13 +61,33 @@ static const uint8_t *pubkey_from_account_index(const MessageHeader *header,
         return NULL;
     }
     uint8_t pubkey_index = instruction->accounts[account_index];
-    if (pubkey_index >= header->pubkeys_header.pubkeys_length) {
-        PRINTF("finalize cs: pubkey_index %d out of range (%d)\n",
-               pubkey_index,
-               header->pubkeys_header.pubkeys_length);
-        return NULL;
+
+    const uint8_t *pubkey;
+    if (pubkey_index < header->pubkeys_header.pubkeys_length) {
+        // Static key: read directly from the message's account list.
+        pubkey = header->pubkeys[pubkey_index].data;
+    } else {
+        // ALT-loaded key: map the global index back to its (alt_address, entry_index) origin.
+        const uint8_t *alt_address = NULL;
+        uint8_t entry_index = 0;
+        if (resolve_alt_loaded_index(cs_tx->transaction,
+                                     cs_tx->transaction_size,
+                                     pubkey_index,
+                                     &alt_address,
+                                     &entry_index) != 0) {
+            PRINTF("finalize cs: pubkey_index %d is not a resolvable ALT-loaded account\n",
+                   pubkey_index);
+            return NULL;
+        }
+        // Only an attested ALT_RESOLUTION descriptor can supply the concrete key.
+        pubkey = cs_alt_cache_find(alt_address, entry_index);
+        if (pubkey == NULL) {
+            PRINTF("finalize cs: no ALT resolution for entry index %d, refusing to sign\n",
+                   entry_index);
+            return NULL;
+        }
     }
-    return header->pubkeys[pubkey_index].data;
+    return pubkey;
 }
 
 // Walk every transaction instruction against the IDL type pool of its matching
@@ -170,7 +196,8 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
                 continue;
             }
             const uint8_t *pubkey =
-                pubkey_from_account_index(&header,
+                pubkey_from_account_index(cs_tx,
+                                          &header,
                                           &instruction,
                                           template->display_fields[f].account.index);
             if (pubkey == NULL) {
@@ -199,9 +226,9 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
         // Seed the mint-binding map from this instruction's MINT_ASSOC pair.
         if (template->has_mint_assoc) {
             const uint8_t *token_account =
-                pubkey_from_account_index(&header, &instruction, template->mint_assoc_account);
+                pubkey_from_account_index(cs_tx, &header, &instruction, template->mint_assoc_account);
             const uint8_t *mint =
-                pubkey_from_account_index(&header, &instruction, template->mint_assoc_mint);
+                pubkey_from_account_index(cs_tx, &header, &instruction, template->mint_assoc_mint);
             if (token_account == NULL || mint == NULL) {
                 PRINTF("finalize cs: instruction %d mint_assoc index out of range\n", i);
                 return -1;
@@ -230,6 +257,7 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
                 case CS_TOKEN_MINT_ACCOUNT_INDEX: {
                     const uint8_t *token_ref =
                         pubkey_from_account_index(
+                            cs_tx,
                             &header,
                             &instruction,
                             field->argument.format.token_amount.ref.account_index);
