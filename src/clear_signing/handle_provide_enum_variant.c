@@ -11,6 +11,8 @@
 #include "os_pki.h"
 #include "ledger_pki.h"
 #include "tlv_library.h"
+#include "cs_transaction.h"
+#include "cs_enum_cache.h"
 
 #define TYPE_ENUM_VARIANT       0x17
 #define MAX_ENUM_ID_LENGTH      64
@@ -113,19 +115,19 @@ static bool handle_common(const tlv_data_t *data, tlv_out_t *out) {
 // Validate PAYLOAD_KIND / PAYLOAD coherence
 static bool validate_payload_kind(const tlv_out_t *tlv_extracted) {
     switch (tlv_extracted->payload_kind) {
-        case 0x00:  // EMPTY
+        case CS_VARIANT_PAYLOAD_EMPTY:
             if (TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags, EV_TAG_PAYLOAD)) {
                 PRINTF("Error: PAYLOAD present for EMPTY payload_kind\n");
                 return false;
             }
             break;
-        case 0x02:  // INLINE
+        case CS_VARIANT_PAYLOAD_INLINE:
             if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags, EV_TAG_PAYLOAD)) {
                 PRINTF("Error: PAYLOAD missing for INLINE payload_kind\n");
                 return false;
             }
             break;
-        case 0x03:  // RAW_SIZE
+        case CS_VARIANT_PAYLOAD_RAW_SIZE:
             if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted->received_tags, EV_TAG_PAYLOAD)) {
                 PRINTF("Error: PAYLOAD missing for RAW_SIZE payload_kind\n");
                 return false;
@@ -145,6 +147,11 @@ static bool validate_payload_kind(const tlv_out_t *tlv_extracted) {
 
 int handle_provide_enum_variant(void) {
     PRINTF("handle_provide_enum_variant\n");
+
+    int state_err = cs_check_state(CS_SESSION_STREAMING);
+    if (state_err != 0) {
+        return io_send_sw(state_err);
+    }
 
     tlv_out_t tlv_extracted = {0};
     cx_sha256_init(&tlv_extracted.hash_ctx);
@@ -209,6 +216,18 @@ int handle_provide_enum_variant(void) {
     PRINTF("variant_index = %d\n", tlv_extracted.variant_index);
     PRINTF("variant_name  = %s\n", tlv_extracted.variant_name);
     PRINTF("payload_kind  = 0x%02x\n", tlv_extracted.payload_kind);
+
+    if (cs_enum_cache_add(tlv_extracted.program_id,
+                          (const uint8_t *) tlv_extracted.enum_id,
+                          strlen(tlv_extracted.enum_id),
+                          tlv_extracted.variant_index,
+                          tlv_extracted.variant_name,
+                          tlv_extracted.payload_kind,
+                          tlv_extracted.payload,
+                          tlv_extracted.payload_size) != 0) {
+        PRINTF("Error: cs_enum_cache_add rejected variant %d\n", tlv_extracted.variant_index);
+        return io_send_sw(ApduReplySolanaInvalidEnumVariant);
+    }
 
     return io_send_sw(ApduReplySuccess);
 }

@@ -80,6 +80,7 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
         uint8_t walker_resolved_count = 0;
         int walk_status = idl_walker_run(instruction.data,
                                          instruction.data_length,
+                                         program_id,
                                          argument_paths,
                                          argument_count,
                                          walker_results,

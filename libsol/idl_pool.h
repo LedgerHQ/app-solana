@@ -31,7 +31,7 @@ typedef struct idl_pool_entry_s {
     uint8_t ref_count;
     const uint8_t *sentinel;  // OPTION_ZEROABLE sentinel bytes
     uint8_t sentinel_len;
-    const uint8_t *enum_id;   // ENUM identifier bytes
+    const uint8_t *enum_id;  // ENUM identifier bytes
     uint8_t enum_id_len;
 } idl_pool_entry_t;
 

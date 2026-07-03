@@ -4,6 +4,7 @@
 #include "cs_transaction.h"
 #include "cs_instruction_template.h"
 #include "cs_display_renderer.h"
+#include "cs_enum_cache.h"
 #include "apdu.h"
 #include "app_mem_utils.h"
 
@@ -26,6 +27,7 @@ int cs_check_state(cs_session_state_t expected) {
 void cs_transaction_reset(void) {
     cs_display_renderer_reset();
     cs_instruction_template_table_reset();
+    cs_enum_cache_reset();
     if (G_cs_transaction != NULL) {
         if (G_cs_transaction->transaction != NULL) {
             APP_MEM_FREE_AND_NULL((void **) &G_cs_transaction->transaction);

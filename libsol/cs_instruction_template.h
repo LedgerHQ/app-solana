@@ -26,16 +26,16 @@
 // Param types (spec/device/tlv_structs.md FieldParamType enum).
 // Determines how the renderer formats the resolved value.
 enum cs_param_type {
-    CS_PARAM_TYPE_RAW          = 0x00,
-    CS_PARAM_TYPE_AMOUNT       = 0x01,
+    CS_PARAM_TYPE_RAW = 0x00,
+    CS_PARAM_TYPE_AMOUNT = 0x01,
     CS_PARAM_TYPE_TOKEN_AMOUNT = 0x02,
-    CS_PARAM_TYPE_DATETIME     = 0x03,
-    CS_PARAM_TYPE_DURATION     = 0x04,
-    CS_PARAM_TYPE_UNIT         = 0x05,
-    CS_PARAM_TYPE_ENUM         = 0x06,
+    CS_PARAM_TYPE_DATETIME = 0x03,
+    CS_PARAM_TYPE_DURATION = 0x04,
+    CS_PARAM_TYPE_UNIT = 0x05,
+    CS_PARAM_TYPE_ENUM = 0x06,
     CS_PARAM_TYPE_TRUSTED_NAME = 0x07,
-    CS_PARAM_TYPE_ACCOUNT      = 0x08,
-    CS_PARAM_TYPE_STRING       = 0x09,
+    CS_PARAM_TYPE_ACCOUNT = 0x08,
+    CS_PARAM_TYPE_STRING = 0x09,
 };
 
 // Format-specific parameters for PARAM_AMOUNT.
@@ -118,8 +118,7 @@ typedef struct cs_instruction_template_s {
 // the matching substructure hash accumulation. Returns the zeroed builder for
 // the caller to fill, or NULL when the committed array is already full or the
 // table cannot be allocated. Discards any previous unfinished builder.
-cs_instruction_template_t *cs_instruction_template_open(
-    const uint8_t target_hash[32]);
+cs_instruction_template_t *cs_instruction_template_open(const uint8_t target_hash[32]);
 
 // The in-flight builder being assembled, or NULL when none is open.
 cs_instruction_template_t *cs_instruction_template_current(void);
@@ -138,8 +137,7 @@ int cs_instruction_template_add_display_path(const uint8_t *path,
 // `name` is the human-readable field label (may be NULL or empty).
 // Always rendered as a short-form base58 address; no param_type needed.
 // Returns 0 on success, -1 when no builder is open or the slot is full.
-int cs_instruction_template_add_account_field(uint8_t account_index,
-                                              const char *name);
+int cs_instruction_template_add_account_field(uint8_t account_index, const char *name);
 
 // Append a CONSTANT display field. The value is embedded directly from the
 // descriptor payload. `kind` is the IDL kind code for formatting at render time.
@@ -177,10 +175,9 @@ bool cs_instruction_template_pending(void);
 
 // Find the committed template whose program_id matches and whose discriminator
 // is a prefix of `data`. Returns NULL when none matches.
-const cs_instruction_template_t *cs_instruction_template_find(
-    const uint8_t program_id[32],
-    const uint8_t *data,
-    size_t data_size);
+const cs_instruction_template_t *cs_instruction_template_find(const uint8_t program_id[32],
+                                                              const uint8_t *data,
+                                                              size_t data_size);
 
 // Release the table and the substructure accumulator, returning to the empty
 // state. Safe when no table is allocated.

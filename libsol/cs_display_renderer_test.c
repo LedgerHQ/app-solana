@@ -16,8 +16,12 @@ static cs_instruction_template_t G_dummy_template;
 static void init_dummy_template(void) {
     memset(&G_dummy_template, 0, sizeof(G_dummy_template));
     strlcpy(G_dummy_template.operation_type, "Transfer", sizeof(G_dummy_template.operation_type));
-    strlcpy(G_dummy_template.display_fields[0].name, "Amount", sizeof(G_dummy_template.display_fields[0].name));
-    strlcpy(G_dummy_template.display_fields[1].name, "Recipient", sizeof(G_dummy_template.display_fields[1].name));
+    strlcpy(G_dummy_template.display_fields[0].name,
+            "Amount",
+            sizeof(G_dummy_template.display_fields[0].name));
+    strlcpy(G_dummy_template.display_fields[1].name,
+            "Recipient",
+            sizeof(G_dummy_template.display_fields[1].name));
 }
 
 static void test_initial_state(void) {
@@ -212,7 +216,9 @@ static void test_render_mixed_argument_and_account_fields(void) {
     // Field 0: ACCOUNT_PATH (resolved to pubkey externally)
     template.display_fields[0].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
     template.display_fields[0].account.index = 2;
-    strlcpy(template.display_fields[0].name, "Destination", sizeof(template.display_fields[0].name));
+    strlcpy(template.display_fields[0].name,
+            "Destination",
+            sizeof(template.display_fields[0].name));
 
     // Field 1: ARGUMENT_PATH (resolved by walker to u32)
     template.display_fields[1].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
@@ -426,6 +432,69 @@ static void test_render_account_full_address(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+static void test_render_enum_variant_name(void) {
+    printf("  test_render_enum_variant_name\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    memset(&template, 0, sizeof(template));
+    strlcpy(template.operation_type, "Test", sizeof(template.operation_type));
+    strlcpy(template.display_fields[0].name, "Kind", sizeof(template.display_fields[0].name));
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_ENUM;
+    template.display_field_count = 1;
+
+    // The walker resolves an enum leaf to the selected variant's display name.
+    const char *variant_name = "Withdraw";
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_ENUM;
+    instr.resolved[0].value = (const uint8_t *) variant_name;
+    instr.resolved[0].value_size = strlen(variant_name);
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
+    assert(strcmp(cs_display_renderer_element(1)->value, "Withdraw") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_string_too_long_refused(void) {
+    printf("  test_render_string_too_long_refused\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    memset(&template, 0, sizeof(template));
+    strlcpy(template.operation_type, "Test", sizeof(template.operation_type));
+    strlcpy(template.display_fields[0].name, "Kind", sizeof(template.display_fields[0].name));
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_ENUM;
+    template.display_field_count = 1;
+
+    // A value that cannot fit the display buffer must be refused, not truncated.
+    uint8_t oversized[CS_DISPLAY_VALUE_SIZE];
+    memset(oversized, 'x', sizeof(oversized));
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_ENUM;
+    instr.resolved[0].value = oversized;
+    instr.resolved[0].value_size = sizeof(oversized);
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 static void test_render_unsupported_param_type(void) {
     printf("  test_render_unsupported_param_type\n");
     mock_mem_reset();
@@ -436,7 +505,7 @@ static void test_render_unsupported_param_type(void) {
     strlcpy(template.operation_type, "Test", sizeof(template.operation_type));
     strlcpy(template.display_fields[0].name, "Field", sizeof(template.display_fields[0].name));
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
-    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_ENUM;  // Not supported yet
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_DATETIME;  // not rendered yet
     template.display_field_count = 1;
 
     uint8_t value = 1;
@@ -513,6 +582,8 @@ int main(void) {
     test_render_token_amount_unknown();
     test_render_token_amount_resolved_mint();
     test_render_account_full_address();
+    test_render_enum_variant_name();
+    test_render_string_too_long_refused();
     test_render_unsupported_param_type();
     printf("  All passed!\n");
     return 0;

@@ -28,6 +28,7 @@ DISPLAY_FIELD_TAG_PARAM = 0x04
 PARAM_TYPE_RAW = 0x00
 PARAM_TYPE_AMOUNT = 0x01
 PARAM_TYPE_TOKEN_AMOUNT = 0x02
+PARAM_TYPE_ENUM = 0x06
 PARAM_TAG_VERSION = 0x00
 PARAM_TAG_VALUE = 0x01
 PARAM_TAG_DECIMALS = 0x02  # PARAM_AMOUNT tag for decimals
@@ -80,6 +81,19 @@ def _build_display_field(argument_path: bytes) -> bytes:
     return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
             + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
             + format_tlv(DISPLAY_FIELD_TAG_NAME, "Amount")
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_RAW)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_raw))
+
+
+def _build_display_field_named(argument_path: bytes, name: str) -> bytes:
+    """A DISPLAY_FIELD (PARAM_RAW) pointing at one ARGUMENT_PATH leaf with a custom name."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, argument_path))
+    param_raw = (format_tlv(PARAM_TAG_VERSION, 1)
+                 + format_tlv(PARAM_TAG_VALUE, value_tlv))
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_RAW)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_raw))
 
@@ -139,6 +153,20 @@ def _build_token_amount_display_field(argument_path: bytes, is_native: bool, nam
             + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_TOKEN_AMOUNT)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_token))
+
+
+def _build_enum_display_field(argument_path: bytes, name: str) -> bytes:
+    """A DISPLAY_FIELD (PARAM_ENUM) pointing at one ARGUMENT_PATH enum leaf.
+    The walker resolves the leaf to the selected variant's display name."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, argument_path))
+    param_enum = (format_tlv(PARAM_TAG_VERSION, 1)
+                  + format_tlv(PARAM_TAG_VALUE, value_tlv))
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_ENUM)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_enum))
 
 
 # Sending a substructure without an open clear-signing session must fail closed.
@@ -290,8 +318,23 @@ def test_alt_resolution_challenge_consumed(backend):
 
 # ── ENUM_VARIANT ─────────────────────────────────────────────────────────────
 
+def test_enum_variant_without_session_rejected(backend):
+    """Sending an enum variant outside an open streaming session must fail closed."""
+    sol = SolanaClient(backend)
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_enum_variant(
+            program_id=b'\x01' * 32,
+            enum_id="SwapRoute",
+            variant_index=0,
+            variant_name="Raydium",
+            payload_kind=0x00,  # EMPTY
+        )
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
+
+
 def test_enum_variant_empty_payload(backend):
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     sol.provide_enum_variant(
         program_id=b'\x01' * 32,
         enum_id="SwapRoute",
@@ -303,6 +346,7 @@ def test_enum_variant_empty_payload(backend):
 
 def test_enum_variant_inline_payload(backend):
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     sol.provide_enum_variant(
         program_id=b'\x01' * 32,
         enum_id="SwapRoute",
@@ -315,6 +359,7 @@ def test_enum_variant_inline_payload(backend):
 
 def test_enum_variant_raw_size_payload(backend):
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     sol.provide_enum_variant(
         program_id=b'\x01' * 32,
         enum_id="SwapRoute",
@@ -327,6 +372,7 @@ def test_enum_variant_raw_size_payload(backend):
 
 def test_enum_variant_bad_payload_kind(backend):
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.provide_enum_variant(
             program_id=b'\x01' * 32,
@@ -341,6 +387,7 @@ def test_enum_variant_bad_payload_kind(backend):
 def test_enum_variant_empty_with_payload_rejected(backend):
     """EMPTY payload_kind must not have a PAYLOAD tag."""
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.provide_enum_variant(
             program_id=b'\x01' * 32,
@@ -356,6 +403,7 @@ def test_enum_variant_empty_with_payload_rejected(backend):
 def test_enum_variant_inline_without_payload_rejected(backend):
     """INLINE payload_kind requires a PAYLOAD tag."""
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.provide_enum_variant(
             program_id=b'\x01' * 32,
@@ -371,6 +419,7 @@ def test_enum_variant_inline_without_payload_rejected(backend):
 def test_enum_variant_raw_size_wrong_length_rejected(backend):
     """RAW_SIZE payload must be exactly 2 bytes."""
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.provide_enum_variant(
             program_id=b'\x01' * 32,
@@ -839,6 +888,202 @@ def test_bridge_account_param_type(backend, sol, scenario_navigator, root_pytest
     assert sol.get_async_response().status == 0x9000
 
 
+# ── ENUM end-to-end: variant name resolution and payload consumption ─────────
+
+# Synthetic program whose single instruction argument struct starts with a
+# 1-byte discriminator (BYTES_FIXED) followed by an ENUM field "sw" with 3
+# variants (indices 0,1,2). The enum discriminator is a single u8 read from
+# the instruction data.
+ENUM_PROGRAM_ID = b'\x0e' * 32
+ENUM_DISCRIMINATOR = b'\x0e'
+ENUM_ID = "sw"
+
+# Path steps: STRUCT steps are 1 byte (the child index).
+#   ENUM_PATH → root STRUCT child 1 (the enum field itself)
+ENUM_PATH = b'\x01\x01'
+
+
+def _enum_pool_empty() -> bytes:
+    """IDL pool: STRUCT{ BYTES_FIXED(1) disc, ENUM sw }."""
+    return bytes([
+        3,
+        0x20, 0x02, 0x01, 0x02,          # [0] STRUCT field_count=2 refs=[1,2]
+        0x12, 0x00, 0x01,                # [1] BYTES_FIXED fixed_size=1 (discriminator)
+        0x28, 0x01, 0x00, 0x03, 0x02,    # [2] ENUM disc=U8 total_variants=3 id_len=2
+        ord('s'), ord('w'),
+    ])
+
+
+def test_enum_empty_variant_displays_name(backend, sol, scenario_navigator, root_pytest_dir):
+    """EMPTY payload: the walker resolves the enum leaf to its variant name and
+    the renderer displays it (no payload bytes consumed)."""
+    # data: discriminator byte, then enum discriminator = variant index 1.
+    data = ENUM_DISCRIMINATOR + bytes([1])
+    message = _craft_single_instruction_message(sol, ENUM_PROGRAM_ID, data)
+    _begin_session(sol, message)
+
+    display_field = _build_enum_display_field(ENUM_PATH, "Route")
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=ENUM_PROGRAM_ID,
+        discriminator=ENUM_DISCRIMINATOR,
+        operation_type="Swap",
+        program_name="SwapDex",
+        substructures_hash=substructures_hash,
+        idl_type_pool=_enum_pool_empty(),
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    sol.provide_enum_variant(
+        program_id=ENUM_PROGRAM_ID,
+        enum_id=ENUM_ID,
+        variant_index=1,
+        variant_name="Orca",
+        payload_kind=0x00,  # EMPTY
+    )
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_enum_missing_variant_refused(backend, sol):
+    """No matching variant registered: the walker cannot resolve the enum leaf,
+    so FINALIZE must fail closed."""
+    data = ENUM_DISCRIMINATOR + bytes([1])
+    message = _craft_single_instruction_message(sol, ENUM_PROGRAM_ID, data)
+    _begin_session(sol, message)
+
+    display_field = _build_enum_display_field(ENUM_PATH, "Route")
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=ENUM_PROGRAM_ID,
+        discriminator=ENUM_DISCRIMINATOR,
+        operation_type="Swap",
+        program_name="SwapDex",
+        substructures_hash=substructures_hash,
+        idl_type_pool=_enum_pool_empty(),
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    # Deliberately do NOT provide the enum variant.
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.INVALID_GENERIC_PREVIEW
+
+
+def test_enum_raw_size_variant_skips_payload(backend, sol, scenario_navigator, root_pytest_dir):
+    """RAW_SIZE payload: the walker skips the fixed number of opaque payload
+    bytes, so a trailing field after the enum decodes correctly."""
+    #   [0] STRUCT field_count=3 refs=[1,2,3]
+    #   [1] BYTES_FIXED(1) discriminator
+    #   [2] ENUM sw
+    #   [3] U8 trailing
+    pool = bytes([
+        4,
+        0x20, 0x03, 0x01, 0x02, 0x03,
+        0x12, 0x00, 0x01,
+        0x28, 0x01, 0x00, 0x03, 0x02, ord('s'), ord('w'),
+        0x01,
+    ])
+    tail_path = b'\x01\x02'
+
+    # data: disc, variant index 2, 2 opaque payload bytes, trailing u8 = 0x7F.
+    data = ENUM_DISCRIMINATOR + bytes([2]) + b'\xAA\xBB' + bytes([0x7F])
+    message = _craft_single_instruction_message(sol, ENUM_PROGRAM_ID, data)
+    _begin_session(sol, message)
+
+    enum_field = _build_enum_display_field(ENUM_PATH, "Route")
+    tail_field = _build_display_field_named(tail_path, "Tail")
+    substructures_hash = hashlib.sha256(enum_field + tail_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=ENUM_PROGRAM_ID,
+        discriminator=ENUM_DISCRIMINATOR,
+        operation_type="Swap",
+        program_name="SwapDex",
+        substructures_hash=substructures_hash,
+        idl_type_pool=pool,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, enum_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, tail_field)
+    sol.provide_enum_variant(
+        program_id=ENUM_PROGRAM_ID,
+        enum_id=ENUM_ID,
+        variant_index=2,
+        variant_name="Jupiter",
+        payload_kind=0x03,  # RAW_SIZE
+        variant_payload=b'\x00\x02',  # 2 opaque bytes
+    )
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_enum_inline_variant_inner_field(backend, sol, scenario_navigator, root_pytest_dir):
+    """INLINE payload: the variant carries a self-contained inline type
+    descriptor whose inner fields become addressable leaves."""
+    # Inline descriptor: STRUCT{ U8 } embedded in the variant.
+    inline_desc = bytes([0x20, 0x01, 0x01])  # STRUCT child_count=1, child U8
+
+    # data: disc, enum discriminator = variant index 1, inner u8 = 0x42.
+    data = ENUM_DISCRIMINATOR + bytes([1]) + bytes([0x42])
+    message = _craft_single_instruction_message(sol, ENUM_PROGRAM_ID, data)
+    _begin_session(sol, message)
+
+    enum_field = _build_enum_display_field(ENUM_PATH, "Route")
+    # Path into the inline payload: root STRUCT child 1 (enum),
+    # variant index 1, inline STRUCT child 0.
+    inner_path = bytes([3, 1, 1, 0])
+    inner_field = _build_display_field_named(inner_path, "Inner")
+    substructures_hash = hashlib.sha256(enum_field + inner_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=ENUM_PROGRAM_ID,
+        discriminator=ENUM_DISCRIMINATOR,
+        operation_type="Swap",
+        program_name="SwapDex",
+        substructures_hash=substructures_hash,
+        idl_type_pool=_enum_pool_empty(),
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, enum_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, inner_field)
+    sol.provide_enum_variant(
+        program_id=ENUM_PROGRAM_ID,
+        enum_id=ENUM_ID,
+        variant_index=1,
+        variant_name="Orca",
+        payload_kind=0x02,  # INLINE
+        variant_payload=inline_desc,
+    )
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
 # ─── End-to-end: clear signing + delayed signing ─────────────────────────────
 
 def _craft_message_with_blockhash(sol: SolanaClient, program_id: bytes,
@@ -910,9 +1155,13 @@ def test_clear_signing_delayed_sign_valid(backend, sol, navigator,
     verify_signature(from_public_key, final_message, signature)
 
     # Dismiss the "Transaction signed" status screen shown by delayed sign
+    if backend.device.is_nano:
+        dismiss_instructions = [NavInsID.BOTH_CLICK]
+    else:
+        dismiss_instructions = [NavInsID.USE_CASE_STATUS_DISMISS]
     navigator.navigate_and_compare(
         path=root_pytest_dir,
-        instructions=[NavInsID.USE_CASE_STATUS_DISMISS],
+        instructions=dismiss_instructions,
         test_case_name="delayed_sign_status",
         screen_change_before_first_instruction=False,
     )
