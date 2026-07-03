@@ -1,5 +1,4 @@
 #include "sol/parser.h"
-#include "sol/offchain_message_signing.h"
 #include "util.h"
 
 static int check_buffer_length(Parser *parser, size_t num) {
@@ -170,11 +169,8 @@ int parse_message_header(Parser *parser, MessageHeader *header) {
 
 int parse_offchain_message_header(Parser *parser, OffchainMessageHeader *header) {
     const size_t domain_len = OFFCHAIN_MESSAGE_SIGNING_DOMAIN_LENGTH;
-    BAIL_IF(check_buffer_length(parser, domain_len));
-    int res;
-    if ((res = memcmp((const void *) &offchain_message_signing_domain,
-                      parser->buffer,
-                      domain_len)) != 0) {
+    int res = check_offchain_signing_domain(parser->buffer, parser->buffer_length);
+    if (res != 0) {
         return res;
     }
     advance(parser, domain_len);  // Signing domain - 16 bytes
@@ -205,7 +201,14 @@ int parse_offchain_message_header(Parser *parser, OffchainMessageHeader *header)
         }
     }
 
-    BAIL_IF(parse_u16(parser, &header->length));  // Message length
+    if (header->version == 0) {
+        uint16_t msg_length = 0;
+        BAIL_IF(parse_u16(parser, &msg_length));  // V0: explicit message length
+        header->length = msg_length;
+    } else {
+        // V1+: no length prefix, content is the trailing bytes
+        header->length = parser->buffer_length;
+    }
     return 0;
 }
 

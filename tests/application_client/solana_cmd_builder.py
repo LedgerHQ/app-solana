@@ -218,6 +218,6 @@ class V1OffchainMessage:
         data += len(self.signer_pubkeys).to_bytes(1, byteorder='little')  # signer count
         for pubkey in self.signer_pubkeys:
             data += pubkey
-        data += len(self.message).to_bytes(2, byteorder='little')
+        # V1: no length prefix, message body is trailing bytes
         data += self.message
         return data

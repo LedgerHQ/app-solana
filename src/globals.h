@@ -35,15 +35,6 @@
 
 #define MAX_OFFCHAIN_MESSAGE_LENGTH PACKET_DATA_SIZE
 
-// Assuming that only one signer
-#define OFFCHAIN_MESSAGE_HEADER_LENGTH 85
-
-// Application buffer - no content reference value
-#define OFFCHAIN_EMPTY_APPLICATION_DOMAIN                                                         \
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,     \
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
-        0x00, 0x00
-
 #define MAX_MESSAGE_LENGTH ROUND_TO_NEXT(TOTAL_SIGN_MESSAGE_BUFFER_LENGTH, USB_SEGMENT_SIZE)
 
 // credit: https://stackoverflow.com/questions/807244/c-compiler-asserts-how-to-implement

@@ -4,8 +4,9 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include "sol/offchain_message_signing.h"
+#include "sol/pubkey.h"
 
-#define PUBKEY_SIZE    32
 #define HASH_SIZE      32
 #define BLOCKHASH_SIZE HASH_SIZE
 
@@ -25,10 +26,6 @@ typedef struct SizedString {
     // nano-s-compatible strategy for dealing with non-ASCII chars...
     const char *string;
 } SizedString;
-
-typedef struct Pubkey {
-    uint8_t data[PUBKEY_SIZE];
-} Pubkey;
 
 typedef struct Hash {
     uint8_t data[HASH_SIZE];
@@ -58,33 +55,6 @@ typedef struct MessageHeader {
     const Blockhash *blockhash;
     size_t instructions_length;
 } MessageHeader;
-
-#define OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH 32
-typedef struct OffchainMessageApplicationDomain {
-    uint8_t data[OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH];
-} OffchainMessageApplicationDomain;
-
-typedef struct OffchainMessageHeader {
-    uint8_t version;
-    // V0 only: application_domain is NULL for V1
-    const OffchainMessageApplicationDomain *application_domain;
-    // V0 only: format is unused for V1
-    uint8_t format;
-    size_t signers_length;
-    const Pubkey *signers;
-    uint16_t length;
-} OffchainMessageHeader;
-
-// Compute the header length based on version and signers count
-static inline size_t offchain_message_header_length(const OffchainMessageHeader *header) {
-    // Common: signing_domain(16) + version(1) + signer_count(1) + signers(32*n) + length(2)
-    size_t base_length = 16 + 1 + 1 + (PUBKEY_SIZE * header->signers_length) + 2;
-    if (header->version == 0) {
-        // V0 adds: application_domain(32) + format(1)
-        base_length += OFFCHAIN_MESSAGE_APPLICATION_DOMAIN_LENGTH + 1;
-    }
-    return base_length;
-}
 
 static inline int parser_is_empty(Parser *parser) {
     return parser->buffer_length == 0;
@@ -120,8 +90,3 @@ int parse_offchain_message_header(Parser *parser, OffchainMessageHeader *header)
 int parse_instruction(Parser *parser, Instruction *instruction);
 
 int skip_address_table_lookups(Parser *parser);
-
-// FIXME: I don't belong here
-static inline bool pubkeys_equal(const Pubkey *pubkey1, const Pubkey *pubkey2) {
-    return memcmp(pubkey1, pubkey2, PUBKEY_SIZE) == 0;
-}
