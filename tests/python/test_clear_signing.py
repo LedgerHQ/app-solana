@@ -13,7 +13,7 @@ from solders.instruction import Instruction, AccountMeta
 from application_client.solana import (SolanaClient, INS, CLA, P2_NONE, P1_NON_CONFIRM, ErrorType,
                                       TokenAccountStateTag, AltResolutionTag, EnumVariantTag,
                                       InstructionInfoTag, ValueTag)
-from application_client.solana_signing_partners import INSTRUCTION_DESCRIPTOR_PARTNER
+from application_client.solana_signing_partners import GENERIC_CLEAR_SIGNING_PARTNER
 from application_client.solana_cmd_builder import verify_signature
 from application_client.tlv import format_tlv
 from application_client import solana_utils as SOL
@@ -263,9 +263,9 @@ def test_token_account_state_wrong_struct_type(backend):
     payload += format_tlv(TokenAccountStateTag.MINT, b'\x22' * 32)
     payload += format_tlv(TokenAccountStateTag.OWNER, b'\x33' * 32)
     payload += format_tlv(TokenAccountStateTag.PRE_BALANCE, 0)
-    payload += format_tlv(TokenAccountStateTag.SIGNATURE, INSTRUCTION_DESCRIPTOR_PARTNER.sign(payload))
+    payload += format_tlv(TokenAccountStateTag.SIGNATURE, GENERIC_CLEAR_SIGNING_PARTNER.sign(payload))
 
-    sol.send_pki_certificate(INSTRUCTION_DESCRIPTOR_PARTNER)
+    sol.send_pki_certificate(GENERIC_CLEAR_SIGNING_PARTNER)
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol._exchange_split(CLA, INS.INS_TOKEN_ACCOUNT_STATE, P1_NON_CONFIRM, payload)
     assert exc_info.value.status == ErrorType.INVALID_TOKEN_ACCOUNT_STATE
@@ -283,9 +283,9 @@ def test_token_account_state_wrong_version(backend):
     payload += format_tlv(TokenAccountStateTag.MINT, b'\x22' * 32)
     payload += format_tlv(TokenAccountStateTag.OWNER, b'\x33' * 32)
     payload += format_tlv(TokenAccountStateTag.PRE_BALANCE, 0)
-    payload += format_tlv(TokenAccountStateTag.SIGNATURE, INSTRUCTION_DESCRIPTOR_PARTNER.sign(payload))
+    payload += format_tlv(TokenAccountStateTag.SIGNATURE, GENERIC_CLEAR_SIGNING_PARTNER.sign(payload))
 
-    sol.send_pki_certificate(INSTRUCTION_DESCRIPTOR_PARTNER)
+    sol.send_pki_certificate(GENERIC_CLEAR_SIGNING_PARTNER)
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol._exchange_split(CLA, INS.INS_TOKEN_ACCOUNT_STATE, P1_NON_CONFIRM, payload)
     assert exc_info.value.status == ErrorType.INVALID_TOKEN_ACCOUNT_STATE

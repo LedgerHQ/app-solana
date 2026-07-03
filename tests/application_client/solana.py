@@ -12,6 +12,7 @@ from .solana_signing_partners import (
     TRUSTED_NAME_PARTNER,
     DYNAMIC_TOKEN_PARTNER,
     INSTRUCTION_DESCRIPTOR_PARTNER,
+    GENERIC_CLEAR_SIGNING_PARTNER,
     TRANSACTION_CHECK_PARTNER,
 )
 
@@ -476,9 +477,9 @@ class SolanaClient:
         payload += format_tlv(TokenAccountStateTag.OWNER, owner)
         payload += format_tlv(TokenAccountStateTag.PRE_BALANCE, pre_balance)
         payload += format_tlv(TokenAccountStateTag.SIGNATURE,
-                              INSTRUCTION_DESCRIPTOR_PARTNER.sign(payload))
+                              GENERIC_CLEAR_SIGNING_PARTNER.sign(payload))
 
-        self.send_pki_certificate(INSTRUCTION_DESCRIPTOR_PARTNER)
+        self.send_pki_certificate(GENERIC_CLEAR_SIGNING_PARTNER)
         self._exchange_split(CLA, INS.INS_TOKEN_ACCOUNT_STATE, P1_NON_CONFIRM, payload)
 
     def provide_alt_resolution(self,
@@ -493,9 +494,9 @@ class SolanaClient:
         payload += format_tlv(AltResolutionTag.ENTRY_INDEX, entry_index)
         payload += format_tlv(AltResolutionTag.RESOLVED_ADDRESS, resolved_address)
         payload += format_tlv(AltResolutionTag.SIGNATURE,
-                              INSTRUCTION_DESCRIPTOR_PARTNER.sign(payload))
+                              GENERIC_CLEAR_SIGNING_PARTNER.sign(payload))
 
-        self.send_pki_certificate(INSTRUCTION_DESCRIPTOR_PARTNER)
+        self.send_pki_certificate(GENERIC_CLEAR_SIGNING_PARTNER)
         self._exchange_split(CLA, INS.INS_ALT_RESOLUTION, P1_NON_CONFIRM, payload)
 
     def provide_enum_variant(self,
@@ -515,9 +516,9 @@ class SolanaClient:
         if variant_payload:
             payload += format_tlv(EnumVariantTag.PAYLOAD, variant_payload)
         payload += format_tlv(EnumVariantTag.SIGNATURE,
-                              INSTRUCTION_DESCRIPTOR_PARTNER.sign(payload))
+                              GENERIC_CLEAR_SIGNING_PARTNER.sign(payload))
 
-        self.send_pki_certificate(INSTRUCTION_DESCRIPTOR_PARTNER)
+        self.send_pki_certificate(GENERIC_CLEAR_SIGNING_PARTNER)
         self._exchange_split(CLA, INS.INS_ENUM_VARIANT, P1_NON_CONFIRM, payload)
 
     def provide_instruction_info(self,
@@ -550,9 +551,9 @@ class SolanaClient:
         if owner_assoc_owner_value is not None:
             payload += format_tlv(InstructionInfoTag.OWNER_ASSOC_OWNER, owner_assoc_owner_value)
         payload += format_tlv(InstructionInfoTag.SIGNATURE,
-                              INSTRUCTION_DESCRIPTOR_PARTNER.sign(payload))
+                              GENERIC_CLEAR_SIGNING_PARTNER.sign(payload))
 
-        self.send_pki_certificate(INSTRUCTION_DESCRIPTOR_PARTNER)
+        self.send_pki_certificate(GENERIC_CLEAR_SIGNING_PARTNER)
         self._exchange_split(CLA, INS.INS_INSTRUCTION_INFO, P1_NON_CONFIRM, payload)
 
 

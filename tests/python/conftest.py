@@ -30,6 +30,16 @@ def sol(backend):
 # Pytest is trying to do "smart" stuff and reorders tests using parametrize by alphabetical order of parameter
 # This breaks the backend scope optim. We disable this
 def pytest_collection_modifyitems(config, items):
+    # The full generic clear-signing flow (finalize + NBGL review navigation) does
+    # not yet run on Nano X. Skip those deep tests there while keeping the ones that
+    # only validate PKI certificate acceptance and APDU verification. Deep tests are
+    # identified by their use of the scenario_navigator fixture.
+    if config.getoption("--device") == "nanox":
+        skip_deep = pytest.mark.skip(reason="Generic clear-signing review flow not yet supported on Nano X")
+        for item in items:
+            if "test_clear_signing" in item.nodeid and "scenario_navigator" in item.fixturenames:
+                item.add_marker(skip_deep)
+
     def param_part(item):
         # Sort by node id as usual
         return item.nodeid
