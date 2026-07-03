@@ -40,8 +40,8 @@ static inline cx_err_t cx_hash_final(cx_hash_t *hash, uint8_t *digest) {
     return CX_OK;
 }
 
-#define CX_ASSERT(call)            \
-    do {                           \
+#define CX_ASSERT(call)                \
+    do {                               \
         cx_err_t _assert_err = (call); \
         assert(_assert_err == CX_OK);  \
     } while (0)

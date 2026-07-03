@@ -60,8 +60,6 @@ static void reset_main_globals(void) {
     G_cs_session_state = CS_SESSION_IDLE;
 }
 
-
-
 static int handle_apdu(int rx) {
     if (rx < 0) {
         return io_send_sw(ApduReplySdkExceptionIoOverflow);
@@ -85,6 +83,10 @@ static int handle_apdu(int rx) {
     }
 
     // Any non-CS, non-stateless APDU resets an active CS session
+    //
+    // In particular, the delayed signing instruction DOES reset the CS session.
+    // But InsPromptUiDisplay stored the validated fingerprint in the main delayed signing storage
+    // So CS session is actually over and can be wiped
     if (G_cs_session_state != CS_SESSION_IDLE
         // CS instructions
         && G_command.instruction != InsStartGenericClearSigningSession
@@ -100,6 +102,7 @@ static int handle_apdu(int rx) {
         && G_command.instruction != InsTrustedInfoGetChallenge
         && G_command.instruction != InsTrustedInfoProvideInfo
         && G_command.instruction != InsTrustedInfoProvideDynamicDescriptor) {
+        // Reset all clear signing progress
         cs_session_reset();
     }
 
@@ -136,32 +139,12 @@ static int handle_apdu(int rx) {
             return handle_sign_message_parse_message();
 
         case InsSignMessageDelayed:
+            // This instruction is called after both InsSignMessagePreview and InsPromptUiDisplay
             if (G_called_from_swap) {
                 PRINTF("Delayed signing is not supported in swap context\n");
                 return io_send_sw(ApduReplySdkNotSupported);
             }
             return handle_sign_message_delayed();
-
-        case InsStartGenericClearSigningSession:
-            if (G_called_from_swap) {
-                PRINTF("Start generic clear signing session not supported in swap context\n");
-                return io_send_sw(ApduReplySdkNotSupported);
-            }
-            return handle_start_generic_clear_signing_session();
-
-        case InsPromptUiDisplay:
-            if (G_called_from_swap) {
-                PRINTF("Prompt UI display not supported in swap context\n");
-                return io_send_sw(ApduReplySdkNotSupported);
-            }
-            return handle_prompt_ui_display();
-
-        case InsFinalizeGenericClearSigning:
-            if (G_called_from_swap) {
-                PRINTF("Finalize generic clear signing not supported in swap context\n");
-                return io_send_sw(ApduReplySdkNotSupported);
-            }
-            return handle_finalize_generic_clear_signing();
 
         case InsSignOffchainMessage:
             return handle_sign_offchain_message();
@@ -187,6 +170,12 @@ static int handle_apdu(int rx) {
             return handle_provide_transaction_check();
 #endif
 
+        case InsStartGenericClearSigningSession:
+            if (G_called_from_swap) {
+                PRINTF("Start generic clear signing session not supported in swap context\n");
+                return io_send_sw(ApduReplySdkNotSupported);
+            }
+            return handle_start_generic_clear_signing_session();
         case InsProvideInstructionInfo:
             return handle_provide_instruction_info();
 
@@ -201,6 +190,20 @@ static int handle_apdu(int rx) {
 
         case InsProvideAltResolution:
             return handle_provide_alt_resolution();
+
+        case InsPromptUiDisplay:
+            if (G_called_from_swap) {
+                PRINTF("Prompt UI display not supported in swap context\n");
+                return io_send_sw(ApduReplySdkNotSupported);
+            }
+            return handle_prompt_ui_display();
+
+        case InsFinalizeGenericClearSigning:
+            if (G_called_from_swap) {
+                PRINTF("Finalize generic clear signing not supported in swap context\n");
+                return io_send_sw(ApduReplySdkNotSupported);
+            }
+            return handle_finalize_generic_clear_signing();
 
         default:
             // Should have been caught by apdu_handle_message

@@ -281,6 +281,41 @@ static int register_param_raw(const display_field_out_t *display_field, const ch
     return 0;
 }
 
+// Register a PARAM_ENUM display field (ARGUMENT_PATH only).
+// The enum leaf is resolved by the walker to its selected variant's display name.
+static int register_param_enum(const display_field_out_t *display_field, const char *field_name) {
+    param_raw_out_t param = {0};
+    if (!parse_param_raw(&display_field->param, &param, &param.received_tags)) {
+        PRINTF("substructure: PARAM_ENUM parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_RAW_TAG_VALUE)) {
+        PRINTF("substructure: PARAM_ENUM missing VALUE\n");
+        return -1;
+    }
+
+    cs_value_t value;
+    if (extract_value(&param.value, &value) != 0) {
+        return -1;
+    }
+    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("substructure: PARAM_ENUM requires ARGUMENT_PATH source, got %d\n", value.source);
+        return -1;
+    }
+
+    if (cs_instruction_template_add_display_path(value.payload,
+                                                 value.payload_size,
+                                                 CS_PARAM_TYPE_ENUM,
+                                                 field_name) != 0) {
+        return -1;
+    }
+    PRINTF("substructure: registered ENUM path %.*H name=%s\n",
+           value.payload_size,
+           value.payload,
+           field_name ? field_name : "(none)");
+    return 0;
+}
+
 // Register a PARAM_AMOUNT display field (ARGUMENT_PATH only).
 static int register_param_amount(const display_field_out_t *display_field,
                                  const char *field_name) {
@@ -396,6 +431,9 @@ static int register_display_field(uint8_t apdu_type, const uint8_t *tlv, size_t 
 
         case CS_PARAM_TYPE_TOKEN_AMOUNT:
             return register_param_token_amount(&display_field, field_name);
+
+        case CS_PARAM_TYPE_ENUM:
+            return register_param_enum(&display_field, field_name);
 
         default:
             PRINTF("substructure: unsupported param_type %d\n", display_field.param_type);

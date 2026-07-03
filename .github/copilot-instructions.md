@@ -157,13 +157,14 @@ The following patterns are STRICLY forbidden and shall never be used :
 
 - **Clean only when needed** - `qb -c` clears leftover .o files (not required for device switches)
 - **Swap context is different than normal Dashboard start and blocks features** - `G_called_from_swap` prevents other features like message preview or blind signing.
-- Do not use /tmp as a storage for temporary files, if you want to create temporary files, create them in the project directory and remove them after.
 
 ## External projects
 
 Other repositories that are relevant to the development of the Solana Ledger application are available as read-only in the directory ./other_projects
 This includes but is not limited to:
 - app-ethereum
+- app-exchange
 - ledger-app-workflows
 - ledger-secure-sdk
+- poc-solana-clear-signing
 - ragger

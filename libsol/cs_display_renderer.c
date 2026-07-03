@@ -25,9 +25,7 @@ void cs_display_renderer_reset(void) {
 
 // Format a single resolved leaf into the value buffer based on its kind.
 // Returns 0 on success, -1 on failure.
-static int format_leaf(const idl_resolved_leaf_t *leaf,
-                       char *value_out,
-                       size_t value_out_size) {
+static int format_leaf(const idl_resolved_leaf_t *leaf, char *value_out, size_t value_out_size) {
     if (leaf->value == NULL || leaf->value_size == 0) {
         strlcpy(value_out, "<empty>", value_out_size);
         return 0;
@@ -57,8 +55,8 @@ static int format_leaf(const idl_resolved_leaf_t *leaf,
                 PRINTF("format_leaf: u32 truncated\n");
                 return -1;
             }
-            print_u64((uint64_t) (leaf->value[0] | (leaf->value[1] << 8) |
-                                  (leaf->value[2] << 16) | (leaf->value[3] << 24)),
+            print_u64((uint64_t) (leaf->value[0] | (leaf->value[1] << 8) | (leaf->value[2] << 16) |
+                                  (leaf->value[3] << 24)),
                       value_out,
                       value_out_size);
             return 0;
@@ -69,12 +67,9 @@ static int format_leaf(const idl_resolved_leaf_t *leaf,
                 return -1;
             }
             print_u64((uint64_t) leaf->value[0] | ((uint64_t) leaf->value[1] << 8) |
-                          ((uint64_t) leaf->value[2] << 16) |
-                          ((uint64_t) leaf->value[3] << 24) |
-                          ((uint64_t) leaf->value[4] << 32) |
-                          ((uint64_t) leaf->value[5] << 40) |
-                          ((uint64_t) leaf->value[6] << 48) |
-                          ((uint64_t) leaf->value[7] << 56),
+                          ((uint64_t) leaf->value[2] << 16) | ((uint64_t) leaf->value[3] << 24) |
+                          ((uint64_t) leaf->value[4] << 32) | ((uint64_t) leaf->value[5] << 40) |
+                          ((uint64_t) leaf->value[6] << 48) | ((uint64_t) leaf->value[7] << 56),
                       value_out,
                       value_out_size);
             return 0;
@@ -99,13 +94,19 @@ static int format_leaf(const idl_resolved_leaf_t *leaf,
             return 0;
 
         case IDL_KIND_STRING_FIXED:
-        case IDL_KIND_STRING_PREFIXED: {
-            size_t copy_len = leaf->value_size;
-            if (copy_len >= value_out_size) {
-                copy_len = value_out_size - 1;
+        case IDL_KIND_STRING_PREFIXED:
+        case IDL_KIND_ENUM: {
+            // ENUM leaves carry the selected variant's display name (a string).
+            // Refuse rather than truncate: a shortened value would misrepresent
+            // what the user is signing.
+            if (leaf->value_size >= value_out_size) {
+                PRINTF("format_leaf: string value (%u) does not fit buffer (%u)\n",
+                       (unsigned) leaf->value_size,
+                       (unsigned) value_out_size);
+                return -1;
             }
-            memcpy(value_out, leaf->value, copy_len);
-            value_out[copy_len] = '\0';
+            memcpy(value_out, leaf->value, leaf->value_size);
+            value_out[leaf->value_size] = '\0';
             return 0;
         }
 
@@ -186,8 +187,11 @@ static int format_token_amount(const idl_resolved_leaf_t *leaf,
         const char *symbol = get_token_symbol(mint_pubkey, false);
         int magnitude = get_token_magnitude(mint_pubkey, false);
         if (symbol != NULL && magnitude >= 0) {
-            return print_token_amount(amount, symbol, (uint8_t) magnitude,
-                                      value_out, value_out_size);
+            return print_token_amount(amount,
+                                      symbol,
+                                      (uint8_t) magnitude,
+                                      value_out,
+                                      value_out_size);
         }
     }
     PRINTF("format_token_amount: no token info for mint, rendering as unknown\n");
@@ -195,9 +199,7 @@ static int format_token_amount(const idl_resolved_leaf_t *leaf,
 }
 
 // ACCOUNT_PATH: full base58 address.
-static int format_account(const idl_resolved_leaf_t *leaf,
-                          char *value_out,
-                          size_t value_out_size) {
+static int format_account(const idl_resolved_leaf_t *leaf, char *value_out, size_t value_out_size) {
     if (leaf->value_size < 32) {
         PRINTF("format_account: value too short (%u < 32)\n", (unsigned) leaf->value_size);
         return -1;
@@ -221,9 +223,9 @@ static int format_argument_field(const cs_display_field_t *field,
 
         case CS_PARAM_TYPE_AMOUNT:
             return format_amount(leaf,
-                                field->argument.format.amount.decimals,
-                                value_out,
-                                value_out_size);
+                                 field->argument.format.amount.decimals,
+                                 value_out,
+                                 value_out_size);
 
         case CS_PARAM_TYPE_TOKEN_AMOUNT:
             return format_token_amount(leaf,
@@ -231,6 +233,10 @@ static int format_argument_field(const cs_display_field_t *field,
                                        mint_pubkey,
                                        value_out,
                                        value_out_size);
+
+        case CS_PARAM_TYPE_ENUM:
+            // The walker resolved the enum leaf to its variant name; render it.
+            return format_leaf(leaf, value_out, value_out_size);
 
         default:
             PRINTF("format_argument_field: unsupported param_type %d\n",
@@ -352,10 +358,10 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
             }
 
             if (format_field(&walked_instructions[ix].template->display_fields[field],
-                            &walked_instructions[ix].resolved[field],
-                            walked_instructions[ix].mint_pubkey,
-                            G_cs_display_renderer->elements[element_index].value,
-                            CS_DISPLAY_VALUE_SIZE) != 0) {
+                             &walked_instructions[ix].resolved[field],
+                             walked_instructions[ix].mint_pubkey,
+                             G_cs_display_renderer->elements[element_index].value,
+                             CS_DISPLAY_VALUE_SIZE) != 0) {
                 PRINTF("cs_display_renderer_run: format failed ix=%u field=%u\n",
                        (unsigned) ix,
                        field);

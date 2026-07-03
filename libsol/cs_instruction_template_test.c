@@ -18,9 +18,7 @@ static const uint8_t DISC_A[] = {0x01, 0x02, 0x03, 0x04};
 static const uint8_t DISC_B[] = {0x05, 0x06};
 
 // Helper: open a builder, fill it with program_id + discriminator, commit.
-static void commit_template(const uint8_t program_id[32],
-                            const uint8_t *disc,
-                            size_t disc_size) {
+static void commit_template(const uint8_t program_id[32], const uint8_t *disc, size_t disc_size) {
     cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
     assert(builder != NULL);
     memcpy(builder->program_id, program_id, 32);
@@ -76,15 +74,17 @@ static void test_find_by_program_and_discriminator(void) {
 
     // Data that starts with DISC_A should match PROGRAM_A
     const uint8_t data_a[] = {0x01, 0x02, 0x03, 0x04, 0xFF, 0xFF};
-    const cs_instruction_template_t *found_a =
-        cs_instruction_template_find(PROGRAM_A, data_a, sizeof(data_a));
+    const cs_instruction_template_t *found_a = cs_instruction_template_find(PROGRAM_A,
+                                                                            data_a,
+                                                                            sizeof(data_a));
     assert(found_a != NULL);
     assert(memcmp(found_a->program_id, PROGRAM_A, 32) == 0);
 
     // Data that starts with DISC_B should match PROGRAM_B
     const uint8_t data_b[] = {0x05, 0x06, 0xAA, 0xBB};
-    const cs_instruction_template_t *found_b =
-        cs_instruction_template_find(PROGRAM_B, data_b, sizeof(data_b));
+    const cs_instruction_template_t *found_b = cs_instruction_template_find(PROGRAM_B,
+                                                                            data_b,
+                                                                            sizeof(data_b));
     assert(found_b != NULL);
     assert(memcmp(found_b->program_id, PROGRAM_B, 32) == 0);
 
@@ -147,8 +147,14 @@ static void test_add_display_path(void) {
 
     const uint8_t path1[] = {0x20, 0x00};
     const uint8_t path2[] = {0x20, 0x01};
-    assert(cs_instruction_template_add_display_path(path1, sizeof(path1), CS_PARAM_TYPE_RAW, "Field1") == 0);
-    assert(cs_instruction_template_add_display_path(path2, sizeof(path2), CS_PARAM_TYPE_RAW, "Field2") == 0);
+    assert(cs_instruction_template_add_display_path(path1,
+                                                    sizeof(path1),
+                                                    CS_PARAM_TYPE_RAW,
+                                                    "Field1") == 0);
+    assert(cs_instruction_template_add_display_path(path2,
+                                                    sizeof(path2),
+                                                    CS_PARAM_TYPE_RAW,
+                                                    "Field2") == 0);
     assert(builder->display_field_count == 2);
     assert(memcmp(builder->display_fields[0].argument.path, path1, sizeof(path1)) == 0);
     assert(builder->display_fields[0].argument.path_size == sizeof(path1));
@@ -165,7 +171,8 @@ static void test_add_display_path_no_builder(void) {
     cs_instruction_template_table_reset();
 
     const uint8_t path[] = {0x20, 0x00};
-    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, NULL) == -1);
+    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, NULL) ==
+           -1);
     assert(mock_mem_outstanding() == 0);
 }
 
@@ -179,7 +186,10 @@ static void test_add_display_path_too_long(void) {
 
     uint8_t long_path[CS_MAX_ARGUMENT_PATH_SIZE + 1];
     memset(long_path, 0x20, sizeof(long_path));
-    assert(cs_instruction_template_add_display_path(long_path, sizeof(long_path), CS_PARAM_TYPE_RAW, NULL) == -1);
+    assert(cs_instruction_template_add_display_path(long_path,
+                                                    sizeof(long_path),
+                                                    CS_PARAM_TYPE_RAW,
+                                                    NULL) == -1);
     assert(builder->display_field_count == 0);
 
     cs_instruction_template_table_reset();
@@ -196,10 +206,13 @@ static void test_add_display_path_slots_full(void) {
 
     const uint8_t path[] = {0x20, 0x00};
     for (int i = 0; i < CS_MAX_DISPLAY_FIELDS; i++) {
-        assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, NULL) == 0);
+        assert(
+            cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, NULL) ==
+            0);
     }
     // One more should fail
-    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, NULL) == -1);
+    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, NULL) ==
+           -1);
 
     cs_instruction_template_table_reset();
     assert(mock_mem_outstanding() == 0);
@@ -342,7 +355,9 @@ static void test_mixed_display_fields_order(void) {
     // Add ACCOUNT_PATH first, then ARGUMENT_PATH, then ACCOUNT_PATH again
     assert(cs_instruction_template_add_account_field(2, "Owner") == 0);
     const uint8_t path[] = {0x20, 0x01};
-    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, "Amount") == 0);
+    assert(
+        cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, "Amount") ==
+        0);
     assert(cs_instruction_template_add_account_field(0, "Recipient") == 0);
 
     assert(builder->display_field_count == 3);
@@ -366,7 +381,8 @@ static void test_add_constant_field(void) {
     assert(builder != NULL);
 
     const uint8_t data[] = {0x63, 0x00, 0x00, 0x00};  // u32 LE = 99
-    assert(cs_instruction_template_add_constant_field(data, sizeof(data), IDL_KIND_U32, "Fee") == 0);
+    assert(cs_instruction_template_add_constant_field(data, sizeof(data), IDL_KIND_U32, "Fee") ==
+           0);
     assert(builder->display_field_count == 1);
     assert(builder->display_fields[0].source == CS_VALUE_SOURCE_CONSTANT);
     assert(builder->display_fields[0].constant.data_size == 4);
@@ -415,7 +431,9 @@ static void test_mixed_all_sources_order(void) {
 
     const uint8_t path[] = {0x01, 0x01};
     const uint8_t constant_data[] = {0xFF, 0x00};
-    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, "Amount") == 0);
+    assert(
+        cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, "Amount") ==
+        0);
     assert(cs_instruction_template_add_constant_field(constant_data,
                                                       sizeof(constant_data),
                                                       IDL_KIND_U16,
@@ -487,10 +505,8 @@ static void test_set_format_amount_wrong_type(void) {
     assert(builder != NULL);
 
     const uint8_t path[] = {0x01};
-    assert(cs_instruction_template_add_display_path(path,
-                                                    sizeof(path),
-                                                    CS_PARAM_TYPE_RAW,
-                                                    "Raw") == 0);
+    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, "Raw") ==
+           0);
     assert(cs_instruction_template_set_format_amount(6) == -1);
 
     cs_instruction_template_table_reset();

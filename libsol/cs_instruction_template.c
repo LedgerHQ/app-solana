@@ -49,8 +49,7 @@ cs_instruction_template_t *cs_instruction_template_open(const uint8_t target_has
     if (G_template_table->builder != NULL) {
         APP_MEM_FREE_AND_NULL((void **) &G_template_table->builder);
     }
-    if (!APP_MEM_CALLOC((void **) &G_template_table->builder,
-                        sizeof(*G_template_table->builder))) {
+    if (!APP_MEM_CALLOC((void **) &G_template_table->builder, sizeof(*G_template_table->builder))) {
         PRINTF("cs_instruction_template: builder allocation failed\n");
         return NULL;
     }
@@ -101,8 +100,7 @@ int cs_instruction_template_add_display_path(const uint8_t *path,
     return 0;
 }
 
-int cs_instruction_template_add_account_field(uint8_t account_index,
-                                              const char *name) {
+int cs_instruction_template_add_account_field(uint8_t account_index, const char *name) {
     cs_instruction_template_t *builder = cs_instruction_template_current();
     if (builder == NULL) {
         PRINTF("cs_instruction_template_add_account_field: no builder open\n");
