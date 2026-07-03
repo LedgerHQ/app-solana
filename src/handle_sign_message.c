@@ -460,7 +460,12 @@ int handle_sign_message_parse_message(void) {
     // Handle the transaction message signing
     Parser parser = {G_command.message, G_command.message_length};
     PrintConfig print_config;
-    print_config.expert_mode = (N_storage.settings.display_mode == DisplayModeExpert);
+    // Expert mode adds items purely for the human reviewer. In swap context the summary is not
+    // shown to the user but compared against the trusted Exchange values, so those extra items
+    // are useless noise. Force it off. Fields required for swap validation are guaranteed by
+    // force_full_print below, independently from expert mode.
+    print_config.expert_mode = (N_storage.settings.display_mode == DisplayModeExpert) &&
+                               !G_called_from_swap;
     print_config.signer_pubkey = NULL;
     print_config.user_input_is_ata_or_token_account = G_command.user_input_is_ata_or_token_account;
     print_config.force_full_print = G_called_from_swap;
