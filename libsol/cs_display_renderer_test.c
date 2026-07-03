@@ -9,6 +9,7 @@
 #include "idl_kinds.h"
 #include "app_mem_utils.h"
 #include "dynamic_token_info.h"
+#include "sol/printer.h"
 
 // Dummy template used by tests that don't care about operation_type/names.
 static cs_instruction_template_t G_dummy_template;
@@ -547,7 +548,7 @@ static void test_render_unsupported_param_type(void) {
     strlcpy(template.operation_type, "Test", sizeof(template.operation_type));
     strlcpy(template.display_fields[0].name, "Field", sizeof(template.display_fields[0].name));
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
-    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_DATETIME;  // not rendered yet
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TRUSTED_NAME;  // not rendered yet
     template.display_field_count = 1;
 
     uint8_t value = 1;
@@ -608,6 +609,424 @@ static void test_render_token_amount_resolved_mint(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+// Helper: build a single-field template rooted at an ARGUMENT_PATH.
+static void init_argument_template(cs_instruction_template_t *template,
+                                   const char *field_name,
+                                   uint8_t param_type) {
+    memset(template, 0, sizeof(*template));
+    strlcpy(template->operation_type, "Test", sizeof(template->operation_type));
+    strlcpy(template->display_fields[0].name, field_name, sizeof(template->display_fields[0].name));
+    template->display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template->display_fields[0].argument.param_type = param_type;
+    template->display_field_count = 1;
+}
+
+static void test_render_datetime(void) {
+    printf("  test_render_datetime\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "When", CS_PARAM_TYPE_DATETIME);
+    template.display_fields[0].argument.format.datetime.ticks_per_second = 1;
+
+    // 1700000000 seconds since Unix epoch -> 2023-11-14 22:13:20
+    // 1700000000 == 0x6553F100
+    uint8_t value[] = {0x00, 0xF1, 0x53, 0x65, 0x00, 0x00, 0x00, 0x00};
+
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
+    assert(strcmp(cs_display_renderer_element(1)->value, "2023-11-14 22:13:20") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_datetime_ticks_scaling(void) {
+    printf("  test_render_datetime_ticks_scaling\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "When", CS_PARAM_TYPE_DATETIME);
+    // Milliseconds: 1000 ticks per second.
+    template.display_fields[0].argument.format.datetime.ticks_per_second = 1000;
+
+    // 1700000000000 ms = 0x18BC33FDE00 -> 1700000000 seconds
+    uint64_t ticks = 1700000000000ULL;
+    uint8_t value[8];
+    for (size_t i = 0; i < 8; i++) {
+        value[i] = (uint8_t) (ticks >> (8 * i));
+    }
+
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "2023-11-14 22:13:20") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_duration(void) {
+    printf("  test_render_duration\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Duration", CS_PARAM_TYPE_DURATION);
+
+    // 3661 seconds = 1:01:01
+    uint8_t value[] = {0x4D, 0x0E, 0x00, 0x00};
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U32;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 4;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "1:01:01") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_duration_zero(void) {
+    printf("  test_render_duration_zero\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Duration", CS_PARAM_TYPE_DURATION);
+
+    uint8_t value = 0;
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U8;
+    instr.resolved[0].value = &value;
+    instr.resolved[0].value_size = 1;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    // A zero value is a valid duration of no elapsed time.
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "0:00:00") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_unit_suffix(void) {
+    printf("  test_render_unit_suffix\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Rate", CS_PARAM_TYPE_UNIT);
+    strlcpy(template.display_fields[0].argument.format.unit.symbol,
+            "%",
+            sizeof(template.display_fields[0].argument.format.unit.symbol));
+    template.display_fields[0].argument.format.unit.decimals = 2;
+    template.display_fields[0].argument.format.unit.prefix = false;
+
+    // 1250 with 2 decimals -> "12.5"
+    uint8_t value[] = {0xE2, 0x04, 0x00, 0x00};
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U32;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 4;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "12.5%") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_unit_prefix(void) {
+    printf("  test_render_unit_prefix\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Price", CS_PARAM_TYPE_UNIT);
+    strlcpy(template.display_fields[0].argument.format.unit.symbol,
+            "$",
+            sizeof(template.display_fields[0].argument.format.unit.symbol));
+    template.display_fields[0].argument.format.unit.decimals = 0;
+    template.display_fields[0].argument.format.unit.prefix = true;
+
+    uint8_t value[] = {0x2A, 0x00, 0x00, 0x00};  // 42
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U32;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 4;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "$42") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_account_short_form(void) {
+    printf("  test_render_account_short_form\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Owner", CS_PARAM_TYPE_ACCOUNT);
+
+    uint8_t pubkey[32];
+    memset(pubkey, 0x42, 32);
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = pubkey;
+    instr.resolved[0].value_size = 32;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    const char *val = cs_display_renderer_element(1)->value;
+    // Short form: 7 chars + ".." + 7 chars.
+    assert(strlen(val) == (size_t) (SUMMARY_LENGTH + 2 + SUMMARY_LENGTH));
+    assert(val[SUMMARY_LENGTH] == '.');
+    assert(val[SUMMARY_LENGTH + 1] == '.');
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_string_ascii(void) {
+    printf("  test_render_string_ascii\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Memo", CS_PARAM_TYPE_STRING);
+    template.display_fields[0].argument.format.string.encoding = CS_STRING_ENCODING_ASCII;
+    template.display_fields[0].argument.format.string.has_slice = false;
+
+    const char *text = "hello";
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
+    instr.resolved[0].value = (const uint8_t *) text;
+    instr.resolved[0].value_size = strlen(text);
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "hello") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_string_ascii_rejects_nonprintable(void) {
+    printf("  test_render_string_ascii_rejects_nonprintable\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Memo", CS_PARAM_TYPE_STRING);
+    template.display_fields[0].argument.format.string.encoding = CS_STRING_ENCODING_ASCII;
+    template.display_fields[0].argument.format.string.has_slice = false;
+
+    uint8_t bytes[] = {'h', 'i', 0x01};
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
+    instr.resolved[0].value = bytes;
+    instr.resolved[0].value_size = sizeof(bytes);
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_string_hex(void) {
+    printf("  test_render_string_hex\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Data", CS_PARAM_TYPE_STRING);
+    template.display_fields[0].argument.format.string.encoding = CS_STRING_ENCODING_HEX;
+    template.display_fields[0].argument.format.string.has_slice = false;
+
+    uint8_t bytes[] = {0xDE, 0xAD, 0xBE, 0xEF};
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
+    instr.resolved[0].value = bytes;
+    instr.resolved[0].value_size = sizeof(bytes);
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "deadbeef") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_string_base64(void) {
+    printf("  test_render_string_base64\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Data", CS_PARAM_TYPE_STRING);
+    template.display_fields[0].argument.format.string.encoding = CS_STRING_ENCODING_BASE64;
+    template.display_fields[0].argument.format.string.has_slice = false;
+
+    // "Man" -> "TWFu"; "Ma" -> "TWE="
+    const char *text = "Man";
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
+    instr.resolved[0].value = (const uint8_t *) text;
+    instr.resolved[0].value_size = strlen(text);
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "TWFu") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_string_base64_padding(void) {
+    printf("  test_render_string_base64_padding\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Data", CS_PARAM_TYPE_STRING);
+    template.display_fields[0].argument.format.string.encoding = CS_STRING_ENCODING_BASE64;
+    template.display_fields[0].argument.format.string.has_slice = false;
+
+    const char *text = "Ma";
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
+    instr.resolved[0].value = (const uint8_t *) text;
+    instr.resolved[0].value_size = strlen(text);
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "TWE=") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_string_slice_source_bounded(void) {
+    printf("  test_render_string_slice_source_bounded\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Slice", CS_PARAM_TYPE_STRING);
+    template.display_fields[0].argument.format.string.encoding = CS_STRING_ENCODING_ASCII;
+    template.display_fields[0].argument.format.string.has_slice = true;
+    template.display_fields[0].argument.format.string.slice_kind = CS_SLICE_KIND_BOUNDED;
+    template.display_fields[0].argument.format.string.slice_start = 1;
+    template.display_fields[0].argument.format.string.slice.bounded.end = 4;
+    template.display_fields[0].argument.format.string.slice_applies_to =
+        CS_SLICE_APPLIES_TO_SOURCE;
+
+    const char *text = "abcdef";
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
+    instr.resolved[0].value = (const uint8_t *) text;
+    instr.resolved[0].value_size = strlen(text);
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    // Bytes [1,4) = "bcd"
+    assert(strcmp(cs_display_renderer_element(1)->value, "bcd") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_string_slice_formatted_sized_reversed(void) {
+    printf("  test_render_string_slice_formatted_sized_reversed\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Tail", CS_PARAM_TYPE_STRING);
+    template.display_fields[0].argument.format.string.encoding = CS_STRING_ENCODING_HEX;
+    template.display_fields[0].argument.format.string.has_slice = true;
+    template.display_fields[0].argument.format.string.slice_kind = CS_SLICE_KIND_SIZED;
+    template.display_fields[0].argument.format.string.slice.sized.size = 4;
+    template.display_fields[0].argument.format.string.slice.sized.reversed = true;
+    template.display_fields[0].argument.format.string.slice_applies_to =
+        CS_SLICE_APPLIES_TO_FORMATTED;
+
+    uint8_t bytes[] = {0xDE, 0xAD, 0xBE, 0xEF};  // hex "deadbeef", last 4 chars "beef"
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
+    instr.resolved[0].value = bytes;
+    instr.resolved[0].value_size = sizeof(bytes);
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "beef") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 int main(void) {
     printf("cs_display_renderer_test\n");
     test_initial_state();
@@ -629,6 +1048,20 @@ int main(void) {
     test_render_enum_variant_name();
     test_render_string_too_long_refused();
     test_render_unsupported_param_type();
+    test_render_datetime();
+    test_render_datetime_ticks_scaling();
+    test_render_duration();
+    test_render_duration_zero();
+    test_render_unit_suffix();
+    test_render_unit_prefix();
+    test_render_account_short_form();
+    test_render_string_ascii();
+    test_render_string_ascii_rejects_nonprintable();
+    test_render_string_hex();
+    test_render_string_base64();
+    test_render_string_base64_padding();
+    test_render_string_slice_source_bounded();
+    test_render_string_slice_formatted_sized_reversed();
     printf("  All passed!\n");
     return 0;
 }

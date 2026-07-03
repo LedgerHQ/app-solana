@@ -139,6 +139,164 @@ static bool param_token_amount_handle_ignore(const tlv_data_t *data,
 
 DEFINE_TLV_PARSER(PARAM_TOKEN_AMOUNT_TAGS, NULL, parse_param_token_amount)
 
+// ---- PARAM_DATETIME parser --------------------------------------------------
+// Used for ARGUMENT_PATH with CS_PARAM_TYPE_DATETIME.
+
+typedef struct param_datetime_out_s {
+    TLV_reception_t received_tags;
+    buffer_t value;
+    buffer_t ticks_per_second;
+} param_datetime_out_t;
+
+static bool param_datetime_handle_value(const tlv_data_t *data, param_datetime_out_t *out) {
+    out->value = data->value;
+    return true;
+}
+
+static bool param_datetime_handle_ticks(const tlv_data_t *data, param_datetime_out_t *out) {
+    out->ticks_per_second = data->value;
+    return true;
+}
+
+static bool param_datetime_handle_ignore(const tlv_data_t *data, param_datetime_out_t *out) {
+    UNUSED(data);
+    UNUSED(out);
+    return true;
+}
+
+// clang-format off
+#define PARAM_DATETIME_TAGS(X) \
+    X(0x00, PARAM_DATETIME_TAG_VERSION, param_datetime_handle_ignore, ENFORCE_UNIQUE_TAG) \
+    X(0x01, PARAM_DATETIME_TAG_VALUE,   param_datetime_handle_value,  ENFORCE_UNIQUE_TAG) \
+    X(0x02, PARAM_DATETIME_TAG_TICKS,   param_datetime_handle_ticks,  ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(PARAM_DATETIME_TAGS, NULL, parse_param_datetime)
+
+// ---- PARAM_UNIT parser ------------------------------------------------------
+// Used for ARGUMENT_PATH with CS_PARAM_TYPE_UNIT.
+
+typedef struct param_unit_out_s {
+    TLV_reception_t received_tags;
+    buffer_t value;
+    buffer_t symbol;
+    buffer_t decimals;
+    buffer_t prefix;
+} param_unit_out_t;
+
+static bool param_unit_handle_value(const tlv_data_t *data, param_unit_out_t *out) {
+    out->value = data->value;
+    return true;
+}
+
+static bool param_unit_handle_symbol(const tlv_data_t *data, param_unit_out_t *out) {
+    out->symbol = data->value;
+    return true;
+}
+
+static bool param_unit_handle_decimals(const tlv_data_t *data, param_unit_out_t *out) {
+    out->decimals = data->value;
+    return true;
+}
+
+static bool param_unit_handle_prefix(const tlv_data_t *data, param_unit_out_t *out) {
+    out->prefix = data->value;
+    return true;
+}
+
+static bool param_unit_handle_ignore(const tlv_data_t *data, param_unit_out_t *out) {
+    UNUSED(data);
+    UNUSED(out);
+    return true;
+}
+
+// clang-format off
+#define PARAM_UNIT_TAGS(X) \
+    X(0x00, PARAM_UNIT_TAG_VERSION,  param_unit_handle_ignore,   ENFORCE_UNIQUE_TAG) \
+    X(0x01, PARAM_UNIT_TAG_VALUE,    param_unit_handle_value,    ENFORCE_UNIQUE_TAG) \
+    X(0x02, PARAM_UNIT_TAG_SYMBOL,   param_unit_handle_symbol,   ENFORCE_UNIQUE_TAG) \
+    X(0x03, PARAM_UNIT_TAG_DECIMALS, param_unit_handle_decimals, ENFORCE_UNIQUE_TAG) \
+    X(0x04, PARAM_UNIT_TAG_PREFIX,   param_unit_handle_prefix,   ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(PARAM_UNIT_TAGS, NULL, parse_param_unit)
+
+// ---- PARAM_STRING parser ----------------------------------------------------
+// Used for ARGUMENT_PATH with CS_PARAM_TYPE_STRING.
+
+typedef struct param_string_out_s {
+    TLV_reception_t received_tags;
+    buffer_t value;
+    buffer_t encoding;
+    buffer_t slice_kind;
+    buffer_t slice_start;
+    buffer_t slice_end;
+    buffer_t slice_size;
+    buffer_t slice_reversed;
+    buffer_t slice_applies_to;
+} param_string_out_t;
+
+static bool param_string_handle_value(const tlv_data_t *data, param_string_out_t *out) {
+    out->value = data->value;
+    return true;
+}
+
+static bool param_string_handle_encoding(const tlv_data_t *data, param_string_out_t *out) {
+    out->encoding = data->value;
+    return true;
+}
+
+static bool param_string_handle_slice_kind(const tlv_data_t *data, param_string_out_t *out) {
+    out->slice_kind = data->value;
+    return true;
+}
+
+static bool param_string_handle_slice_start(const tlv_data_t *data, param_string_out_t *out) {
+    out->slice_start = data->value;
+    return true;
+}
+
+static bool param_string_handle_slice_end(const tlv_data_t *data, param_string_out_t *out) {
+    out->slice_end = data->value;
+    return true;
+}
+
+static bool param_string_handle_slice_size(const tlv_data_t *data, param_string_out_t *out) {
+    out->slice_size = data->value;
+    return true;
+}
+
+static bool param_string_handle_slice_reversed(const tlv_data_t *data, param_string_out_t *out) {
+    out->slice_reversed = data->value;
+    return true;
+}
+
+static bool param_string_handle_slice_applies_to(const tlv_data_t *data, param_string_out_t *out) {
+    out->slice_applies_to = data->value;
+    return true;
+}
+
+static bool param_string_handle_ignore(const tlv_data_t *data, param_string_out_t *out) {
+    UNUSED(data);
+    UNUSED(out);
+    return true;
+}
+
+// clang-format off
+#define PARAM_STRING_TAGS(X) \
+    X(0x00, PARAM_STRING_TAG_VERSION,          param_string_handle_ignore,           ENFORCE_UNIQUE_TAG) \
+    X(0x01, PARAM_STRING_TAG_VALUE,            param_string_handle_value,            ENFORCE_UNIQUE_TAG) \
+    X(0x02, PARAM_STRING_TAG_ENCODING,         param_string_handle_encoding,         ENFORCE_UNIQUE_TAG) \
+    X(0x03, PARAM_STRING_TAG_SLICE_KIND,       param_string_handle_slice_kind,       ENFORCE_UNIQUE_TAG) \
+    X(0x04, PARAM_STRING_TAG_SLICE_START,      param_string_handle_slice_start,      ENFORCE_UNIQUE_TAG) \
+    X(0x05, PARAM_STRING_TAG_SLICE_END,        param_string_handle_slice_end,        ENFORCE_UNIQUE_TAG) \
+    X(0x06, PARAM_STRING_TAG_SLICE_SIZE,       param_string_handle_slice_size,       ENFORCE_UNIQUE_TAG) \
+    X(0x07, PARAM_STRING_TAG_SLICE_REVERSED,   param_string_handle_slice_reversed,   ENFORCE_UNIQUE_TAG) \
+    X(0x08, PARAM_STRING_TAG_SLICE_APPLIES_TO, param_string_handle_slice_applies_to, ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(PARAM_STRING_TAGS, NULL, parse_param_string)
+
 // DISPLAY_FIELD parser. PARAM (tag 0x04) and SUBSTRUCT_TYPE (tag 0x01) are
 // captured; the others are accepted and ignored.
 typedef struct display_field_out_s {
@@ -482,6 +640,334 @@ static int register_param_token_amount(const display_field_out_t *display_field,
     return 0;
 }
 
+// Read a big-endian unsigned integer of up to `max_bytes` bytes from a buffer.
+// An absent (NULL) buffer yields `fallback`. Returns false when the encoded
+// width exceeds `max_bytes`.
+static bool read_be_uint(const buffer_t *buf, size_t max_bytes, uint32_t fallback, uint32_t *out) {
+    if (buf->ptr == NULL || buf->size == 0) {
+        *out = fallback;
+        return true;
+    }
+    if (buf->size > max_bytes) {
+        PRINTF("substructure: integer width %d exceeds max %d\n", buf->size, max_bytes);
+        return false;
+    }
+    uint32_t value = 0;
+    for (size_t i = 0; i < buf->size; i++) {
+        value = (value << 8) | buf->ptr[i];
+    }
+    *out = value;
+    return true;
+}
+
+// Register a PARAM_DATETIME display field (ARGUMENT_PATH only).
+static int register_param_datetime(const display_field_out_t *display_field,
+                                   const char *field_name) {
+    param_datetime_out_t param = {0};
+    if (!parse_param_datetime(&display_field->param, &param, &param.received_tags)) {
+        PRINTF("substructure: PARAM_DATETIME parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_DATETIME_TAG_VALUE)) {
+        PRINTF("substructure: PARAM_DATETIME missing VALUE\n");
+        return -1;
+    }
+
+    cs_value_t value;
+    if (extract_value(&param.value, &value) != 0) {
+        return -1;
+    }
+    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("substructure: PARAM_DATETIME requires ARGUMENT_PATH source, got %d\n",
+               value.source);
+        return -1;
+    }
+
+    uint32_t ticks_per_second = 1;
+    if (!read_be_uint(&param.ticks_per_second, 4, 1, &ticks_per_second)) {
+        PRINTF("substructure: PARAM_DATETIME bad TICKS_PER_SECOND\n");
+        return -1;
+    }
+    if (ticks_per_second == 0) {
+        PRINTF("substructure: PARAM_DATETIME TICKS_PER_SECOND must be non-zero\n");
+        return -1;
+    }
+
+    if (cs_instruction_template_add_display_path(value.payload,
+                                                 value.payload_size,
+                                                 CS_PARAM_TYPE_DATETIME,
+                                                 field_name) != 0) {
+        return -1;
+    }
+    if (cs_instruction_template_set_format_datetime(ticks_per_second) != 0) {
+        PRINTF("substructure: set_format_datetime failed\n");
+        return -1;
+    }
+    PRINTF("substructure: registered DATETIME path %.*H ticks=%d name=%s\n",
+           value.payload_size,
+           value.payload,
+           ticks_per_second,
+           field_name ? field_name : "(none)");
+    return 0;
+}
+
+// Register a PARAM_UNIT display field (ARGUMENT_PATH only).
+static int register_param_unit(const display_field_out_t *display_field, const char *field_name) {
+    param_unit_out_t param = {0};
+    if (!parse_param_unit(&display_field->param, &param, &param.received_tags)) {
+        PRINTF("substructure: PARAM_UNIT parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_UNIT_TAG_VALUE)) {
+        PRINTF("substructure: PARAM_UNIT missing VALUE\n");
+        return -1;
+    }
+
+    cs_value_t value;
+    if (extract_value(&param.value, &value) != 0) {
+        return -1;
+    }
+    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("substructure: PARAM_UNIT requires ARGUMENT_PATH source, got %d\n", value.source);
+        return -1;
+    }
+
+    cs_format_unit_t format = {0};
+    if (param.symbol.ptr != NULL && param.symbol.size > 0) {
+        if (param.symbol.size >= sizeof(format.symbol)) {
+            PRINTF("substructure: PARAM_UNIT symbol too long (%d >= %d)\n",
+                   param.symbol.size,
+                   (int) sizeof(format.symbol));
+            return -1;
+        }
+        memcpy(format.symbol, param.symbol.ptr, param.symbol.size);
+        format.symbol[param.symbol.size] = '\0';
+    }
+    if (param.decimals.ptr != NULL) {
+        if (param.decimals.size != 1) {
+            PRINTF("substructure: PARAM_UNIT DECIMALS must be 1 byte (got %d)\n",
+                   param.decimals.size);
+            return -1;
+        }
+        format.decimals = param.decimals.ptr[0];
+    }
+    if (param.prefix.ptr != NULL) {
+        if (param.prefix.size != 1) {
+            PRINTF("substructure: PARAM_UNIT PREFIX must be 1 byte (got %d)\n", param.prefix.size);
+            return -1;
+        }
+        format.prefix = (param.prefix.ptr[0] == 1);
+    }
+
+    if (cs_instruction_template_add_display_path(value.payload,
+                                                 value.payload_size,
+                                                 CS_PARAM_TYPE_UNIT,
+                                                 field_name) != 0) {
+        return -1;
+    }
+    if (cs_instruction_template_set_format_unit(&format) != 0) {
+        PRINTF("substructure: set_format_unit failed\n");
+        return -1;
+    }
+    PRINTF("substructure: registered UNIT path %.*H symbol=%s decimals=%d prefix=%d name=%s\n",
+           value.payload_size,
+           value.payload,
+           format.symbol,
+           format.decimals,
+           format.prefix,
+           field_name ? field_name : "(none)");
+    return 0;
+}
+
+// Register a PARAM_STRING display field (ARGUMENT_PATH only).
+static int register_param_string(const display_field_out_t *display_field,
+                                 const char *field_name) {
+    param_string_out_t param = {0};
+    if (!parse_param_string(&display_field->param, &param, &param.received_tags)) {
+        PRINTF("substructure: PARAM_STRING parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_VALUE)) {
+        PRINTF("substructure: PARAM_STRING missing VALUE\n");
+        return -1;
+    }
+
+    cs_value_t value;
+    if (extract_value(&param.value, &value) != 0) {
+        return -1;
+    }
+    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("substructure: PARAM_STRING requires ARGUMENT_PATH source, got %d\n", value.source);
+        return -1;
+    }
+
+    cs_format_string_t format = {0};
+    format.encoding = CS_STRING_ENCODING_UTF8;
+    if (param.encoding.ptr != NULL) {
+        if (param.encoding.size != 1) {
+            PRINTF("substructure: PARAM_STRING ENCODING must be 1 byte (got %d)\n",
+                   param.encoding.size);
+            return -1;
+        }
+        format.encoding = param.encoding.ptr[0];
+    }
+    switch (format.encoding) {
+        case CS_STRING_ENCODING_ASCII:
+        case CS_STRING_ENCODING_UTF8:
+        case CS_STRING_ENCODING_BASE58:
+        case CS_STRING_ENCODING_BASE64:
+        case CS_STRING_ENCODING_HEX:
+            break;
+        default:
+            PRINTF("substructure: PARAM_STRING unknown encoding %d\n", format.encoding);
+            return -1;
+    }
+
+    // Presence of SLICE_KIND enables slicing; the other slice tags are only
+    // valid for the matching kind.
+    format.has_slice = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_KIND);
+    bool has_end = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_END);
+    bool has_size = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_SIZE);
+    bool has_reversed =
+        TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_REVERSED);
+    bool has_start = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_START);
+
+    if (!format.has_slice) {
+        if (has_end || has_size || has_reversed || has_start) {
+            PRINTF("substructure: PARAM_STRING slice tags present without SLICE_KIND\n");
+            return -1;
+        }
+    } else {
+        if (param.slice_kind.size != 1) {
+            PRINTF("substructure: PARAM_STRING SLICE_KIND must be 1 byte (got %d)\n",
+                   param.slice_kind.size);
+            return -1;
+        }
+        format.slice_kind = param.slice_kind.ptr[0];
+
+        uint32_t start = 0;
+        if (!read_be_uint(&param.slice_start, 2, 0, &start)) {
+            PRINTF("substructure: PARAM_STRING bad SLICE_START\n");
+            return -1;
+        }
+        format.slice_start = (uint16_t) start;
+
+        if (format.slice_kind == CS_SLICE_KIND_BOUNDED) {
+            if (has_size || has_reversed) {
+                PRINTF("substructure: PARAM_STRING BOUNDED cannot carry SLICE_SIZE/REVERSED\n");
+                return -1;
+            }
+            uint32_t end = 0xFFFF;
+            if (!read_be_uint(&param.slice_end, 2, 0xFFFF, &end)) {
+                PRINTF("substructure: PARAM_STRING bad SLICE_END\n");
+                return -1;
+            }
+            format.slice.bounded.end = (uint16_t) end;
+        } else if (format.slice_kind == CS_SLICE_KIND_SIZED) {
+            if (has_end) {
+                PRINTF("substructure: PARAM_STRING SIZED cannot carry SLICE_END\n");
+                return -1;
+            }
+            if (!has_size) {
+                PRINTF("substructure: PARAM_STRING SIZED requires SLICE_SIZE\n");
+                return -1;
+            }
+            uint32_t size = 0;
+            if (!read_be_uint(&param.slice_size, 2, 0, &size)) {
+                PRINTF("substructure: PARAM_STRING bad SLICE_SIZE\n");
+                return -1;
+            }
+            format.slice.sized.size = (uint16_t) size;
+            if (has_reversed) {
+                if (param.slice_reversed.size != 1) {
+                    PRINTF("substructure: PARAM_STRING SLICE_REVERSED must be 1 byte (got %d)\n",
+                           param.slice_reversed.size);
+                    return -1;
+                }
+                format.slice.sized.reversed = (param.slice_reversed.ptr[0] == 1);
+            }
+        } else {
+            PRINTF("substructure: PARAM_STRING unknown SLICE_KIND %d\n", format.slice_kind);
+            return -1;
+        }
+    }
+
+    format.slice_applies_to = CS_SLICE_APPLIES_TO_FORMATTED;
+    if (TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_APPLIES_TO)) {
+        if (param.slice_applies_to.size != 1) {
+            PRINTF("substructure: PARAM_STRING SLICE_APPLIES_TO must be 1 byte (got %d)\n",
+                   param.slice_applies_to.size);
+            return -1;
+        }
+        format.slice_applies_to = param.slice_applies_to.ptr[0];
+        if (format.slice_applies_to != CS_SLICE_APPLIES_TO_FORMATTED &&
+            format.slice_applies_to != CS_SLICE_APPLIES_TO_SOURCE) {
+            PRINTF("substructure: PARAM_STRING unknown SLICE_APPLIES_TO %d\n",
+                   format.slice_applies_to);
+            return -1;
+        }
+    }
+
+    if (cs_instruction_template_add_display_path(value.payload,
+                                                 value.payload_size,
+                                                 CS_PARAM_TYPE_STRING,
+                                                 field_name) != 0) {
+        return -1;
+    }
+    if (cs_instruction_template_set_format_string(&format) != 0) {
+        PRINTF("substructure: set_format_string failed\n");
+        return -1;
+    }
+    PRINTF("substructure: registered STRING path %.*H encoding=%d has_slice=%d name=%s\n",
+           value.payload_size,
+           value.payload,
+           format.encoding,
+           format.has_slice,
+           field_name ? field_name : "(none)");
+    return 0;
+}
+
+// Register a PARAM_ACCOUNT or PARAM_DURATION display field. Both reuse the
+// PARAM_RAW envelope (VERSION + VALUE) and carry no extra format parameters;
+// only the resulting param_type differs. ARGUMENT_PATH source only.
+static int register_param_plain_argument(const display_field_out_t *display_field,
+                                         const char *field_name,
+                                         uint8_t param_type) {
+    param_raw_out_t param = {0};
+    if (!parse_param_raw(&display_field->param, &param, &param.received_tags)) {
+        PRINTF("substructure: plain PARAM (type %d) parsing failed\n", param_type);
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_RAW_TAG_VALUE)) {
+        PRINTF("substructure: plain PARAM (type %d) missing VALUE\n", param_type);
+        return -1;
+    }
+
+    cs_value_t value;
+    if (extract_value(&param.value, &value) != 0) {
+        return -1;
+    }
+    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("substructure: param_type %d requires ARGUMENT_PATH source, got %d\n",
+               param_type,
+               value.source);
+        return -1;
+    }
+
+    if (cs_instruction_template_add_display_path(value.payload,
+                                                 value.payload_size,
+                                                 param_type,
+                                                 field_name) != 0) {
+        return -1;
+    }
+    PRINTF("substructure: registered param_type %d path %.*H name=%s\n",
+           param_type,
+           value.payload_size,
+           value.payload,
+           field_name ? field_name : "(none)");
+    return 0;
+}
+
 // Parse a DISPLAY_FIELD substructure and register it on the current template.
 // Dispatches to the correct PARAM parser based on the declared param_type.
 static int register_display_field(uint8_t apdu_type, const uint8_t *tlv, size_t tlv_size) {
@@ -507,6 +993,25 @@ static int register_display_field(uint8_t apdu_type, const uint8_t *tlv, size_t 
 
         case CS_PARAM_TYPE_ENUM:
             return register_param_enum(&display_field, field_name);
+
+        case CS_PARAM_TYPE_DATETIME:
+            return register_param_datetime(&display_field, field_name);
+
+        case CS_PARAM_TYPE_DURATION:
+            return register_param_plain_argument(&display_field,
+                                                 field_name,
+                                                 CS_PARAM_TYPE_DURATION);
+
+        case CS_PARAM_TYPE_UNIT:
+            return register_param_unit(&display_field, field_name);
+
+        case CS_PARAM_TYPE_ACCOUNT:
+            return register_param_plain_argument(&display_field,
+                                                 field_name,
+                                                 CS_PARAM_TYPE_ACCOUNT);
+
+        case CS_PARAM_TYPE_STRING:
+            return register_param_string(&display_field, field_name);
 
         default:
             PRINTF("substructure: unsupported param_type %d\n", display_field.param_type);
