@@ -341,7 +341,7 @@ static void test_render_token_amount_native(void) {
     strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
-    template.display_fields[0].argument.format.token_amount.is_native = true;
+    template.display_fields[0].argument.format.token_amount.mint_source = CS_TOKEN_MINT_NATIVE;
     template.display_field_count = 1;
 
     // 1_000_000_000 lamports = 1 SOL
@@ -363,8 +363,10 @@ static void test_render_token_amount_native(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-static void test_render_token_amount_unknown(void) {
-    printf("  test_render_token_amount_unknown\n");
+// A descriptor that declares no mint (NONE) renders the amount bare, with no
+// ticker and no decimal scaling.
+static void test_render_token_amount_none(void) {
+    printf("  test_render_token_amount_none\n");
     mock_mem_reset();
     cs_display_renderer_reset();
 
@@ -374,7 +376,7 @@ static void test_render_token_amount_unknown(void) {
     strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
-    template.display_fields[0].argument.format.token_amount.is_native = false;
+    template.display_fields[0].argument.format.token_amount.mint_source = CS_TOKEN_MINT_NONE;
     template.display_field_count = 1;
 
     // 1000000 in u64 LE
@@ -390,9 +392,49 @@ static void test_render_token_amount_unknown(void) {
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
     assert(cs_display_renderer_element_count() == 2);
+    assert(strcmp(cs_display_renderer_element(1)->value, "1000000") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A descriptor that references a mint (CONSTANT here) which the registry does
+// not recognize renders with a "???" ticker and no decimal scaling.
+static void test_render_token_amount_unknown(void) {
+    printf("  test_render_token_amount_unknown\n");
+    mock_mem_reset();
+    mock_dynamic_token_info_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    memset(&template, 0, sizeof(template));
+    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
+    strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
+    template.display_fields[0].argument.format.token_amount.mint_source = CS_TOKEN_MINT_CONSTANT;
+    template.display_field_count = 1;
+
+    // 1000000 in u64 LE
+    uint8_t value[] = {0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00};
+    uint8_t unknown_mint[32];
+    memset(unknown_mint, 0x55, 32);
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+    instr.field_mint[0] = unknown_mint;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
     assert(strcmp(cs_display_renderer_element(1)->value, "1000000 ???") == 0);
 
     cs_display_renderer_reset();
+    mock_dynamic_token_info_reset();
     assert(mock_mem_outstanding() == 0);
 }
 
@@ -541,7 +583,8 @@ static void test_render_token_amount_resolved_mint(void) {
     strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
-    template.display_fields[0].argument.format.token_amount.is_native = false;
+    template.display_fields[0].argument.format.token_amount.mint_source =
+        CS_TOKEN_MINT_ACCOUNT_INDEX;
     template.display_field_count = 1;
 
     // 1_500_000 = 1.5 USDC (6 decimals)
@@ -553,7 +596,7 @@ static void test_render_token_amount_resolved_mint(void) {
     instr.resolved[0].value = value;
     instr.resolved[0].value_size = 8;
     instr.resolved_count = 1;
-    instr.mint_pubkey = usdc_mint;
+    instr.field_mint[0] = usdc_mint;
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
@@ -579,6 +622,7 @@ int main(void) {
     test_render_amount_with_decimals();
     test_render_amount_zero_decimals();
     test_render_token_amount_native();
+    test_render_token_amount_none();
     test_render_token_amount_unknown();
     test_render_token_amount_resolved_mint();
     test_render_account_full_address();

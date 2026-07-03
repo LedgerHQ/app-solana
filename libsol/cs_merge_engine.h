@@ -22,7 +22,9 @@ typedef struct cs_instruction_result_s {
     const cs_instruction_template_t *template;
     idl_resolved_leaf_t resolved[CS_MAX_DISPLAY_FIELDS];
     uint8_t resolved_count;
-    const uint8_t *mint_pubkey;  // resolved from template mint_assoc, NULL if absent
+    // Per display-field resolved mint pubkey, indexed like `resolved`. Non-NULL
+    // only for TOKEN_AMOUNT fields whose TOKEN reference resolved to a mint.
+    const uint8_t *field_mint[CS_MAX_DISPLAY_FIELDS];
 } cs_instruction_result_t;
 
 // Run the merge engine on walked instructions. Fills survivors[i] = true for

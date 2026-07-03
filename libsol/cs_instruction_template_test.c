@@ -489,8 +489,11 @@ static void test_param_type_token_amount(void) {
                                                     "Token Amount") == 0);
     assert(builder->display_fields[0].argument.param_type == CS_PARAM_TYPE_TOKEN_AMOUNT);
 
-    assert(cs_instruction_template_set_format_token_amount(true) == 0);
-    assert(builder->display_fields[0].argument.format.token_amount.is_native == true);
+    cs_format_token_amount_t format = {0};
+    format.mint_source = CS_TOKEN_MINT_NATIVE;
+    assert(cs_instruction_template_set_format_token_amount(&format) == 0);
+    assert(builder->display_fields[0].argument.format.token_amount.mint_source ==
+           CS_TOKEN_MINT_NATIVE);
 
     cs_instruction_template_table_reset();
     assert(mock_mem_outstanding() == 0);
@@ -519,7 +522,9 @@ static void test_set_format_no_builder(void) {
     cs_instruction_template_table_reset();
 
     assert(cs_instruction_template_set_format_amount(9) == -1);
-    assert(cs_instruction_template_set_format_token_amount(false) == -1);
+    cs_format_token_amount_t format = {0};
+    format.mint_source = CS_TOKEN_MINT_NONE;
+    assert(cs_instruction_template_set_format_token_amount(&format) == -1);
     assert(mock_mem_outstanding() == 0);
 }
 

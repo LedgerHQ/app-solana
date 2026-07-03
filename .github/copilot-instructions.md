@@ -130,7 +130,8 @@ Coding patterns described here are more important than uniformity cross applicat
 - Never write functions in header files.
 - Do not rely on C implicit struct copy, use a memcpy to highlight deep copy behavior.
 - Avoid enum-like defines. Prefer real enum definition.
-- Do NOT use early returns to separate different valid feature paths. Use `if/else` chains so branches are visually parallel and mutually exclusive. Early returns are fine ONLY for error guards, not for splitting valid execution paths.
+- Do NOT use early returns to separate different valid feature paths. Use `if/else` chains so branches are visually parallel and mutually exclusive. Early returns are fine ONLY for error guards, not for splitting valid execution paths. There shall be ONE and ONLY ONE valid return per function.
+- You are FORBIDDEN from writing the pattern "fail.*closed" in comments or doc.
 
 ### FORBIDDEN patterns
 

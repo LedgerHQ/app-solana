@@ -6,6 +6,7 @@
 #include "cs_merge_engine.h"
 #include "cs_display_renderer.h"
 #include "cs_instruction_template.h"
+#include "cs_token_account_cache.h"
 #include "apdu.h"
 #include "globals.h"
 #include "io.h"
@@ -13,6 +14,55 @@
 #include "idl_pool.h"
 #include "idl_walker.h"
 #include "idl_kinds.h"
+
+// One entry of the transaction-scoped mint-binding map: a token account pubkey
+// bound to the mint pubkey that identifies its token. Seeded from every
+// instruction template's MINT_ASSOC association. Pointers reference the buffered
+// transaction, which outlives the walk.
+typedef struct mint_binding_s {
+    const uint8_t *token_account;
+    const uint8_t *mint;
+} mint_binding_t;
+
+// Resolve a 32-byte token reference (a token account or a mint) to the mint that
+// identifies its token, per spec "Token amount metadata resolution": the
+// MINT_ASSOC bindings take priority, then the chain-attested TOKEN_ACCOUNT_STATE
+// cache, and finally the reference is treated as the mint itself.
+static const uint8_t *resolve_field_mint(const mint_binding_t *bindings,
+                                         size_t binding_count,
+                                         const uint8_t *token_ref) {
+    for (size_t b = 0; b < binding_count; b++) {
+        if (memcmp(bindings[b].token_account, token_ref, 32) == 0) {
+            return bindings[b].mint;
+        }
+    }
+    const cs_token_account_t *entry = cs_token_account_cache_find(token_ref);
+    if (entry != NULL) {
+        return entry->mint;
+    }
+    return token_ref;
+}
+
+// Resolve an instruction accounts-array index to its pubkey in the message.
+// Returns NULL when either index is out of range.
+static const uint8_t *pubkey_from_account_index(const MessageHeader *header,
+                                                 const Instruction *instruction,
+                                                 uint8_t account_index) {
+    if (account_index >= instruction->accounts_length) {
+        PRINTF("finalize cs: account_index %d out of range (%d)\n",
+               account_index,
+               instruction->accounts_length);
+        return NULL;
+    }
+    uint8_t pubkey_index = instruction->accounts[account_index];
+    if (pubkey_index >= header->pubkeys_header.pubkeys_length) {
+        PRINTF("finalize cs: pubkey_index %d out of range (%d)\n",
+               pubkey_index,
+               header->pubkeys_header.pubkeys_length);
+        return NULL;
+    }
+    return header->pubkeys[pubkey_index].data;
+}
 
 // Walk every transaction instruction against the IDL type pool of its matching
 // template, collecting the display-field leaf values into per-instruction
@@ -29,7 +79,18 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
 
     *walked_instructions_count = 0;
 
+    // Transaction-scoped mint-binding map, seeded below from each instruction's
+    // MINT_ASSOC pair and queried in the second pass.
+    mint_binding_t bindings[CS_MAX_INSTRUCTION_TEMPLATES];
+    size_t binding_count = 0;
+
     for (size_t i = 0; i < header.instructions_length; i++) {
+        if (*walked_instructions_count >= CS_MAX_INSTRUCTION_TEMPLATES) {
+            PRINTF("finalize cs: more instructions than supported templates (max %d)\n",
+                   CS_MAX_INSTRUCTION_TEMPLATES);
+            return -1;
+        }
+
         Instruction instruction;
         if (parse_instruction(&parser, &instruction) != 0) {
             PRINTF("finalize cs: failed to parse instruction %d\n", i);
@@ -96,6 +157,7 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
         // Initialize full resolved array then scatter walker results back
         cs_instruction_result_t *result = &walked_instructions[*walked_instructions_count];
         memset(result->resolved, 0, sizeof(result->resolved));
+        memset(result->field_mint, 0, sizeof(result->field_mint));
         result->resolved_count = template->display_field_count;
 
         for (uint8_t w = 0; w < argument_count; w++) {
@@ -107,24 +169,18 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
             if (template->display_fields[f].source != CS_VALUE_SOURCE_ACCOUNT_PATH) {
                 continue;
             }
-            uint8_t account_index = template->display_fields[f].account.index;
-            if (account_index >= instruction.accounts_length) {
-                PRINTF("finalize cs: instruction %d account_index %d out of range (%d)\n",
+            const uint8_t *pubkey =
+                pubkey_from_account_index(&header,
+                                          &instruction,
+                                          template->display_fields[f].account.index);
+            if (pubkey == NULL) {
+                PRINTF("finalize cs: instruction %d ACCOUNT_PATH field %d index out of range\n",
                        i,
-                       account_index,
-                       instruction.accounts_length);
-                return -1;
-            }
-            uint8_t pubkey_index = instruction.accounts[account_index];
-            if (pubkey_index >= header.pubkeys_header.pubkeys_length) {
-                PRINTF("finalize cs: instruction %d pubkey_index %d out of range (%d)\n",
-                       i,
-                       pubkey_index,
-                       header.pubkeys_header.pubkeys_length);
+                       f);
                 return -1;
             }
             result->resolved[f].kind = IDL_KIND_PUBKEY_32;
-            result->resolved[f].value = header.pubkeys[pubkey_index].data;
+            result->resolved[f].value = pubkey;
             result->resolved[f].value_size = 32;
         }
 
@@ -139,31 +195,77 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
         }
 
         result->template = template;
-        result->mint_pubkey = NULL;
 
-        // Resolve the mint pubkey from the template's mint association indices
-        // so the renderer can look up token symbol and decimals.
+        // Seed the mint-binding map from this instruction's MINT_ASSOC pair.
         if (template->has_mint_assoc) {
-            if (template->mint_assoc_mint >= instruction.accounts_length) {
-                PRINTF("finalize cs: instruction %d mint_assoc_mint %d out of range (%d)\n",
-                       i,
-                       template->mint_assoc_mint,
-                       instruction.accounts_length);
+            const uint8_t *token_account =
+                pubkey_from_account_index(&header, &instruction, template->mint_assoc_account);
+            const uint8_t *mint =
+                pubkey_from_account_index(&header, &instruction, template->mint_assoc_mint);
+            if (token_account == NULL || mint == NULL) {
+                PRINTF("finalize cs: instruction %d mint_assoc index out of range\n", i);
                 return -1;
             }
-            if (instruction.accounts[template->mint_assoc_mint] >=
-                header.pubkeys_header.pubkeys_length) {
-                PRINTF("finalize cs: instruction %d mint pubkey_index %d out of range (%d)\n",
-                       i,
-                       instruction.accounts[template->mint_assoc_mint],
-                       header.pubkeys_header.pubkeys_length);
-                return -1;
+            bindings[binding_count].token_account = token_account;
+            bindings[binding_count].mint = mint;
+            binding_count++;
+        }
+
+        // Resolve each TOKEN_AMOUNT field's mint reference to a token_ref pubkey.
+        // The mint it maps to is resolved in a second pass, once every MINT_ASSOC
+        // binding has been collected. NATIVE and NONE carry no reference and leave
+        // field_mint NULL; the invalid ARGUMENT_PATH source is refused at ingest.
+        for (uint8_t f = 0; f < template->display_field_count; f++) {
+            const cs_display_field_t *field = &template->display_fields[f];
+            if (field->source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+                continue;
             }
-            result->mint_pubkey =
-                header.pubkeys[instruction.accounts[template->mint_assoc_mint]].data;
+            if (field->argument.param_type != CS_PARAM_TYPE_TOKEN_AMOUNT) {
+                continue;
+            }
+            switch (field->argument.format.token_amount.mint_source) {
+                case CS_TOKEN_MINT_NATIVE:
+                case CS_TOKEN_MINT_NONE:
+                    break;
+                case CS_TOKEN_MINT_ACCOUNT_INDEX: {
+                    const uint8_t *token_ref =
+                        pubkey_from_account_index(
+                            &header,
+                            &instruction,
+                            field->argument.format.token_amount.ref.account_index);
+                    if (token_ref == NULL) {
+                        PRINTF("finalize cs: instruction %d TOKEN account index out of range\n", i);
+                        return -1;
+                    }
+                    result->field_mint[f] = token_ref;
+                    break;
+                }
+                case CS_TOKEN_MINT_CONSTANT:
+                    result->field_mint[f] = field->argument.format.token_amount.ref.mint;
+                    break;
+                default:
+                    PRINTF("finalize cs: instruction %d unknown TOKEN mint_source %d\n",
+                           i,
+                           field->argument.format.token_amount.mint_source);
+                    return -1;
+            }
         }
 
         (*walked_instructions_count)++;
+    }
+
+    // Second pass: with every MINT_ASSOC binding collected, resolve each token
+    // reference to the mint that identifies its token (binding map, then the
+    // TOKEN_ACCOUNT_STATE cache, then the reference itself).
+    for (size_t i = 0; i < *walked_instructions_count; i++) {
+        for (uint8_t f = 0; f < walked_instructions[i].resolved_count; f++) {
+            if (walked_instructions[i].field_mint[f] != NULL) {
+                walked_instructions[i].field_mint[f] =
+                    resolve_field_mint(bindings,
+                                       binding_count,
+                                       walked_instructions[i].field_mint[f]);
+            }
+        }
     }
     return 0;
 }

@@ -34,6 +34,8 @@ PARAM_TAG_VALUE = 0x01
 PARAM_TAG_DECIMALS = 0x02  # PARAM_AMOUNT tag for decimals
 PARAM_TAG_KIND = 0x02      # PARAM_RAW/CONSTANT tag for IDL kind
 PARAM_TAG_IS_NATIVE = 0x04  # PARAM_TOKEN_AMOUNT tag for is_native flag
+PARAM_TOKEN_TAG_TOKEN = 0x02     # PARAM_TOKEN_AMOUNT tag for the TOKEN reference (VALUE)
+PARAM_TOKEN_TAG_DECIMALS = 0x03  # PARAM_TOKEN_AMOUNT tag for the DECIMALS override (VALUE)
 VALUE_SOURCE_ARGUMENT_PATH = 0x00
 VALUE_SOURCE_ACCOUNT_PATH = 0x01
 VALUE_SOURCE_CONSTANT = 0x02
@@ -155,6 +157,30 @@ def _build_token_amount_display_field(argument_path: bytes, is_native: bool, nam
             + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_token))
 
 
+def _build_token_amount_field_with_token(argument_path: bytes, name: str, *,
+                                         token_source: int, token_payload: bytes,
+                                         decimals: int = None) -> bytes:
+    """A DISPLAY_FIELD with PARAM_TOKEN_AMOUNT carrying a TOKEN reference (and an
+    optional DECIMALS override). The amount is an ARGUMENT_PATH; the TOKEN is a
+    VALUE resolving to the token account or mint that identifies the token."""
+    amount_value = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                    + format_tlv(ValueTag.PAYLOAD, argument_path))
+    token_value = (format_tlv(ValueTag.SOURCE, token_source)
+                   + format_tlv(ValueTag.PAYLOAD, token_payload))
+    param_token = (format_tlv(PARAM_TAG_VERSION, 1)
+                   + format_tlv(PARAM_TAG_VALUE, amount_value)
+                   + format_tlv(PARAM_TOKEN_TAG_TOKEN, token_value))
+    if decimals is not None:
+        decimals_value = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_CONSTANT)
+                          + format_tlv(ValueTag.PAYLOAD, bytes([decimals])))
+        param_token += format_tlv(PARAM_TOKEN_TAG_DECIMALS, decimals_value)
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_TOKEN_AMOUNT)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_token))
+
+
 def _build_enum_display_field(argument_path: bytes, name: str) -> bytes:
     """A DISPLAY_FIELD (PARAM_ENUM) pointing at one ARGUMENT_PATH enum leaf.
     The walker resolves the leaf to the selected variant's display name."""
@@ -181,8 +207,24 @@ def test_substructure_without_session_rejected(backend):
 
 # ── TOKEN_ACCOUNT_STATE ──────────────────────────────────────────────────────
 
+def test_token_account_state_without_session_rejected(backend):
+    """Providing a token account state outside an open streaming session must fail closed."""
+    sol = SolanaClient(backend)
+    challenge = sol.get_challenge()
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_token_account_state(
+            challenge=challenge,
+            account_address=b'\x11' * 32,
+            mint=b'\x22' * 32,
+            owner=b'\x33' * 32,
+            pre_balance=1_000_000,
+        )
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
+
+
 def test_token_account_state_valid(backend):
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     challenge = sol.get_challenge()
     sol.provide_token_account_state(
         challenge=challenge,
@@ -195,6 +237,7 @@ def test_token_account_state_valid(backend):
 
 def test_token_account_state_bad_challenge(backend):
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     sol.get_challenge()
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.provide_token_account_state(
@@ -210,6 +253,7 @@ def test_token_account_state_bad_challenge(backend):
 def test_token_account_state_wrong_struct_type(backend):
     """Sending wrong struct type should fail."""
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     challenge = sol.get_challenge()
     # Build manually with wrong struct type (0x99 instead of 0x15)
     payload = format_tlv(TokenAccountStateTag.STRUCT_TYPE, 0x99)
@@ -230,6 +274,7 @@ def test_token_account_state_wrong_struct_type(backend):
 def test_token_account_state_wrong_version(backend):
     """Sending unsupported version should fail."""
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     challenge = sol.get_challenge()
     payload = format_tlv(TokenAccountStateTag.STRUCT_TYPE, 0x15)
     payload += format_tlv(TokenAccountStateTag.STRUCT_VERSION, 99)
@@ -250,6 +295,7 @@ def test_token_account_state_challenge_consumed(backend):
     """After a successful TOKEN_ACCOUNT_STATE, the challenge should be rolled.
     Reusing the same challenge should fail."""
     sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     challenge = sol.get_challenge()
     sol.provide_token_account_state(
         challenge=challenge,
@@ -851,6 +897,221 @@ def test_bridge_token_amount_unknown(backend, sol, scenario_navigator, root_pyte
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+
+
+# ── TOKEN_AMOUNT mint resolution (TOKEN_ACCOUNT_STATE consumption) ────────────
+
+def test_token_amount_resolved_via_token_account_state(backend, sol, scenario_navigator,
+                                                        root_pytest_dir):
+    """A TOKEN_AMOUNT whose TOKEN is an ACCOUNT_PATH pointing at an SPL token
+    account. The mint is not an in-transaction account, so it is resolved from
+    the TOKEN_ACCOUNT_STATE cache, then formatted with the dynamic token's
+    ticker/decimals: '1.5 GORK'."""
+    token_account = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+    message = _craft_instruction_with_accounts(
+        sol,
+        BRIDGE_PROGRAM_ID,
+        _bridge_instruction_data(1000, 1_500_000),
+        extra_accounts=[token_account],
+    )
+    _begin_session(sol, message)
+
+    sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False,
+                              mint_address=SOL.GORK_MINT_ADDRESS)
+
+    challenge = sol.get_challenge()
+    sol.provide_token_account_state(
+        challenge=challenge,
+        account_address=token_account,
+        mint=SOL.GORK_MINT_PUBLIC_KEY,
+        owner=b'\x33' * 32,
+        pre_balance=10_000_000,
+    )
+
+    display_field = _build_token_amount_field_with_token(
+        BRIDGE_PATH_U64, "Amount",
+        token_source=VALUE_SOURCE_ACCOUNT_PATH, token_payload=bytes([1]))
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_token_amount_constant_mint(backend, sol, scenario_navigator, root_pytest_dir):
+    """A TOKEN_AMOUNT whose TOKEN is a CONSTANT 32-byte mint. No TOKEN_ACCOUNT_STATE
+    is needed: the reference is itself the mint and resolves directly to the
+    dynamic token's ticker/decimals."""
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 2_000_000))
+    _begin_session(sol, message)
+
+    sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False,
+                              mint_address=SOL.GORK_MINT_ADDRESS)
+
+    display_field = _build_token_amount_field_with_token(
+        BRIDGE_PATH_U64, "Amount",
+        token_source=VALUE_SOURCE_CONSTANT, token_payload=SOL.GORK_MINT_PUBLIC_KEY)
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_token_amount_decimals_override(backend, sol, scenario_navigator, root_pytest_dir):
+    """A DECIMALS override replaces the dynamic token's magnitude (6) with 2, so
+    a raw value of 150 renders as '1.5 GORK' instead of '0.00015 GORK'."""
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 150))
+    _begin_session(sol, message)
+
+    sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False,
+                              mint_address=SOL.GORK_MINT_ADDRESS)
+
+    display_field = _build_token_amount_field_with_token(
+        BRIDGE_PATH_U64, "Amount",
+        token_source=VALUE_SOURCE_CONSTANT, token_payload=SOL.GORK_MINT_PUBLIC_KEY,
+        decimals=2)
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_token_amount_mint_assoc_priority_over_tas(backend, sol, scenario_navigator,
+                                                   root_pytest_dir):
+    """When both a MINT_ASSOC binding and a TOKEN_ACCOUNT_STATE entry map the same
+    token account, the MINT_ASSOC binding wins. The TAS deliberately maps the
+    account to USDC; the MINT_ASSOC binds it to the GORK mint, so 'GORK' is shown."""
+    token_account = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+    mint_account = SOL.GORK_MINT_PUBLIC_KEY
+    message = _craft_instruction_with_accounts(
+        sol,
+        BRIDGE_PROGRAM_ID,
+        _bridge_instruction_data(1000, 1_500_000),
+        extra_accounts=[token_account, mint_account],
+    )
+    _begin_session(sol, message)
+
+    sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False,
+                              mint_address=SOL.GORK_MINT_ADDRESS)
+
+    challenge = sol.get_challenge()
+    sol.provide_token_account_state(
+        challenge=challenge,
+        account_address=token_account,
+        mint=SOL.USDC_MINT_PUBLIC_KEY,  # deliberately different; must be ignored
+        owner=b'\x33' * 32,
+        pre_balance=0,
+    )
+
+    display_field = _build_token_amount_field_with_token(
+        BRIDGE_PATH_U64, "Amount",
+        token_source=VALUE_SOURCE_ACCOUNT_PATH, token_payload=bytes([1]))
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+        mint_assoc_account=1,
+        mint_assoc_mint=2,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_token_amount_argument_path_token_rejected(backend):
+    """A TOKEN reference sourced from ARGUMENT_PATH is not supported and must be
+    refused at ingest, when the substructure is provided (fail closed)."""
+    sol = SolanaClient(backend)
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 1_500_000))
+    _begin_session(sol, message)
+
+    display_field = _build_token_amount_field_with_token(
+        BRIDGE_PATH_U64, "Amount",
+        token_source=VALUE_SOURCE_ARGUMENT_PATH, token_payload=BRIDGE_PATH_DISC)
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
 
 
 def test_bridge_account_param_type(backend, sol, scenario_navigator, root_pytest_dir):
