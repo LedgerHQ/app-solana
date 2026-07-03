@@ -28,18 +28,47 @@ DISPLAY_FIELD_TAG_PARAM = 0x04
 PARAM_TYPE_RAW = 0x00
 PARAM_TYPE_AMOUNT = 0x01
 PARAM_TYPE_TOKEN_AMOUNT = 0x02
+PARAM_TYPE_DATETIME = 0x03
+PARAM_TYPE_DURATION = 0x04
+PARAM_TYPE_UNIT = 0x05
 PARAM_TYPE_ENUM = 0x06
+PARAM_TYPE_ACCOUNT = 0x08
+PARAM_TYPE_STRING = 0x09
 PARAM_TAG_VERSION = 0x00
 PARAM_TAG_VALUE = 0x01
 PARAM_TAG_DECIMALS = 0x02  # PARAM_AMOUNT tag for decimals
 PARAM_TAG_KIND = 0x02      # PARAM_RAW/CONSTANT tag for IDL kind
 PARAM_TAG_IS_NATIVE = 0x04  # PARAM_TOKEN_AMOUNT tag for is_native flag
+PARAM_DATETIME_TAG_TICKS = 0x02       # PARAM_DATETIME ticks-per-second (BE uint)
+PARAM_UNIT_TAG_SYMBOL = 0x02          # PARAM_UNIT symbol string
+PARAM_UNIT_TAG_DECIMALS = 0x03        # PARAM_UNIT decimal scaling
+PARAM_UNIT_TAG_PREFIX = 0x04          # PARAM_UNIT 1=symbol before value
+PARAM_STRING_TAG_ENCODING = 0x02      # PARAM_STRING encoding selector
+PARAM_STRING_TAG_SLICE_KIND = 0x03    # PARAM_STRING slice kind (bounded/sized)
+PARAM_STRING_TAG_SLICE_START = 0x04   # PARAM_STRING slice start (BE u16)
+PARAM_STRING_TAG_SLICE_END = 0x05     # PARAM_STRING bounded slice end (BE u16)
+PARAM_STRING_TAG_SLICE_SIZE = 0x06    # PARAM_STRING sized slice size (BE u16)
+PARAM_STRING_TAG_SLICE_REVERSED = 0x07  # PARAM_STRING sized slice from tail
+PARAM_STRING_TAG_SLICE_APPLIES_TO = 0x08  # PARAM_STRING 0=formatted, 1=source
+STRING_ENCODING_ASCII = 0x00
+STRING_ENCODING_UTF8 = 0x01
+STRING_ENCODING_BASE58 = 0x02
+STRING_ENCODING_BASE64 = 0x03
+STRING_ENCODING_HEX = 0x04
+SLICE_KIND_BOUNDED = 0x00
+SLICE_KIND_SIZED = 0x01
+SLICE_APPLIES_TO_FORMATTED = 0x00
+SLICE_APPLIES_TO_SOURCE = 0x01
 PARAM_TOKEN_TAG_TOKEN = 0x02     # PARAM_TOKEN_AMOUNT tag for the TOKEN reference (VALUE)
 PARAM_TOKEN_TAG_DECIMALS = 0x03  # PARAM_TOKEN_AMOUNT tag for the DECIMALS override (VALUE)
 VALUE_SOURCE_ARGUMENT_PATH = 0x00
 VALUE_SOURCE_ACCOUNT_PATH = 0x01
 VALUE_SOURCE_CONSTANT = 0x02
 IDL_KIND_U32 = 0x03
+IDL_KIND_U64 = 0x04
+IDL_KIND_PUBKEY_32 = 0x11
+IDL_KIND_BYTES_FIXED = 0x12
+IDL_KIND_STRING_PREFIXED = 0x14
 SUBSTRUCTURE_TYPE_DISPLAY_FIELD = 0x00
 
 
@@ -193,6 +222,104 @@ def _build_enum_display_field(argument_path: bytes, name: str) -> bytes:
             + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_ENUM)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_enum))
+
+
+def _build_datetime_display_field(argument_path: bytes, name: str, *,
+                                  ticks_per_second: int = None) -> bytes:
+    """A DISPLAY_FIELD with PARAM_DATETIME: a numeric leaf rendered as a date/time.
+    An optional TICKS_PER_SECOND (BE uint) scales the raw ticks to seconds."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, argument_path))
+    param = (format_tlv(PARAM_TAG_VERSION, 1)
+             + format_tlv(PARAM_TAG_VALUE, value_tlv))
+    if ticks_per_second is not None:
+        param += format_tlv(PARAM_DATETIME_TAG_TICKS, ticks_per_second)
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_DATETIME)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param))
+
+
+def _build_duration_display_field(argument_path: bytes, name: str) -> bytes:
+    """A DISPLAY_FIELD with PARAM_DURATION: a numeric leaf of seconds rendered H:MM:SS."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, argument_path))
+    param = (format_tlv(PARAM_TAG_VERSION, 1)
+             + format_tlv(PARAM_TAG_VALUE, value_tlv))
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_DURATION)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param))
+
+
+def _build_unit_display_field(argument_path: bytes, name: str, *,
+                              symbol: str, decimals: int = None, prefix: bool = False) -> bytes:
+    """A DISPLAY_FIELD with PARAM_UNIT: a scaled numeric value with a symbol affix."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, argument_path))
+    param = (format_tlv(PARAM_TAG_VERSION, 1)
+             + format_tlv(PARAM_TAG_VALUE, value_tlv)
+             + format_tlv(PARAM_UNIT_TAG_SYMBOL, symbol))
+    if decimals is not None:
+        param += format_tlv(PARAM_UNIT_TAG_DECIMALS, decimals)
+    if prefix:
+        param += format_tlv(PARAM_UNIT_TAG_PREFIX, 1)
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_UNIT)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param))
+
+
+def _build_account_argument_display_field(argument_path: bytes, name: str) -> bytes:
+    """A DISPLAY_FIELD with PARAM_ACCOUNT: a 32-byte argument leaf rendered as a
+    base58 short-form address."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, argument_path))
+    param = (format_tlv(PARAM_TAG_VERSION, 1)
+             + format_tlv(PARAM_TAG_VALUE, value_tlv))
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_ACCOUNT)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param))
+
+
+def _build_string_display_field(argument_path: bytes, name: str, *,
+                                encoding: int = None,
+                                slice_kind: int = None,
+                                slice_start: int = None,
+                                slice_end: int = None,
+                                slice_size: int = None,
+                                slice_reversed: bool = False,
+                                slice_applies_to: int = None) -> bytes:
+    """A DISPLAY_FIELD with PARAM_STRING: a byte leaf rendered through an encoding,
+    optionally sliced (before or after encoding)."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, argument_path))
+    param = (format_tlv(PARAM_TAG_VERSION, 1)
+             + format_tlv(PARAM_TAG_VALUE, value_tlv))
+    if encoding is not None:
+        param += format_tlv(PARAM_STRING_TAG_ENCODING, encoding)
+    if slice_kind is not None:
+        param += format_tlv(PARAM_STRING_TAG_SLICE_KIND, slice_kind)
+        if slice_start is not None:
+            param += format_tlv(PARAM_STRING_TAG_SLICE_START, slice_start)
+        if slice_end is not None:
+            param += format_tlv(PARAM_STRING_TAG_SLICE_END, slice_end)
+        if slice_size is not None:
+            param += format_tlv(PARAM_STRING_TAG_SLICE_SIZE, slice_size)
+        if slice_reversed:
+            param += format_tlv(PARAM_STRING_TAG_SLICE_REVERSED, 1)
+    if slice_applies_to is not None:
+        param += format_tlv(PARAM_STRING_TAG_SLICE_APPLIES_TO, slice_applies_to)
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_STRING)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param))
 
 
 # Sending a substructure without an open clear-signing session must fail closed.
@@ -1614,3 +1741,246 @@ def test_cs_stateless_apdu_preserves_streaming_session(backend, stateless_fn):
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.finalize_generic_clear_signing()
     assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+
+
+# ── TYPED PARAM formatting: DATETIME / DURATION / UNIT / ACCOUNT / STRING ─────
+
+# A synthetic program whose argument struct is
+#   {pubkey, u64, u32, string(u8-prefixed utf8)}
+# preceded by a 1-byte discriminator consumed by a BYTES_FIXED root field.
+TYPED_PROGRAM_ID = b'\x09' * 32
+TYPED_DISCRIMINATOR = b'\x09'
+
+# IDL type pool: u8 count || entries.
+#   [0] STRUCT(0x20) field_count=5 refs=[1,2,3,4,5]
+#   [1] BYTES_FIXED(0x12) fixed_size=1   (consumes the discriminator)
+#   [2] PUBKEY_32(0x11)
+#   [3] U64(0x04)
+#   [4] U32(0x03)
+#   [5] STRING_PREFIXED(0x14) prefix_kind=U8 encoding=UTF8
+TYPED_POOL = bytes([6,
+                    0x20, 5, 1, 2, 3, 4, 5,
+                    0x12, 0x00, 0x01,
+                    0x11,
+                    0x04,
+                    0x03,
+                    0x14, 0x01, 0x00])
+
+# Packed argument paths (u8 step_count || packed steps); STRUCT steps are 1 byte.
+TYPED_PATH_PUBKEY = b'\x01\x01'
+TYPED_PATH_U64 = b'\x01\x02'
+TYPED_PATH_U32 = b'\x01\x03'
+TYPED_PATH_STRING = b'\x01\x04'
+
+
+def _typed_instruction_data(pubkey: bytes, u64_value: int, u32_value: int, text: bytes) -> bytes:
+    return (TYPED_DISCRIMINATOR
+            + pubkey
+            + struct.pack("<Q", u64_value)
+            + struct.pack("<I", u32_value)
+            + bytes([len(text)]) + text)
+
+
+def _provide_typed_info(sol: SolanaClient, substructures_hash: bytes) -> None:
+    sol.provide_instruction_info(
+        program_id=TYPED_PROGRAM_ID,
+        discriminator=TYPED_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Typed",
+        substructures_hash=substructures_hash,
+        idl_type_pool=TYPED_POOL,
+        idl_root_type=0,
+    )
+
+
+def test_typed_datetime(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_DATETIME with default ticks: a u64 of Unix seconds renders as a date."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 1_700_000_000, 0, b"x"))
+    _begin_session(sol, message)
+
+    display_field = _build_datetime_display_field(TYPED_PATH_U64, "When")
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_typed_datetime_millisecond_ticks(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_DATETIME with ticks_per_second=1000 scales milliseconds to seconds."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 1_700_000_000_000, 0, b"x"))
+    _begin_session(sol, message)
+
+    display_field = _build_datetime_display_field(TYPED_PATH_U64, "When", ticks_per_second=1000)
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_typed_duration(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_DURATION: a u32 of seconds renders as H:MM:SS (3661 -> 1:01:01)."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 0, 3661, b"x"))
+    _begin_session(sol, message)
+
+    display_field = _build_duration_display_field(TYPED_PATH_U32, "Lockup")
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_typed_unit_suffix(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_UNIT with a suffix symbol: 1250 scaled by 2 decimals -> '12.5%'."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 0, 1250, b"x"))
+    _begin_session(sol, message)
+
+    display_field = _build_unit_display_field(TYPED_PATH_U32, "Rate", symbol="%", decimals=2)
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_typed_account_short_form(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_ACCOUNT: a 32-byte argument leaf renders as a base58 short address."""
+    pubkey = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(pubkey, 0, 0, b"x"))
+    _begin_session(sol, message)
+
+    display_field = _build_account_argument_display_field(TYPED_PATH_PUBKEY, "Owner")
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_typed_string_ascii(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_STRING with ASCII encoding renders the leaf bytes verbatim."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 0, 0, b"hello"))
+    _begin_session(sol, message)
+
+    display_field = _build_string_display_field(TYPED_PATH_STRING, "Memo",
+                                                encoding=STRING_ENCODING_ASCII)
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_typed_string_hex(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_STRING with HEX encoding renders the leaf bytes as lowercase hex."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 0, 0, b"\xde\xad\xbe\xef"))
+    _begin_session(sol, message)
+
+    display_field = _build_string_display_field(TYPED_PATH_STRING, "Data",
+                                                encoding=STRING_ENCODING_HEX)
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_typed_string_slice_source_bounded(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_STRING slicing the source bytes [1,4) before ASCII encoding -> 'bcd'."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 0, 0, b"abcdef"))
+    _begin_session(sol, message)
+
+    display_field = _build_string_display_field(
+        TYPED_PATH_STRING, "Slice",
+        encoding=STRING_ENCODING_ASCII,
+        slice_kind=SLICE_KIND_BOUNDED, slice_start=1, slice_end=4,
+        slice_applies_to=SLICE_APPLIES_TO_SOURCE)
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+
+# ── TYPED PARAM ingest error paths (rejected before any UI) ──────────────────
+
+def test_typed_datetime_zero_ticks_rejected(backend, sol):
+    """A PARAM_DATETIME with TICKS_PER_SECOND=0 is refused at ingest."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 1_700_000_000, 0, b"x"))
+    _begin_session(sol, message)
+
+    display_field = _build_datetime_display_field(TYPED_PATH_U64, "When", ticks_per_second=0)
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
+
+
+def test_typed_string_unknown_encoding_rejected(backend, sol):
+    """A PARAM_STRING with an unrecognized encoding is refused at ingest."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 0, 0, b"hi"))
+    _begin_session(sol, message)
+
+    display_field = _build_string_display_field(TYPED_PATH_STRING, "Memo", encoding=0x7F)
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
+
+
+def test_typed_string_bounded_with_size_rejected(backend, sol):
+    """A BOUNDED slice carrying a SLICE_SIZE tag is contradictory and refused."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 0, 0, b"abcdef"))
+    _begin_session(sol, message)
+
+    display_field = _build_string_display_field(
+        TYPED_PATH_STRING, "Slice",
+        encoding=STRING_ENCODING_ASCII,
+        slice_kind=SLICE_KIND_BOUNDED, slice_start=1, slice_size=3)
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE

@@ -203,6 +203,69 @@ int cs_instruction_template_set_format_token_amount(const cs_format_token_amount
     return 0;
 }
 
+int cs_instruction_template_set_format_datetime(uint32_t ticks_per_second) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL || builder->display_field_count == 0) {
+        PRINTF("cs_instruction_template_set_format_datetime: no field to configure\n");
+        return -1;
+    }
+    cs_display_field_t *field = &builder->display_fields[builder->display_field_count - 1];
+    if (field->source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("cs_instruction_template_set_format_datetime: source %d != ARGUMENT_PATH\n",
+               field->source);
+        return -1;
+    }
+    if (field->argument.param_type != CS_PARAM_TYPE_DATETIME) {
+        PRINTF("cs_instruction_template_set_format_datetime: param_type %d != DATETIME\n",
+               field->argument.param_type);
+        return -1;
+    }
+    field->argument.format.datetime.ticks_per_second = ticks_per_second;
+    return 0;
+}
+
+int cs_instruction_template_set_format_unit(const cs_format_unit_t *format) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL || builder->display_field_count == 0) {
+        PRINTF("cs_instruction_template_set_format_unit: no field to configure\n");
+        return -1;
+    }
+    cs_display_field_t *field = &builder->display_fields[builder->display_field_count - 1];
+    if (field->source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("cs_instruction_template_set_format_unit: source %d != ARGUMENT_PATH\n",
+               field->source);
+        return -1;
+    }
+    if (field->argument.param_type != CS_PARAM_TYPE_UNIT) {
+        PRINTF("cs_instruction_template_set_format_unit: param_type %d != UNIT\n",
+               field->argument.param_type);
+        return -1;
+    }
+    memcpy(&field->argument.format.unit, format, sizeof(*format));
+    return 0;
+}
+
+int cs_instruction_template_set_format_string(const cs_format_string_t *format) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL || builder->display_field_count == 0) {
+        PRINTF("cs_instruction_template_set_format_string: no field to configure\n");
+        return -1;
+    }
+    cs_display_field_t *field = &builder->display_fields[builder->display_field_count - 1];
+    if (field->source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("cs_instruction_template_set_format_string: source %d != ARGUMENT_PATH\n",
+               field->source);
+        return -1;
+    }
+    if (field->argument.param_type != CS_PARAM_TYPE_STRING) {
+        PRINTF("cs_instruction_template_set_format_string: param_type %d != STRING\n",
+               field->argument.param_type);
+        return -1;
+    }
+    memcpy(&field->argument.format.string, format, sizeof(*format));
+    return 0;
+}
+
 // Record which instruction accounts carry the token account and the mint,
 // so the finalize step can resolve the mint pubkey for TOKEN_AMOUNT display.
 int cs_instruction_template_set_mint_assoc(uint8_t account_idx, uint8_t mint_idx) {

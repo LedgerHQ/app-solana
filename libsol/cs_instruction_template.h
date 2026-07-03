@@ -43,6 +43,62 @@ typedef struct cs_format_amount_s {
     uint8_t decimals;
 } cs_format_amount_t;
 
+// Format-specific parameters for PARAM_DATETIME. The resolved integer leaf is
+// divided by `ticks_per_second` to obtain Unix epoch seconds before formatting.
+typedef struct cs_format_datetime_s {
+    uint32_t ticks_per_second;
+} cs_format_datetime_t;
+
+// Format-specific parameters for PARAM_UNIT. The resolved integer leaf is scaled
+// by `decimals` and rendered with `symbol` placed before (`prefix`) or after it.
+#define CS_MAX_UNIT_SYMBOL 12
+typedef struct cs_format_unit_s {
+    char symbol[CS_MAX_UNIT_SYMBOL];
+    uint8_t decimals;
+    bool prefix;
+} cs_format_unit_t;
+
+// Text encoding applied to a PARAM_STRING leaf before display.
+enum cs_string_encoding {
+    CS_STRING_ENCODING_ASCII = 0x00,
+    CS_STRING_ENCODING_UTF8 = 0x01,
+    CS_STRING_ENCODING_BASE58 = 0x02,
+    CS_STRING_ENCODING_BASE64 = 0x03,
+    CS_STRING_ENCODING_HEX = 0x04,
+};
+
+// How a PARAM_STRING slice window is expressed.
+enum cs_slice_kind {
+    CS_SLICE_KIND_BOUNDED = 0x00,  // [start, end)
+    CS_SLICE_KIND_SIZED = 0x01,    // `size` units from start, or from the tail when reversed
+};
+
+// Whether a PARAM_STRING slice operates on the raw source bytes or on the
+// post-encoding formatted string.
+enum cs_slice_applies_to {
+    CS_SLICE_APPLIES_TO_FORMATTED = 0x00,
+    CS_SLICE_APPLIES_TO_SOURCE = 0x01,
+};
+
+// Format-specific parameters for PARAM_STRING. `slice_kind` selects the active
+// `slice` arm; `slice_start` is shared by BOUNDED and forward SIZED.
+typedef struct cs_format_string_s {
+    uint8_t encoding;  // enum cs_string_encoding
+    bool has_slice;
+    uint8_t slice_kind;        // enum cs_slice_kind
+    uint8_t slice_applies_to;  // enum cs_slice_applies_to
+    uint16_t slice_start;
+    union {
+        struct {
+            uint16_t end;  // exclusive
+        } bounded;         // CS_SLICE_KIND_BOUNDED
+        struct {
+            uint16_t size;
+            bool reversed;  // take the trailing window
+        } sized;            // CS_SLICE_KIND_SIZED
+    } slice;
+} cs_format_string_t;
+
 // Where a TOKEN_AMOUNT's ticker/decimals metadata comes from. Exactly one
 // applies, so contradictory combinations (native carrying a mint reference, a
 // stale payload behind an absent reference) are unrepresentable. ARGUMENT_PATH
@@ -105,6 +161,9 @@ typedef struct cs_display_field_s {
             union {
                 cs_format_amount_t amount;
                 cs_format_token_amount_t token_amount;
+                cs_format_datetime_t datetime;
+                cs_format_unit_t unit;
+                cs_format_string_t string;
             } format;
         } argument;
         struct {
@@ -181,6 +240,21 @@ int cs_instruction_template_set_format_amount(uint8_t decimals);
 // Must be called immediately after adding a field with param_type == TOKEN_AMOUNT.
 // Returns 0 on success, -1 when no matching field is open.
 int cs_instruction_template_set_format_token_amount(const cs_format_token_amount_t *format);
+
+// Set DATETIME format parameters on the last added display field.
+// Must be called immediately after adding a field with param_type == DATETIME.
+// Returns 0 on success, -1 when no matching field is open.
+int cs_instruction_template_set_format_datetime(uint32_t ticks_per_second);
+
+// Set UNIT format parameters on the last added display field.
+// Must be called immediately after adding a field with param_type == UNIT.
+// Returns 0 on success, -1 when no matching field is open.
+int cs_instruction_template_set_format_unit(const cs_format_unit_t *format);
+
+// Set STRING format parameters on the last added display field.
+// Must be called immediately after adding a field with param_type == STRING.
+// Returns 0 on success, -1 when no matching field is open.
+int cs_instruction_template_set_format_string(const cs_format_string_t *format);
 
 // Set mint association indices on the in-flight builder. Both indices refer to
 // the instruction's accounts array: `account_idx` is the token account,
