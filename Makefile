@@ -92,6 +92,11 @@ ENABLE_PKI_LIBRARY = 1
 #        Dynamic allocation            #
 ########################################
 ENABLE_DYNAMIC_ALLOC = 1
+
+########################################
+#        SDK Stack protection          #
+########################################
+ENABLE_STACK_PROTECTOR=1
 # --8<-- [end:variables]
 
 ########################################
