@@ -24,6 +24,9 @@
 #include "handle_get_challenge.h"
 #include "handle_provide_trusted_info.h"
 #include "handle_provide_dynamic_descriptor.h"
+#ifdef HAVE_TRANSACTION_CHECKS
+#include "handle_provide_transaction_check.h"
+#endif
 #include "apdu.h"
 #include "ui_api.h"
 #include "nbgl_use_case.h"
@@ -70,13 +73,19 @@ static int handle_apdu(int rx) {
 
     switch (G_command.instruction) {
         case InsDeprecatedGetAppConfiguration:
-        case InsGetAppConfiguration:
-            G_io_apdu_buffer[0] = N_storage.settings.allow_blind_sign;
-            G_io_apdu_buffer[1] = N_storage.settings.pubkey_display;
-            G_io_apdu_buffer[2] = MAJOR_VERSION;
-            G_io_apdu_buffer[3] = MINOR_VERSION;
-            G_io_apdu_buffer[4] = PATCH_VERSION;
-            return io_send_response_pointer(G_io_apdu_buffer, 5, ApduReplySuccess);
+        case InsGetAppConfiguration: {
+            size_t offset = 0;
+            G_io_apdu_buffer[offset++] = N_storage.settings.allow_blind_sign;
+            G_io_apdu_buffer[offset++] = N_storage.settings.pubkey_display;
+            G_io_apdu_buffer[offset++] = MAJOR_VERSION;
+            G_io_apdu_buffer[offset++] = MINOR_VERSION;
+            G_io_apdu_buffer[offset++] = PATCH_VERSION;
+#ifdef HAVE_TRANSACTION_CHECKS
+            G_io_apdu_buffer[offset++] = N_storage.settings.tx_check_opt_in;
+            G_io_apdu_buffer[offset++] = N_storage.settings.tx_check_enable;
+#endif
+            return io_send_response_pointer(G_io_apdu_buffer, offset, ApduReplySuccess);
+        }
 
         case InsDeprecatedGetPubkey:
         case InsGetPubkey:
@@ -113,6 +122,15 @@ static int handle_apdu(int rx) {
         case InsTrustedInfoProvideDynamicDescriptor:
             return handle_provide_dynamic_descriptor();
 
+#ifdef HAVE_TRANSACTION_CHECKS
+        case InsProvideTransactionCheck:
+            if (G_called_from_swap) {
+                PRINTF("Transaction check mode not supported in swap context\n");
+                return io_send_sw(ApduReplySdkNotSupported);
+            }
+            return handle_provide_transaction_check();
+#endif
+
         default:
             // Should have been caught by apdu_handle_message
             PRINTF("Received unknown instruction %d\n", G_command.instruction);
@@ -126,6 +144,10 @@ void nv_app_state_init() {
         storage.settings.allow_blind_sign = BlindSignDisabled;
         storage.settings.pubkey_display = PubkeyDisplayLong;
         storage.settings.display_mode = DisplayModeUser;
+#ifdef HAVE_TRANSACTION_CHECKS
+        storage.settings.tx_check_enable = 0;
+        storage.settings.tx_check_opt_in = 0;
+#endif
         storage.initialized = 0x01;
         nvm_write((void *) &N_storage, (void *) &storage, sizeof(internalStorage_t));
     }

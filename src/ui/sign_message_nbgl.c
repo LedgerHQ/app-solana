@@ -18,6 +18,10 @@
 #include "trusted_info.h"
 #include "dynamic_token_info.h"
 
+#ifdef HAVE_TRANSACTION_CHECKS
+#include "handle_provide_transaction_check.h"
+#endif
+
 // Content of the review flow
 static nbgl_contentTagValueList_t G_content;
 // Used by NBGL to display the reference the pair number N
@@ -97,6 +101,9 @@ static void review_choice(bool confirm) {
     reset_dynamic_token_info();
 
     // Answer, display a status page and go back to main
+#ifdef HAVE_TRANSACTION_CHECKS
+    clear_transaction_check();
+#endif
     if (confirm) {
         if (G_command.is_preview_mode) {
             // In preview mode, store fingerprint instead of signing
@@ -145,15 +152,33 @@ static void init_review_content(nbgl_opType_t operation_type,
     G_content.nbPairs = G_transaction_steps_number;
 }
 
+// Returns the appropriate confirmation text based on warning bits.
+static const char *maybe_warning_confirmation(const char *default_confirmation) {
+    if (G_warning.predefinedSet & SET_BIT(W3C_THREAT_DETECTED_WARN)) {
+        PRINTF("Transaction_Check threat detected, override confirmation text\n");
+        return "Accept threat and sign";
+    } else if (G_warning.predefinedSet & SET_BIT(W3C_RISK_DETECTED_WARN)) {
+        PRINTF("Transaction_Check risk detected, override confirmation text\n");
+        return "Accept risk and sign";
+    } else {
+        return default_confirmation;
+    }
+}
+
 static void start_blind_signing_ui(const char *review_title, const char *confirmation_text) {
-    explicit_bzero(&G_warning, sizeof(nbgl_warning_t));
     G_warning.predefinedSet |= SET_BIT(BLIND_SIGNING_WARN);
+#ifdef HAVE_TRANSACTION_CHECKS
+    if (G_operation_type == TYPE_TRANSACTION) {
+        PRINTF("Applying transaction check report to blind signing review\n");
+        apply_transaction_check_report(&G_warning);
+    }
+#endif
     nbgl_useCaseAdvancedReview(G_operation_type,
                                &G_content,
                                &ICON_SIGN_MENU,
                                review_title,
                                NULL,
-                               confirmation_text,
+                               maybe_warning_confirmation(confirmation_text),
                                NULL,
                                &G_warning,
                                review_choice);
@@ -161,6 +186,12 @@ static void start_blind_signing_ui(const char *review_title, const char *confirm
 
 // This function handles post warnings UI for both onchain and offchain message signing
 static void start_message_signing_review(void) {
+#ifdef HAVE_TRANSACTION_CHECKS
+    if (G_operation_type == TYPE_TRANSACTION) {
+        PRINTF("Applying transaction check report to transaction review\n");
+        apply_transaction_check_report(&G_warning);
+    }
+#endif
     const char *review_title = NULL;
     // On Nano devices we display only the default "Sign transaction?"
     // We forward NULL to let NBGL handle it
@@ -234,13 +265,15 @@ static void start_message_signing_review(void) {
 #endif
     }
 
-    nbgl_useCaseReview(G_operation_type,
-                       &G_content,
-                       icon,
-                       review_title,
-                       NULL,
-                       confirmation_text,
-                       review_choice);
+    nbgl_useCaseAdvancedReview(G_operation_type,
+                               &G_content,
+                               icon,
+                               review_title,
+                               NULL,
+                               maybe_warning_confirmation(confirmation_text),
+                               NULL,
+                               &G_warning,
+                               review_choice);
 }
 
 // Function called by the Transaction Hook / Unknown Transaction Fees flow
@@ -253,6 +286,7 @@ static void on_token_warning_choice(bool cancel) {
 }
 
 void start_sign_message_ui(size_t num_summary_steps) {
+    explicit_bzero(&G_warning, sizeof(nbgl_warning_t));
     init_review_content(TYPE_TRANSACTION, num_summary_steps, false);
 
     if (transaction_summary_is_blind_signing()) {
@@ -293,6 +327,7 @@ void start_sign_message_ui(size_t num_summary_steps) {
 }
 
 void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
+    explicit_bzero(&G_warning, sizeof(nbgl_warning_t));
     init_review_content(TYPE_MESSAGE, num_summary_steps, is_ascii);
 
     if (!is_ascii) {

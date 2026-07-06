@@ -121,7 +121,7 @@ class NavigationHelper:
         seq += [NavInsID.LEFT_CLICK]
         return seq
 
-    def enable_blind_signing(self):
+    def enable_blind_signing(self, suffix: str = ""):
         if self._backend.firmware.is_nano:
             nav = self._enable_nano_option_n(1)
         else:
@@ -133,11 +133,11 @@ class NavigationHelper:
                    NavIns(NavInsID.TOUCH, coordinates),
                    NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
         self._navigator.navigate_and_compare(self._root_pytest_dir,
-                                             self._test_name + "_enable_bs",
+                                             self._test_name + "_enable_bs" + suffix,
                                              nav,
                                              screen_change_before_first_instruction=False)
 
-    def enable_short_public_key(self, snapshots_name: str):
+    def enable_short_public_key(self, suffix: str = ""):
         if self._backend.firmware.is_nano:
             nav = self._enable_nano_option_n(2)
         else:
@@ -146,15 +146,14 @@ class NavigationHelper:
             else:
                 coordinates = (348,251)
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
-                   NavInsID.USE_CASE_SETTINGS_NEXT,
                    NavIns(NavInsID.TOUCH, coordinates),
                    NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
         self._navigator.navigate_and_compare(self._root_pytest_dir,
-                                             snapshots_name,
+                                             self._test_name + "_enable_spk" + suffix,
                                              nav,
                                              screen_change_before_first_instruction=False)
 
-    def enable_expert_mode(self):
+    def enable_expert_mode(self, suffix: str = ""):
         if self._backend.firmware.is_nano:
             nav = self._enable_nano_option_n(3)
         elif self._backend.firmware is Firmware.STAX:
@@ -171,6 +170,43 @@ class NavigationHelper:
                    NavIns(NavInsID.TOUCH, coordinates),
                    NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
         self._navigator.navigate_and_compare(self._root_pytest_dir,
-                                             self._test_name + "_enable_em",
+                                             self._test_name + "_enable_em" + suffix,
                                              nav,
                                              screen_change_before_first_instruction=False)
+
+    def enable_transaction_check(self, has_opt_in_modal: bool = True, suffix: str = ""):
+        if self._backend.firmware.is_nano:
+            raise NotImplementedError("Transaction Check setting is not available on Nano devices")
+        else:
+            if self._backend.firmware is Firmware.APEX_P:
+                coordinates = (263,193)
+            else:
+                coordinates = (348,251)
+            nav = [NavInsID.USE_CASE_HOME_SETTINGS,
+                   NavInsID.USE_CASE_SETTINGS_NEXT,
+                   NavIns(NavInsID.TOUCH, coordinates)]
+
+            if has_opt_in_modal:
+                # Opt-in consent screen appears on first toggle —
+                # tap "Yes, enable" then dismiss the success status
+                nav += [NavInsID.USE_CASE_CHOICE_CONFIRM,
+                        NavInsID.USE_CASE_STATUS_DISMISS]
+
+            # Exit settings
+            nav += [NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
+
+        self._navigator.navigate_and_compare(self._root_pytest_dir,
+                                             self._test_name + "_enable_tc" + suffix,
+                                             nav,
+                                             screen_change_before_first_instruction=False)
+
+    def _choice_action(self, choice):
+        self._navigator.navigate_and_compare(self._root_pytest_dir,
+                                             self._test_name,
+                                             [choice])
+
+    def accept_choice(self):
+        self._choice_action(NavInsID.USE_CASE_CHOICE_CONFIRM)
+
+    def reject_choice(self):
+        self._choice_action(NavInsID.USE_CASE_CHOICE_REJECT)
