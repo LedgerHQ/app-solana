@@ -13,7 +13,8 @@ class TestAppConfiguration:
             assert list(config[:2]) == [blind_sign, pubkey_display]
         else:
             assert len(config) == 7
-            assert list(config[:4]) == [blind_sign, pubkey_display, tx_check_opt_in, tx_check_enable]
+            assert list(config[:2]) == [blind_sign, pubkey_display]
+            assert list(config[5:7]) == [tx_check_opt_in, tx_check_enable]
 
     def test_app_configuration(self, backend, sol: SolanaClient, navigation_helper):
         """Each setting toggle only affects its own flag in GetAppConfiguration"""

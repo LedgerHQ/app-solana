@@ -49,11 +49,11 @@ _None_
 | ------------------------- | :------: |
 | blind_sign setting        |    01    |
 | pubkey_display setting    |    01    |
-| tx_check_opt_in setting   |    01    |
-| tx_check_enable setting   |    01    |
 | Application major version |    01    |
 | Application minor version |    01    |
 | Application patch version |    01    |
+| tx_check_opt_in setting   |    01    |
+| tx_check_enable setting   |    01    |
 
 ### GET PUBKEY
 

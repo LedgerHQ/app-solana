@@ -77,13 +77,13 @@ static int handle_apdu(int rx) {
             size_t offset = 0;
             G_io_apdu_buffer[offset++] = N_storage.settings.allow_blind_sign;
             G_io_apdu_buffer[offset++] = N_storage.settings.pubkey_display;
+            G_io_apdu_buffer[offset++] = MAJOR_VERSION;
+            G_io_apdu_buffer[offset++] = MINOR_VERSION;
+            G_io_apdu_buffer[offset++] = PATCH_VERSION;
 #ifdef HAVE_TRANSACTION_CHECKS
             G_io_apdu_buffer[offset++] = N_storage.settings.tx_check_opt_in;
             G_io_apdu_buffer[offset++] = N_storage.settings.tx_check_enable;
 #endif
-            G_io_apdu_buffer[offset++] = MAJOR_VERSION;
-            G_io_apdu_buffer[offset++] = MINOR_VERSION;
-            G_io_apdu_buffer[offset++] = PATCH_VERSION;
             return io_send_response_pointer(G_io_apdu_buffer, offset, ApduReplySuccess);
         }
 
