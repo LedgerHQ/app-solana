@@ -20,9 +20,9 @@ TRANSFER_CHECKED = 12
 
 FAKE_HASH = b'\xff' * 32
 
-# Solana chain IDs as used by the swap backend / Transaction Check.
-# 900=mainnet-beta, 901=devnet, 902=testnet.
+# Solana chain IDs. Only mainnet-beta (900) is honored; any other is rejected.
 SOLANA_MAINNET_CHAIN_ID = 900
+SOLANA_TESTNET_CHAIN_ID = 902
 
 DEFAULT_TX_CHECK_PARAMS = {
     "address": base58.b58encode(b'\x22' * 32),
@@ -92,7 +92,7 @@ class TestTransactionCheck:
         if report_type != "NA":
             risk = {"invalid_hash": 0, "invalid_chain_id": 0, "benign": 0, "warn": 1, "threat": 2}[report_type]
             tx_hash = FAKE_HASH if report_type == "invalid_hash" else hashlib.sha256(message).digest()
-            chain_id = 99 if report_type == "invalid_chain_id" else SOLANA_MAINNET_CHAIN_ID
+            chain_id = SOLANA_TESTNET_CHAIN_ID if report_type == "invalid_chain_id" else SOLANA_MAINNET_CHAIN_ID
             sol.provide_transaction_check(
                 address=base58.b58encode(from_public_key),
                 tx_hash=tx_hash,
@@ -126,7 +126,7 @@ class TestTransactionCheck:
         if report_type != "NA":
             risk = {"invalid_hash": 0, "invalid_chain_id": 0, "benign": 0, "warn": 1, "threat": 2}[report_type]
             tx_hash = FAKE_HASH if report_type == "invalid_hash" else hashlib.sha256(message).digest()
-            chain_id = 99 if report_type == "invalid_chain_id" else SOLANA_MAINNET_CHAIN_ID
+            chain_id = SOLANA_TESTNET_CHAIN_ID if report_type == "invalid_chain_id" else SOLANA_MAINNET_CHAIN_ID
             sol.provide_transaction_check(
                 address=base58.b58encode(from_public_key),
                 tx_hash=tx_hash,

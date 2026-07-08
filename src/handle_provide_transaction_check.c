@@ -136,15 +136,15 @@ static bool check_transaction_check_report_validity(void) {
         return false;
     }
 
-    // Check chain_id refers to a Solana chain: 900=mainnet-beta, 901=devnet, 902=testnet
+    // Mainnet-only: the device can't bind a message to a network, so a devnet/testnet
+    // report could downgrade the risk of a mainnet transaction.
     if (!G_transaction_check_info.chain_id_received) {
         PRINTF("[TX CHECK] No chain_id in report\n");
         return false;
     }
-    if (G_transaction_check_info.chain_id != SOLANA_CHAIN_ID_MAINNET &&
-        G_transaction_check_info.chain_id != SOLANA_CHAIN_ID_DEVNET &&
-        G_transaction_check_info.chain_id != SOLANA_CHAIN_ID_TESTNET) {
-        PRINTF("[TX CHECK] Unknown chain_id: %llu\n", G_transaction_check_info.chain_id);
+    if (G_transaction_check_info.chain_id != SOLANA_CHAIN_ID_MAINNET) {
+        PRINTF("[TX CHECK] Non-mainnet chain_id rejected: %llu\n",
+               G_transaction_check_info.chain_id);
         return false;
     }
 
