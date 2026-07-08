@@ -14,6 +14,7 @@
 #include "reply.h"
 #include "app_mem_utils.h"
 #include "sol/parser.h"
+#include "compute_budget_instruction.h"
 #include "idl_pool.h"
 #include "idl_walker.h"
 #include "idl_kinds.h"
@@ -976,6 +977,14 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
         }
         const uint8_t *program_id = header.pubkeys[instruction.program_id_index].data;
 
+        // Compute Budget instructions carry no clear-signing template: they are
+        // handled by the app's hardcoded fee handler (which computes and displays
+        // fees) rather than through TLV descriptors. Skip them here so their
+        // absence from the template set does not refuse the signature.
+        if (memcmp(program_id, &compute_budget_program_id, PUBKEY_SIZE) == 0) {
+            PRINTF("finalize cs: skipping Compute Budget instruction %d\n", i);
+            continue;
+        }
         cs_instruction_result_t *result = &walked_instructions[*walked_instructions_count];
         if (walk_instruction(cs_tx, &header, &instruction, program_id, alt_writable_count, result,
                              bindings, &binding_count, owner_bindings, owner_binding_count) != 0) {
