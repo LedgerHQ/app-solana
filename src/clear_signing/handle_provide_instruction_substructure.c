@@ -483,6 +483,26 @@ static int extract_value(const buffer_t *value_buf, cs_value_t *out) {
     return 0;
 }
 
+// Register an ACCOUNT_PATH value as a plain account field. The payload is a
+// single u8: the index into the instruction's accounts array. The pubkey there
+// is always rendered as a short-form base58 address, so the declared param_type
+// and any format parameters are irrelevant and intentionally ignored. Every
+// PARAM parser routes an ACCOUNT_PATH source here so it is accepted uniformly.
+// Returns 0 on success, -1 on a malformed payload.
+static int register_account_path_value(const cs_value_t *value, const char *field_name) {
+    if (value->payload.size != 1) {
+        PRINTF("substructure: ACCOUNT_PATH payload size %d != 1\n", value->payload.size);
+        return -1;
+    }
+    if (cs_instruction_template_add_account_field(value->payload.ptr[0], field_name) != 0) {
+        return -1;
+    }
+    PRINTF("substructure: registered account field index=%d name=%s\n",
+           value->payload.ptr[0],
+           field_name ? field_name : "(none)");
+    return 0;
+}
+
 // Register a PARAM_RAW display field (also handles ACCOUNT_PATH and CONSTANT sources).
 static int register_param_raw(const display_field_out_t *display_field, const char *field_name) {
     param_raw_out_t param = {0};
@@ -512,16 +532,7 @@ static int register_param_raw(const display_field_out_t *display_field, const ch
                value.payload.ptr,
                field_name ? field_name : "(none)");
     } else if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
-        if (value.payload.size != 1) {
-            PRINTF("substructure: ACCOUNT_PATH payload size %d != 1\n", value.payload.size);
-            return -1;
-        }
-        if (cs_instruction_template_add_account_field(value.payload.ptr[0], field_name) != 0) {
-            return -1;
-        }
-        PRINTF("substructure: registered account field index=%d name=%s\n",
-               value.payload.ptr[0],
-               field_name ? field_name : "(none)");
+        return register_account_path_value(&value, field_name);
     } else if (value.source == CS_VALUE_SOURCE_CONSTANT) {
         uint8_t kind = 0;
         if (param.kind.ptr != NULL && param.kind.size == 1) {
@@ -544,7 +555,7 @@ static int register_param_raw(const display_field_out_t *display_field, const ch
     return 0;
 }
 
-// Register a PARAM_ENUM display field (ARGUMENT_PATH only).
+// Register a PARAM_ENUM display field (ARGUMENT_PATH, or ACCOUNT_PATH rendered as an address).
 // The enum leaf is resolved by the walker to its selected variant's display name.
 static int register_param_enum(const display_field_out_t *display_field, const char *field_name) {
     param_enum_out_t param = {0};
@@ -571,8 +582,12 @@ static int register_param_enum(const display_field_out_t *display_field, const c
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        return register_account_path_value(&value, field_name);
+    }
     if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: PARAM_ENUM requires ARGUMENT_PATH source, got %d\n", value.source);
+        PRINTF("substructure: PARAM_ENUM requires ARGUMENT or ACCOUNT path, got %d\n",
+               value.source);
         return -1;
     }
 
@@ -589,7 +604,7 @@ static int register_param_enum(const display_field_out_t *display_field, const c
     return 0;
 }
 
-// Register a PARAM_AMOUNT display field (ARGUMENT_PATH only).
+// Register a PARAM_AMOUNT display field (ARGUMENT_PATH, or ACCOUNT_PATH rendered as an address).
 static int register_param_amount(const display_field_out_t *display_field,
                                  const char *field_name) {
     param_amount_out_t param = {0};
@@ -606,8 +621,11 @@ static int register_param_amount(const display_field_out_t *display_field,
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        return register_account_path_value(&value, field_name);
+    }
     if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: PARAM_AMOUNT requires ARGUMENT_PATH source, got %d\n",
+        PRINTF("substructure: PARAM_AMOUNT requires ARGUMENT or ACCOUNT path, got %d\n",
                value.source);
         return -1;
     }
@@ -637,7 +655,7 @@ static int register_param_amount(const display_field_out_t *display_field,
     return 0;
 }
 
-// Register a PARAM_TOKEN_AMOUNT display field (ARGUMENT_PATH only).
+// Register a PARAM_TOKEN_AMOUNT display field (ARGUMENT_PATH, or ACCOUNT_PATH rendered as an address).
 static int register_param_token_amount(const display_field_out_t *display_field,
                                        const char *field_name) {
     param_token_amount_out_t param = {0};
@@ -654,8 +672,11 @@ static int register_param_token_amount(const display_field_out_t *display_field,
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        return register_account_path_value(&value, field_name);
+    }
     if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: PARAM_TOKEN_AMOUNT requires ARGUMENT_PATH source, got %d\n",
+        PRINTF("substructure: PARAM_TOKEN_AMOUNT requires ARGUMENT or ACCOUNT path, got %d\n",
                value.source);
         return -1;
     }
@@ -763,7 +784,7 @@ static bool read_be_uint(const buffer_t *buf, size_t max_bytes, uint32_t fallbac
     return true;
 }
 
-// Register a PARAM_DATETIME display field (ARGUMENT_PATH only).
+// Register a PARAM_DATETIME display field (ARGUMENT_PATH, or ACCOUNT_PATH rendered as an address).
 static int register_param_datetime(const display_field_out_t *display_field,
                                    const char *field_name) {
     param_datetime_out_t param = {0};
@@ -780,8 +801,11 @@ static int register_param_datetime(const display_field_out_t *display_field,
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        return register_account_path_value(&value, field_name);
+    }
     if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: PARAM_DATETIME requires ARGUMENT_PATH source, got %d\n",
+        PRINTF("substructure: PARAM_DATETIME requires ARGUMENT or ACCOUNT path, got %d\n",
                value.source);
         return -1;
     }
@@ -814,7 +838,7 @@ static int register_param_datetime(const display_field_out_t *display_field,
     return 0;
 }
 
-// Register a PARAM_UNIT display field (ARGUMENT_PATH only).
+// Register a PARAM_UNIT display field (ARGUMENT_PATH, or ACCOUNT_PATH rendered as an address).
 static int register_param_unit(const display_field_out_t *display_field, const char *field_name) {
     param_unit_out_t param = {0};
     if (!parse_param_unit(&display_field->param, &param, &param.received_tags)) {
@@ -830,8 +854,12 @@ static int register_param_unit(const display_field_out_t *display_field, const c
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        return register_account_path_value(&value, field_name);
+    }
     if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: PARAM_UNIT requires ARGUMENT_PATH source, got %d\n", value.source);
+        PRINTF("substructure: PARAM_UNIT requires ARGUMENT or ACCOUNT path, got %d\n",
+               value.source);
         return -1;
     }
 
@@ -877,7 +905,7 @@ static int register_param_unit(const display_field_out_t *display_field, const c
     return 0;
 }
 
-// Register a PARAM_STRING display field (ARGUMENT_PATH only).
+// Register a PARAM_STRING display field (ARGUMENT_PATH, or ACCOUNT_PATH rendered as an address).
 static int register_param_string(const display_field_out_t *display_field,
                                  const char *field_name) {
     param_string_out_t param = {0};
@@ -894,8 +922,12 @@ static int register_param_string(const display_field_out_t *display_field,
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        return register_account_path_value(&value, field_name);
+    }
     if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: PARAM_STRING requires ARGUMENT_PATH source, got %d\n", value.source);
+        PRINTF("substructure: PARAM_STRING requires ARGUMENT or ACCOUNT path, got %d\n",
+               value.source);
         return -1;
     }
 
@@ -1088,9 +1120,10 @@ static int register_param_trusted_name(const display_field_out_t *display_field,
     return 0;
 }
 
-// Register a PARAM_ACCOUNT or PARAM_DURATION display field. Both reuse the
-// PARAM_RAW envelope (VERSION + VALUE) and carry no extra format parameters;
-// only the resulting param_type differs. ARGUMENT_PATH source only.
+// Register a PARAM_ACCOUNT, PARAM_DURATION or PARAM_TRUSTED_NAME display field.
+// All reuse the PARAM_RAW envelope (VERSION + VALUE) and carry no extra format
+// parameters; only the resulting param_type differs. Accepts an ARGUMENT_PATH
+// value, or an ACCOUNT_PATH value rendered as a base58 address.
 static int register_param_plain_argument(const display_field_out_t *display_field,
                                          const char *field_name,
                                          uint8_t param_type) {
@@ -1108,8 +1141,11 @@ static int register_param_plain_argument(const display_field_out_t *display_fiel
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        return register_account_path_value(&value, field_name);
+    }
     if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: param_type %d requires ARGUMENT_PATH source, got %d\n",
+        PRINTF("substructure: param_type %d requires ARGUMENT or ACCOUNT path, got %d\n",
                param_type,
                value.source);
         return -1;
