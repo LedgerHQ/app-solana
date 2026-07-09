@@ -901,7 +901,7 @@ static bool read_short_u16(walk_ctx_t *walk, uint64_t *out) {
         }
     }
     *out = value;
-    PRINTF("idl_walker: read SHORT_U16 value=%d cursor=%d\n", value, walk->cursor);
+    PRINTF("idl_walker: read SHORT_U16 value=%d cursor=%d\n", (int) value, walk->cursor);
     return true;
 }
 // Read a little-endian unsigned integer of the given primitive `kind` (or a
@@ -929,7 +929,7 @@ static bool read_uint_le(walk_ctx_t *walk, uint8_t kind, uint64_t *out) {
     PRINTF("idl_walker: read uint kind=0x%02x width=%d value=%d cursor=%d\n",
            kind,
            width,
-           value,
+           (int) value,
            walk->cursor);
     return true;
 }
@@ -1265,7 +1265,7 @@ static int walk_top(walk_ctx_t *walk) {
                 return -1;
             }
             const uint8_t *value = walk->data + walk->cursor;
-            PRINTF("idl_walker: prefixed string leaf len=%d\n", len);
+            PRINTF("idl_walker: prefixed string leaf len=%d\n", (int) len);
             if (emit_leaf(walk, frame->kind, value, (size_t) len) != 0) {
                 return -1;
             }
@@ -1311,7 +1311,7 @@ static int walk_top(walk_ctx_t *walk) {
                 if (!read_uint_le(walk, entry->len_kind, &len)) {
                     return -1;
                 }
-                PRINTF("idl_walker: ARRAY_PREFIXED element count=%d\n", len);
+                PRINTF("idl_walker: ARRAY_PREFIXED element count=%d\n", (int) len);
                 frame->child_count = (size_t) len;
                 frame->child_i = 0;
                 frame->entered = true;
@@ -1365,7 +1365,7 @@ static int walk_top(walk_ctx_t *walk) {
                     return -1;
                 }
                 PRINTF("idl_walker: OPTION_DYNAMIC flag=%d (%s)\n",
-                       flag,
+                       (int) flag,
                        (flag != 0) ? "present" : "absent");
                 frame->child_count = (flag != 0) ? 1 : 0;
                 frame->child_i = 0;
@@ -1380,7 +1380,7 @@ static int walk_top(walk_ctx_t *walk) {
                     return -1;
                 }
                 if (flag != 0) {
-                    PRINTF("idl_walker: OPTION_FIXED flag=%d present, descending\n", flag);
+                    PRINTF("idl_walker: OPTION_FIXED flag=%d present, descending\n", (int) flag);
                     frame->child_count = 1;
                 } else if (frame->is_inline) {
                     // Absent inline OPTION_FIXED: the inner bytes are still
@@ -1479,7 +1479,7 @@ static int walk_top(walk_ctx_t *walk) {
                 }
                 if (disc >= entry->total_variants) {
                     PRINTF("idl_walker: ENUM discriminator %d >= total_variants %d\n",
-                           disc,
+                           (int) disc,
                            entry->total_variants);
                     return -1;
                 }
