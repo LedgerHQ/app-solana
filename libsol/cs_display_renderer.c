@@ -613,6 +613,7 @@ static int format_account_short_named(const idl_resolved_leaf_t *leaf,
 static int format_duration(const idl_resolved_leaf_t *leaf,
                            char *value_out,
                            size_t value_out_size) {
+    int64_t signed_seconds;
     uint64_t total_seconds;
     uint64_t hours;
     uint32_t minutes;
@@ -620,10 +621,17 @@ static int format_duration(const idl_resolved_leaf_t *leaf,
     char hours_str[21];
     int written;
 
-    if (read_leaf_u64(leaf, &total_seconds) != 0) {
+    // Some programs encode a duration in a signed integer (e.g. an i64), so
+    // read it as signed and reject negatives below rather than assuming u64.
+    if (read_leaf_i64(leaf, &signed_seconds) != 0) {
         PRINTF("format_duration: unsupported leaf kind %d\n", leaf->kind);
         return -1;
     }
+    if (signed_seconds < 0) {
+        PRINTF("format_duration: negative duration %lld\n", (long long) signed_seconds);
+        return -1;
+    }
+    total_seconds = (uint64_t) signed_seconds;
     // Split the total seconds into H:MM:SS components.
     hours = total_seconds / 3600;
     minutes = (uint32_t) ((total_seconds % 3600) / 60);
