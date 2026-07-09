@@ -2,6 +2,8 @@
 
 ## Build & Compile
 
+Never truncate, filter, or paginate the output of qb, qb_run_in_docker, or pytest. Run them raw and read the whole output. This bans appending | tail, | head, | less, | grep, | wc, and any 2>&1 | … filter to these commands. They are deliberately tuned to print only meaningful lines, so there is nothing to trim.
+
 Use `qb` tool (auto-runs in Docker):
 
 ```bash
@@ -32,8 +34,9 @@ venv && pytest tests/swap/ --device flex
 venv && pytest tests/swap/ --device flex --golden_run  # Regenerate snapshots, use conservatively
 
 # libsol unit tests
-qb_run_in_docker make -C libsol
-qb_run_in_docker COVERAGE=1 make -C libsol
+qb_run_in_docker make -C libsol QUIET=1
+qb_run_in_docker make -C libsol QUIET=1 clean
+qb_run_in_docker COVERAGE=1 make -C libsol QUIET=1
 
 # Memory leak tests (valground)
 # Build with memory_profiling flag, run pytest with -s to capture allocator logs, pipe to valground.py
