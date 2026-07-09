@@ -41,12 +41,12 @@ static const nbgl_contentInfoList_t infoList = {
 };
 
 enum {
-    BLIND_SIGNING_IDX = 0,
-    PUBLIC_KEY_LENGTH_IDX,
-    DISPLAY_MODE_IDX,
 #ifdef HAVE_TRANSACTION_CHECKS
     TRANSACTION_CHECKS_IDX,
 #endif
+    BLIND_SIGNING_IDX,
+    PUBLIC_KEY_LENGTH_IDX,
+    DISPLAY_MODE_IDX,
     NB_SETTINGS_SWITCHES,
 };
 static nbgl_layoutSwitch_t G_switches[NB_SETTINGS_SWITCHES];

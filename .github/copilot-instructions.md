@@ -7,10 +7,9 @@ Never truncate, filter, or paginate the output of qb, qb_run_in_docker, or pytes
 Use `qb` tool (auto-runs in Docker):
 
 ```bash
-qb -e -f dbg_trusted_name_test    # FLEX with test flags
-qb -a -f dbg_trusted_name_test    # STAX with test flags
-qb -xpaen -f dbg_trusted_name_test # All devices
-qb -cx                            # Clean rebuild for NANOX
+qb --flex -f dbg_trusted_name_test                                  # FLEX with test flags
+qb --stax --flex --nanox --nanosp --apex_p -f dbg_trusted_name_test # All devices with test flags
+qb -c --nanox                                                       # Clean rebuild for NANOX
 ```
 
 **NANOS is DEPRECATED**

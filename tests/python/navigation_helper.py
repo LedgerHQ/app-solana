@@ -122,13 +122,20 @@ class NavigationHelper:
         return seq
 
     def enable_blind_signing(self, suffix: str = ""):
+        # Blind signing is the 2nd switch on the first settings page, right
+        # after Transaction Check (which is highlighted first, like the ETH app).
+        # Transaction Check has a multi-line subtext, so its row is tall and
+        # pushes Blind signing well below a normal slot-2 position.
+        # On Nano there is no Transaction Check, so Blind signing stays first.
         if self._backend.firmware.is_nano:
             nav = self._enable_nano_option_n(1)
         else:
             if self._backend.firmware is Firmware.APEX_P:
-                coordinates = (263,95)
+                coordinates = (263,235)
+            elif self._backend.firmware is Firmware.STAX:
+                coordinates = (348,335)
             else:
-                coordinates = (348,132)
+                coordinates = (348,350)
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
                    NavIns(NavInsID.TOUCH, coordinates),
                    NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
@@ -138,14 +145,22 @@ class NavigationHelper:
                                              screen_change_before_first_instruction=False)
 
     def enable_short_public_key(self, suffix: str = ""):
+        # Transaction Check and Blind signing are highlighted on the first page.
+        # Stax fits 3 switches per page, so Public key length is still on page 1
+        # (slot 3); Flex/Apex fit 2 per page, so it is on page 2 (slot 1).
         if self._backend.firmware.is_nano:
             nav = self._enable_nano_option_n(2)
+        elif self._backend.firmware is Firmware.STAX:
+            nav = [NavInsID.USE_CASE_HOME_SETTINGS,
+                   NavIns(NavInsID.TOUCH, (348,480)),
+                   NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
         else:
             if self._backend.firmware is Firmware.APEX_P:
-                coordinates = (263,193)
+                coordinates = (263,95)
             else:
-                coordinates = (348,251)
+                coordinates = (348,132)
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
+                   NavInsID.USE_CASE_SETTINGS_NEXT,
                    NavIns(NavInsID.TOUCH, coordinates),
                    NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
         self._navigator.navigate_and_compare(self._root_pytest_dir,
@@ -154,17 +169,20 @@ class NavigationHelper:
                                              screen_change_before_first_instruction=False)
 
     def enable_expert_mode(self, suffix: str = ""):
+        # Display mode is on the 2nd settings page (after Transaction Check,
+        # Blind signing, and — on Stax only — Public key length).
         if self._backend.firmware.is_nano:
             nav = self._enable_nano_option_n(3)
         elif self._backend.firmware is Firmware.STAX:
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
-                   NavIns(NavInsID.TOUCH, (348,382)),
+                   NavInsID.USE_CASE_SETTINGS_NEXT,
+                   NavIns(NavInsID.TOUCH, (348,132)),
                    NavInsID.USE_CASE_SETTINGS_MULTI_PAGE_EXIT]
         else:
             if self._backend.firmware is Firmware.APEX_P:
-                coordinates = (262,98)
+                coordinates = (263,193)
             else:
-                coordinates = (250,150)
+                coordinates = (348,251)
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
                    NavInsID.USE_CASE_SETTINGS_NEXT,
                    NavIns(NavInsID.TOUCH, coordinates),
@@ -175,15 +193,16 @@ class NavigationHelper:
                                              screen_change_before_first_instruction=False)
 
     def enable_transaction_check(self, has_opt_in_modal: bool = True, suffix: str = ""):
+        # Transaction Check is the 1st switch on the first settings page,
+        # before Blind signing (highlighted on page 1, like the ETH app).
         if self._backend.firmware.is_nano:
             raise NotImplementedError("Transaction Check setting is not available on Nano devices")
         else:
             if self._backend.firmware is Firmware.APEX_P:
-                coordinates = (263,193)
+                coordinates = (263,95)
             else:
-                coordinates = (348,251)
+                coordinates = (348,132)
             nav = [NavInsID.USE_CASE_HOME_SETTINGS,
-                   NavInsID.USE_CASE_SETTINGS_NEXT,
                    NavIns(NavInsID.TOUCH, coordinates)]
 
             if has_opt_in_modal:
