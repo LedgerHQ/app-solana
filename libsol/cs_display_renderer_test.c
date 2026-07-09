@@ -1110,7 +1110,7 @@ static void test_render_unit_suffix(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "12.5%") == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "12.5 %") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1137,7 +1137,7 @@ static void test_render_unit_prefix(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "$42") == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "$ 42") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);

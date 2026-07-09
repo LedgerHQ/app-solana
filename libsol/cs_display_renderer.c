@@ -716,9 +716,9 @@ static int format_unit(const idl_resolved_leaf_t *leaf,
         symbol = unit->symbol;
     }
     if (unit->prefix) {
-        written = snprintf(value_out, value_out_size, "%s%s", symbol, number);
+        written = snprintf(value_out, value_out_size, "%s %s", symbol, number);
     } else {
-        written = snprintf(value_out, value_out_size, "%s%s", number, symbol);
+        written = snprintf(value_out, value_out_size, "%s %s", number, symbol);
     }
     if (written < 0 || (size_t) written >= value_out_size) {
         PRINTF("format_unit: output does not fit\n");
