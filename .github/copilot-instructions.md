@@ -27,12 +27,12 @@ Run only one pytest per command line, do not chain them with `&&`
 
 ```bash
 # Python UI tests (Speculos)
-venv_ai && pytest tests/python/ --device flex
-venv_ai && pytest tests/python/ --device stax --golden_run  # Regenerate snapshots, use conservatively
+venv && pytest tests/python/ --device flex
+venv && pytest tests/python/ --device stax --golden_run  # Regenerate snapshots, use conservatively
 
 # Swap tests (Exchange + Ethereum apps)
-venv_ai && pytest tests/swap/ --device flex
-venv_ai && pytest tests/swap/ --device flex --golden_run  # Regenerate snapshots, use conservatively
+venv && pytest tests/swap/ --device flex
+venv && pytest tests/swap/ --device flex --golden_run  # Regenerate snapshots, use conservatively
 
 # libsol unit tests
 qb_run_in_docker make -C libsol QUIET=1
@@ -43,7 +43,7 @@ qb_run_in_docker COVERAGE=1 make -C libsol QUIET=1
 # Build with memory_profiling flag, run pytest with -s to capture allocator logs, pipe to valground.py
 # Clean if previous compilation was with a different flag, e.g. from dbg_trusted_name_test to memory_profiling
 qb -ce -f memory_profiling
-venv_ai && pytest tests/python/ --device flex -s 2>&1 | tools/valground.py -q
+venv && pytest tests/python/ --device flex -s 2>&1 | tools/valground.py -q
 ```
 
 ### Test pitfals
@@ -169,3 +169,7 @@ This includes but is not limited to:
 - ledger-secure-sdk
 - poc-solana-clear-signing
 - ragger
+
+## Audit
+
+The user can request an audit : it means something in your configuration will have to be modified as your behavior was not satisfying. When it happens, permanently stop focusing on the code for this session and only focus on project rules (AI instructions, settings, etc). Making promises is empty since the chat will be restarted and local context lost ; only configuration files remain. In this mode, analyze your biases, suggest settings patch, etc.

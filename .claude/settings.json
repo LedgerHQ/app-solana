@@ -6,13 +6,15 @@
     "allow": [
       "Skill(update-config)",
       "Skill(update-config:*)",
-      "Bash(qb *)",
-      "Bash(qb_run_in_docker *)",
+      "Bash(qb:*)",
+      "Bash(qb_run_in_docker:*)",
       "Bash(venv)",
       "Bash(git status)",
       "Bash(git log)",
-      "Bash(echo)",
-      "Bash(pytest *)"
+      "Bash(echo:*)",
+      "Bash(pytest:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)"
     ],
     "deny": [
       "Edit(.github/copilot-instructions.md)",
