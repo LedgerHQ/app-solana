@@ -160,7 +160,7 @@ int handle_provide_token_account_state(void) {
     CX_ASSERT(cx_hash_final((cx_hash_t *) &tlv_extracted.hash_ctx, tlv_hash));
     buffer_t hash = {.ptr = tlv_hash, .size = sizeof(tlv_hash)};
 
-    uint8_t expected_key_usage = CERTIFICATE_PUBLIC_KEY_USAGE_CALLDATA;
+    uint8_t expected_key_usage = CERTIFICATE_PUBLIC_KEY_USAGE_TRUSTED_NAME;
     cx_curve_t curve = CX_CURVE_SECP256K1;
     check_signature_with_pki_status_t err =
         check_signature_with_pki(hash, &expected_key_usage, &curve, tlv_extracted.signature);

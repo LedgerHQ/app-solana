@@ -127,6 +127,13 @@ typedef struct cs_format_token_amount_s {
     uint8_t decimals;
 } cs_format_token_amount_t;
 
+// PARAM_TRUSTED_NAME: the TYPES allow-list as a bitmask (bit i = TrustedNameType
+// i permitted; all values are <= 6). Zero means no constraint. No source mask:
+// only CRYPTO_ASSET_LIST names are ever cached.
+typedef struct cs_format_trusted_name_s {
+    uint8_t allowed_types_mask;
+} cs_format_trusted_name_t;
+
 // Fixed capacities. Inputs exceeding these fail closed rather than truncate.
 #define CS_MAX_INSTRUCTION_TEMPLATES 4
 #define CS_MAX_IDL_TYPE_POOL_SIZE    512
@@ -164,6 +171,7 @@ typedef struct cs_display_field_s {
                 cs_format_datetime_t datetime;
                 cs_format_unit_t unit;
                 cs_format_string_t string;
+                cs_format_trusted_name_t trusted_name;
             } format;
         } argument;
         struct {
@@ -255,6 +263,11 @@ int cs_instruction_template_set_format_unit(const cs_format_unit_t *format);
 // Must be called immediately after adding a field with param_type == STRING.
 // Returns 0 on success, -1 when no matching field is open.
 int cs_instruction_template_set_format_string(const cs_format_string_t *format);
+
+// Set TRUSTED_NAME format parameters (type/source allow-list masks) on the last
+// added display field. Must be called immediately after adding a field with
+// param_type == TRUSTED_NAME. Returns 0 on success, -1 when no matching field.
+int cs_instruction_template_set_format_trusted_name(const cs_format_trusted_name_t *format);
 
 // Set mint association indices on the in-flight builder. Both indices refer to
 // the instruction's accounts array: `account_idx` is the token account,

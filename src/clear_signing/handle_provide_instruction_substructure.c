@@ -297,6 +297,46 @@ static bool param_string_handle_ignore(const tlv_data_t *data, param_string_out_
 
 DEFINE_TLV_PARSER(PARAM_STRING_TAGS, NULL, parse_param_string)
 
+// ---- PARAM_TRUSTED_NAME parser ----------------------------------------------
+// Used for ARGUMENT_PATH with CS_PARAM_TYPE_TRUSTED_NAME.
+
+typedef struct param_trusted_name_out_s {
+    TLV_reception_t received_tags;
+    buffer_t value;
+    buffer_t types;
+} param_trusted_name_out_t;
+
+static bool param_trusted_name_handle_value(const tlv_data_t *data,
+                                            param_trusted_name_out_t *out) {
+    out->value = data->value;
+    return true;
+}
+
+static bool param_trusted_name_handle_types(const tlv_data_t *data,
+                                            param_trusted_name_out_t *out) {
+    out->types = data->value;
+    return true;
+}
+
+static bool param_trusted_name_handle_ignore(const tlv_data_t *data,
+                                             param_trusted_name_out_t *out) {
+    UNUSED(data);
+    UNUSED(out);
+    return true;
+}
+
+// SOURCES is handled (the parser rejects unlisted tags) but ignored: only
+// CRYPTO_ASSET_LIST names are ever cached.
+// clang-format off
+#define PARAM_TRUSTED_NAME_TAGS(X) \
+    X(0x00, PARAM_TRUSTED_NAME_TAG_VERSION, param_trusted_name_handle_ignore, ENFORCE_UNIQUE_TAG) \
+    X(0x01, PARAM_TRUSTED_NAME_TAG_VALUE,   param_trusted_name_handle_value,  ENFORCE_UNIQUE_TAG) \
+    X(0x02, PARAM_TRUSTED_NAME_TAG_TYPES,   param_trusted_name_handle_types,  ENFORCE_UNIQUE_TAG) \
+    X(0x03, PARAM_TRUSTED_NAME_TAG_SOURCES, param_trusted_name_handle_ignore, ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(PARAM_TRUSTED_NAME_TAGS, NULL, parse_param_trusted_name)
+
 // DISPLAY_FIELD parser. PARAM (tag 0x04) and SUBSTRUCT_TYPE (tag 0x01) are
 // captured; the others are accepted and ignored.
 typedef struct display_field_out_s {
@@ -927,6 +967,69 @@ static int register_param_string(const display_field_out_t *display_field,
     return 0;
 }
 
+// Fold an allow-list byte array into a bitmask (bit i = value i permitted).
+// An empty array yields 0 (no constraint). Returns -1 on a value >= 8, which a
+// uint8 mask cannot represent.
+static int trusted_name_build_mask(const buffer_t *list, uint8_t *mask_out) {
+    uint8_t mask = 0;
+    for (uint16_t i = 0; i < list->size; i++) {
+        uint8_t value = list->ptr[i];
+        if (value >= 8) {
+            PRINTF("substructure: PARAM_TRUSTED_NAME value %d out of representable range\n", value);
+            return -1;
+        }
+        mask |= (uint8_t) (1 << value);
+    }
+    *mask_out = mask;
+    return 0;
+}
+
+// Register a PARAM_TRUSTED_NAME display field (ARGUMENT_PATH only).
+static int register_param_trusted_name(const display_field_out_t *display_field,
+                                       const char *field_name) {
+    param_trusted_name_out_t param = {0};
+    if (!parse_param_trusted_name(&display_field->param, &param, &param.received_tags)) {
+        PRINTF("substructure: PARAM_TRUSTED_NAME parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_TRUSTED_NAME_TAG_VALUE)) {
+        PRINTF("substructure: PARAM_TRUSTED_NAME missing VALUE\n");
+        return -1;
+    }
+
+    cs_value_t value;
+    if (extract_value(&param.value, &value) != 0) {
+        return -1;
+    }
+    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("substructure: PARAM_TRUSTED_NAME requires ARGUMENT_PATH source, got %d\n",
+               value.source);
+        return -1;
+    }
+
+    cs_format_trusted_name_t format = {0};
+    if (trusted_name_build_mask(&param.types, &format.allowed_types_mask) != 0) {
+        return -1;
+    }
+
+    if (cs_instruction_template_add_display_path(value.payload,
+                                                 value.payload_size,
+                                                 CS_PARAM_TYPE_TRUSTED_NAME,
+                                                 field_name) != 0) {
+        return -1;
+    }
+    if (cs_instruction_template_set_format_trusted_name(&format) != 0) {
+        PRINTF("substructure: set_format_trusted_name failed\n");
+        return -1;
+    }
+    PRINTF("substructure: registered TRUSTED_NAME path %.*H types=0x%02x name=%s\n",
+           value.payload_size,
+           value.payload,
+           format.allowed_types_mask,
+           field_name ? field_name : "(none)");
+    return 0;
+}
+
 // Register a PARAM_ACCOUNT or PARAM_DURATION display field. Both reuse the
 // PARAM_RAW envelope (VERSION + VALUE) and carry no extra format parameters;
 // only the resulting param_type differs. ARGUMENT_PATH source only.
@@ -1012,6 +1115,9 @@ static int register_display_field(uint8_t apdu_type, const uint8_t *tlv, size_t 
 
         case CS_PARAM_TYPE_STRING:
             return register_param_string(&display_field, field_name);
+
+        case CS_PARAM_TYPE_TRUSTED_NAME:
+            return register_param_trusted_name(&display_field, field_name);
 
         default:
             PRINTF("substructure: unsupported param_type %d\n", display_field.param_type);

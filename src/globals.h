@@ -76,6 +76,7 @@ typedef enum InstructionCode {
     InsProvideEnumVariant = 0x26,
     InsProvideTokenAccountState = 0x27,
     InsProvideAltResolution = 0x28,
+    InsProvideTrustedName = 0x29,
 } InstructionCode;
 
 // Generic clear signing

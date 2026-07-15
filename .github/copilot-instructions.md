@@ -124,7 +124,11 @@ Coding patterns described here are more important than uniformity cross applicat
 - bool return is used to indicate the result of a CHECK, NOT a success or failure.
 - int return is used to report a success or failure of a function by using -1 or 0.
 - Global or module variables are prefixed by `G_*`.
-- Comments are concise and straightforward
+- Comments are concise: 1 or 2 lines, and straight to the point. One line per function or `if` branch is almost always enough.
+- Comment only the non-obvious "why"; never restate what the code does. Prefer no comment over a redundant or explanatory one.
+- Do NOT narrate design decisions, spec/SDK references, or alternatives in code comments. No multi-line block above every struct/function/#define; match the LEANEST surrounding style, not the most verbose.
+- Reserve comment blocks for very tricky code that is not readable otherwise (memory juggling, API hacks, advanced cryptography, math optimizations, etc)
+
 - Functions and variables should have clear explicit names without abbreviation. BAD: `idl_leaf_cb_t cb`, GOOD: `idl_leaf_cb_t leaf_callback`.
 - Functions called in a wrong context shall return an error, not ignore or skip
 - Never write functions in header files.
@@ -173,3 +177,8 @@ This includes but is not limited to:
 ## Audit
 
 The user can request an audit : it means something in your configuration will have to be modified as your behavior was not satisfying. When it happens, permanently stop focusing on the code for this session and only focus on project rules (AI instructions, settings, etc). Making promises is empty since the chat will be restarted and local context lost ; only configuration files remain. In this mode, analyze your biases, suggest settings patch, etc.
+
+## Communication guidelines
+
+- NEVER end a response with a continuance or permission-seeking question ("Want me to...?", "Should I...?", "Let me know if..."). This is FORBIDDEN.
+- NEVER make promises or commitments about your own future behavior ("I'll stop...", "I will...", "Going forward..."). Context is ephemeral, so such promises are empty and misleading unless backed by an instruction change.

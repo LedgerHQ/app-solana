@@ -32,8 +32,16 @@ PARAM_TYPE_DATETIME = 0x03
 PARAM_TYPE_DURATION = 0x04
 PARAM_TYPE_UNIT = 0x05
 PARAM_TYPE_ENUM = 0x06
+PARAM_TYPE_TRUSTED_NAME = 0x07
 PARAM_TYPE_ACCOUNT = 0x08
 PARAM_TYPE_STRING = 0x09
+PARAM_TRUSTED_NAME_TAG_TYPES = 0x02    # PARAM_TRUSTED_NAME allowed TrustedNameType values
+PARAM_TRUSTED_NAME_TAG_SOURCES = 0x03  # PARAM_TRUSTED_NAME allowed TrustedNameSource values
+# TrustedNameType / TrustedNameSource values (see tlv_use_case_trusted_name.h).
+TRUSTED_NAME_TYPE_SMART_CONTRACT = 0x02
+TRUSTED_NAME_TYPE_TOKEN = 0x04
+TRUSTED_NAME_SOURCE_CRYPTO_ASSET_LIST = 0x01
+TRUSTED_NAME_SOURCE_DYNAMIC_RESOLVER = 0x06
 PARAM_TAG_VERSION = 0x00
 PARAM_TAG_VALUE = 0x01
 PARAM_TAG_DECIMALS = 0x02  # PARAM_AMOUNT tag for decimals
@@ -284,6 +292,26 @@ def _build_account_argument_display_field(argument_path: bytes, name: str) -> by
             + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
             + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_ACCOUNT)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param))
+
+
+def _build_trusted_name_display_field(argument_path: bytes, name: str, *,
+                                      types: bytes = None, sources: bytes = None) -> bytes:
+    """A DISPLAY_FIELD with PARAM_TRUSTED_NAME: a 32-byte argument leaf resolved
+    to a human-readable name via the trusted-name cache. TYPES / SOURCES are
+    optional allow-lists of the permitted TrustedNameType / TrustedNameSource."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, argument_path))
+    param = (format_tlv(PARAM_TAG_VERSION, 1)
+             + format_tlv(PARAM_TAG_VALUE, value_tlv))
+    if types is not None:
+        param += format_tlv(PARAM_TRUSTED_NAME_TAG_TYPES, types)
+    if sources is not None:
+        param += format_tlv(PARAM_TRUSTED_NAME_TAG_SOURCES, sources)
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_TRUSTED_NAME)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM, param))
 
 
@@ -1303,6 +1331,215 @@ def test_bridge_account_param_type(backend, sol, scenario_navigator, root_pytest
         program_name="Bridge",
         substructures_hash=substructures_hash,
         idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
+# ── TRUSTED_NAME (INS 0x29) ──────────────────────────────────────────────────
+
+# Synthetic program whose single instruction argument struct is
+# { BYTES_FIXED(1) discriminator, PUBKEY_32 address }.
+TN_PROGRAM_ID = b'\x29' * 32
+TN_DISCRIMINATOR = b'\x29'
+#   [0] STRUCT(0x20) field_count=2 refs=[1,2]
+#   [1] BYTES_FIXED(0x12) fixed_size=1  (discriminator)
+#   [2] PUBKEY_32(0x11)
+TN_POOL = bytes([3, 0x20, 2, 1, 2, 0x12, 0x00, 0x01, 0x11])
+TN_PATH_PUBKEY = b'\x01\x01'  # root STRUCT child 1 → PUBKEY_32
+TN_ADDRESS = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+
+
+def _tn_instruction_data(address: bytes) -> bytes:
+    return TN_DISCRIMINATOR + address
+
+
+def test_trusted_name_without_session_rejected(backend):
+    """Providing a trusted name outside an open streaming session must fail closed."""
+    sol = SolanaClient(backend)
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_cs_trusted_name(address=TN_ADDRESS, name="CODE")
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
+
+
+def test_trusted_name_valid_ingest(backend):
+    """A well-formed TOKEN / CRYPTO_ASSET_LIST descriptor is accepted (no challenge)."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    sol.provide_cs_trusted_name(address=TN_ADDRESS, name="CODE",
+                                name_type=TRUSTED_NAME_TYPE_TOKEN,
+                                source=TRUSTED_NAME_SOURCE_CRYPTO_ASSET_LIST)
+
+
+def test_trusted_name_smart_contract_ingest(backend):
+    """SMART_CONTRACT is also an accepted type."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    sol.provide_cs_trusted_name(address=TN_ADDRESS, name="Jupiter",
+                                name_type=TRUSTED_NAME_TYPE_SMART_CONTRACT,
+                                source=TRUSTED_NAME_SOURCE_CRYPTO_ASSET_LIST)
+
+
+def test_trusted_name_unsupported_type_rejected(backend):
+    """A type outside {SMART_CONTRACT, TOKEN} is refused."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_cs_trusted_name(address=TN_ADDRESS, name="X",
+                                    name_type=0x01,  # EOA
+                                    source=TRUSTED_NAME_SOURCE_CRYPTO_ASSET_LIST)
+    assert exc_info.value.status == ErrorType.INVALID_TRUSTED_NAME
+
+
+def test_trusted_name_unsupported_source_rejected(backend):
+    """A source other than CRYPTO_ASSET_LIST is refused."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_cs_trusted_name(address=TN_ADDRESS, name="X",
+                                    name_type=TRUSTED_NAME_TYPE_TOKEN,
+                                    source=TRUSTED_NAME_SOURCE_DYNAMIC_RESOLVER)
+    assert exc_info.value.status == ErrorType.INVALID_TRUSTED_NAME
+
+
+def test_trusted_name_bad_address_size_rejected(backend):
+    """An address that is not 32 bytes is refused."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_cs_trusted_name(address=b'\x11' * 20, name="X",
+                                    name_type=TRUSTED_NAME_TYPE_TOKEN,
+                                    source=TRUSTED_NAME_SOURCE_CRYPTO_ASSET_LIST)
+    assert exc_info.value.status == ErrorType.INVALID_TRUSTED_NAME
+
+
+def test_trusted_name_wrong_chain_id_rejected(backend):
+    """A chain id other than Solana mainnet (900) is refused."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_cs_trusted_name(address=TN_ADDRESS, name="CODE",
+                                    name_type=TRUSTED_NAME_TYPE_TOKEN,
+                                    source=TRUSTED_NAME_SOURCE_CRYPTO_ASSET_LIST,
+                                    chain_id=101)
+    assert exc_info.value.status == ErrorType.INVALID_TRUSTED_NAME
+
+
+def test_trusted_name_non_printable_rejected(backend):
+    """A name containing a non-printable byte is refused."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_cs_trusted_name(address=TN_ADDRESS, name=b"CO\nDE",
+                                    name_type=TRUSTED_NAME_TYPE_TOKEN,
+                                    source=TRUSTED_NAME_SOURCE_CRYPTO_ASSET_LIST)
+    assert exc_info.value.status == ErrorType.INVALID_TRUSTED_NAME
+
+
+def test_trusted_name_resolved(backend, sol, scenario_navigator, root_pytest_dir):
+    """A PARAM_TRUSTED_NAME field whose address matches a provided descriptor
+    renders the human-readable name."""
+    message = _craft_single_instruction_message(sol, TN_PROGRAM_ID,
+                                                _tn_instruction_data(TN_ADDRESS))
+    _begin_session(sol, message)
+
+    sol.provide_cs_trusted_name(address=TN_ADDRESS, name="CODE",
+                                name_type=TRUSTED_NAME_TYPE_TOKEN,
+                                source=TRUSTED_NAME_SOURCE_CRYPTO_ASSET_LIST)
+
+    display_field = _build_trusted_name_display_field(
+        TN_PATH_PUBKEY, "Token",
+        types=bytes([TRUSTED_NAME_TYPE_TOKEN]),
+        sources=bytes([TRUSTED_NAME_SOURCE_CRYPTO_ASSET_LIST]))
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=TN_PROGRAM_ID,
+        discriminator=TN_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=TN_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_trusted_name_cache_miss_falls_back_to_address(backend, sol, scenario_navigator,
+                                                       root_pytest_dir):
+    """With no descriptor for the address, a PARAM_TRUSTED_NAME field falls back
+    to the short base58 address (the verified on-chain value)."""
+    message = _craft_single_instruction_message(sol, TN_PROGRAM_ID,
+                                                _tn_instruction_data(TN_ADDRESS))
+    _begin_session(sol, message)
+
+    display_field = _build_trusted_name_display_field(
+        TN_PATH_PUBKEY, "Token",
+        types=bytes([TRUSTED_NAME_TYPE_TOKEN]),
+        sources=bytes([TRUSTED_NAME_SOURCE_CRYPTO_ASSET_LIST]))
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=TN_PROGRAM_ID,
+        discriminator=TN_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=TN_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_trusted_name_labels_account_field(backend, sol, scenario_navigator, root_pytest_dir):
+    """A plain PARAM_ACCOUNT field (e.g. a mint) is labelled with its trusted
+    name when the CAL provided one — the main current use of trusted names."""
+    message = _craft_single_instruction_message(sol, TN_PROGRAM_ID,
+                                                _tn_instruction_data(TN_ADDRESS))
+    _begin_session(sol, message)
+
+    sol.provide_cs_trusted_name(address=TN_ADDRESS, name="USDC",
+                                name_type=TRUSTED_NAME_TYPE_TOKEN,
+                                source=TRUSTED_NAME_SOURCE_CRYPTO_ASSET_LIST)
+
+    # A raw account field, not a PARAM_TRUSTED_NAME field: resolution still applies.
+    display_field = _build_account_argument_display_field(TN_PATH_PUBKEY, "Mint")
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=TN_PROGRAM_ID,
+        discriminator=TN_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=TN_POOL,
         idl_root_type=0,
     )
 

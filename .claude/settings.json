@@ -5,7 +5,7 @@
   "permissions": {
     "allow": [
       "Skill(update-config)",
-      "Skill(update-config:*)",
+      "Skill(update-config *)",
       "Bash(qb:*)",
       "Bash(qb_run_in_docker:*)",
       "Bash(venv)",
