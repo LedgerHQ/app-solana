@@ -55,6 +55,7 @@ static int parse_apdu_header(const uint8_t *apdu_message,
         case InsProvideInstructionInfo:
         case InsProvideTokenAccountState:
         case InsProvideAltResolution:
+        case InsProvideTrustedName:
             PRINTF("Handling modern instruction %d\n", header->instruction);
             header->deprecated_host = false;
             data_offset = OFFSET_CDATA;
@@ -116,7 +117,8 @@ static bool split_allowed_for_instruction(uint8_t instruction) {
             instruction == InsProvideEnumVariant ||
             instruction == InsProvideInstructionInfo ||
             instruction == InsProvideTokenAccountState ||
-            instruction == InsProvideAltResolution
+            instruction == InsProvideAltResolution ||
+            instruction == InsProvideTrustedName
 #ifdef HAVE_TRANSACTION_CHECKS
             || instruction == InsProvideTransactionCheck
 #endif
@@ -134,7 +136,8 @@ static bool instruction_with_derivation_path_in_first_apdu(uint8_t instruction) 
             instruction != InsProvideEnumVariant &&
             instruction != InsProvideInstructionInfo &&
             instruction != InsProvideTokenAccountState &&
-            instruction != InsProvideAltResolution
+            instruction != InsProvideAltResolution &&
+            instruction != InsProvideTrustedName
 #ifdef HAVE_TRANSACTION_CHECKS
             && instruction != InsProvideTransactionCheck
 #endif

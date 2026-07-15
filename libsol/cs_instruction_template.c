@@ -266,6 +266,27 @@ int cs_instruction_template_set_format_string(const cs_format_string_t *format) 
     return 0;
 }
 
+int cs_instruction_template_set_format_trusted_name(const cs_format_trusted_name_t *format) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL || builder->display_field_count == 0) {
+        PRINTF("cs_instruction_template_set_format_trusted_name: no field to configure\n");
+        return -1;
+    }
+    cs_display_field_t *field = &builder->display_fields[builder->display_field_count - 1];
+    if (field->source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        PRINTF("cs_instruction_template_set_format_trusted_name: source %d != ARGUMENT_PATH\n",
+               field->source);
+        return -1;
+    }
+    if (field->argument.param_type != CS_PARAM_TYPE_TRUSTED_NAME) {
+        PRINTF("cs_instruction_template_set_format_trusted_name: param_type %d != TRUSTED_NAME\n",
+               field->argument.param_type);
+        return -1;
+    }
+    memcpy(&field->argument.format.trusted_name, format, sizeof(*format));
+    return 0;
+}
+
 // Record which instruction accounts carry the token account and the mint,
 // so the finalize step can resolve the mint pubkey for TOKEN_AMOUNT display.
 int cs_instruction_template_set_mint_assoc(uint8_t account_idx, uint8_t mint_idx) {

@@ -9,6 +9,11 @@
 #include "util.h"
 #include "os_print.h"
 #include "dynamic_token_info.h"
+#include "cs_trusted_name_cache.h"
+
+// The value buffer must hold a maximum-length trusted name plus its NUL.
+_Static_assert(CS_DISPLAY_VALUE_SIZE >= CS_TRUSTED_NAME_MAX_LEN + 1,
+               "CS_DISPLAY_VALUE_SIZE too small for a maximum-length trusted name");
 
 typedef struct cs_display_renderer_s {
     cs_display_element_t elements[CS_MAX_DISPLAY_ELEMENTS];
@@ -246,6 +251,31 @@ static int format_token_amount(const idl_resolved_leaf_t *leaf,
     return 0;
 }
 
+// Write the cached name for a 32-byte address leaf when its type satisfies the
+// allow-list mask (zero = no constraint). Returns false on a miss or a
+// disallowed type, leaving the caller to render the raw address.
+static bool resolve_trusted_name(const idl_resolved_leaf_t *leaf,
+                                 uint8_t allowed_types_mask,
+                                 char *value_out,
+                                 size_t value_out_size) {
+    if (leaf->value_size < 32) {
+        return false;
+    }
+    const cs_trusted_name_t *entry = cs_trusted_name_cache_find(leaf->value);
+    if (entry == NULL) {
+        return false;
+    }
+    bool type_allowed = (allowed_types_mask == 0) ||
+                        (entry->type < 8 &&
+                         (allowed_types_mask & (uint8_t) (1 << entry->type)) != 0);
+    if (type_allowed) {
+        strlcpy(value_out, entry->name, value_out_size);
+        PRINTF("resolve_trusted_name: resolved name=%s\n", value_out);
+        return true;
+    }
+    return false;
+}
+
 // ACCOUNT_PATH: full base58 address.
 static int format_account(const idl_resolved_leaf_t *leaf, char *value_out, size_t value_out_size) {
     if (leaf->value_size < 32) {
@@ -289,6 +319,48 @@ static int format_account_short(const idl_resolved_leaf_t *leaf,
     }
     PRINTF("format_account_short: rendered value=%s\n", value_out);
     return 0;
+}
+
+// PARAM_TRUSTED_NAME: show the cached name for the address leaf, or its short
+// base58 form when no permitted name exists.
+static int format_trusted_name(const idl_resolved_leaf_t *leaf,
+                               const cs_format_trusted_name_t *format,
+                               char *value_out,
+                               size_t value_out_size) {
+    if (leaf->value_size < 32) {
+        PRINTF("format_trusted_name: value too short (%u < 32)\n", (unsigned) leaf->value_size);
+        return -1;
+    }
+
+    if (resolve_trusted_name(leaf, format->allowed_types_mask, value_out, value_out_size)) {
+        return 0;
+    } else {
+        PRINTF("format_trusted_name: no permitted name, rendering short address\n");
+        return format_account_short(leaf, value_out, value_out_size);
+    }
+}
+
+// ACCOUNT_PATH: cached trusted name, else the full base58 address. Labels a
+// plain account such as a mint; no allow-list applies.
+static int format_account_named(const idl_resolved_leaf_t *leaf,
+                                char *value_out,
+                                size_t value_out_size) {
+    if (resolve_trusted_name(leaf, 0, value_out, value_out_size)) {
+        return 0;
+    } else {
+        return format_account(leaf, value_out, value_out_size);
+    }
+}
+
+// PARAM_ACCOUNT: cached trusted name, else the short base58 address.
+static int format_account_short_named(const idl_resolved_leaf_t *leaf,
+                                      char *value_out,
+                                      size_t value_out_size) {
+    if (resolve_trusted_name(leaf, 0, value_out, value_out_size)) {
+        return 0;
+    } else {
+        return format_account_short(leaf, value_out, value_out_size);
+    }
 }
 
 // PARAM_DURATION: a numeric value of seconds rendered as "H:MM:SS".
@@ -667,7 +739,13 @@ static int format_argument_field(const cs_display_field_t *field,
                                value_out_size);
 
         case CS_PARAM_TYPE_ACCOUNT:
-            return format_account_short(leaf, value_out, value_out_size);
+            return format_account_short_named(leaf, value_out, value_out_size);
+
+        case CS_PARAM_TYPE_TRUSTED_NAME:
+            return format_trusted_name(leaf,
+                                       &field->argument.format.trusted_name,
+                                       value_out,
+                                       value_out_size);
 
         case CS_PARAM_TYPE_STRING:
             return format_string(leaf,
@@ -682,10 +760,8 @@ static int format_argument_field(const cs_display_field_t *field,
     }
 }
 
-// Dispatch formatting based on the display field's source.
-// ARGUMENT_PATH fields use param_type for semantic formatting.
-// ACCOUNT_PATH fields always render as full base58 addresses.
-// CONSTANT fields always use format_leaf with their IDL kind.
+// Dispatch on the field's source: ARGUMENT_PATH uses param_type, ACCOUNT_PATH
+// renders an address (or its trusted name), CONSTANT uses format_leaf.
 static int format_field(const cs_display_field_t *field,
                         const idl_resolved_leaf_t *leaf,
                         const uint8_t *mint_pubkey,
@@ -701,7 +777,7 @@ static int format_field(const cs_display_field_t *field,
             return format_argument_field(field, leaf, mint_pubkey, value_out, value_out_size);
 
         case CS_VALUE_SOURCE_ACCOUNT_PATH:
-            return format_account(leaf, value_out, value_out_size);
+            return format_account_named(leaf, value_out, value_out_size);
 
         case CS_VALUE_SOURCE_CONSTANT:
             return format_leaf(leaf, value_out, value_out_size);

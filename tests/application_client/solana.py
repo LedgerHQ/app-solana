@@ -45,6 +45,7 @@ class INS(IntEnum):
     INS_ENUM_VARIANT = 0x26
     INS_TOKEN_ACCOUNT_STATE = 0x27
     INS_ALT_RESOLUTION = 0x28
+    INS_PROVIDE_TRUSTED_NAME = 0x29
 
 
 CLA = 0xE0
@@ -105,6 +106,7 @@ class ErrorType:
     INVALID_ENUM_VARIANT = 0x6ce0
     INVALID_TOKEN_ACCOUNT_STATE = 0x6cf0
     INVALID_ALT_RESOLUTION = 0x6d10
+    INVALID_TRUSTED_NAME = 0x6d30
     INVALID_GENERIC_PREVIEW = 0x6d20
     CLEAR_SIGNING_INCOMPLETE = 0x6d21
     CLEAR_SIGNING_INVALID_STATE = 0x6d22
@@ -393,6 +395,35 @@ class SolanaClient:
         self.send_pki_certificate(TRUSTED_NAME_PARTNER)
         self._exchange_split(CLA, INS.INS_TRUSTED_INFO, P1_NON_CONFIRM, payload)
 
+    def provide_cs_trusted_name(self,
+                                address: bytes,
+                                name: str,
+                                name_type: int = 0x04,   # TOKEN
+                                source: int = 0x01,       # CRYPTO_ASSET_LIST
+                                chain_id: int = 900,      # Solana mainnet
+                                signer_key_id: int = 0):  # test key
+        """Provide a generic clear-signing TRUSTED_NAME descriptor (INS 0x29).
+
+        Unlike the legacy 0x21 flow, ADDRESS is raw 32 bytes, no challenge is
+        used, and the accepted (type, source) are TOKEN/SMART_CONTRACT and
+        CRYPTO_ASSET_LIST.
+        """
+        name_bytes = name.encode("ascii") if isinstance(name, str) else name
+        payload = format_tlv(TrustedNameTag.STRUCTURE_TYPE, STRUCTURE_TYPE.TRUSTED_NAME)
+        payload += format_tlv(TrustedNameTag.VERSION, 2)
+        payload += format_tlv(TrustedNameTag.TRUSTED_NAME_TYPE, name_type)
+        payload += format_tlv(TrustedNameTag.TRUSTED_NAME_SOURCE, source)
+        payload += format_tlv(TrustedNameTag.TRUSTED_NAME, name_bytes)
+        payload += format_tlv(TrustedNameTag.CHAIN_ID, chain_id)
+        payload += format_tlv(TrustedNameTag.ADDRESS, address)
+        payload += format_tlv(TrustedNameTag.SIGNER_KEY_ID, signer_key_id)
+        payload += format_tlv(TrustedNameTag.SIGNER_ALGO, 1)  # secp256k1
+        payload += format_tlv(TrustedNameTag.DER_SIGNATURE,
+                              TRUSTED_NAME_PARTNER.sign(payload))
+
+        self.send_pki_certificate(TRUSTED_NAME_PARTNER)
+        self._exchange_split(CLA, INS.INS_PROVIDE_TRUSTED_NAME, P1_NON_CONFIRM, payload)
+
 
     def provide_dynamic_token(self,
                               ticker: str,
@@ -477,9 +508,9 @@ class SolanaClient:
         payload += format_tlv(TokenAccountStateTag.OWNER, owner)
         payload += format_tlv(TokenAccountStateTag.PRE_BALANCE, pre_balance)
         payload += format_tlv(TokenAccountStateTag.SIGNATURE,
-                              GENERIC_CLEAR_SIGNING_PARTNER.sign(payload))
+                              TRUSTED_NAME_PARTNER.sign(payload))
 
-        self.send_pki_certificate(GENERIC_CLEAR_SIGNING_PARTNER)
+        self.send_pki_certificate(TRUSTED_NAME_PARTNER)
         self._exchange_split(CLA, INS.INS_TOKEN_ACCOUNT_STATE, P1_NON_CONFIRM, payload)
 
     def provide_alt_resolution(self,
@@ -494,9 +525,9 @@ class SolanaClient:
         payload += format_tlv(AltResolutionTag.ENTRY_INDEX, entry_index)
         payload += format_tlv(AltResolutionTag.RESOLVED_ADDRESS, resolved_address)
         payload += format_tlv(AltResolutionTag.SIGNATURE,
-                              GENERIC_CLEAR_SIGNING_PARTNER.sign(payload))
+                              TRUSTED_NAME_PARTNER.sign(payload))
 
-        self.send_pki_certificate(GENERIC_CLEAR_SIGNING_PARTNER)
+        self.send_pki_certificate(TRUSTED_NAME_PARTNER)
         self._exchange_split(CLA, INS.INS_ALT_RESOLUTION, P1_NON_CONFIRM, payload)
 
     def provide_enum_variant(self,

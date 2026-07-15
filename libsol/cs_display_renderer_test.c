@@ -9,7 +9,11 @@
 #include "idl_kinds.h"
 #include "app_mem_utils.h"
 #include "dynamic_token_info.h"
+#include "cs_trusted_name_cache.h"
 #include "sol/printer.h"
+
+#define TN_TYPE_TOKEN          0x04
+#define TN_TYPE_SMART_CONTRACT 0x02
 
 // Dummy template used by tests that don't care about operation_type/names.
 static cs_instruction_template_t G_dummy_template;
@@ -548,7 +552,7 @@ static void test_render_unsupported_param_type(void) {
     strlcpy(template.operation_type, "Test", sizeof(template.operation_type));
     strlcpy(template.display_fields[0].name, "Field", sizeof(template.display_fields[0].name));
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
-    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TRUSTED_NAME;  // not rendered yet
+    template.display_fields[0].argument.param_type = 0xFF;  // no such param type
     template.display_field_count = 1;
 
     uint8_t value = 1;
@@ -827,6 +831,212 @@ static void test_render_account_short_form(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+// A cached trusted name whose (type, source) satisfy the field allow-list is
+// rendered as the human-readable name.
+static void test_render_trusted_name_resolved(void) {
+    printf("  test_render_trusted_name_resolved\n");
+    mock_mem_reset();
+    cs_trusted_name_cache_reset();
+    cs_display_renderer_reset();
+
+    uint8_t pubkey[32];
+    memset(pubkey, 0x42, 32);
+    assert(cs_trusted_name_cache_add(pubkey, "CODE", TN_TYPE_TOKEN) == 0);
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Token", CS_PARAM_TYPE_TRUSTED_NAME);
+    template.display_fields[0].argument.format.trusted_name.allowed_types_mask =
+        (uint8_t) (1 << TN_TYPE_TOKEN);
+
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = pubkey;
+    instr.resolved[0].value_size = 32;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "CODE") == 0);
+
+    cs_display_renderer_reset();
+    cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A maximum-length trusted name (CS_TRUSTED_NAME_MAX_LEN chars) is displayed in
+// full: the display value buffer must accommodate the spec-max name without
+// truncation.
+static void test_render_trusted_name_max_length(void) {
+    printf("  test_render_trusted_name_max_length\n");
+    mock_mem_reset();
+    cs_trusted_name_cache_reset();
+    cs_display_renderer_reset();
+
+    char max_name[CS_TRUSTED_NAME_MAX_LEN + 1];
+    memset(max_name, 'A', CS_TRUSTED_NAME_MAX_LEN);
+    max_name[CS_TRUSTED_NAME_MAX_LEN] = '\0';
+
+    uint8_t pubkey[32];
+    memset(pubkey, 0x42, 32);
+    assert(cs_trusted_name_cache_add(pubkey, max_name, TN_TYPE_TOKEN) == 0);
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Token", CS_PARAM_TYPE_TRUSTED_NAME);
+
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = pubkey;
+    instr.resolved[0].value_size = 32;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    // The full name is rendered, not truncated.
+    assert(strlen(cs_display_renderer_element(1)->value) == CS_TRUSTED_NAME_MAX_LEN);
+    assert(strcmp(cs_display_renderer_element(1)->value, max_name) == 0);
+
+    cs_display_renderer_reset();
+    cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// No cached descriptor for the address: fall back to the short base58 address.
+static void test_render_trusted_name_cache_miss(void) {
+    printf("  test_render_trusted_name_cache_miss\n");
+    mock_mem_reset();
+    cs_trusted_name_cache_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Token", CS_PARAM_TYPE_TRUSTED_NAME);
+
+    uint8_t pubkey[32];
+    memset(pubkey, 0x42, 32);
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = pubkey;
+    instr.resolved[0].value_size = 32;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    const char *val = cs_display_renderer_element(1)->value;
+    // Short address form: 7 + ".." + 7.
+    assert(strlen(val) == (size_t) (SUMMARY_LENGTH + 2 + SUMMARY_LENGTH));
+    assert(val[SUMMARY_LENGTH] == '.' && val[SUMMARY_LENGTH + 1] == '.');
+
+    cs_display_renderer_reset();
+    cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A cached name whose type is outside the field's allow-list is not used; the
+// short base58 address is shown instead.
+static void test_render_trusted_name_type_not_allowed(void) {
+    printf("  test_render_trusted_name_type_not_allowed\n");
+    mock_mem_reset();
+    cs_trusted_name_cache_reset();
+    cs_display_renderer_reset();
+
+    uint8_t pubkey[32];
+    memset(pubkey, 0x42, 32);
+    // Cached as SMART_CONTRACT, but the field only permits TOKEN.
+    assert(cs_trusted_name_cache_add(pubkey, "Jupiter", TN_TYPE_SMART_CONTRACT) == 0);
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Token", CS_PARAM_TYPE_TRUSTED_NAME);
+    template.display_fields[0].argument.format.trusted_name.allowed_types_mask =
+        (uint8_t) (1 << TN_TYPE_TOKEN);
+
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = pubkey;
+    instr.resolved[0].value_size = 32;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    const char *val = cs_display_renderer_element(1)->value;
+    assert(strcmp(val, "Jupiter") != 0);
+    assert(strlen(val) == (size_t) (SUMMARY_LENGTH + 2 + SUMMARY_LENGTH));
+
+    cs_display_renderer_reset();
+    cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A zero allow-list mask means "no constraint": any cached (type, source) resolves.
+static void test_render_trusted_name_unconstrained_mask(void) {
+    printf("  test_render_trusted_name_unconstrained_mask\n");
+    mock_mem_reset();
+    cs_trusted_name_cache_reset();
+    cs_display_renderer_reset();
+
+    uint8_t pubkey[32];
+    memset(pubkey, 0x42, 32);
+    assert(cs_trusted_name_cache_add(pubkey, "Jupiter", TN_TYPE_SMART_CONTRACT) == 0);
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Program", CS_PARAM_TYPE_TRUSTED_NAME);
+    // Masks left at 0 (unconstrained).
+
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = pubkey;
+    instr.resolved[0].value_size = 32;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "Jupiter") == 0);
+
+    cs_display_renderer_reset();
+    cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A plain PARAM_ACCOUNT field (e.g. a mint) is labelled with its trusted name
+// when the CAL provided one, even though the field carries no allow-list.
+static void test_render_account_resolves_trusted_name(void) {
+    printf("  test_render_account_resolves_trusted_name\n");
+    mock_mem_reset();
+    cs_trusted_name_cache_reset();
+    cs_display_renderer_reset();
+
+    uint8_t mint[32];
+    memset(mint, 0x55, 32);
+    assert(cs_trusted_name_cache_add(mint, "USDC", TN_TYPE_TOKEN) == 0);
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Mint", CS_PARAM_TYPE_ACCOUNT);
+
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = mint;
+    instr.resolved[0].value_size = 32;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "USDC") == 0);
+
+    cs_display_renderer_reset();
+    cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 static void test_render_string_ascii(void) {
     printf("  test_render_string_ascii\n");
     mock_mem_reset();
@@ -1055,6 +1265,12 @@ int main(void) {
     test_render_unit_suffix();
     test_render_unit_prefix();
     test_render_account_short_form();
+    test_render_trusted_name_resolved();
+    test_render_trusted_name_max_length();
+    test_render_trusted_name_cache_miss();
+    test_render_trusted_name_type_not_allowed();
+    test_render_trusted_name_unconstrained_mask();
+    test_render_account_resolves_trusted_name();
     test_render_string_ascii();
     test_render_string_ascii_rejects_nonprintable();
     test_render_string_hex();

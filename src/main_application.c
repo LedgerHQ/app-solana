@@ -32,6 +32,7 @@
 #include "clear_signing/handle_provide_enum_variant.h"
 #include "clear_signing/handle_provide_token_account_state.h"
 #include "clear_signing/handle_provide_alt_resolution.h"
+#include "clear_signing/handle_provide_trusted_name.h"
 #include "clear_signing/handle_start_generic_clear_signing_session.h"
 #include "clear_signing/handle_finalize_generic_clear_signing.h"
 #include "clear_signing/handle_prompt_ui_display.h"
@@ -95,6 +96,7 @@ static int handle_apdu(int rx) {
         && G_command.instruction != InsProvideEnumVariant
         && G_command.instruction != InsProvideTokenAccountState
         && G_command.instruction != InsProvideAltResolution
+        && G_command.instruction != InsProvideTrustedName
         && G_command.instruction != InsFinalizeGenericClearSigning
         && G_command.instruction != InsPromptUiDisplay
 
@@ -190,6 +192,9 @@ static int handle_apdu(int rx) {
 
         case InsProvideAltResolution:
             return handle_provide_alt_resolution();
+
+        case InsProvideTrustedName:
+            return handle_provide_trusted_name();
 
         case InsPromptUiDisplay:
             if (G_called_from_swap) {
