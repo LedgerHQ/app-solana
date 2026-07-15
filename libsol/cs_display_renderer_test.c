@@ -688,6 +688,64 @@ static void test_render_datetime_ticks_scaling(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+// A Solana UnixTimestamp is an i64: a DATETIME field over a signed leaf must
+// render, not be refused.
+static void test_render_datetime_signed_i64(void) {
+    printf("  test_render_datetime_signed_i64\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "When", CS_PARAM_TYPE_DATETIME);
+    template.display_fields[0].argument.format.datetime.ticks_per_second = 1;
+
+    // 1700000000 seconds -> 2023-11-14 22:13:20, stored as i64.
+    uint8_t value[] = {0x00, 0xF1, 0x53, 0x65, 0x00, 0x00, 0x00, 0x00};
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_I64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert_string_equal(cs_display_renderer_element(1)->value, "2023-11-14 22:13:20");
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A negative i64 timestamp is a valid pre-1970 date.
+static void test_render_datetime_negative_i64(void) {
+    printf("  test_render_datetime_negative_i64\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "When", CS_PARAM_TYPE_DATETIME);
+    template.display_fields[0].argument.format.datetime.ticks_per_second = 1;
+
+    // -1 second -> 1969-12-31 23:59:59.
+    uint8_t value[8];
+    memset(value, 0xFF, sizeof(value));
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_I64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert_string_equal(cs_display_renderer_element(1)->value, "1969-12-31 23:59:59");
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 static void test_render_duration(void) {
     printf("  test_render_duration\n");
     mock_mem_reset();
@@ -1237,6 +1295,218 @@ static void test_render_string_slice_formatted_sized_reversed(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+// Helper: run a single RAW-typed leaf and return its rendered value, or NULL on
+// a render failure. The caller supplies the leaf kind and raw bytes.
+static void run_raw_leaf(uint8_t kind,
+                         const uint8_t *value,
+                         size_t value_size,
+                         cs_instruction_result_t *instr,
+                         cs_instruction_template_t *template) {
+    init_argument_template(template, "Raw", CS_PARAM_TYPE_RAW);
+    memset(instr, 0, sizeof(*instr));
+    instr->template = template;
+    instr->resolved[0].kind = kind;
+    instr->resolved[0].value = value;
+    instr->resolved[0].value_size = value_size;
+    instr->resolved_count = 1;
+}
+
+static void test_render_raw_i64_negative(void) {
+    printf("  test_render_raw_i64_negative\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    int64_t signed_value = -1000000;
+    uint8_t value[8];
+    for (size_t i = 0; i < 8; i++) {
+        value[i] = (uint8_t) ((uint64_t) signed_value >> (8 * i));
+    }
+    cs_instruction_result_t instr;
+    cs_instruction_template_t template;
+    run_raw_leaf(IDL_KIND_I64, value, sizeof(value), &instr, &template);
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert_string_equal(cs_display_renderer_element(1)->value, "-1000000");
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_raw_i32_negative(void) {
+    printf("  test_render_raw_i32_negative\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    // -42 in 4-byte little-endian, must sign-extend correctly.
+    uint8_t value[] = {0xD6, 0xFF, 0xFF, 0xFF};
+    cs_instruction_result_t instr;
+    cs_instruction_template_t template;
+    run_raw_leaf(IDL_KIND_I32, value, sizeof(value), &instr, &template);
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert_string_equal(cs_display_renderer_element(1)->value, "-42");
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_raw_u128(void) {
+    printf("  test_render_raw_u128\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    // 2^64 = 18446744073709551616 (byte 8 set).
+    uint8_t value[16] = {0};
+    value[8] = 1;
+    cs_instruction_result_t instr;
+    cs_instruction_template_t template;
+    run_raw_leaf(IDL_KIND_U128, value, sizeof(value), &instr, &template);
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert_string_equal(cs_display_renderer_element(1)->value, "18446744073709551616");
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_raw_i128_negative(void) {
+    printf("  test_render_raw_i128_negative\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    // -1: all bytes 0xFF.
+    uint8_t value[16];
+    memset(value, 0xFF, sizeof(value));
+    cs_instruction_result_t instr;
+    cs_instruction_template_t template;
+    run_raw_leaf(IDL_KIND_I128, value, sizeof(value), &instr, &template);
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert_string_equal(cs_display_renderer_element(1)->value, "-1");
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_raw_short_u16_multibyte(void) {
+    printf("  test_render_raw_short_u16_multibyte\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    // 300 as compact-u16: 0xAC 0x02.
+    uint8_t value[] = {0xAC, 0x02};
+    cs_instruction_result_t instr;
+    cs_instruction_template_t template;
+    run_raw_leaf(IDL_KIND_SHORT_U16, value, sizeof(value), &instr, &template);
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert_string_equal(cs_display_renderer_element(1)->value, "300");
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_raw_bool_u16_high_byte(void) {
+    printf("  test_render_raw_bool_u16_high_byte\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    // Only the high byte is set: still True.
+    uint8_t value[] = {0x00, 0x01};
+    cs_instruction_result_t instr;
+    cs_instruction_template_t template;
+    run_raw_leaf(IDL_KIND_BOOL_U16, value, sizeof(value), &instr, &template);
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert_string_equal(cs_display_renderer_element(1)->value, "True");
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_raw_bytes_fixed_hex(void) {
+    printf("  test_render_raw_bytes_fixed_hex\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    uint8_t value[] = {0x01, 0x02, 0xAB};
+    cs_instruction_result_t instr;
+    cs_instruction_template_t template;
+    run_raw_leaf(IDL_KIND_BYTES_FIXED, value, sizeof(value), &instr, &template);
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert_string_equal(cs_display_renderer_element(1)->value, "0102ab");
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_raw_bytes_too_long_refused(void) {
+    printf("  test_render_raw_bytes_too_long_refused\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    // 33 bytes -> 66 hex chars + NUL (67) overruns CS_DISPLAY_VALUE_SIZE (65).
+    uint8_t value[33];
+    memset(value, 0xAB, sizeof(value));
+    cs_instruction_result_t instr;
+    cs_instruction_template_t template;
+    run_raw_leaf(IDL_KIND_BYTES_REMAINDER, value, sizeof(value), &instr, &template);
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_raw_f32(void) {
+    printf("  test_render_raw_f32\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    float f = 1.5f;
+    uint8_t value[4];
+    memcpy(value, &f, sizeof(value));
+    cs_instruction_result_t instr;
+    cs_instruction_template_t template;
+    run_raw_leaf(IDL_KIND_F32, value, sizeof(value), &instr, &template);
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert_string_equal(cs_display_renderer_element(1)->value, "1.5");
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_raw_f64(void) {
+    printf("  test_render_raw_f64\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    double d = -2.5;
+    uint8_t value[8];
+    memcpy(value, &d, sizeof(value));
+    cs_instruction_result_t instr;
+    cs_instruction_template_t template;
+    run_raw_leaf(IDL_KIND_F64, value, sizeof(value), &instr, &template);
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert_string_equal(cs_display_renderer_element(1)->value, "-2.5");
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 int main(void) {
     printf("cs_display_renderer_test\n");
     test_initial_state();
@@ -1260,6 +1530,8 @@ int main(void) {
     test_render_unsupported_param_type();
     test_render_datetime();
     test_render_datetime_ticks_scaling();
+    test_render_datetime_signed_i64();
+    test_render_datetime_negative_i64();
     test_render_duration();
     test_render_duration_zero();
     test_render_unit_suffix();
@@ -1278,6 +1550,16 @@ int main(void) {
     test_render_string_base64_padding();
     test_render_string_slice_source_bounded();
     test_render_string_slice_formatted_sized_reversed();
+    test_render_raw_i64_negative();
+    test_render_raw_i32_negative();
+    test_render_raw_u128();
+    test_render_raw_i128_negative();
+    test_render_raw_short_u16_multibyte();
+    test_render_raw_bool_u16_high_byte();
+    test_render_raw_bytes_fixed_hex();
+    test_render_raw_bytes_too_long_refused();
+    test_render_raw_f32();
+    test_render_raw_f64();
     printf("  All passed!\n");
     return 0;
 }

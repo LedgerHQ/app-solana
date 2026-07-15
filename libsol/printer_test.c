@@ -125,6 +125,63 @@ void test_print_u64() {
     assert(print_u64(0, NULL, 0) == 1);
 }
 
+void test_print_u128() {
+    char buf[64];
+
+    uint8_t zero[16] = {0};
+    assert(print_u128(zero, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "0");
+
+    // 2^64 = 18446744073709551616 (byte 8 set).
+    uint8_t two_pow_64[16] = {0};
+    two_pow_64[8] = 1;
+    assert(print_u128(two_pow_64, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "18446744073709551616");
+
+    // Max u128: all bytes 0xFF, 39 digits.
+    uint8_t max[16];
+    memset(max, 0xFF, sizeof(max));
+    assert(print_u128(max, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "340282366920938463463374607431768211455");
+
+    // Refuse when the buffer cannot hold the digits plus NUL.
+    assert(print_u128(max, buf, 39) == 1);
+}
+
+void test_print_i128() {
+    char buf[64];
+
+    uint8_t zero[16] = {0};
+    assert(print_i128(zero, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "0");
+
+    // -1: all bytes 0xFF.
+    uint8_t minus_one[16];
+    memset(minus_one, 0xFF, sizeof(minus_one));
+    assert(print_i128(minus_one, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "-1");
+
+    // Max i128 = 2^127 - 1.
+    uint8_t max[16];
+    memset(max, 0xFF, sizeof(max));
+    max[15] = 0x7F;
+    assert(print_i128(max, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "170141183460469231731687303715884105727");
+
+    // Min i128 = -2^127.
+    uint8_t min[16] = {0};
+    min[15] = 0x80;
+    assert(print_i128(min, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "-170141183460469231731687303715884105728");
+
+    // -(2^64): low 8 bytes zero, high 8 bytes 0xFF.
+    uint8_t neg_two_pow_64[16];
+    memset(neg_two_pow_64, 0x00, 8);
+    memset(neg_two_pow_64 + 8, 0xFF, 8);
+    assert(print_i128(neg_two_pow_64, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "-18446744073709551616");
+}
+
 void test_print_timestamp() {
 #define RFC3339_MAX (4 + 1 + 2 + 1 + 2 + 1 + 2 + 1 + 2 + 1 + 2 + 1)
     char out[RFC3339_MAX];
@@ -286,6 +343,8 @@ int main() {
     RUN_TEST(test_print_summary);
     RUN_TEST(test_print_i64);
     RUN_TEST(test_print_u64);
+    RUN_TEST(test_print_u128);
+    RUN_TEST(test_print_i128);
     RUN_TEST(test_print_timestamp);
     RUN_TEST(test_amount_as_string_is_greater_or_equal);
 

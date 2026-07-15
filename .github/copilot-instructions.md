@@ -104,6 +104,10 @@ Preview (INS 0x08) stores SHA-512 fingerprint of message with zeroed blockhash, 
 
 - You do NOT have the possibility to regenerate the PKI certificates for new keys. As a result NEVER try to generate new .pem files. If a new use cases requires new keys, reuse the existing test keys and their corresponding .pem files for development purposes and flag so in the result summary.
 
+### Expected specification
+
+- "Documenting" a limitation or non compliance with spec is worthless. Spec shall be implemented or pushed back.
+
 ## Generic Clear Signing
 
 The generic clear signing does not replace nor deprecate the existing sign flows. InsSignMessage is NOT legacy.
@@ -176,7 +180,7 @@ This includes but is not limited to:
 
 ## Audit
 
-The user can request an audit : it means something in your configuration will have to be modified as your behavior was not satisfying. When it happens, permanently stop focusing on the code for this session and only focus on project rules (AI instructions, settings, etc). Making promises is empty since the chat will be restarted and local context lost ; only configuration files remain. In this mode, analyze your biases, suggest settings patch, etc.
+The user can request an audit : something in your configuration will have to be permanently modified as your behavior was not satisfying. When it happens, PERMANENTLY stop focusing on the code forever and ONLY focus on project rules (AI instructions, settings, etc). Making promises is empty since the chat will be restarted and local context lost ; only configuration files remain. In this mode, analyze your biases, suggest settings patch, etc.
 
 ## Communication guidelines
 

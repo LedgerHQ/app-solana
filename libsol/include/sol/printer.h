@@ -26,6 +26,11 @@ int print_i64(int64_t i64, char *out, size_t out_length);
 
 int print_u64(uint64_t u64, char *out, size_t out_length);
 
+// Render a 128-bit integer held as 16 little-endian bytes.
+int print_u128(const uint8_t value[16], char *out, size_t out_length);
+
+int print_i128(const uint8_t value[16], char *out, size_t out_length);
+
 int print_sized_string(const SizedString *string, char *out, size_t out_length);
 
 int print_string(const char *in, char *out, size_t out_length);
