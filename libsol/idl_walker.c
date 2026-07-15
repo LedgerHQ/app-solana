@@ -264,6 +264,19 @@ typedef struct span_frame_s {
     bool is_zeroable;
 } span_frame_t;
 
+// One node on the inline data-size work stack (see inline_static_data_size).
+// Accumulates the static serialized DATA size of an inline subtree. `kind` is 0
+// for the virtual root; `multiplier` scales an ARRAY_FIXED child; `own` holds a
+// node's fixed self-contribution (an OPTION_FIXED flag byte width).
+typedef struct size_frame_s {
+    uint8_t kind;
+    uint16_t children_left;
+    bool is_zeroable;
+    size_t multiplier;
+    size_t own;
+    size_t acc;
+} size_frame_t;
+
 typedef struct walk_ctx_s {
     // Instruction argument bytes under decode, and the current read offset.
     const uint8_t *data;
@@ -281,6 +294,9 @@ typedef struct walk_ctx_s {
 
     span_frame_t *span_stack;  // reusable scratch for inline_span (grows on demand)
     size_t span_cap;
+
+    size_frame_t *size_stack;  // reusable scratch for inline_static_data_size (grows on demand)
+    size_t size_cap;
 
     uint8_t *path;  // reusable scratch for the current leaf's packed path
     size_t path_cap;
@@ -659,6 +675,156 @@ static int inline_child_ptr(walk_ctx_t *walk,
     }
     *out = cur;
     return 0;
+}
+
+// Static serialized DATA size of the inline type subtree rooted at `ptr`
+// (bounded by `end`): the number of instruction-data bytes it occupies once
+// encoded. Writes a concrete size, or FS_VARIABLE when any part is
+// variable-width, to *out. Iterative post-order over the reusable size stack
+// (no recursion), mirroring try_static_size over inline descriptors instead of
+// pool refs. Returns 0 on success, -1 on a truncated/unknown descriptor,
+// allocator failure, or size overflow.
+static int inline_static_data_size(walk_ctx_t *walk,
+                                   const uint8_t *ptr,
+                                   const uint8_t *end,
+                                   size_t *out) {
+    if (walk->size_cap == 0) {
+        walk->size_stack = APP_MEM_ALLOC(8 * sizeof(size_frame_t));
+        if (walk->size_stack == NULL) {
+            PRINTF("idl_walker: size stack allocation failed\n");
+            return -1;
+        }
+        walk->size_cap = 8;
+    }
+
+    const uint8_t *cur = ptr;
+    // Virtual parent expecting exactly one subtree (the inner root).
+    walk->size_stack[0].kind = 0;
+    walk->size_stack[0].children_left = 1;
+    walk->size_stack[0].is_zeroable = false;
+    walk->size_stack[0].multiplier = 1;
+    walk->size_stack[0].own = 0;
+    walk->size_stack[0].acc = 0;
+    size_t depth = 1;
+
+    while (depth > 0) {
+        size_frame_t *top = &walk->size_stack[depth - 1];
+        if (top->children_left == 0) {
+            // OPTION_ZEROABLE trails a sentinel in the descriptor (no data cost).
+            if (top->is_zeroable) {
+                if (cur >= end) {
+                    PRINTF("idl_walker: inline size zeroable sentinel length past end\n");
+                    return -1;
+                }
+                uint8_t sentinel_len = *cur;
+                cur++;
+                if (cur + sentinel_len > end) {
+                    PRINTF("idl_walker: inline size zeroable sentinel past end\n");
+                    return -1;
+                }
+                cur += sentinel_len;
+            }
+            size_t node_size;
+            if (top->kind == IDL_KIND_ARRAY_FIXED) {
+                if (top->acc != 0 && top->multiplier > SIZE_MAX / top->acc) {
+                    PRINTF("idl_walker: inline ARRAY_FIXED size overflow\n");
+                    return -1;
+                }
+                node_size = top->multiplier * top->acc;
+            } else if (top->kind == IDL_KIND_OPTION_FIXED) {
+                node_size = top->own + top->acc;
+            } else {
+                // virtual root, STRUCT, TUPLE, OPTION_ZEROABLE, HIDDEN_*
+                node_size = top->acc;
+            }
+            depth--;
+            if (depth == 0) {
+                *out = node_size;
+                return 0;
+            }
+            walk->size_stack[depth - 1].acc += node_size;
+            walk->size_stack[depth - 1].children_left--;
+            continue;
+        }
+
+        uint8_t kind;
+        size_t header_len;
+        uint8_t child_count;
+        bool is_zeroable;
+        if (inline_header_len(cur, end, &kind, &header_len, &child_count, &is_zeroable) != 0) {
+            return -1;
+        }
+        const uint8_t *header_start = cur;
+        cur += header_len;
+
+        // Any variable-width construct makes the whole subtree variable, which
+        // an OPTION_FIXED inner must never be (that is OPTION_DYNAMIC's role).
+        size_t primitive_width = fixed_primitive_width(kind);
+        if (primitive_width == 0) {
+            switch (kind) {
+                case IDL_KIND_BYTES_FIXED:
+                case IDL_KIND_STRING_FIXED:
+                case IDL_KIND_STRUCT:
+                case IDL_KIND_TUPLE:
+                case IDL_KIND_ARRAY_FIXED:
+                case IDL_KIND_OPTION_FIXED:
+                case IDL_KIND_OPTION_ZEROABLE:
+                case IDL_KIND_HIDDEN_PREFIX:
+                case IDL_KIND_HIDDEN_SUFFIX:
+                    break;
+                default:
+                    PRINTF("idl_walker: inline OPTION_FIXED inner has variable kind 0x%02x\n", kind);
+                    *out = FS_VARIABLE;
+                    return 0;
+            }
+        }
+
+        // True leaves fold their size in immediately. Aggregates are pushed,
+        // including an empty STRUCT/TUPLE (child_count 0), whose data footprint
+        // is zero and must not be read as a fixed-size header field.
+        if (primitive_width != 0) {
+            top->acc += primitive_width;
+            top->children_left--;
+            continue;
+        }
+        if (kind == IDL_KIND_BYTES_FIXED || kind == IDL_KIND_STRING_FIXED) {
+            top->acc += ((size_t) header_start[1] << 8) | (size_t) header_start[2];
+            top->children_left--;
+            continue;
+        }
+
+        if (depth == walk->size_cap) {
+            size_t new_cap = walk->size_cap * 2;
+            size_frame_t *grown = APP_MEM_REALLOC(walk->size_stack, new_cap * sizeof(size_frame_t));
+            if (grown == NULL) {
+                PRINTF("idl_walker: size stack growth failed\n");
+                return -1;
+            }
+            walk->size_stack = grown;
+            walk->size_cap = new_cap;
+        }
+        walk->size_stack[depth].kind = kind;
+        walk->size_stack[depth].children_left = child_count;
+        walk->size_stack[depth].is_zeroable = is_zeroable;
+        walk->size_stack[depth].multiplier = 1;
+        walk->size_stack[depth].own = 0;
+        walk->size_stack[depth].acc = 0;
+        if (kind == IDL_KIND_ARRAY_FIXED) {
+            walk->size_stack[depth].multiplier =
+                ((size_t) header_start[1] << 8) | (size_t) header_start[2];
+        } else if (kind == IDL_KIND_OPTION_FIXED) {
+            size_t flag_width = fixed_primitive_width(header_start[1]);
+            if (flag_width == 0) {
+                PRINTF("idl_walker: inline OPTION_FIXED invalid flag kind 0x%02x\n", header_start[1]);
+                return -1;
+            }
+            walk->size_stack[depth].own = flag_width;
+        }
+        depth++;
+    }
+
+    PRINTF("idl_walker: inline size stack drained unexpectedly\n");
+    return -1;
 }
 
 // Inline counterpart of select_child: reports the embedded child index `dci`
@@ -1202,11 +1368,29 @@ static int walk_top(walk_ctx_t *walk) {
                     PRINTF("idl_walker: OPTION_FIXED flag=%d present, descending\n", flag);
                     frame->child_count = 1;
                 } else if (frame->is_inline) {
-                    // Skipping an absent inline OPTION_FIXED needs the inner's
-                    // static byte size, which the pool-wide size table does not
-                    // cover for inline descriptors.
-                    PRINTF("idl_walker: absent OPTION_FIXED inside inline payload not supported\n");
-                    return -1;
+                    // Absent inline OPTION_FIXED: the inner bytes are still
+                    // present as padding, so advance by the inner's static data
+                    // size computed straight from the inline descriptor (the
+                    // pool-wide size table does not index inline subtrees).
+                    size_t inner_size;
+                    if (inline_static_data_size(walk,
+                                                children_base,
+                                                frame->source.inline_descriptor.end,
+                                                &inner_size) != 0) {
+                        return -1;
+                    }
+                    if (inner_size == FS_VARIABLE) {
+                        PRINTF("idl_walker: inline OPTION_FIXED with variable-size inner\n");
+                        return -1;
+                    }
+                    if (walk->cursor + inner_size > walk->data_size) {
+                        PRINTF("idl_walker: inline OPTION_FIXED skip past end of data\n");
+                        return -1;
+                    }
+                    PRINTF("idl_walker: inline OPTION_FIXED flag=0 absent, skipping inner_size=%d\n",
+                           inner_size);
+                    walk->cursor += inner_size;
+                    frame->child_count = 0;
                 } else {
                     size_t inner_size = walk->fixed_sizes[entry->refs[0]];
                     PRINTF("idl_walker: OPTION_FIXED flag=0 absent, skipping inner_size=%d\n",
@@ -1433,6 +1617,7 @@ int idl_walker_run(const uint8_t *data,
     APP_MEM_FREE(walk.path);
     APP_MEM_FREE(walk.stack);
     APP_MEM_FREE(walk.span_stack);
+    APP_MEM_FREE(walk.size_stack);
     APP_MEM_FREE(fixed_sizes);
     PRINTF("idl_walker_run: finished with result=%d (cursor=%d, data_size=%d)\n",
            walk_result,
