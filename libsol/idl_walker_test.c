@@ -990,6 +990,268 @@ void test_enum_inline_option_payload() {
     assert(mock_mem_outstanding() == 0);
 }
 
+// INLINE payload holding an OPTION_FIXED(U8 flag, U32 inner) inside a STRUCT
+// with a trailing U8. Unlike OPTION_DYNAMIC, the inner's bytes are always
+// present: when the flag is clear the four inner bytes are padding that must be
+// skipped so the following field still decodes at the right offset.
+void test_enum_inline_option_fixed_absent() {
+    // STRUCT{ OPTION_FIXED(flag U8, U32), U8 }
+    const uint8_t inline_desc[] = {
+        IDL_KIND_STRUCT,
+        0x02,
+        IDL_KIND_OPTION_FIXED,
+        IDL_KIND_U8,
+        IDL_KIND_U32,
+        IDL_KIND_U8,
+    };
+    const uint8_t inner_u32_path[] = {0x04, 0x00, 0x01, 0x00, 0x00};
+    const uint8_t field1_u8_path[] = {0x03, 0x00, 0x01, 0x01};
+    const uint8_t trailing_u8_path[] = {0x01, 0x01};
+
+    // Flag present: the inner u32 decodes, both following fields still align.
+    mock_mem_reset();
+    cs_enum_cache_reset();
+    assert(cs_enum_cache_add(TEST_PROGRAM_ID,
+                             ENUM_ID,
+                             sizeof(ENUM_ID),
+                             1,
+                             "Beta",
+                             CS_VARIANT_PAYLOAD_INLINE,
+                             inline_desc,
+                             sizeof(inline_desc)) == 0);
+    {
+        const uint8_t data[] = {0x01, 0x01, 0xAA, 0xBB, 0xCC, 0xDD, 0x77, 0xAB};
+        test_walk_t tw = {0};
+        tw_add_path(&tw, 0, inner_u32_path, sizeof(inner_u32_path));
+        tw_add_path(&tw, 1, field1_u8_path, sizeof(field1_u8_path));
+        tw_add_path(&tw, 2, trailing_u8_path, sizeof(trailing_u8_path));
+        assert(
+            run_walk_enum(ENUM_STRUCT_POOL, sizeof(ENUM_STRUCT_POOL), 2, data, sizeof(data), &tw) ==
+            0);
+        assert(tw.resolved_count == 3);
+        expect_resolved(&tw, 0, IDL_KIND_U32, &data[2], 4);
+        expect_resolved(&tw, 1, IDL_KIND_U8, &data[6], 1);
+        expect_resolved(&tw, 2, IDL_KIND_U8, &data[7], 1);
+    }
+    cs_enum_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+
+    // Flag absent: the four inner bytes are padding; the struct's second field
+    // and the trailing root u8 must still land on the correct bytes.
+    mock_mem_reset();
+    cs_enum_cache_reset();
+    assert(cs_enum_cache_add(TEST_PROGRAM_ID,
+                             ENUM_ID,
+                             sizeof(ENUM_ID),
+                             1,
+                             "Beta",
+                             CS_VARIANT_PAYLOAD_INLINE,
+                             inline_desc,
+                             sizeof(inline_desc)) == 0);
+    {
+        const uint8_t data[] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x77, 0xAB};
+        test_walk_t tw = {0};
+        tw_add_path(&tw, 0, inner_u32_path, sizeof(inner_u32_path));
+        tw_add_path(&tw, 1, field1_u8_path, sizeof(field1_u8_path));
+        tw_add_path(&tw, 2, trailing_u8_path, sizeof(trailing_u8_path));
+        assert(
+            run_walk_enum(ENUM_STRUCT_POOL, sizeof(ENUM_STRUCT_POOL), 2, data, sizeof(data), &tw) ==
+            0);
+        assert(tw.resolved_count == 2);
+        expect_resolved(&tw, 1, IDL_KIND_U8, &data[6], 1);
+        expect_resolved(&tw, 2, IDL_KIND_U8, &data[7], 1);
+    }
+    cs_enum_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// Absent inline OPTION_FIXED whose inner is a fixed-size aggregate: the skip
+// size is computed over the whole subtree (nested struct, then fixed array).
+void test_enum_inline_option_fixed_aggregate_inner() {
+    // STRUCT{ OPTION_FIXED(flag U8, STRUCT{U8,U16}), U8 } — inner is 3 bytes.
+    const uint8_t struct_inner_desc[] = {
+        IDL_KIND_STRUCT,
+        0x02,
+        IDL_KIND_OPTION_FIXED,
+        IDL_KIND_U8,
+        IDL_KIND_STRUCT,
+        0x02,
+        IDL_KIND_U8,
+        IDL_KIND_U16,
+        IDL_KIND_U8,
+    };
+    const uint8_t field1_u8_path[] = {0x03, 0x00, 0x01, 0x01};
+    const uint8_t trailing_u8_path[] = {0x01, 0x01};
+
+    mock_mem_reset();
+    cs_enum_cache_reset();
+    assert(cs_enum_cache_add(TEST_PROGRAM_ID,
+                             ENUM_ID,
+                             sizeof(ENUM_ID),
+                             1,
+                             "Beta",
+                             CS_VARIANT_PAYLOAD_INLINE,
+                             struct_inner_desc,
+                             sizeof(struct_inner_desc)) == 0);
+    {
+        // disc, flag=0, 3 inner padding bytes, field1 u8=0x77, trailing=0xAB.
+        const uint8_t data[] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x77, 0xAB};
+        test_walk_t tw = {0};
+        tw_add_path(&tw, 1, field1_u8_path, sizeof(field1_u8_path));
+        tw_add_path(&tw, 2, trailing_u8_path, sizeof(trailing_u8_path));
+        assert(
+            run_walk_enum(ENUM_STRUCT_POOL, sizeof(ENUM_STRUCT_POOL), 2, data, sizeof(data), &tw) ==
+            0);
+        assert(tw.resolved_count == 2);
+        expect_resolved(&tw, 1, IDL_KIND_U8, &data[5], 1);
+        expect_resolved(&tw, 2, IDL_KIND_U8, &data[6], 1);
+    }
+    cs_enum_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+
+    // STRUCT{ OPTION_FIXED(flag U8, ARRAY_FIXED(3, U8)), U8 } — inner is 3 bytes
+    // via the array multiplier.
+    const uint8_t array_inner_desc[] = {
+        IDL_KIND_STRUCT,
+        0x02,
+        IDL_KIND_OPTION_FIXED,
+        IDL_KIND_U8,
+        IDL_KIND_ARRAY_FIXED,
+        0x00,
+        0x03,
+        IDL_KIND_U8,
+        IDL_KIND_U8,
+    };
+    mock_mem_reset();
+    cs_enum_cache_reset();
+    assert(cs_enum_cache_add(TEST_PROGRAM_ID,
+                             ENUM_ID,
+                             sizeof(ENUM_ID),
+                             1,
+                             "Beta",
+                             CS_VARIANT_PAYLOAD_INLINE,
+                             array_inner_desc,
+                             sizeof(array_inner_desc)) == 0);
+    {
+        const uint8_t data[] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x77, 0xAB};
+        test_walk_t tw = {0};
+        tw_add_path(&tw, 1, field1_u8_path, sizeof(field1_u8_path));
+        tw_add_path(&tw, 2, trailing_u8_path, sizeof(trailing_u8_path));
+        assert(
+            run_walk_enum(ENUM_STRUCT_POOL, sizeof(ENUM_STRUCT_POOL), 2, data, sizeof(data), &tw) ==
+            0);
+        assert(tw.resolved_count == 2);
+        expect_resolved(&tw, 1, IDL_KIND_U8, &data[5], 1);
+        expect_resolved(&tw, 2, IDL_KIND_U8, &data[6], 1);
+    }
+    cs_enum_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// An absent inline OPTION_FIXED wrapping an empty STRUCT contributes zero data
+// bytes: the following field must decode immediately after the flag byte.
+void test_enum_inline_option_fixed_empty_struct_inner() {
+    // STRUCT{ OPTION_FIXED(flag U8, STRUCT{}), U8 } — inner footprint is 0.
+    const uint8_t inline_desc[] = {
+        IDL_KIND_STRUCT,
+        0x02,
+        IDL_KIND_OPTION_FIXED,
+        IDL_KIND_U8,
+        IDL_KIND_STRUCT,
+        0x00,
+        IDL_KIND_U8,
+    };
+    const uint8_t field1_u8_path[] = {0x03, 0x00, 0x01, 0x01};
+    const uint8_t trailing_u8_path[] = {0x01, 0x01};
+
+    mock_mem_reset();
+    cs_enum_cache_reset();
+    assert(cs_enum_cache_add(TEST_PROGRAM_ID,
+                             ENUM_ID,
+                             sizeof(ENUM_ID),
+                             1,
+                             "Beta",
+                             CS_VARIANT_PAYLOAD_INLINE,
+                             inline_desc,
+                             sizeof(inline_desc)) == 0);
+    {
+        // disc=1, flag=0, no inner bytes, field1 u8=0x77, trailing=0xAB.
+        const uint8_t data[] = {0x01, 0x00, 0x77, 0xAB};
+        test_walk_t tw = {0};
+        tw_add_path(&tw, 1, field1_u8_path, sizeof(field1_u8_path));
+        tw_add_path(&tw, 2, trailing_u8_path, sizeof(trailing_u8_path));
+        assert(
+            run_walk_enum(ENUM_STRUCT_POOL, sizeof(ENUM_STRUCT_POOL), 2, data, sizeof(data), &tw) ==
+            0);
+        assert(tw.resolved_count == 2);
+        expect_resolved(&tw, 1, IDL_KIND_U8, &data[2], 1);
+        expect_resolved(&tw, 2, IDL_KIND_U8, &data[3], 1);
+    }
+    cs_enum_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// An absent inline OPTION_FIXED wrapping a variable-size inner is malformed
+// (that is OPTION_DYNAMIC's role) and must fail closed.
+void test_enum_inline_option_fixed_variable_inner_rejected() {
+    // STRUCT{ OPTION_FIXED(flag U8, STRING_PREFIXED(len U8, utf8)) }
+    const uint8_t inline_desc[] = {
+        IDL_KIND_STRUCT,
+        0x01,
+        IDL_KIND_OPTION_FIXED,
+        IDL_KIND_U8,
+        IDL_KIND_STRING_PREFIXED,
+        IDL_KIND_U8,
+        0x00,
+    };
+    mock_mem_reset();
+    cs_enum_cache_reset();
+    assert(cs_enum_cache_add(TEST_PROGRAM_ID,
+                             ENUM_ID,
+                             sizeof(ENUM_ID),
+                             1,
+                             "Beta",
+                             CS_VARIANT_PAYLOAD_INLINE,
+                             inline_desc,
+                             sizeof(inline_desc)) == 0);
+    const uint8_t data[] = {0x01, 0x00};  // disc=1, flag=0 (absent)
+    test_walk_t tw = {0};
+    assert(run_walk_enum(ENUM_STRUCT_POOL, sizeof(ENUM_STRUCT_POOL), 2, data, sizeof(data), &tw) ==
+           -1);
+    cs_enum_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// An absent inline OPTION_FIXED whose inner skip would run past the data end
+// fails closed rather than advancing the cursor out of bounds.
+void test_enum_inline_option_fixed_skip_past_end() {
+    // STRUCT{ OPTION_FIXED(flag U8, U32) }
+    const uint8_t inline_desc[] = {
+        IDL_KIND_STRUCT,
+        0x01,
+        IDL_KIND_OPTION_FIXED,
+        IDL_KIND_U8,
+        IDL_KIND_U32,
+    };
+    mock_mem_reset();
+    cs_enum_cache_reset();
+    assert(cs_enum_cache_add(TEST_PROGRAM_ID,
+                             ENUM_ID,
+                             sizeof(ENUM_ID),
+                             1,
+                             "Beta",
+                             CS_VARIANT_PAYLOAD_INLINE,
+                             inline_desc,
+                             sizeof(inline_desc)) == 0);
+    // disc=1, flag=0, then only two of the four inner padding bytes.
+    const uint8_t data[] = {0x01, 0x00, 0x00, 0x00};
+    test_walk_t tw = {0};
+    assert(run_walk_enum(ENUM_STRUCT_POOL, sizeof(ENUM_STRUCT_POOL), 2, data, sizeof(data), &tw) ==
+           -1);
+    cs_enum_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 // An INLINE payload whose fields overrun the instruction data fails closed.
 void test_enum_inline_payload_overruns_data() {
     mock_mem_reset();
@@ -1585,6 +1847,11 @@ int main() {
     RUN_TEST(test_enum_inline_struct_payload);
     RUN_TEST(test_enum_inline_nested_payload);
     RUN_TEST(test_enum_inline_option_payload);
+    RUN_TEST(test_enum_inline_option_fixed_absent);
+    RUN_TEST(test_enum_inline_option_fixed_aggregate_inner);
+    RUN_TEST(test_enum_inline_option_fixed_empty_struct_inner);
+    RUN_TEST(test_enum_inline_option_fixed_variable_inner_rejected);
+    RUN_TEST(test_enum_inline_option_fixed_skip_past_end);
     RUN_TEST(test_enum_inline_payload_overruns_data);
 
     // Out-of-space injection
