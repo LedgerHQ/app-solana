@@ -6,6 +6,7 @@
 #include "app_mem_utils.h"
 #include "idl_kinds.h"
 #include "sol/printer.h"
+#include "print_float.h"
 #include "util.h"
 #include "os_print.h"
 #include "dynamic_token_info.h"
@@ -31,6 +32,51 @@ void cs_display_renderer_reset(void) {
     if (G_cs_display_renderer != NULL) {
         APP_MEM_FREE_AND_NULL((void **) &G_cs_display_renderer);
     }
+}
+
+// Defined further down; needed by format_leaf for the raw byte kinds.
+static int encode_hex(const uint8_t *in, size_t in_len, char *out, size_t out_size);
+
+// Read a little-endian signed integer from leaf bytes, sign-extended to i64.
+// Returns 0 on success, -1 on unsupported kind or truncation.
+static int read_leaf_i64(const idl_resolved_leaf_t *leaf, int64_t *out) {
+    size_t width = 0;
+
+    switch (leaf->kind) {
+        case IDL_KIND_I8:
+            width = 1;
+            break;
+        case IDL_KIND_I16:
+            width = 2;
+            break;
+        case IDL_KIND_I32:
+            width = 4;
+            break;
+        case IDL_KIND_I64:
+            width = 8;
+            break;
+        default:
+            PRINTF("read_leaf_i64: unsupported kind=%d\n", leaf->kind);
+            return -1;
+    }
+
+    if (leaf->value_size < width) {
+        PRINTF("read_leaf_i64: value truncated (size=%u < width=%u)\n",
+               (unsigned) leaf->value_size,
+               (unsigned) width);
+        return -1;
+    }
+
+    uint64_t raw = 0;
+    for (size_t i = 0; i < width; i++) {
+        raw |= (uint64_t) leaf->value[i] << (8 * i);
+    }
+    // Sign-extend from the width's top bit for kinds narrower than 64 bits.
+    if (width < 8 && (raw & ((uint64_t) 1 << (width * 8 - 1))) != 0) {
+        raw |= ~(((uint64_t) 1 << (width * 8)) - 1);
+    }
+    *out = (int64_t) raw;
+    return 0;
 }
 
 // Format a single resolved leaf into the value buffer based on its kind.
@@ -84,12 +130,118 @@ static int format_leaf(const idl_resolved_leaf_t *leaf, char *value_out, size_t 
                       value_out_size);
             return 0;
 
-        case IDL_KIND_BOOL_U8:
-            if (leaf->value_size < 1) {
-                PRINTF("format_leaf: bool_u8 truncated\n");
+        case IDL_KIND_U128:
+            if (leaf->value_size < 16) {
+                PRINTF("format_leaf: u128 truncated\n");
                 return -1;
             }
-            strlcpy(value_out, leaf->value[0] ? "True" : "False", value_out_size);
+            if (print_u128(leaf->value, value_out, value_out_size) != 0) {
+                PRINTF("format_leaf: print_u128 failed\n");
+                return -1;
+            }
+            return 0;
+
+        case IDL_KIND_I8:
+        case IDL_KIND_I16:
+        case IDL_KIND_I32:
+        case IDL_KIND_I64: {
+            int64_t signed_value;
+            if (read_leaf_i64(leaf, &signed_value) != 0) {
+                PRINTF("format_leaf: signed read failed\n");
+                return -1;
+            }
+            if (print_i64(signed_value, value_out, value_out_size) != 0) {
+                PRINTF("format_leaf: print_i64 failed\n");
+                return -1;
+            }
+            return 0;
+        }
+
+        case IDL_KIND_I128:
+            if (leaf->value_size < 16) {
+                PRINTF("format_leaf: i128 truncated\n");
+                return -1;
+            }
+            if (print_i128(leaf->value, value_out, value_out_size) != 0) {
+                PRINTF("format_leaf: print_i128 failed\n");
+                return -1;
+            }
+            return 0;
+
+        case IDL_KIND_SHORT_U16: {
+            // The leaf carries the raw compact-u16 varint bytes; re-decode them.
+            uint64_t decoded = 0;
+            for (size_t i = 0; i < leaf->value_size && i < 3; i++) {
+                decoded |= (uint64_t) (leaf->value[i] & 0x7F) << (7 * i);
+                if ((leaf->value[i] & 0x80) == 0) {
+                    break;
+                }
+            }
+            if (print_u64(decoded, value_out, value_out_size) != 0) {
+                PRINTF("format_leaf: short_u16 print_u64 failed\n");
+                return -1;
+            }
+            return 0;
+        }
+
+        case IDL_KIND_BOOL_U8:
+        case IDL_KIND_BOOL_U16:
+        case IDL_KIND_BOOL_U32: {
+            size_t width;
+            if (leaf->kind == IDL_KIND_BOOL_U8) {
+                width = 1;
+            } else if (leaf->kind == IDL_KIND_BOOL_U16) {
+                width = 2;
+            } else {
+                width = 4;
+            }
+            if (leaf->value_size < width) {
+                PRINTF("format_leaf: bool truncated\n");
+                return -1;
+            }
+            bool is_true = false;
+            for (size_t i = 0; i < width; i++) {
+                if (leaf->value[i] != 0) {
+                    is_true = true;
+                    break;
+                }
+            }
+            if (is_true) {
+                strlcpy(value_out, "True", value_out_size);
+            } else {
+                strlcpy(value_out, "False", value_out_size);
+            }
+            return 0;
+        }
+
+        case IDL_KIND_F32:
+            if (leaf->value_size < 4) {
+                PRINTF("format_leaf: f32 truncated\n");
+                return -1;
+            }
+            if (print_f32(leaf->value, value_out, value_out_size) != 0) {
+                PRINTF("format_leaf: print_f32 failed\n");
+                return -1;
+            }
+            return 0;
+
+        case IDL_KIND_F64:
+            if (leaf->value_size < 8) {
+                PRINTF("format_leaf: f64 truncated\n");
+                return -1;
+            }
+            if (print_f64(leaf->value, value_out, value_out_size) != 0) {
+                PRINTF("format_leaf: print_f64 failed\n");
+                return -1;
+            }
+            return 0;
+
+        case IDL_KIND_BYTES_FIXED:
+        case IDL_KIND_BYTES_REMAINDER:
+            if (encode_hex(leaf->value, leaf->value_size, value_out, value_out_size) < 0) {
+                PRINTF("format_leaf: bytes hex encode failed\n");
+                return -1;
+            }
             return 0;
 
         case IDL_KIND_PUBKEY_32:
@@ -397,29 +549,47 @@ static int format_duration(const idl_resolved_leaf_t *leaf,
     return 0;
 }
 
+// True for the signed integer leaf kinds.
+static bool is_signed_int_kind(uint8_t kind) {
+    return kind == IDL_KIND_I8 || kind == IDL_KIND_I16 || kind == IDL_KIND_I32 ||
+           kind == IDL_KIND_I64;
+}
+
 // PARAM_DATETIME: a numeric value of ticks rendered as "YYYY-MM-DD hh:mm:ss".
+// A Unix timestamp is signed (Solana's UnixTimestamp is i64), so signed leaves
+// are read sign-extended and unsigned leaves zero-extended, both into an i64.
 static int format_datetime(const idl_resolved_leaf_t *leaf,
                            uint32_t ticks_per_second,
                            char *value_out,
                            size_t value_out_size) {
-    uint64_t ticks;
-    uint64_t unix_seconds;
+    int64_t ticks;
+    int64_t unix_seconds;
 
     if (ticks_per_second == 0) {
         PRINTF("format_datetime: ticks_per_second is zero\n");
         return -1;
     }
-    if (read_leaf_u64(leaf, &ticks) != 0) {
-        PRINTF("format_datetime: unsupported leaf kind %d\n", leaf->kind);
-        return -1;
+    if (is_signed_int_kind(leaf->kind)) {
+        if (read_leaf_i64(leaf, &ticks) != 0) {
+            PRINTF("format_datetime: signed read failed\n");
+            return -1;
+        }
+    } else {
+        uint64_t unsigned_ticks;
+        if (read_leaf_u64(leaf, &unsigned_ticks) != 0) {
+            PRINTF("format_datetime: unsupported leaf kind %d\n", leaf->kind);
+            return -1;
+        }
+        // An unsigned tick count above INT64_MAX has no signed timestamp.
+        if (unsigned_ticks > (uint64_t) INT64_MAX) {
+            PRINTF("format_datetime: unsigned value out of range\n");
+            return -1;
+        }
+        ticks = (int64_t) unsigned_ticks;
     }
     // Scale ticks down to Unix epoch seconds.
-    unix_seconds = ticks / ticks_per_second;
-    if (unix_seconds > (uint64_t) INT64_MAX) {
-        PRINTF("format_datetime: value out of range\n");
-        return -1;
-    }
-    if (print_timestamp((int64_t) unix_seconds, value_out, value_out_size) != 0) {
+    unix_seconds = ticks / (int64_t) ticks_per_second;
+    if (print_timestamp(unix_seconds, value_out, value_out_size) != 0) {
         PRINTF("format_datetime: print_timestamp failed\n");
         return -1;
     }
