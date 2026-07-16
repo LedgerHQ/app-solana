@@ -599,6 +599,37 @@ def test_enum_variant_inline_payload(backend):
     )
 
 
+def test_enum_variant_inline_payload_max_length_accepted(backend):
+    """An INLINE payload at the exact cache capacity (128 bytes) is accepted."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    sol.provide_enum_variant(
+        program_id=b'\x01' * 32,
+        enum_id="SwapRoute",
+        variant_index=1,
+        variant_name="Orca",
+        payload_kind=0x02,  # INLINE
+        variant_payload=b'\x05' * 128,
+    )
+
+
+def test_enum_variant_inline_payload_too_long_rejected(backend):
+    """An INLINE payload exceeding the cache capacity (129 > 128 bytes) is
+    rejected at ingest (fail closed)."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_enum_variant(
+            program_id=b'\x01' * 32,
+            enum_id="SwapRoute",
+            variant_index=1,
+            variant_name="Orca",
+            payload_kind=0x02,  # INLINE
+            variant_payload=b'\x05' * 129,
+        )
+    assert exc_info.value.status == ErrorType.INVALID_ENUM_VARIANT
+
+
 def test_enum_variant_raw_size_payload(backend):
     sol = SolanaClient(backend)
     _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
@@ -687,6 +718,57 @@ def test_instruction_info_valid_minimal(backend):
         idl_type_pool=b'\x01\x02\x03',
         idl_root_type=0,
     )
+
+
+def test_instruction_info_names_max_length_accepted(backend):
+    """OPERATION_TYPE and PROGRAM_NAME at their exact storage capacity (31 chars,
+    the template buffers hold 31 chars + NUL) are accepted verbatim."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    sol.provide_instruction_info(
+        program_id=b'\x01' * 32,
+        discriminator=b'\xab\xcd\xef\x01',
+        operation_type="O" * 31,
+        program_name="P" * 31,
+        substructures_hash=b'\x00' * 32,
+        idl_type_pool=b'\x01\x02\x03',
+        idl_root_type=0,
+    )
+
+
+def test_instruction_info_operation_type_too_long_rejected(backend):
+    """An OPERATION_TYPE exceeding the template capacity (32 chars > 31) is
+    rejected at ingest, not silently truncated (fail closed)."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_info(
+            program_id=b'\x01' * 32,
+            discriminator=b'\xab\xcd\xef\x01',
+            operation_type="O" * 32,
+            substructures_hash=b'\x00' * 32,
+            idl_type_pool=b'\x01\x02\x03',
+            idl_root_type=0,
+        )
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_INFO
+
+
+def test_instruction_info_program_name_too_long_rejected(backend):
+    """A PROGRAM_NAME exceeding the template capacity (32 chars > 31) is
+    rejected at ingest, not silently truncated (fail closed)."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_info(
+            program_id=b'\x01' * 32,
+            discriminator=b'\xab\xcd\xef\x01',
+            operation_type="Transfer",
+            program_name="P" * 32,
+            substructures_hash=b'\x00' * 32,
+            idl_type_pool=b'\x01\x02\x03',
+            idl_root_type=0,
+        )
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_INFO
 
 
 def test_instruction_info_with_mint_assoc(backend):
