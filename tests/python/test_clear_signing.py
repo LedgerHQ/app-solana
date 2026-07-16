@@ -32,6 +32,7 @@ PARAM_TYPE_DATETIME = 0x03
 PARAM_TYPE_DURATION = 0x04
 PARAM_TYPE_UNIT = 0x05
 PARAM_TYPE_ENUM = 0x06
+PARAM_TYPE_TRUSTED_NAME = 0x07
 PARAM_TYPE_ACCOUNT = 0x08
 PARAM_TYPE_STRING = 0x09
 PARAM_TAG_VERSION = 0x00
@@ -61,6 +62,9 @@ SLICE_APPLIES_TO_FORMATTED = 0x00
 SLICE_APPLIES_TO_SOURCE = 0x01
 PARAM_TOKEN_TAG_TOKEN = 0x02     # PARAM_TOKEN_AMOUNT tag for the TOKEN reference (VALUE)
 PARAM_TOKEN_TAG_DECIMALS = 0x03  # PARAM_TOKEN_AMOUNT tag for the DECIMALS override (VALUE)
+PARAM_TRUSTED_NAME_TAG_TYPES = 0x02   # PARAM_TRUSTED_NAME allowed TrustedNameType list
+TRUSTED_NAME_TYPE_SMART_CONTRACT = 0x02
+TRUSTED_NAME_TYPE_TOKEN = 0x04
 VALUE_SOURCE_ARGUMENT_PATH = 0x00
 VALUE_SOURCE_ACCOUNT_PATH = 0x01
 VALUE_SOURCE_CONSTANT = 0x02
@@ -326,6 +330,24 @@ def _build_string_display_field(argument_path: bytes, name: str, *,
             + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
             + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_STRING)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM, param))
+
+
+def _build_trusted_name_display_field(argument_path: bytes, name: str, *,
+                                      allowed_types: list = None) -> bytes:
+    """A DISPLAY_FIELD with PARAM_TRUSTED_NAME: a 32-byte address argument leaf
+    rendered as the cached trusted name, constrained to an optional type allow-list.
+    The VALUE must be an ARGUMENT_PATH source (enforced on device)."""
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, argument_path))
+    param = (format_tlv(PARAM_TAG_VERSION, 1)
+             + format_tlv(PARAM_TAG_VALUE, value_tlv))
+    if allowed_types is not None:
+        param += format_tlv(PARAM_TRUSTED_NAME_TAG_TYPES, bytes(allowed_types))
+    return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+            + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+            + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
+            + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_TRUSTED_NAME)
             + format_tlv(DISPLAY_FIELD_TAG_PARAM, param))
 
 
@@ -2067,3 +2089,288 @@ def test_typed_string_bounded_with_size_rejected(backend, sol):
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
     assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
+
+
+def test_typed_string_base64(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_STRING with BASE64 encoding renders the leaf bytes as base64."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 0, 0, b"\x01\x02\x03"))
+    _begin_session(sol, message)
+
+    display_field = _build_string_display_field(TYPED_PATH_STRING, "Data",
+                                                encoding=STRING_ENCODING_BASE64)
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_typed_string_slice_formatted_sized_reversed(backend, sol, scenario_navigator,
+                                                     root_pytest_dir):
+    """PARAM_STRING taking the trailing 3 units of the ASCII-formatted string
+    (SIZED + REVERSED, applied to the formatted output) -> 'def' from 'abcdef'."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 0, 0, b"abcdef"))
+    _begin_session(sol, message)
+
+    display_field = _build_string_display_field(
+        TYPED_PATH_STRING, "Tail",
+        encoding=STRING_ENCODING_ASCII,
+        slice_kind=SLICE_KIND_SIZED, slice_size=3, slice_reversed=True,
+        slice_applies_to=SLICE_APPLIES_TO_FORMATTED)
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+
+# ── TRUSTED_NAME end-to-end (PARAM_TRUSTED_NAME + INS 0x29) ───────────────────
+
+def test_trusted_name_resolves_and_displays(backend, sol, scenario_navigator, root_pytest_dir):
+    """A PARAM_TRUSTED_NAME field over a 32-byte pubkey argument resolves to the
+    name carried by a TRUSTED_NAME descriptor (INS 0x29) and displays it."""
+    named_address = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(named_address, 0, 0, b"x"))
+    _begin_session(sol, message)
+
+    # Phase A: the CAL-signed trusted name for the address (no challenge needed).
+    sol.provide_cs_trusted_name(address=named_address, name="MyToken",
+                                name_type=TRUSTED_NAME_TYPE_TOKEN)
+
+    display_field = _build_trusted_name_display_field(
+        TYPED_PATH_PUBKEY, "Token", allowed_types=[TRUSTED_NAME_TYPE_TOKEN])
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_trusted_name_type_not_allowed_shows_address(backend, sol, scenario_navigator,
+                                                     root_pytest_dir):
+    """When the cached name's type is outside the field's allow-list, the device
+    falls back to the short base58 address rather than showing the name."""
+    named_address = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(named_address, 0, 0, b"x"))
+    _begin_session(sol, message)
+
+    # The name is a TOKEN, but the field only permits SMART_CONTRACT.
+    sol.provide_cs_trusted_name(address=named_address, name="MyToken",
+                                name_type=TRUSTED_NAME_TYPE_TOKEN)
+
+    display_field = _build_trusted_name_display_field(
+        TYPED_PATH_PUBKEY, "Token", allowed_types=[TRUSTED_NAME_TYPE_SMART_CONTRACT])
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+
+# ── FINALIZE failure: descriptors do not match the streamed transaction ───────
+
+def test_finalize_substructure_hash_mismatch_incomplete(backend, sol):
+    """A DISPLAY_FIELD whose hash never matches the INSTRUCTION_INFO's committed
+    SUBSTRUCTURES_HASH leaves the template uncommitted; finalize refuses as
+    incomplete rather than signing an unauthenticated descriptor set."""
+    message = _craft_single_instruction_message(
+        sol, BRIDGE_PROGRAM_ID, _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=b'\x00' * 32,  # never matches the streamed substructure
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+
+
+def test_finalize_descriptor_program_mismatch_rejected(backend, sol):
+    """A committed template whose PROGRAM_ID does not match the streamed
+    instruction leaves the walk unable to resolve a template: finalize refuses."""
+    message = _craft_single_instruction_message(
+        sol, BRIDGE_PROGRAM_ID, _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    sol.provide_instruction_info(
+        program_id=b'\x7e' * 32,  # not the transaction's program
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Wrong",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.INVALID_GENERIC_PREVIEW
+
+
+def test_finalize_descriptor_discriminator_mismatch_rejected(backend, sol):
+    """A committed template for the right program but a discriminator that is not
+    a prefix of the instruction data matches nothing: finalize refuses."""
+    message = _craft_single_instruction_message(
+        sol, BRIDGE_PROGRAM_ID, _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=b'\xff',  # transaction data starts with 0x07, not 0xff
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.INVALID_GENERIC_PREVIEW
+
+
+# ── ALT resolution end-to-end (v0 versioned transaction) ──────────────────────
+
+# A program whose single instruction references an ALT-loaded account.
+ALT_PROGRAM_ID = b'\x0c' * 32
+ALT_DISCRIMINATOR = b'\x0c'
+# IDL type pool: STRUCT(1 field) = [BYTES_FIXED(1)] consuming the 1-byte discriminator.
+ALT_POOL = bytes([2, 0x20, 1, 1, 0x12, 0x00, 0x01])
+ALT_TABLE_ADDRESS = b'\xa0' * 32
+ALT_ENTRY_INDEX = 7
+
+
+def _craft_v0_message_with_alt(sender_pubkey: bytes, program_id: bytes,
+                               instruction_data: bytes, *,
+                               instruction_account_indexes: bytes,
+                               alt_table_address: bytes,
+                               alt_writable_entries: list,
+                               alt_readonly_entries: list) -> bytes:
+    """Hand-craft a v0 (versioned) message with one ALT lookup table.
+
+    Static keys are [sender (signer), program]. The single instruction's account
+    indexes may reference ALT-loaded accounts (global index >= static key count),
+    which the device resolves through the ALT section + a signed ALT_RESOLUTION
+    descriptor. All compact-u16 counts stay below 128 (single byte). The layout
+    mirrors libsol/parser.c parse_message_header + the ALT section."""
+    static_keys = [sender_pubkey, program_id]
+    body = bytes([0x80])              # version prefix: versioned, version 0
+    body += bytes([1, 0, 1])         # num_required_sigs, ro_signed, ro_unsigned (program)
+    body += bytes([len(static_keys)])
+    for key in static_keys:
+        body += key
+    body += bytes(32)                # blockhash (zeroed, as for the preview fingerprint)
+    body += bytes([1])               # instructions_length
+    # single instruction: program is static key 1
+    body += bytes([1])
+    body += bytes([len(instruction_account_indexes)]) + instruction_account_indexes
+    body += bytes([len(instruction_data)]) + instruction_data
+    # address-table-lookup section: one table
+    body += bytes([1])               # num_tables
+    body += alt_table_address
+    body += bytes([len(alt_writable_entries)]) + bytes(alt_writable_entries)
+    body += bytes([len(alt_readonly_entries)]) + bytes(alt_readonly_entries)
+    return body
+
+
+def test_alt_loaded_account_resolved_and_displayed(backend, sol, scenario_navigator,
+                                                   root_pytest_dir):
+    """A v0 transaction references an ALT-loaded account (global index beyond the
+    static keys). Finalize maps it back to (alt_address, entry_index), resolves it
+    through a signed ALT_RESOLUTION descriptor, and displays the concrete address."""
+    sender = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+    resolved_address = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+
+    # Static keys are indexes 0..1; global index 2 is the first ALT writable entry.
+    message = _craft_v0_message_with_alt(
+        sender, ALT_PROGRAM_ID, ALT_DISCRIMINATOR,
+        instruction_account_indexes=bytes([2]),
+        alt_table_address=ALT_TABLE_ADDRESS,
+        alt_writable_entries=[ALT_ENTRY_INDEX],
+        alt_readonly_entries=[],
+    )
+    _begin_session(sol, message)
+
+    challenge = sol.get_challenge()
+    sol.provide_alt_resolution(
+        challenge=challenge,
+        alt_address=ALT_TABLE_ADDRESS,
+        entry_index=ALT_ENTRY_INDEX,
+        resolved_address=resolved_address,
+    )
+
+    display_field = _build_account_display_field(0, "Delegate")
+    sol.provide_instruction_info(
+        program_id=ALT_PROGRAM_ID,
+        discriminator=ALT_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="AltProg",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=ALT_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+
+
+def test_alt_loaded_account_without_resolution_refused(backend, sol):
+    """Without a matching ALT_RESOLUTION descriptor, an ALT-loaded account cannot
+    be resolved to a concrete key and finalize refuses to sign (fail closed)."""
+    sender = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+    message = _craft_v0_message_with_alt(
+        sender, ALT_PROGRAM_ID, ALT_DISCRIMINATOR,
+        instruction_account_indexes=bytes([2]),
+        alt_table_address=ALT_TABLE_ADDRESS,
+        alt_writable_entries=[ALT_ENTRY_INDEX],
+        alt_readonly_entries=[],
+    )
+    _begin_session(sol, message)
+
+    display_field = _build_account_display_field(0, "Delegate")
+    sol.provide_instruction_info(
+        program_id=ALT_PROGRAM_ID,
+        discriminator=ALT_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="AltProg",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=ALT_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.INVALID_GENERIC_PREVIEW
