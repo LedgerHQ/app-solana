@@ -14,10 +14,7 @@
 #include "cs_transaction.h"
 #include "cs_enum_cache.h"
 
-#define TYPE_ENUM_VARIANT       0x17
-#define MAX_ENUM_ID_LENGTH      64
-#define MAX_VARIANT_NAME_LENGTH 64
-#define MAX_PAYLOAD_LENGTH      255
+#define TYPE_ENUM_VARIANT 0x17
 
 typedef struct tlv_out_s {
     TLV_reception_t received_tags;
@@ -25,11 +22,12 @@ typedef struct tlv_out_s {
     uint8_t structure_type;
     uint8_t version;
     uint8_t program_id[32];
-    char enum_id[MAX_ENUM_ID_LENGTH + 1];
+    // Sized from the enum-cache caps so oversized inputs are rejected at ingest, not later.
+    char enum_id[CS_ENUM_ID_MAX_SIZE + 1];
     uint16_t variant_index;
-    char variant_name[MAX_VARIANT_NAME_LENGTH + 1];
+    char variant_name[CS_VARIANT_NAME_MAX_SIZE + 1];
     uint8_t payload_kind;
-    uint8_t payload[MAX_PAYLOAD_LENGTH];
+    uint8_t payload[CS_VARIANT_PAYLOAD_MAX_SIZE];
     size_t payload_size;
 
     cx_sha256_t hash_ctx;
@@ -71,7 +69,7 @@ static bool handle_payload_kind(const tlv_data_t *data, tlv_out_t *out) {
 
 static bool handle_payload(const tlv_data_t *data, tlv_out_t *out) {
     buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 0, MAX_PAYLOAD_LENGTH)) {
+    if (!get_buffer_from_tlv_data(data, &temp, 0, CS_VARIANT_PAYLOAD_MAX_SIZE)) {
         return false;
     }
     out->payload_size = temp.size;

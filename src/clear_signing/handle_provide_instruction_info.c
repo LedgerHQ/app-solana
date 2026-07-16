@@ -14,22 +14,18 @@
 #include "tlv_parser_cs_value.h"
 #include "cs_instruction_template.h"
 
-#define MAX_DISCRIMINATOR_SIZE    8
-#define MAX_OPERATION_TYPE_LENGTH 64
-#define MAX_PROGRAM_NAME_LENGTH   64
-#define MAX_IDL_TYPE_POOL_SIZE    512
-
 typedef struct tlv_out_s {
     TLV_reception_t received_tags;
 
     uint8_t version;
     uint8_t program_id[32];
-    uint8_t discriminator[MAX_DISCRIMINATOR_SIZE];
+    uint8_t discriminator[CS_MAX_DISCRIMINATOR_SIZE];
     size_t discriminator_size;
-    char operation_type[MAX_OPERATION_TYPE_LENGTH + 1];
-    char program_name[MAX_PROGRAM_NAME_LENGTH + 1];
+    // Sized from the template caps so oversized names are rejected at ingest, not truncated on copy.
+    char operation_type[CS_MAX_OPERATION_TYPE_SIZE];
+    char program_name[CS_MAX_PROGRAM_NAME_SIZE];
     uint8_t substructures_hash[32];
-    uint8_t idl_type_pool[MAX_IDL_TYPE_POOL_SIZE];
+    uint8_t idl_type_pool[CS_MAX_IDL_TYPE_POOL_SIZE];
     size_t idl_type_pool_size;
     uint8_t idl_root_type;
     uint8_t mint_assoc_account;
@@ -58,7 +54,7 @@ static bool handle_program_id(const tlv_data_t *data, tlv_out_t *out) {
 
 static bool handle_discriminator(const tlv_data_t *data, tlv_out_t *out) {
     buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 0, MAX_DISCRIMINATOR_SIZE)) {
+    if (!get_buffer_from_tlv_data(data, &temp, 0, CS_MAX_DISCRIMINATOR_SIZE)) {
         return false;
     }
     out->discriminator_size = temp.size;
@@ -87,7 +83,7 @@ static bool handle_substructures_hash(const tlv_data_t *data, tlv_out_t *out) {
 
 static bool handle_idl_type_pool(const tlv_data_t *data, tlv_out_t *out) {
     buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 1, MAX_IDL_TYPE_POOL_SIZE)) {
+    if (!get_buffer_from_tlv_data(data, &temp, 1, CS_MAX_IDL_TYPE_POOL_SIZE)) {
         return false;
     }
     out->idl_type_pool_size = temp.size;
