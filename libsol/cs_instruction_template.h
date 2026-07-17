@@ -136,7 +136,6 @@ typedef struct cs_format_trusted_name_s {
 
 // Fixed capacities. Inputs exceeding these fail closed rather than truncate.
 #define CS_MAX_INSTRUCTION_TEMPLATES 4
-#define CS_MAX_IDL_TYPE_POOL_SIZE    512
 #define CS_MAX_DISCRIMINATOR_SIZE    8
 #define CS_MAX_DISPLAY_FIELDS        8
 #define CS_MAX_ARGUMENT_PATH_SIZE    16
@@ -193,7 +192,7 @@ typedef struct cs_instruction_template_s {
     uint8_t discriminator_size;
     char operation_type[CS_MAX_OPERATION_TYPE_SIZE];
     char program_name[CS_MAX_PROGRAM_NAME_SIZE];
-    uint8_t idl_type_pool[CS_MAX_IDL_TYPE_POOL_SIZE];
+    uint8_t *idl_type_pool;  // heap, sized to idl_type_pool_size; owned by this template
     size_t idl_type_pool_size;
     uint8_t idl_root_type;
     cs_display_field_t display_fields[CS_MAX_DISPLAY_FIELDS];
@@ -268,6 +267,11 @@ int cs_instruction_template_set_format_string(const cs_format_string_t *format);
 // added display field. Must be called immediately after adding a field with
 // param_type == TRUSTED_NAME. Returns 0 on success, -1 when no matching field.
 int cs_instruction_template_set_format_trusted_name(const cs_format_trusted_name_t *format);
+
+// Copy the IDL type pool into a right-sized heap buffer owned by the in-flight
+// builder. `size` is the exact byte length streamed by the descriptor.
+// Returns 0 on success, -1 when no builder is open or the allocation fails.
+int cs_instruction_template_set_idl_type_pool(const uint8_t *data, size_t size);
 
 // Set mint association indices on the in-flight builder. Both indices refer to
 // the instruction's accounts array: `account_idx` is the token account,
