@@ -341,11 +341,12 @@ int resolve_alt_loaded_index(const uint8_t *transaction,
     } else {
         target = loaded_index - total_writable;
     }
-    PRINTF("resolve_alt_loaded_index: loaded_index=%d total_writable=%d want_writable=%d target=%d\n",
-           loaded_index,
-           total_writable,
-           want_writable,
-           target);
+    PRINTF(
+        "resolve_alt_loaded_index: loaded_index=%d total_writable=%d want_writable=%d target=%d\n",
+        loaded_index,
+        total_writable,
+        want_writable,
+        target);
 
     // Second scan: replay the same tables and consume entries from the selected
     // list (writable or readonly) until the target position lands inside a table.
@@ -377,7 +378,9 @@ int resolve_alt_loaded_index(const uint8_t *transaction,
         if (target < entry_count) {
             *out_alt_address = alt_address;
             *out_entry_index = entry_list[target];
-            PRINTF("resolve_alt_loaded_index: hit table %d, entry_index=%d\n", i, entry_list[target]);
+            PRINTF("resolve_alt_loaded_index: hit table %d, entry_index=%d\n",
+                   i,
+                   entry_list[target]);
             return 0;
         }
         target -= entry_count;
@@ -386,7 +389,6 @@ int resolve_alt_loaded_index(const uint8_t *transaction,
     PRINTF("resolve_alt_loaded_index: global index %u beyond loaded range\n", global_index);
     return -1;
 }
-
 
 int parse_instruction(Parser *parser, Instruction *instruction) {
     BAIL_IF(parse_u8(parser, &instruction->program_id_index));

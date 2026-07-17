@@ -32,7 +32,8 @@ typedef enum cs_variant_payload_kind_e {
 
 // One cached enum variant descriptor. Only ever exposed once fully stored, so
 // every field is valid. `payload_kind` tags the union: only the member matching
-// the kind is valid (EMPTY leaves the union unused).
+// the kind is valid (EMPTY leaves the union unused). The INLINE descriptor owns
+// a separately heap-allocated buffer sized to its exact length.
 typedef struct cs_enum_variant_s {
     // Enum key
     uint8_t program_id[32];
@@ -43,15 +44,15 @@ typedef struct cs_enum_variant_s {
     char variant_name[CS_VARIANT_NAME_MAX_SIZE + 1];
     cs_variant_payload_kind_t payload_kind;
     union {
-        // CS_VARIANT_PAYLOAD_INLINE: the self-contained inline type descriptor the walker decodes.
+        // CS_VARIANT_PAYLOAD_INLINE: the self-contained inline type descriptor the
+        // walker decodes. `bytes` is heap-allocated to `size`, owned by this entry.
         struct {
-            uint8_t bytes[CS_VARIANT_PAYLOAD_MAX_SIZE];
+            uint8_t *bytes;
             uint16_t size;
         } inline_descriptor;
         // CS_VARIANT_PAYLOAD_RAW_SIZE: opaque payload byte count to skip.
         uint16_t raw_size;
         // CS_VARIANT_PAYLOAD_EMPTY: nothing.
-        // empty
     } payload;
 } cs_enum_variant_t;
 

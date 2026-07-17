@@ -10,15 +10,18 @@
 
 #define CS_MAX_TRUSTED_NAMES 8
 
-// Maximum name length, excluding the NUL terminator.
+// Maximum accepted name length, excluding the NUL terminator. This is a
+// validation bound only: storage is sized to the actual name (see `name`).
 #define CS_TRUSTED_NAME_MAX_LEN 64
 
 // `type` is kept so a PARAM_TRUSTED_NAME field can enforce its type allow-list.
 // The source is not stored: ingest only accepts CRYPTO_ASSET_LIST.
+// `name` is heap-allocated to strlen(name) + 1, owned by this entry, so a short
+// name costs a short buffer.
 typedef struct cs_trusted_name_s {
     uint8_t address[32];
-    char name[CS_TRUSTED_NAME_MAX_LEN + 1];
     uint8_t type;
+    char *name;
 } cs_trusted_name_t;
 
 // Store one trusted name (`name` NUL-terminated, at most CS_TRUSTED_NAME_MAX_LEN

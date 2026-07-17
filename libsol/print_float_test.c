@@ -65,7 +65,10 @@ static void roundtrip_f32(float f) {
     assert(print_f32(bytes, out, sizeof(out)) == 0);
     float parsed = strtof(out, NULL);
     if (parsed != f) {
-        printf("    f32 roundtrip failed: %.9g -> \"%s\" -> %.9g\n", (double) f, out, (double) parsed);
+        printf("    f32 roundtrip failed: %.9g -> \"%s\" -> %.9g\n",
+               (double) f,
+               out,
+               (double) parsed);
     }
     assert(parsed == f);
 }

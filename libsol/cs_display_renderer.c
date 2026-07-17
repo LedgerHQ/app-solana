@@ -16,22 +16,79 @@
 _Static_assert(CS_DISPLAY_VALUE_SIZE >= CS_TRUSTED_NAME_MAX_LEN + 1,
                "CS_DISPLAY_VALUE_SIZE too small for a maximum-length trusted name");
 
-typedef struct cs_display_renderer_s {
-    cs_display_element_t elements[CS_MAX_DISPLAY_ELEMENTS];
-    uint8_t element_count;
-} cs_display_renderer_t;
+typedef struct cs_display_renderer_table_s {
+    cs_display_element_t **elements;  // heap pointer array, grown on demand
+    size_t capacity;
+    size_t count;
+} cs_display_renderer_table_t;
 
 // Scratch buffer size for encoding a PARAM_STRING value before slicing the
 // formatted result. Large enough to hold an encoded string from which a
 // display-sized window (CS_DISPLAY_VALUE_SIZE) can be sliced.
 #define CS_STRING_FORMATTED_MAX 128
 
-static cs_display_renderer_t *G_cs_display_renderer = NULL;
+static cs_display_renderer_table_t G_cs_display_renderer;
 
-void cs_display_renderer_reset(void) {
-    if (G_cs_display_renderer != NULL) {
-        APP_MEM_FREE_AND_NULL((void **) &G_cs_display_renderer);
+// Pointer-array capacity grows in fixed steps of this size (also the initial
+// allocation). The element count itself has no fixed cap: it is bounded by the
+// surviving instructions and their fields, and ultimately by the pool.
+#define CS_DISPLAY_ELEMENTS_CAP_STEP 8
+
+// Ensure the pointer array can hold one more element, growing it by one step on
+// demand. The first allocation uses CALLOC; later growth reallocates, so realloc
+// is never handed a NULL base.
+static int ensure_element_capacity(void) {
+    if (G_cs_display_renderer.count < G_cs_display_renderer.capacity) {
+        return 0;
     }
+    if (G_cs_display_renderer.capacity == 0) {
+        cs_display_element_t **initial = NULL;
+        if (!APP_MEM_CALLOC((void **) &initial, CS_DISPLAY_ELEMENTS_CAP_STEP * sizeof(*initial))) {
+            PRINTF("ensure_element_capacity: element table allocation failed\n");
+            return -1;
+        }
+        G_cs_display_renderer.elements = initial;
+        G_cs_display_renderer.capacity = CS_DISPLAY_ELEMENTS_CAP_STEP;
+    } else {
+        size_t new_capacity = G_cs_display_renderer.capacity + CS_DISPLAY_ELEMENTS_CAP_STEP;
+        cs_display_element_t **grown = APP_MEM_REALLOC(G_cs_display_renderer.elements,
+                                                       new_capacity * sizeof(*grown));
+        if (grown == NULL) {
+            PRINTF("ensure_element_capacity: element table growth failed\n");
+            return -1;
+        }
+        G_cs_display_renderer.elements = grown;
+        G_cs_display_renderer.capacity = new_capacity;
+    }
+    return 0;
+}
+
+// Allocate, register and return the next display element, or NULL on allocation
+// failure (out of pool).
+static cs_display_element_t *append_element(void) {
+    if (ensure_element_capacity() != 0) {
+        return NULL;
+    }
+    cs_display_element_t *element = NULL;
+    if (!APP_MEM_CALLOC((void **) &element, sizeof(*element))) {
+        PRINTF("append_element: element allocation failed\n");
+        return NULL;
+    }
+    G_cs_display_renderer.elements[G_cs_display_renderer.count] = element;
+    G_cs_display_renderer.count++;
+    return element;
+}
+
+// Release every element and the pointer array, returning to the empty state.
+void cs_display_renderer_reset(void) {
+    for (size_t i = 0; i < G_cs_display_renderer.count; i++) {
+        APP_MEM_FREE_AND_NULL((void **) &G_cs_display_renderer.elements[i]);
+    }
+    if (G_cs_display_renderer.elements != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &G_cs_display_renderer.elements);
+    }
+    G_cs_display_renderer.capacity = 0;
+    G_cs_display_renderer.count = 0;
 }
 
 // Defined further down; needed by format_leaf for the raw byte kinds.
@@ -647,8 +704,8 @@ static int encode_hex(const uint8_t *in, size_t in_len, char *out, size_t out_si
 
 // Encode raw bytes to standard (padded) base64. Returns encoded length or -1.
 static int encode_base64(const uint8_t *in, size_t in_len, char *out, size_t out_size) {
-    static const char alphabet[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    static const char
+        alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     size_t out_len = ((in_len + 2) / 3) * 4;
     size_t o = 0;
 
@@ -684,7 +741,11 @@ static int encode_base64(const uint8_t *in, size_t in_len, char *out, size_t out
 
 // Encode raw bytes as printable text. ASCII rejects non-printable bytes; UTF-8
 // passes bytes through but rejects embedded NUL. Returns encoded length or -1.
-static int encode_text(const uint8_t *in, size_t in_len, bool ascii_only, char *out, size_t out_size) {
+static int encode_text(const uint8_t *in,
+                       size_t in_len,
+                       bool ascii_only,
+                       char *out,
+                       size_t out_size) {
     if (in_len + 1 > out_size) {
         PRINTF("encode_text: output does not fit\n");
         return -1;
@@ -903,10 +964,7 @@ static int format_argument_field(const cs_display_field_t *field,
             return format_duration(leaf, value_out, value_out_size);
 
         case CS_PARAM_TYPE_UNIT:
-            return format_unit(leaf,
-                               &field->argument.format.unit,
-                               value_out,
-                               value_out_size);
+            return format_unit(leaf, &field->argument.format.unit, value_out, value_out_size);
 
         case CS_PARAM_TYPE_ACCOUNT:
             return format_account_short_named(leaf, value_out, value_out_size);
@@ -918,10 +976,7 @@ static int format_argument_field(const cs_display_field_t *field,
                                        value_out_size);
 
         case CS_PARAM_TYPE_STRING:
-            return format_string(leaf,
-                                 &field->argument.format.string,
-                                 value_out,
-                                 value_out_size);
+            return format_string(leaf, &field->argument.format.string, value_out, value_out_size);
 
         default:
             PRINTF("format_argument_field: unsupported param_type %d\n",
@@ -963,11 +1018,6 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
                             const bool *survivors) {
     cs_display_renderer_reset();
 
-    if (!APP_MEM_CALLOC((void **) &G_cs_display_renderer, sizeof(cs_display_renderer_t))) {
-        PRINTF("cs_display_renderer_run: allocation failed\n");
-        return -1;
-    }
-
     // Count surviving instructions for the [ix/total] header
     size_t survivor_count = 0;
     for (size_t i = 0; i < walked_instructions_count; i++) {
@@ -976,7 +1026,6 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
         }
     }
 
-    uint8_t element_index = 0;
     size_t survivor_index = 0;
 
     for (size_t ix = 0; ix < walked_instructions_count; ix++) {
@@ -986,11 +1035,11 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
         survivor_index++;
 
         // Instruction header element: "[ix/total] operation_type"
-        if (element_index >= CS_MAX_DISPLAY_ELEMENTS) {
-            PRINTF("cs_display_renderer_run: too many display elements\n");
+        cs_display_element_t *header = append_element();
+        if (header == NULL) {
             return -1;
         }
-        snprintf(G_cs_display_renderer->elements[element_index].title,
+        snprintf(header->title,
                  CS_DISPLAY_TITLE_SIZE,
                  "[%u/%u] %s",
                  (unsigned) survivor_index,
@@ -999,7 +1048,7 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
 
         // Display Program, as name if the template told us, as address otherwise
         if (walked_instructions[ix].template->program_name[0] != '\0') {
-            snprintf(G_cs_display_renderer->elements[element_index].value,
+            snprintf(header->value,
                      CS_DISPLAY_VALUE_SIZE,
                      "Program: %s",
                      walked_instructions[ix].template->program_name);
@@ -1012,69 +1061,53 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
                 PRINTF("cs_display_renderer_run: base58 encode program_id failed\n");
                 return -1;
             }
-            snprintf(G_cs_display_renderer->elements[element_index].value,
-                     CS_DISPLAY_VALUE_SIZE,
-                     "Program: %s",
-                     address);
+            snprintf(header->value, CS_DISPLAY_VALUE_SIZE, "Program: %s", address);
         }
-        element_index++;
 
         for (uint8_t field = 0; field < walked_instructions[ix].resolved_count; field++) {
-            if (element_index >= CS_MAX_DISPLAY_ELEMENTS) {
-                PRINTF("cs_display_renderer_run: too many display elements\n");
-                return -1;
-            }
-
             if (walked_instructions[ix].resolved[field].value == NULL) {
                 continue;
             }
 
+            cs_display_element_t *element = append_element();
+            if (element == NULL) {
+                return -1;
+            }
+
             if (walked_instructions[ix].template->display_fields[field].name[0] != '\0') {
-                strlcpy(G_cs_display_renderer->elements[element_index].title,
+                strlcpy(element->title,
                         walked_instructions[ix].template->display_fields[field].name,
                         CS_DISPLAY_TITLE_SIZE);
             } else {
-                snprintf(G_cs_display_renderer->elements[element_index].title,
-                         CS_DISPLAY_TITLE_SIZE,
-                         "Field %u",
-                         field + 1);
+                snprintf(element->title, CS_DISPLAY_TITLE_SIZE, "Field %u", field + 1);
             }
 
             if (format_field(&walked_instructions[ix].template->display_fields[field],
                              &walked_instructions[ix].resolved[field],
                              walked_instructions[ix].field_mint[field],
-                             G_cs_display_renderer->elements[element_index].value,
+                             element->value,
                              CS_DISPLAY_VALUE_SIZE) != 0) {
                 PRINTF("cs_display_renderer_run: format failed ix=%u field=%u\n",
                        (unsigned) ix,
                        field);
                 return -1;
             }
-
-            element_index++;
         }
     }
 
-    G_cs_display_renderer->element_count = element_index;
-    PRINTF("cs_display_renderer_run: produced %d elements\n", element_index);
+    PRINTF("cs_display_renderer_run: produced %u elements\n",
+           (unsigned) G_cs_display_renderer.count);
     return 0;
 }
 
 size_t cs_display_renderer_element_count(void) {
-    if (G_cs_display_renderer == NULL) {
-        return 0;
-    }
-    return G_cs_display_renderer->element_count;
+    return G_cs_display_renderer.count;
 }
 
 const cs_display_element_t *cs_display_renderer_element(size_t index) {
-    if (G_cs_display_renderer == NULL) {
-        PRINTF("cs_display_renderer_element: renderer not run\n");
-        return NULL;
-    }
-    if (index >= G_cs_display_renderer->element_count) {
+    if (index >= G_cs_display_renderer.count) {
         PRINTF("cs_display_renderer_element: index %u out of range\n", (unsigned) index);
         return NULL;
     }
-    return &G_cs_display_renderer->elements[index];
+    return G_cs_display_renderer.elements[index];
 }

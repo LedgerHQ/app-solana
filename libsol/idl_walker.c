@@ -277,6 +277,11 @@ typedef struct size_frame_s {
     size_t acc;
 } size_frame_t;
 
+// Growth step for the walk scratch stacks (also their initial capacity). Fixed
+// increment rather than doubling: the walk is bounded and shallow, so a small
+// linear step keeps the reserved capacity close to the real depth.
+#define IDL_WALK_STACK_STEP 8
+
 typedef struct walk_ctx_s {
     // Instruction argument bytes under decode, and the current read offset.
     const uint8_t *data;
@@ -558,7 +563,7 @@ static int inline_span(walk_ctx_t *walk, const uint8_t *ptr, const uint8_t *end,
         cur += header_len;
 
         if (depth == walk->span_cap) {
-            size_t new_cap = walk->span_cap * 2;
+            size_t new_cap = walk->span_cap + IDL_WALK_STACK_STEP;
             span_frame_t *grown = APP_MEM_REALLOC(walk->span_stack, new_cap * sizeof(span_frame_t));
             if (grown == NULL) {
                 PRINTF("idl_walker: span stack growth failed\n");
@@ -773,7 +778,8 @@ static int inline_static_data_size(walk_ctx_t *walk,
                 case IDL_KIND_HIDDEN_SUFFIX:
                     break;
                 default:
-                    PRINTF("idl_walker: inline OPTION_FIXED inner has variable kind 0x%02x\n", kind);
+                    PRINTF("idl_walker: inline OPTION_FIXED inner has variable kind 0x%02x\n",
+                           kind);
                     *out = FS_VARIABLE;
                     return 0;
             }
@@ -794,7 +800,7 @@ static int inline_static_data_size(walk_ctx_t *walk,
         }
 
         if (depth == walk->size_cap) {
-            size_t new_cap = walk->size_cap * 2;
+            size_t new_cap = walk->size_cap + IDL_WALK_STACK_STEP;
             size_frame_t *grown = APP_MEM_REALLOC(walk->size_stack, new_cap * sizeof(size_frame_t));
             if (grown == NULL) {
                 PRINTF("idl_walker: size stack growth failed\n");
@@ -810,12 +816,13 @@ static int inline_static_data_size(walk_ctx_t *walk,
         walk->size_stack[depth].own = 0;
         walk->size_stack[depth].acc = 0;
         if (kind == IDL_KIND_ARRAY_FIXED) {
-            walk->size_stack[depth].multiplier =
-                ((size_t) header_start[1] << 8) | (size_t) header_start[2];
+            walk->size_stack[depth].multiplier = ((size_t) header_start[1] << 8) |
+                                                 (size_t) header_start[2];
         } else if (kind == IDL_KIND_OPTION_FIXED) {
             size_t flag_width = fixed_primitive_width(header_start[1]);
             if (flag_width == 0) {
-                PRINTF("idl_walker: inline OPTION_FIXED invalid flag kind 0x%02x\n", header_start[1]);
+                PRINTF("idl_walker: inline OPTION_FIXED invalid flag kind 0x%02x\n",
+                       header_start[1]);
                 return -1;
             }
             walk->size_stack[depth].own = flag_width;
@@ -1009,7 +1016,7 @@ static int emit_leaf(walk_ctx_t *walk, uint8_t kind, const uint8_t *value, size_
 
 static int ensure_frame_capacity(walk_ctx_t *walk) {
     if (walk->stack_len == walk->stack_cap) {
-        size_t new_cap = walk->stack_cap * 2;
+        size_t new_cap = walk->stack_cap + IDL_WALK_STACK_STEP;
         frame_t *new_stack = APP_MEM_REALLOC(walk->stack, new_cap * sizeof(frame_t));
         if (new_stack == NULL) {
             PRINTF("idl_walker: frame stack growth failed\n");
@@ -1387,8 +1394,9 @@ static int walk_top(walk_ctx_t *walk) {
                         PRINTF("idl_walker: inline OPTION_FIXED skip past end of data\n");
                         return -1;
                     }
-                    PRINTF("idl_walker: inline OPTION_FIXED flag=0 absent, skipping inner_size=%d\n",
-                           inner_size);
+                    PRINTF(
+                        "idl_walker: inline OPTION_FIXED flag=0 absent, skipping inner_size=%d\n",
+                        inner_size);
                     walk->cursor += inner_size;
                     frame->child_count = 0;
                 } else {

@@ -19,7 +19,7 @@
 // proportional to the number of ALT resolutions actually provided. The table
 // itself is a tiny static array of pointers plus a count.
 typedef struct cs_alt_cache_table_s {
-    cs_alt_entry_t *entries[CS_MAX_ALT_ENTRIES];
+    cs_alt_entry_t **entries;  // grown by one entry per add (APDU-paced)
     uint8_t count;
 } cs_alt_cache_table_t;
 
@@ -38,6 +38,15 @@ int cs_alt_cache_add(const uint8_t alt_address[PUBKEY_SIZE],
         PRINTF("cs_alt_cache_add: cache full (max %d)\n", CS_MAX_ALT_ENTRIES);
         return -1;
     }
+
+    // Grow the pointer array to hold exactly one more entry.
+    cs_alt_entry_t **grown = APP_MEM_REALLOC(G_alt_cache.entries,
+                                             (G_alt_cache.count + 1) * sizeof(*grown));
+    if (grown == NULL) {
+        PRINTF("cs_alt_cache_add: table growth failed\n");
+        return -1;
+    }
+    G_alt_cache.entries = grown;
 
     cs_alt_entry_t *slot = NULL;
     if (!APP_MEM_CALLOC((void **) &slot, sizeof(*slot))) {
@@ -78,6 +87,9 @@ void cs_alt_cache_reset(void) {
     PRINTF("cs_alt_cache_reset: releasing %d entries\n", G_alt_cache.count);
     for (uint8_t i = 0; i < G_alt_cache.count; i++) {
         APP_MEM_FREE_AND_NULL((void **) &G_alt_cache.entries[i]);
+    }
+    if (G_alt_cache.entries != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &G_alt_cache.entries);
     }
     G_alt_cache.count = 0;
 }
