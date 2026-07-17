@@ -17,6 +17,9 @@ static const uint8_t TARGET_HASH[32] = {0};
 static const uint8_t DISC_A[] = {0x01, 0x02, 0x03, 0x04};
 static const uint8_t DISC_B[] = {0x05, 0x06};
 
+// A dummy IDL type pool payload.
+static const uint8_t IDL_POOL[] = {0x10, 0x20, 0x30, 0x40, 0x50};
+
 // Helper: open a builder, fill it with program_id + discriminator, commit.
 static void commit_template(const uint8_t program_id[32], const uint8_t *disc, size_t disc_size) {
     cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
@@ -54,10 +57,18 @@ static void test_open_and_commit(void) {
     memcpy(builder->program_id, PROGRAM_A, 32);
     memcpy(builder->discriminator, DISC_A, sizeof(DISC_A));
     builder->discriminator_size = sizeof(DISC_A);
+    assert(cs_instruction_template_set_idl_type_pool(IDL_POOL, sizeof(IDL_POOL)) == 0);
 
     assert(cs_instruction_template_commit() == 0);
     assert(cs_instruction_template_pending() == false);
     assert(cs_instruction_template_committed_count() == 1);
+
+    // The IDL pool buffer survives the commit with its content intact.
+    const cs_instruction_template_t *found =
+        cs_instruction_template_find(PROGRAM_A, DISC_A, sizeof(DISC_A));
+    assert(found != NULL);
+    assert(found->idl_type_pool_size == sizeof(IDL_POOL));
+    assert(memcmp(found->idl_type_pool, IDL_POOL, sizeof(IDL_POOL)) == 0);
 
     cs_instruction_template_table_reset();
     assert(mock_mem_outstanding() == 0);
@@ -253,6 +264,8 @@ static void test_open_discards_previous_builder(void) {
     cs_instruction_template_t *first = cs_instruction_template_open(TARGET_HASH);
     assert(first != NULL);
     memcpy(first->program_id, PROGRAM_A, 32);
+    // Give the doomed builder an IDL pool: discarding it must free that buffer too.
+    assert(cs_instruction_template_set_idl_type_pool(IDL_POOL, sizeof(IDL_POOL)) == 0);
 
     // Open again without committing — previous builder is discarded
     cs_instruction_template_t *second = cs_instruction_template_open(TARGET_HASH);
@@ -275,8 +288,18 @@ static void test_reset_cleans_everything(void) {
     mock_mem_reset();
     cs_instruction_template_table_reset();
 
-    commit_template(PROGRAM_A, DISC_A, sizeof(DISC_A));
+    // Committed template carries an IDL pool, and so does the open builder:
+    // reset must free both ownership levels.
+    cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
+    assert(builder != NULL);
+    memcpy(builder->program_id, PROGRAM_A, 32);
+    memcpy(builder->discriminator, DISC_A, sizeof(DISC_A));
+    builder->discriminator_size = sizeof(DISC_A);
+    assert(cs_instruction_template_set_idl_type_pool(IDL_POOL, sizeof(IDL_POOL)) == 0);
+    assert(cs_instruction_template_commit() == 0);
+
     cs_instruction_template_open(TARGET_HASH);  // leave builder open
+    assert(cs_instruction_template_set_idl_type_pool(IDL_POOL, sizeof(IDL_POOL)) == 0);
 
     assert(cs_instruction_template_committed_count() == 1);
     assert(cs_instruction_template_pending() == true);
@@ -311,6 +334,34 @@ static void test_alloc_failure_on_table(void) {
     // Very first alloc (table itself) fails
     mock_mem_fail_after(0);
     assert(cs_instruction_template_open(TARGET_HASH) == NULL);
+
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_set_idl_type_pool_no_builder(void) {
+    printf("  test_set_idl_type_pool_no_builder\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    assert(cs_instruction_template_set_idl_type_pool(IDL_POOL, sizeof(IDL_POOL)) == -1);
+
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_alloc_failure_on_idl_pool(void) {
+    printf("  test_alloc_failure_on_idl_pool\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    // Table (1) and builder (2) allocs succeed; the IDL pool alloc (3) fails.
+    cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
+    assert(builder != NULL);
+    mock_mem_fail_after(0);
+    assert(cs_instruction_template_set_idl_type_pool(IDL_POOL, sizeof(IDL_POOL)) == -1);
+    assert(builder->idl_type_pool == NULL);
 
     mock_mem_reset();
     cs_instruction_template_table_reset();
@@ -548,6 +599,8 @@ int main(void) {
     test_reset_cleans_everything();
     test_alloc_failure_on_open();
     test_alloc_failure_on_table();
+    test_set_idl_type_pool_no_builder();
+    test_alloc_failure_on_idl_pool();
     test_add_account_field();
     test_add_account_field_no_builder();
     test_mixed_display_fields_order();

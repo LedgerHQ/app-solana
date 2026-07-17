@@ -47,6 +47,9 @@ cs_instruction_template_t *cs_instruction_template_open(const uint8_t target_has
 
     // Drop any previous unfinished builder before opening a fresh one.
     if (G_template_table->builder != NULL) {
+        if (G_template_table->builder->idl_type_pool != NULL) {
+            APP_MEM_FREE_AND_NULL((void **) &G_template_table->builder->idl_type_pool);
+        }
         APP_MEM_FREE_AND_NULL((void **) &G_template_table->builder);
     }
     if (!APP_MEM_CALLOC((void **) &G_template_table->builder, sizeof(*G_template_table->builder))) {
@@ -287,6 +290,26 @@ int cs_instruction_template_set_format_trusted_name(const cs_format_trusted_name
     return 0;
 }
 
+int cs_instruction_template_set_idl_type_pool(const uint8_t *data, size_t size) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL) {
+        PRINTF("cs_instruction_template_set_idl_type_pool: no builder open\n");
+        return -1;
+    }
+    // ENFORCE_UNIQUE_TAG bounds this to one call per builder; free defensively anyway.
+    if (builder->idl_type_pool != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &builder->idl_type_pool);
+    }
+    if (!APP_MEM_CALLOC((void **) &builder->idl_type_pool, size)) {
+        PRINTF("cs_instruction_template_set_idl_type_pool: allocation failed (%d bytes)\n",
+               (int) size);
+        return -1;
+    }
+    memcpy(builder->idl_type_pool, data, size);
+    builder->idl_type_pool_size = size;
+    return 0;
+}
+
 // Record which instruction accounts carry the token account and the mint,
 // so the finalize step can resolve the mint pubkey for TOKEN_AMOUNT display.
 int cs_instruction_template_set_mint_assoc(uint8_t account_idx, uint8_t mint_idx) {
@@ -312,6 +335,9 @@ int cs_instruction_template_commit(void) {
         return -1;
     }
 
+    // The struct copy shallow-copies idl_type_pool; ownership of that separate
+    // heap buffer transfers to the committed slot. Freeing the builder struct
+    // below releases only the struct block, never the pool buffer.
     memcpy(&G_template_table->committed[G_template_table->committed_count],
            G_template_table->builder,
            sizeof(*G_template_table->builder));
@@ -361,7 +387,16 @@ void cs_instruction_template_table_reset(void) {
     cs_substructure_reset();
     if (G_template_table != NULL) {
         if (G_template_table->builder != NULL) {
+            if (G_template_table->builder->idl_type_pool != NULL) {
+                APP_MEM_FREE_AND_NULL((void **) &G_template_table->builder->idl_type_pool);
+            }
             APP_MEM_FREE_AND_NULL((void **) &G_template_table->builder);
+        }
+        // Each committed template owns its own IDL pool buffer; free before the table block.
+        for (uint8_t i = 0; i < G_template_table->committed_count; i++) {
+            if (G_template_table->committed[i].idl_type_pool != NULL) {
+                APP_MEM_FREE_AND_NULL((void **) &G_template_table->committed[i].idl_type_pool);
+            }
         }
         APP_MEM_FREE_AND_NULL((void **) &G_template_table);
     }

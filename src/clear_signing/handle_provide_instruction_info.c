@@ -25,8 +25,8 @@ typedef struct tlv_out_s {
     char operation_type[CS_MAX_OPERATION_TYPE_SIZE];
     char program_name[CS_MAX_PROGRAM_NAME_SIZE];
     uint8_t substructures_hash[32];
-    uint8_t idl_type_pool[CS_MAX_IDL_TYPE_POOL_SIZE];
-    size_t idl_type_pool_size;
+    // Points into G_command.message; copied into the template's heap buffer at open time.
+    buffer_t idl_type_pool;
     uint8_t idl_root_type;
     uint8_t mint_assoc_account;
     uint8_t mint_assoc_mint;
@@ -82,13 +82,8 @@ static bool handle_substructures_hash(const tlv_data_t *data, tlv_out_t *out) {
 }
 
 static bool handle_idl_type_pool(const tlv_data_t *data, tlv_out_t *out) {
-    buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 1, CS_MAX_IDL_TYPE_POOL_SIZE)) {
-        return false;
-    }
-    out->idl_type_pool_size = temp.size;
-    memcpy(out->idl_type_pool, temp.ptr, temp.size);
-    return true;
+    // No copy: keep a view into the message, bounded only by the reception buffer.
+    return get_buffer_from_tlv_data(data, &out->idl_type_pool, 1, MAX_MESSAGE_LENGTH);
 }
 
 static bool handle_idl_root_type(const tlv_data_t *data, tlv_out_t *out) {
@@ -232,7 +227,7 @@ int handle_provide_instruction_info(void) {
     PRINTF("operation_type     = %s\n", tlv_extracted.operation_type);
     PRINTF("program_name       = %s\n", tlv_extracted.program_name);
     PRINTF("substructures_hash = %.*H\n", 32, tlv_extracted.substructures_hash);
-    PRINTF("idl_type_pool_size = %d\n", tlv_extracted.idl_type_pool_size);
+    PRINTF("idl_type_pool_size = %d\n", (int) tlv_extracted.idl_type_pool.size);
     PRINTF("idl_root_type      = %d\n", tlv_extracted.idl_root_type);
 
     // A SIGN MESSAGE GENERIC PREVIEW (0x0A) must have opened the context first.
@@ -252,8 +247,11 @@ int handle_provide_instruction_info(void) {
     strlcpy(template->program_name,
             tlv_extracted.program_name,
             sizeof(template->program_name));
-    memcpy(template->idl_type_pool, tlv_extracted.idl_type_pool, tlv_extracted.idl_type_pool_size);
-    template->idl_type_pool_size = tlv_extracted.idl_type_pool_size;
+    if (cs_instruction_template_set_idl_type_pool(tlv_extracted.idl_type_pool.ptr,
+                                                  tlv_extracted.idl_type_pool.size) != 0) {
+        PRINTF("Error: failed to store IDL type pool\n");
+        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+    }
     template->idl_root_type = tlv_extracted.idl_root_type;
 
     if (has_mint_account) {
