@@ -20,7 +20,7 @@
 // proportional to the number of token account states actually provided. The
 // table itself is a tiny static array of pointers plus a count.
 typedef struct cs_token_account_cache_table_s {
-    cs_token_account_t *accounts[CS_MAX_TOKEN_ACCOUNTS];
+    cs_token_account_t **accounts;  // grown by one entry per add (APDU-paced)
     uint8_t count;
 } cs_token_account_cache_table_t;
 
@@ -39,6 +39,16 @@ int cs_token_account_cache_add(const uint8_t account_address[32],
         PRINTF("cs_token_account_cache_add: cache full (max %d)\n", CS_MAX_TOKEN_ACCOUNTS);
         return -1;
     }
+
+    // Grow the pointer array to hold exactly one more entry.
+    cs_token_account_t **grown = APP_MEM_REALLOC(
+        G_token_account_cache.accounts,
+        (G_token_account_cache.count + 1) * sizeof(*grown));
+    if (grown == NULL) {
+        PRINTF("cs_token_account_cache_add: table growth failed\n");
+        return -1;
+    }
+    G_token_account_cache.accounts = grown;
 
     cs_token_account_t *slot = NULL;
     if (!APP_MEM_CALLOC((void **) &slot, sizeof(*slot))) {
@@ -71,6 +81,9 @@ uint8_t cs_token_account_cache_count(void) {
 void cs_token_account_cache_reset(void) {
     for (uint8_t i = 0; i < G_token_account_cache.count; i++) {
         APP_MEM_FREE_AND_NULL((void **) &G_token_account_cache.accounts[i]);
+    }
+    if (G_token_account_cache.accounts != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &G_token_account_cache.accounts);
     }
     G_token_account_cache.count = 0;
 }

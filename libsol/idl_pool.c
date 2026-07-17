@@ -15,10 +15,14 @@
 // Module-global parsed pool
 // =============================================================================
 
-static idl_pool_entry_t *G_idl_pool_entries = NULL;
-static uint8_t G_idl_pool_count = 0;
-static uint8_t G_idl_pool_root_index = 0;
-static bool G_idl_pool_ready = false;
+typedef struct idl_pool_s {
+    idl_pool_entry_t *entries;
+    uint8_t count;
+    uint8_t root_index;  // index of the entry the walk starts from (the pool's root type)
+    bool ready;          // true once a pool is parsed and loaded; getters refuse to read until then
+} idl_pool_t;
+
+static idl_pool_t G_idl_pool;
 
 // =============================================================================
 // Parsing
@@ -293,44 +297,44 @@ int idl_pool_provide(const uint8_t *pool, size_t pool_size, uint8_t root_index) 
         return -1;
     }
 
-    G_idl_pool_entries = entries;
-    G_idl_pool_count = count;
-    G_idl_pool_root_index = root_index;
-    G_idl_pool_ready = true;
+    G_idl_pool.entries = entries;
+    G_idl_pool.count = count;
+    G_idl_pool.root_index = root_index;
+    G_idl_pool.ready = true;
 
     PRINTF("idl_pool_provide: parsed pool (entries=%d, root_index=%d)\n", count, root_index);
     return 0;
 }
 
 bool idl_pool_ready(void) {
-    return G_idl_pool_ready;
+    return G_idl_pool.ready;
 }
 
 uint8_t idl_pool_count(void) {
-    return G_idl_pool_count;
+    return G_idl_pool.count;
 }
 
 uint8_t idl_pool_root_index(void) {
-    return G_idl_pool_root_index;
+    return G_idl_pool.root_index;
 }
 
 const idl_pool_entry_t *idl_pool_entry(uint8_t index) {
-    if (!G_idl_pool_ready) {
+    if (!G_idl_pool.ready) {
         PRINTF("idl_pool_entry: no pool loaded\n");
         return NULL;
     }
-    if (index >= G_idl_pool_count) {
-        PRINTF("idl_pool_entry: index %d out of range (count=%d)\n", index, G_idl_pool_count);
+    if (index >= G_idl_pool.count) {
+        PRINTF("idl_pool_entry: index %d out of range (count=%d)\n", index, G_idl_pool.count);
         return NULL;
     }
-    return &G_idl_pool_entries[index];
+    return &G_idl_pool.entries[index];
 }
 
 void idl_pool_reset(void) {
-    PRINTF("idl_pool_reset: freeing %d entries\n", G_idl_pool_count);
-    APP_MEM_FREE(G_idl_pool_entries);
-    G_idl_pool_entries = NULL;
-    G_idl_pool_count = 0;
-    G_idl_pool_root_index = 0;
-    G_idl_pool_ready = false;
+    PRINTF("idl_pool_reset: freeing %d entries\n", G_idl_pool.count);
+    APP_MEM_FREE(G_idl_pool.entries);
+    G_idl_pool.entries = NULL;
+    G_idl_pool.count = 0;
+    G_idl_pool.root_index = 0;
+    G_idl_pool.ready = false;
 }

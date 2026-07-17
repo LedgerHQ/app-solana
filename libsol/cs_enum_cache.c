@@ -20,7 +20,7 @@
 // for the display renderer buffer at finalize time. The table itself is a tiny
 // static array of pointers plus a count, so it needs no allocation of its own.
 typedef struct cs_enum_cache_table_s {
-    cs_enum_variant_t *variants[CS_MAX_ENUM_VARIANTS];
+    cs_enum_variant_t **variants;  // grown by one entry per add (APDU-paced)
     uint8_t count;
 } cs_enum_cache_table_t;
 
@@ -98,7 +98,17 @@ int cs_enum_cache_add(const uint8_t program_id[32],
         return -1;
     }
 
-    // One descriptor per variant, freed together on reset.
+    // Grow the pointer array to hold exactly one more variant.
+    cs_enum_variant_t **grown = APP_MEM_REALLOC(G_enum_cache.variants,
+                                                (G_enum_cache.count + 1) * sizeof(*grown));
+    if (grown == NULL) {
+        PRINTF("cs_enum_cache_add: table growth failed\n");
+        return -1;
+    }
+    G_enum_cache.variants = grown;
+
+    // One descriptor per variant, freed on reset. INLINE additionally owns a
+    // separately allocated payload buffer, released together with the slot.
     cs_enum_variant_t *slot = NULL;
     if (!APP_MEM_CALLOC((void **) &slot, sizeof(*slot))) {
         PRINTF("cs_enum_cache_add: variant allocation failed\n");
@@ -121,6 +131,12 @@ int cs_enum_cache_add(const uint8_t program_id[32],
         case CS_VARIANT_PAYLOAD_EMPTY:
             break;
         case CS_VARIANT_PAYLOAD_INLINE:
+            // Size the inline buffer to the exact payload length.
+            if (!APP_MEM_CALLOC((void **) &slot->payload.inline_descriptor.bytes, payload_size)) {
+                PRINTF("cs_enum_cache_add: inline payload allocation failed\n");
+                APP_MEM_FREE_AND_NULL((void **) &slot);
+                return -1;
+            }
             memcpy(slot->payload.inline_descriptor.bytes, payload, payload_size);
             slot->payload.inline_descriptor.size = (uint16_t) payload_size;
             break;
@@ -158,8 +174,16 @@ uint8_t cs_enum_cache_count(void) {
 
 void cs_enum_cache_reset(void) {
     // Release every per-variant descriptor; the static table stays but empties.
+    // INLINE variants own a separate payload buffer, freed before the slot.
     for (uint8_t i = 0; i < G_enum_cache.count; i++) {
+        if (G_enum_cache.variants[i]->payload_kind == CS_VARIANT_PAYLOAD_INLINE) {
+            APP_MEM_FREE_AND_NULL(
+                (void **) &G_enum_cache.variants[i]->payload.inline_descriptor.bytes);
+        }
         APP_MEM_FREE_AND_NULL((void **) &G_enum_cache.variants[i]);
+    }
+    if (G_enum_cache.variants != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &G_enum_cache.variants);
     }
     G_enum_cache.count = 0;
 }

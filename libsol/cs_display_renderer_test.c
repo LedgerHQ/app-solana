@@ -144,13 +144,52 @@ static void test_alloc_failure(void) {
     printf("  test_alloc_failure\n");
     mock_mem_reset();
     cs_display_renderer_reset();
+    init_dummy_template();
 
+    uint8_t value[] = {0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00};
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &G_dummy_template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    // The very first allocation (the pointer table) fails: render must fail
+    // closed and keep nothing.
     mock_mem_fail_after(0);
     bool survivor = true;
-    assert(cs_display_renderer_run(NULL, 0, &survivor) == -1);
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
     assert(cs_display_renderer_element_count() == 0);
 
     mock_mem_reset();
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// The header element allocates, then a field element allocation fails: the
+// partially built table must be released with nothing retained.
+static void test_partial_alloc_failure(void) {
+    printf("  test_partial_alloc_failure\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+    init_dummy_template();
+
+    uint8_t value[] = {0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00};
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &G_dummy_template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    // Table + header (2 allocs) succeed, the field element (3rd alloc) fails.
+    mock_mem_fail_after(2);
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
+    assert(cs_display_renderer_element_count() == 1);
+
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
 }
@@ -588,8 +627,8 @@ static void test_render_token_amount_resolved_mint(void) {
     strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
-    template.display_fields[0].argument.format.token_amount.mint_source =
-        CS_TOKEN_MINT_ACCOUNT_INDEX;
+    template.display_fields[0]
+        .argument.format.token_amount.mint_source = CS_TOKEN_MINT_ACCOUNT_INDEX;
     template.display_field_count = 1;
 
     // 1_500_000 = 1.5 USDC (6 decimals)
@@ -903,8 +942,8 @@ static void test_render_trusted_name_resolved(void) {
 
     cs_instruction_template_t template;
     init_argument_template(&template, "Token", CS_PARAM_TYPE_TRUSTED_NAME);
-    template.display_fields[0].argument.format.trusted_name.allowed_types_mask =
-        (uint8_t) (1 << TN_TYPE_TOKEN);
+    template.display_fields[0]
+        .argument.format.trusted_name.allowed_types_mask = (uint8_t) (1 << TN_TYPE_TOKEN);
 
     cs_instruction_result_t instr;
     memset(&instr, 0, sizeof(instr));
@@ -1009,8 +1048,8 @@ static void test_render_trusted_name_type_not_allowed(void) {
 
     cs_instruction_template_t template;
     init_argument_template(&template, "Token", CS_PARAM_TYPE_TRUSTED_NAME);
-    template.display_fields[0].argument.format.trusted_name.allowed_types_mask =
-        (uint8_t) (1 << TN_TYPE_TOKEN);
+    template.display_fields[0]
+        .argument.format.trusted_name.allowed_types_mask = (uint8_t) (1 << TN_TYPE_TOKEN);
 
     cs_instruction_result_t instr;
     memset(&instr, 0, sizeof(instr));
@@ -1242,8 +1281,7 @@ static void test_render_string_slice_source_bounded(void) {
     template.display_fields[0].argument.format.string.slice_kind = CS_SLICE_KIND_BOUNDED;
     template.display_fields[0].argument.format.string.slice_start = 1;
     template.display_fields[0].argument.format.string.slice.bounded.end = 4;
-    template.display_fields[0].argument.format.string.slice_applies_to =
-        CS_SLICE_APPLIES_TO_SOURCE;
+    template.display_fields[0].argument.format.string.slice_applies_to = CS_SLICE_APPLIES_TO_SOURCE;
 
     const char *text = "abcdef";
     cs_instruction_result_t instr;
@@ -1275,8 +1313,8 @@ static void test_render_string_slice_formatted_sized_reversed(void) {
     template.display_fields[0].argument.format.string.slice_kind = CS_SLICE_KIND_SIZED;
     template.display_fields[0].argument.format.string.slice.sized.size = 4;
     template.display_fields[0].argument.format.string.slice.sized.reversed = true;
-    template.display_fields[0].argument.format.string.slice_applies_to =
-        CS_SLICE_APPLIES_TO_FORMATTED;
+    template.display_fields[0]
+        .argument.format.string.slice_applies_to = CS_SLICE_APPLIES_TO_FORMATTED;
 
     uint8_t bytes[] = {0xDE, 0xAD, 0xBE, 0xEF};  // hex "deadbeef", last 4 chars "beef"
     cs_instruction_result_t instr;
@@ -1515,6 +1553,7 @@ int main(void) {
     test_render_skips_null_value();
     test_render_empty_input();
     test_alloc_failure();
+    test_partial_alloc_failure();
     test_header_value_with_program_name();
     test_header_value_fallback_to_program_address();
     test_render_mixed_argument_and_account_fields();
