@@ -184,11 +184,40 @@ static void test_partial_alloc_failure(void) {
     instr.resolved[0].value_size = 8;
     instr.resolved_count = 1;
 
-    // Table + header (2 allocs) succeed, the field element (3rd alloc) fails.
-    mock_mem_fail_after(2);
+    // The header is fully built first: table, header struct, then its title and
+    // value buffers each allocated and shrunk (6 allocations). The 7th allocation,
+    // the field element struct, fails.
+    mock_mem_fail_after(6);
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
     assert(cs_display_renderer_element_count() == 1);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A value buffer allocates but its shrink (realloc) fails: the working buffer
+// must be released and nothing retained.
+static void test_shrink_failure(void) {
+    printf("  test_shrink_failure\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+    init_dummy_template();
+
+    uint8_t value[] = {0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00};
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &G_dummy_template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    // Table, header struct, header title buffer (3 allocs) succeed; the 4th
+    // operation, shrinking the header title, fails.
+    mock_mem_fail_after(3);
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -563,8 +592,8 @@ static void test_render_string_too_long_refused(void) {
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_ENUM;
     template.display_field_count = 1;
 
-    // A value that cannot fit the display buffer must be refused, not truncated.
-    uint8_t oversized[CS_DISPLAY_VALUE_SIZE];
+    // A value larger than the render working buffer must be refused, not truncated.
+    uint8_t oversized[256];
     memset(oversized, 'x', sizeof(oversized));
     cs_instruction_result_t instr;
     memset(&instr, 0, sizeof(instr));
@@ -576,6 +605,41 @@ static void test_render_string_too_long_refused(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_string_long_now_renders(void) {
+    printf("  test_render_string_long_now_renders\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    memset(&template, 0, sizeof(template));
+    strlcpy(template.operation_type, "Test", sizeof(template.operation_type));
+    strlcpy(template.display_fields[0].name, "Kind", sizeof(template.display_fields[0].name));
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_ENUM;
+    template.display_field_count = 1;
+
+    // 100 chars is past the old 65-char cap but within the working buffer, so it
+    // must now render in full rather than be refused.
+    char long_value[101];
+    memset(long_value, 'y', 100);
+    long_value[100] = '\0';
+    cs_instruction_result_t instr;
+    memset(&instr, 0, sizeof(instr));
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_ENUM;
+    instr.resolved[0].value = (uint8_t *) long_value;
+    instr.resolved[0].value_size = 100;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strlen(cs_display_renderer_element(1)->value) == 100);
+    assert(strcmp(cs_display_renderer_element(1)->value, long_value) == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1491,8 +1555,8 @@ static void test_render_raw_bytes_too_long_refused(void) {
     mock_mem_reset();
     cs_display_renderer_reset();
 
-    // 33 bytes -> 66 hex chars + NUL (67) overruns CS_DISPLAY_VALUE_SIZE (65).
-    uint8_t value[33];
+    // 64 bytes -> 128 hex chars + NUL (129) overruns the 128-byte working buffer.
+    uint8_t value[64];
     memset(value, 0xAB, sizeof(value));
     cs_instruction_result_t instr;
     cs_instruction_template_t template;
@@ -1500,6 +1564,27 @@ static void test_render_raw_bytes_too_long_refused(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_render_raw_bytes_long_now_renders(void) {
+    printf("  test_render_raw_bytes_long_now_renders\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    // 33 bytes -> 66 hex chars, past the old 65-char cap but within the working
+    // buffer: it must now render in full rather than be refused.
+    uint8_t value[33];
+    memset(value, 0xAB, sizeof(value));
+    cs_instruction_result_t instr;
+    cs_instruction_template_t template;
+    run_raw_leaf(IDL_KIND_BYTES_REMAINDER, value, sizeof(value), &instr, &template);
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strlen(cs_display_renderer_element(1)->value) == 66);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1554,6 +1639,7 @@ int main(void) {
     test_render_empty_input();
     test_alloc_failure();
     test_partial_alloc_failure();
+    test_shrink_failure();
     test_header_value_with_program_name();
     test_header_value_fallback_to_program_address();
     test_render_mixed_argument_and_account_fields();
@@ -1566,6 +1652,7 @@ int main(void) {
     test_render_account_full_address();
     test_render_enum_variant_name();
     test_render_string_too_long_refused();
+    test_render_string_long_now_renders();
     test_render_unsupported_param_type();
     test_render_datetime();
     test_render_datetime_ticks_scaling();
@@ -1597,6 +1684,7 @@ int main(void) {
     test_render_raw_bool_u16_high_byte();
     test_render_raw_bytes_fixed_hex();
     test_render_raw_bytes_too_long_refused();
+    test_render_raw_bytes_long_now_renders();
     test_render_raw_f32();
     test_render_raw_f64();
     printf("  All passed!\n");

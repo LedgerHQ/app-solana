@@ -2106,10 +2106,15 @@ def test_typed_account_short_form(backend, sol, scenario_navigator, root_pytest_
 
 
 def test_typed_string_ascii(backend, sol, scenario_navigator, root_pytest_dir):
-    """PARAM_STRING with ASCII encoding renders the leaf bytes verbatim."""
+    """PARAM_STRING with ASCII encoding renders the leaf bytes verbatim.
+
+    The value is 89 characters, past the old 65-char display cap, so it also
+    covers rendering a value longer than the previous fixed buffer.
+    """
+    memo = b"This memo is deliberately longer than sixty-five characters to exercise the display path."
     message = _craft_single_instruction_message(
         sol, TYPED_PROGRAM_ID,
-        _typed_instruction_data(b'\x11' * 32, 0, 0, b"hello"))
+        _typed_instruction_data(b'\x11' * 32, 0, 0, memo))
     _begin_session(sol, message)
 
     display_field = _build_string_display_field(TYPED_PATH_STRING, "Memo",
