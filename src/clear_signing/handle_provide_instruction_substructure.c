@@ -9,6 +9,7 @@
 #include "tlv_parser_cs_value.h"
 #include "cs_instruction_template.h"
 #include "cs_substructure.h"
+#include "app_mem_utils.h"
 
 enum substructure_type {
     SUBSTRUCTURE_TYPE_DISPLAY_FIELD   = 0x00,
@@ -343,7 +344,7 @@ typedef struct display_field_out_s {
     TLV_reception_t received_tags;
     uint8_t substruct_type;
     uint8_t param_type;
-    char name[CS_MAX_DISPLAY_FIELD_NAME];
+    buffer_t name;  // view into the message; materialized NUL-terminated at dispatch
     buffer_t param;
 } display_field_out_t;
 
@@ -362,12 +363,7 @@ static bool display_field_handle_param(const tlv_data_t *data, display_field_out
 }
 
 static bool display_field_handle_name(const tlv_data_t *data, display_field_out_t *out) {
-    size_t len = data->value.size;
-    if (len >= sizeof(out->name)) {
-        len = sizeof(out->name) - 1;
-    }
-    memcpy(out->name, data->value.ptr, len);
-    out->name[len] = '\0';
+    out->name = data->value;
     return true;
 }
 
@@ -1071,58 +1067,74 @@ static int register_param_plain_argument(const display_field_out_t *display_fiel
     return 0;
 }
 
-// Parse a DISPLAY_FIELD substructure and register it on the current template.
-// Dispatches to the correct PARAM parser based on the declared param_type.
-static int register_display_field(uint8_t apdu_type, const uint8_t *tlv, size_t tlv_size) {
-    display_field_out_t display_field;
-    if (parse_display_field_envelope(apdu_type, tlv, tlv_size, &display_field) != 0) {
-        return -1;
-    }
-
-    const char *field_name = NULL;
-    if (display_field.name[0] != '\0') {
-        field_name = display_field.name;
-    }
-
-    switch (display_field.param_type) {
+// Dispatch a parsed DISPLAY_FIELD to the correct PARAM parser based on the
+// declared param_type. `field_name` is the NUL-terminated label (or NULL).
+static int dispatch_display_field(const display_field_out_t *display_field,
+                                  const char *field_name) {
+    switch (display_field->param_type) {
         case CS_PARAM_TYPE_RAW:
-            return register_param_raw(&display_field, field_name);
+            return register_param_raw(display_field, field_name);
 
         case CS_PARAM_TYPE_AMOUNT:
-            return register_param_amount(&display_field, field_name);
+            return register_param_amount(display_field, field_name);
 
         case CS_PARAM_TYPE_TOKEN_AMOUNT:
-            return register_param_token_amount(&display_field, field_name);
+            return register_param_token_amount(display_field, field_name);
 
         case CS_PARAM_TYPE_ENUM:
-            return register_param_enum(&display_field, field_name);
+            return register_param_enum(display_field, field_name);
 
         case CS_PARAM_TYPE_DATETIME:
-            return register_param_datetime(&display_field, field_name);
+            return register_param_datetime(display_field, field_name);
 
         case CS_PARAM_TYPE_DURATION:
-            return register_param_plain_argument(&display_field,
+            return register_param_plain_argument(display_field,
                                                  field_name,
                                                  CS_PARAM_TYPE_DURATION);
 
         case CS_PARAM_TYPE_UNIT:
-            return register_param_unit(&display_field, field_name);
+            return register_param_unit(display_field, field_name);
 
         case CS_PARAM_TYPE_ACCOUNT:
-            return register_param_plain_argument(&display_field,
+            return register_param_plain_argument(display_field,
                                                  field_name,
                                                  CS_PARAM_TYPE_ACCOUNT);
 
         case CS_PARAM_TYPE_STRING:
-            return register_param_string(&display_field, field_name);
+            return register_param_string(display_field, field_name);
 
         case CS_PARAM_TYPE_TRUSTED_NAME:
-            return register_param_trusted_name(&display_field, field_name);
+            return register_param_trusted_name(display_field, field_name);
 
         default:
-            PRINTF("substructure: unsupported param_type %d\n", display_field.param_type);
+            PRINTF("substructure: unsupported param_type %d\n", display_field->param_type);
             return -1;
     }
+}
+
+// Parse a DISPLAY_FIELD substructure and register it, materializing the optional
+// NUL-terminated label from its message view for the duration of registration.
+static int register_display_field(uint8_t apdu_type, const uint8_t *tlv, size_t tlv_size) {
+    display_field_out_t display_field = {0};
+    if (parse_display_field_envelope(apdu_type, tlv, tlv_size, &display_field) != 0) {
+        return -1;
+    }
+
+    char *field_name = NULL;
+    if (display_field.name.size > 0) {
+        if (!APP_MEM_CALLOC((void **) &field_name, display_field.name.size + 1)) {
+            PRINTF("substructure: field name allocation failed\n");
+            return -1;
+        }
+        memcpy(field_name, display_field.name.ptr, display_field.name.size);
+    }
+
+    int result = dispatch_display_field(&display_field, field_name);
+
+    if (field_name != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &field_name);
+    }
+    return result;
 }
 
 int handle_provide_instruction_substructure(void) {

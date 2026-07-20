@@ -26,12 +26,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define IDL_MATCH_PATH_MAX_SIZE 16
-
-// One path to match during the walk (input, read-only).
-// Layout is intentionally identical to cs_display_field_t so callers can cast.
+// One path to match during the walk (input, read-only). `path` is borrowed for
+// the duration of idl_walker_run() only; the caller owns the bytes.
 typedef struct {
-    uint8_t path[IDL_MATCH_PATH_MAX_SIZE];
+    const uint8_t *path;
     uint8_t path_size;
 } idl_match_path_t;
 

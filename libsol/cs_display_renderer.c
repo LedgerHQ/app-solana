@@ -6,6 +6,7 @@
 #include "app_mem_utils.h"
 #include "idl_kinds.h"
 #include "sol/printer.h"
+#include "sol/string_utils.h"
 #include "print_float.h"
 #include "util.h"
 #include "os_print.h"
@@ -88,23 +89,19 @@ void cs_display_renderer_reset(void) {
     G_cs_display_renderer.count = 0;
 }
 
-// Shrink a formatted working buffer to its string length and hand it to *out.
-// On failure the working buffer is freed and -1 returned.
-static int commit_render_buffer(char *buffer, char **out) {
+// Shrink a formatted working buffer to its string length and return the fitted
+// buffer. On failure the working buffer is freed and NULL returned.
+static char *shrink_render_buffer(char *buffer) {
     size_t fitted_size = strlen(buffer) + 1;
     char *fitted = APP_MEM_REALLOC(buffer, fitted_size);
     if (fitted == NULL) {
-        PRINTF("commit_render_buffer: shrink to %u bytes failed\n", (unsigned) fitted_size);
+        PRINTF("shrink_render_buffer: shrink to %u bytes failed\n", (unsigned) fitted_size);
         APP_MEM_FREE_AND_NULL((void **) &buffer);
-        return -1;
+        return NULL;
     }
-    PRINTF("commit_render_buffer: %u bytes: %s\n", (unsigned) fitted_size, fitted);
-    *out = fitted;
-    return 0;
+    PRINTF("shrink_render_buffer: %u bytes: %s\n", (unsigned) fitted_size, fitted);
+    return fitted;
 }
-
-// Defined further down; needed by format_leaf for the raw byte kinds.
-static int encode_hex(const uint8_t *in, size_t in_len, char *out, size_t out_size);
 
 // Read a little-endian signed integer from leaf bytes, sign-extended to i64.
 // Returns 0 on success, -1 on unsupported kind or truncation.
@@ -698,85 +695,6 @@ static int format_unit(const idl_resolved_leaf_t *leaf,
     return 0;
 }
 
-// Encode raw bytes to lowercase hexadecimal. Returns encoded length or -1.
-static int encode_hex(const uint8_t *in, size_t in_len, char *out, size_t out_size) {
-    static const char digits[] = "0123456789abcdef";
-
-    if (in_len * 2 + 1 > out_size) {
-        PRINTF("encode_hex: output does not fit\n");
-        return -1;
-    }
-    for (size_t i = 0; i < in_len; i++) {
-        out[i * 2] = digits[(in[i] >> 4) & 0x0F];
-        out[i * 2 + 1] = digits[in[i] & 0x0F];
-    }
-    out[in_len * 2] = '\0';
-    return (int) (in_len * 2);
-}
-
-// Encode raw bytes to standard (padded) base64. Returns encoded length or -1.
-static int encode_base64(const uint8_t *in, size_t in_len, char *out, size_t out_size) {
-    static const char
-        alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    size_t out_len = ((in_len + 2) / 3) * 4;
-    size_t o = 0;
-
-    if (out_len + 1 > out_size) {
-        PRINTF("encode_base64: output does not fit\n");
-        return -1;
-    }
-    for (size_t i = 0; i < in_len; i += 3) {
-        uint32_t triple = (uint32_t) in[i] << 16;
-        size_t remaining = in_len - i;
-        if (remaining > 1) {
-            triple |= (uint32_t) in[i + 1] << 8;
-        }
-        if (remaining > 2) {
-            triple |= (uint32_t) in[i + 2];
-        }
-        out[o++] = alphabet[(triple >> 18) & 0x3F];
-        out[o++] = alphabet[(triple >> 12) & 0x3F];
-        if (remaining > 1) {
-            out[o++] = alphabet[(triple >> 6) & 0x3F];
-        } else {
-            out[o++] = '=';
-        }
-        if (remaining > 2) {
-            out[o++] = alphabet[triple & 0x3F];
-        } else {
-            out[o++] = '=';
-        }
-    }
-    out[o] = '\0';
-    return (int) o;
-}
-
-// Encode raw bytes as printable text. ASCII rejects non-printable bytes; UTF-8
-// passes bytes through but rejects embedded NUL. Returns encoded length or -1.
-static int encode_text(const uint8_t *in,
-                       size_t in_len,
-                       bool ascii_only,
-                       char *out,
-                       size_t out_size) {
-    if (in_len + 1 > out_size) {
-        PRINTF("encode_text: output does not fit\n");
-        return -1;
-    }
-    for (size_t i = 0; i < in_len; i++) {
-        if (in[i] == 0) {
-            PRINTF("encode_text: embedded NUL byte\n");
-            return -1;
-        }
-        if (ascii_only && (in[i] < 0x20 || in[i] > 0x7E)) {
-            PRINTF("encode_text: non-printable ASCII byte 0x%02x\n", in[i]);
-            return -1;
-        }
-        out[i] = (char) in[i];
-    }
-    out[in_len] = '\0';
-    return (int) in_len;
-}
-
 // Encode raw bytes according to the string encoding. Returns encoded length or -1.
 static int encode_string_bytes(uint8_t encoding,
                                const uint8_t *in,
@@ -1036,38 +954,42 @@ static int render_instruction_header(const cs_instruction_result_t *instruction,
         return -1;
     }
 
-    char *title = NULL;
-    if (!APP_MEM_CALLOC((void **) &title, CS_RENDER_BUFFER_SIZE)) {
+    if (!APP_MEM_CALLOC((void **) &header->title, CS_RENDER_BUFFER_SIZE)) {
         PRINTF("render_instruction_header: title buffer allocation failed\n");
         return -1;
     }
-    snprintf(title,
+    snprintf(header->title,
              CS_RENDER_BUFFER_SIZE,
              "[%u/%u] %s",
              (unsigned) survivor_index,
              (unsigned) survivor_count,
              instruction->template->operation_type);
-    if (commit_render_buffer(title, &header->title) != 0) {
+    header->title = shrink_render_buffer(header->title);
+    if (header->title == NULL) {
         return -1;
     }
 
-    char *value = NULL;
-    if (!APP_MEM_CALLOC((void **) &value, CS_RENDER_BUFFER_SIZE)) {
+    if (!APP_MEM_CALLOC((void **) &header->value, CS_RENDER_BUFFER_SIZE)) {
         PRINTF("render_instruction_header: value buffer allocation failed\n");
         return -1;
     }
-    if (instruction->template->program_name[0] != '\0') {
-        snprintf(value, CS_RENDER_BUFFER_SIZE, "Program: %s", instruction->template->program_name);
+    if (instruction->template->program_name != NULL &&
+        instruction->template->program_name[0] != '\0') {
+        snprintf(header->value,
+                 CS_RENDER_BUFFER_SIZE,
+                 "Program: %s",
+                 instruction->template->program_name);
     } else {
         char address[BASE58_PUBKEY_LENGTH];
         if (encode_base58(instruction->template->program_id, 32, address, sizeof(address)) < 0) {
             PRINTF("render_instruction_header: base58 encode program_id failed\n");
-            APP_MEM_FREE_AND_NULL((void **) &value);
+            APP_MEM_FREE_AND_NULL((void **) &header->value);
             return -1;
         }
-        snprintf(value, CS_RENDER_BUFFER_SIZE, "Program: %s", address);
+        snprintf(header->value, CS_RENDER_BUFFER_SIZE, "Program: %s", address);
     }
-    if (commit_render_buffer(value, &header->value) != 0) {
+    header->value = shrink_render_buffer(header->value);
+    if (header->value == NULL) {
         return -1;
     }
     return 0;
@@ -1082,35 +1004,38 @@ static int render_field(const cs_instruction_result_t *instruction, size_t field
         return -1;
     }
 
-    char *title = NULL;
-    if (!APP_MEM_CALLOC((void **) &title, CS_RENDER_BUFFER_SIZE)) {
+    if (!APP_MEM_CALLOC((void **) &element->title, CS_RENDER_BUFFER_SIZE)) {
         PRINTF("render_field: title buffer allocation failed field=%u\n", (unsigned) field);
         return -1;
     }
-    if (instruction->template->display_fields[field].name[0] != '\0') {
-        strlcpy(title, instruction->template->display_fields[field].name, CS_RENDER_BUFFER_SIZE);
+    if (instruction->template->display_fields[field].name != NULL &&
+        instruction->template->display_fields[field].name[0] != '\0') {
+        strlcpy(element->title,
+                instruction->template->display_fields[field].name,
+                CS_RENDER_BUFFER_SIZE);
     } else {
-        snprintf(title, CS_RENDER_BUFFER_SIZE, "Field %u", (unsigned) (field + 1));
+        snprintf(element->title, CS_RENDER_BUFFER_SIZE, "Field %u", (unsigned) (field + 1));
     }
-    if (commit_render_buffer(title, &element->title) != 0) {
+    element->title = shrink_render_buffer(element->title);
+    if (element->title == NULL) {
         return -1;
     }
 
-    char *value = NULL;
-    if (!APP_MEM_CALLOC((void **) &value, CS_RENDER_BUFFER_SIZE)) {
+    if (!APP_MEM_CALLOC((void **) &element->value, CS_RENDER_BUFFER_SIZE)) {
         PRINTF("render_field: value buffer allocation failed field=%u\n", (unsigned) field);
         return -1;
     }
     if (format_field(&instruction->template->display_fields[field],
                      &instruction->resolved[field],
                      instruction->field_mint[field],
-                     value,
+                     element->value,
                      CS_RENDER_BUFFER_SIZE) != 0) {
         PRINTF("render_field: format failed field=%u\n", (unsigned) field);
-        APP_MEM_FREE_AND_NULL((void **) &value);
+        APP_MEM_FREE_AND_NULL((void **) &element->value);
         return -1;
     }
-    if (commit_render_buffer(value, &element->value) != 0) {
+    element->value = shrink_render_buffer(element->value);
+    if (element->value == NULL) {
         return -1;
     }
     return 0;
