@@ -29,11 +29,6 @@ int cs_trusted_name_cache_add(const uint8_t address[32], const char *name, uint8
         PRINTF("cs_trusted_name_cache_add: duplicate address\n");
         return -1;
     }
-    if (G_trusted_name_cache.count >= CS_MAX_TRUSTED_NAMES) {
-        PRINTF("cs_trusted_name_cache_add: cache full (max %d)\n", CS_MAX_TRUSTED_NAMES);
-        return -1;
-    }
-
     // Grow the pointer array to hold exactly one more entry.
     cs_trusted_name_t **grown = APP_MEM_REALLOC(G_trusted_name_cache.names,
                                                 (G_trusted_name_cache.count + 1) * sizeof(*grown));

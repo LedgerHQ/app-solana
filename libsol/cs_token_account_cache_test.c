@@ -86,22 +86,49 @@ static void test_duplicate_rejected(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-static void test_cache_full_rejected(void) {
-    printf("  test_cache_full_rejected\n");
+// No count cap: the cache grows past the former CS_MAX_TOKEN_ACCOUNTS (8),
+// bounded only by the pool. Every entry stays stored and findable.
+static void test_grows_past_old_cap(void) {
+    printf("  test_grows_past_old_cap\n");
     mock_mem_reset();
     cs_token_account_cache_reset();
 
-    for (uint8_t i = 0; i < CS_MAX_TOKEN_ACCOUNTS; i++) {
+    const uint8_t count = 40;
+    for (uint8_t i = 0; i < count; i++) {
         uint8_t account[32] = {0};
         account[0] = i + 1;
         assert(cs_token_account_cache_add(account, MINT_A, OWNER_A, i) == 0);
     }
-    assert(cs_token_account_cache_count() == CS_MAX_TOKEN_ACCOUNTS);
+    assert(cs_token_account_cache_count() == count);
+    for (uint8_t i = 0; i < count; i++) {
+        uint8_t account[32] = {0};
+        account[0] = i + 1;
+        const cs_token_account_t *found = cs_token_account_cache_find(account);
+        assert(found != NULL && found->pre_balance == i);
+    }
 
-    // One more entry must be refused.
-    uint8_t overflow[32] = {0xFF};
-    assert(cs_token_account_cache_add(overflow, MINT_A, OWNER_A, 0) == -1);
-    assert(cs_token_account_cache_count() == CS_MAX_TOKEN_ACCOUNTS);
+    cs_token_account_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// The only accepted refusal is an allocation failure: the entry is not stored
+// and nothing leaks after reset.
+static void test_oom_rejected(void) {
+    printf("  test_oom_rejected\n");
+    mock_mem_reset();
+    cs_token_account_cache_reset();
+
+    assert(cs_token_account_cache_add(ACCOUNT_A, MINT_A, OWNER_A, 1) == 0);
+
+    // Fail the pointer-array growth (first allocation of the add).
+    mock_mem_fail_after(0);
+    assert(cs_token_account_cache_add(ACCOUNT_B, MINT_B, OWNER_B, 2) == -1);
+    assert(cs_token_account_cache_count() == 1);
+
+    // Fail the per-entry allocation (growth succeeds, slot alloc fails).
+    mock_mem_fail_after(1);
+    assert(cs_token_account_cache_add(ACCOUNT_B, MINT_B, OWNER_B, 2) == -1);
+    assert(cs_token_account_cache_count() == 1);
 
     cs_token_account_cache_reset();
     assert(mock_mem_outstanding() == 0);
@@ -130,7 +157,8 @@ int main(void) {
     test_add_and_find();
     test_key_disambiguation();
     test_duplicate_rejected();
-    test_cache_full_rejected();
+    test_grows_past_old_cap();
+    test_oom_rejected();
     test_reset_releases_memory();
     printf("  All passed!\n");
     return 0;

@@ -135,7 +135,6 @@ typedef struct cs_format_trusted_name_s {
 } cs_format_trusted_name_t;
 
 // Fixed capacities. Inputs exceeding these fail closed rather than truncate.
-#define CS_MAX_INSTRUCTION_TEMPLATES 4
 #define CS_MAX_DISCRIMINATOR_SIZE    8
 #define CS_MAX_DISPLAY_FIELDS        8
 #define CS_MAX_ARGUMENT_PATH_SIZE    16

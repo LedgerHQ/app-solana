@@ -34,11 +34,6 @@ int cs_alt_cache_add(const uint8_t alt_address[PUBKEY_SIZE],
         PRINTF("cs_alt_cache_add: duplicate (alt_address, entry_index)\n");
         return -1;
     }
-    if (G_alt_cache.count >= CS_MAX_ALT_ENTRIES) {
-        PRINTF("cs_alt_cache_add: cache full (max %d)\n", CS_MAX_ALT_ENTRIES);
-        return -1;
-    }
-
     // Grow the pointer array to hold exactly one more entry.
     cs_alt_entry_t **grown = APP_MEM_REALLOC(G_alt_cache.entries,
                                              (G_alt_cache.count + 1) * sizeof(*grown));

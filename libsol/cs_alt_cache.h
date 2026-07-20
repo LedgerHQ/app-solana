@@ -19,11 +19,6 @@
 
 #include "sol/parser.h"
 
-// Fixed capacity. A descriptor beyond this bound is rejected rather than
-// truncated. Only the ALT entries actually referenced by a substructure are
-// streamed, so a small bound covers even large routes that load many accounts.
-#define CS_MAX_ALT_ENTRIES 16
-
 // One cached ALT resolution, keyed by (alt_address, entry_index). The
 // resolved_address is the chain-attested value committed to by the HSM
 // signature verified at ingest.
@@ -34,8 +29,8 @@ typedef struct cs_alt_entry_s {
 } cs_alt_entry_t;
 
 // Store one ALT resolution keyed by (alt_address, entry_index). Returns 0 on
-// success, -1 when the table cannot be allocated, is full, or the key already
-// exists (duplicate descriptor).
+// success, -1 when the pool cannot allocate or the key already exists
+// (duplicate descriptor).
 int cs_alt_cache_add(const uint8_t alt_address[PUBKEY_SIZE],
                      uint8_t entry_index,
                      const uint8_t resolved_address[PUBKEY_SIZE]);

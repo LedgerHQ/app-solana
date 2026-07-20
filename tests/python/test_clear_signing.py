@@ -114,6 +114,19 @@ def _craft_instruction_with_accounts(sol: SolanaClient, program_id: bytes, data:
     return sol.craft_tx([instruction], sender)
 
 
+def _craft_multi_instruction_message(sol: SolanaClient, program_id: bytes, data: bytes,
+                                     count: int) -> bytes:
+    """Build a message repeating one identical instruction `count` times. All
+    instances share a single (program_id, discriminator) template."""
+    sender = Pubkey.from_bytes(sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH))
+    instruction = Instruction(
+        program_id=Pubkey.from_bytes(program_id),
+        accounts=[AccountMeta(pubkey=sender, is_signer=True, is_writable=True)],
+        data=data,
+    )
+    return sol.craft_tx([instruction] * count, sender)
+
+
 def _build_display_field(argument_path: bytes) -> bytes:
     """A minimal DISPLAY_FIELD (PARAM_RAW) pointing at one ARGUMENT_PATH leaf."""
     value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
@@ -893,6 +906,32 @@ def test_bridge_walks_instruction(backend, sol, scenario_navigator, root_pytest_
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+
+
+def test_cs_more_instructions_than_old_template_cap(backend, sol):
+    """Regression: five instructions sharing one template. The removed
+    CS_MAX_INSTRUCTION_TEMPLATES (4) cap falsely rejected this at finalize; the
+    walk buffers are now sized to the real instruction count, so it succeeds."""
+    data = _bridge_instruction_data(1000, 5_000_000)
+    message = _craft_multi_instruction_message(sol, BRIDGE_PROGRAM_ID, data, 5)
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
 
 
 def test_bridge_with_account_path_field(backend, sol, scenario_navigator, root_pytest_dir):

@@ -14,8 +14,7 @@
 #include <string.h>
 
 #include "handle_provide_instruction_descriptor.h"
-
-#define MAX_INSTRUCTIONS 6
+#include "app_mem_utils.h"
 
 static void debug_print_header(const MessageHeader *header) {
     PRINTF("instructions_length = %d\n", header->instructions_length);
@@ -51,13 +50,15 @@ static int parse_validate_and_debug_instruction_accounts(Parser *parser,
             return -1;
         }
     }
-    for (uint8_t i = 0; i < instruction->accounts_length; ++i) {
+    // size_t counter: accounts_length is a size_t (compact-u16) and can exceed 255;
+    // a uint8_t index would wrap and loop forever.
+    for (size_t i = 0; i < instruction->accounts_length; ++i) {
         if (instruction->accounts[i] >= header->pubkeys_header.pubkeys_length) {
             // ALT-loaded account: not present in the wire format, cannot be resolved on device
-            PRINTF("accounts[%d] = pubkeys[%d] = <ALT loaded>\n", i, instruction->accounts[i]);
+            PRINTF("accounts[%d] = pubkeys[%d] = <ALT loaded>\n", (int) i, instruction->accounts[i]);
         } else {
             PRINTF("accounts[%d] = pubkeys[%d] = %.*H\n",
-                   i,
+                   (int) i,
                    instruction->accounts[i],
                    PUBKEY_SIZE,
                    header->pubkeys[instruction->accounts[i]].data);
@@ -66,32 +67,30 @@ static int parse_validate_and_debug_instruction_accounts(Parser *parser,
     return 0;
 }
 
-int process_message_body(const uint8_t *message_body,
-                         int message_body_length,
-                         const PrintConfig *print_config) {
+// Inner worker: the instruction buffers are caller-owned (allocated and freed by
+// process_message_body), sized to the transaction's instruction count.
+static int process_message_body_inner(const uint8_t *message_body,
+                                      int message_body_length,
+                                      const PrintConfig *print_config,
+                                      InstructionInfo *instruction_info,
+                                      InstructionInfo **display_instruction_info) {
     const MessageHeader *header = &print_config->header;
-    debug_print_header(header);
-    BAIL_IF(header->instructions_length == 0);
-    BAIL_IF(header->instructions_length > MAX_INSTRUCTIONS);
-
-    InstructionInfo instruction_info[MAX_INSTRUCTIONS];
-    explicit_bzero(instruction_info, sizeof(InstructionInfo) * MAX_INSTRUCTIONS);
 
     // Track if given transaction contains token2022 extensions that are not fully supported
     // Needed to display user proper warning
     bool generate_extension_warning = false;
 
     size_t display_instruction_count = 0;
-    InstructionInfo *display_instruction_info[MAX_INSTRUCTIONS];
 
     Parser parser = {message_body, message_body_length};
-    for (uint8_t ins_idx = 0; ins_idx < header->instructions_length; ins_idx++) {
+    for (size_t ins_idx = 0; ins_idx < header->instructions_length; ins_idx++) {
         Instruction instruction;
         // Every account is displayed to the user and therefore must be resolvable in the statically
         // listed keys. ALT-loaded indices are rejected (fail closed).
         if (parse_validate_and_debug_instruction_accounts(&parser, &instruction, header, false) !=
             0) {
-            PRINTF("Error in parse_validate_and_debug_instruction_accounts for ins %d\n", ins_idx);
+            PRINTF("Error in parse_validate_and_debug_instruction_accounts for ins %d\n",
+                   (int) ins_idx);
             return -1;
         }
 
@@ -176,15 +175,10 @@ int process_message_body(const uint8_t *message_body,
                 case ProgramIdVote:
                 case ProgramIdComputeBudget:
                 case ProgramIdUnknown:
-                    if (display_instruction_count >= MAX_INSTRUCTIONS) {
-                        PRINTF("Error: too many instructions to display requested\n");
-                        return -1;
-                    } else {
-                        PRINTF("Registered info %d to display in slot %d\n",
-                               info->kind,
-                               display_instruction_count);
-                        display_instruction_info[display_instruction_count++] = info;
-                    }
+                    PRINTF("Registered info %d to display in slot %d\n",
+                           info->kind,
+                           display_instruction_count);
+                    display_instruction_info[display_instruction_count++] = info;
                     break;
                 // Ignored instructions
                 case ProgramIdSerumAssertOwner:
@@ -223,6 +217,40 @@ int process_message_body(const uint8_t *message_body,
     return 0;
 }
 
+int process_message_body(const uint8_t *message_body,
+                         int message_body_length,
+                         const PrintConfig *print_config) {
+    const MessageHeader *header = &print_config->header;
+    debug_print_header(header);
+    BAIL_IF(header->instructions_length == 0);
+
+    // Size the instruction buffers to the real count; bounded by the wire
+    // transaction and the pool, no arbitrary cap.
+    InstructionInfo *instruction_info = NULL;
+    InstructionInfo **display_instruction_info = NULL;
+    int status = -1;
+    if (APP_MEM_CALLOC((void **) &instruction_info,
+                       header->instructions_length * sizeof(*instruction_info)) &&
+        APP_MEM_CALLOC((void **) &display_instruction_info,
+                       header->instructions_length * sizeof(*display_instruction_info))) {
+        status = process_message_body_inner(message_body,
+                                            message_body_length,
+                                            print_config,
+                                            instruction_info,
+                                            display_instruction_info);
+    } else {
+        PRINTF("process_message_body: instruction buffer allocation failed\n");
+    }
+
+    if (display_instruction_info != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &display_instruction_info);
+    }
+    if (instruction_info != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &instruction_info);
+    }
+    return status;
+}
+
 int process_message_body_with_descriptor(const uint8_t *message_body,
                                          int message_body_length,
                                          const PrintConfig *print_config) {
@@ -240,16 +268,18 @@ int process_message_body_with_descriptor(const uint8_t *message_body,
         return -1;
     }
 
-    // Iterate over all instructions of this message
+    // Iterate over all instructions of this message. ins_idx is size_t:
+    // instructions_length is a size_t (compact-u16) and a uint8_t would wrap.
     Parser parser = {message_body, message_body_length};
-    for (uint8_t ins_idx = 0; ins_idx < header->instructions_length; ins_idx++) {
+    for (size_t ins_idx = 0; ins_idx < header->instructions_length; ins_idx++) {
         Instruction instruction;
         // Swap + descriptor path: ALT-loaded account indices are tolerated here, their integrity is
         // sealed by the swap tx_hash check. Concrete account inspection is gated by
         // get_account_from_ins() which fails closed on ALT indices.
         if (parse_validate_and_debug_instruction_accounts(&parser, &instruction, header, true) !=
             0) {
-            PRINTF("Error in parse_validate_and_debug_instruction_accounts for ins %d\n", ins_idx);
+            PRINTF("Error in parse_validate_and_debug_instruction_accounts for ins %d\n",
+                   (int) ins_idx);
             return -1;
         }
         PRINTF("Checking instruction length %d data '%.*H'\n",
@@ -258,7 +288,7 @@ int process_message_body_with_descriptor(const uint8_t *message_body,
                instruction.data);
 
         if (validate_instruction_using_descriptor(header, &instruction) != 0) {
-            PRINTF("Error in validate_instruction_using_descriptor for ins %d\n", ins_idx);
+            PRINTF("Error in validate_instruction_using_descriptor for ins %d\n", (int) ins_idx);
             return -1;
         }
     }

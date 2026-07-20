@@ -18,7 +18,7 @@
 
 typedef struct cs_instruction_template_table_s {
     cs_instruction_template_t *builder;  // heap, non-NULL while a template is in flight
-    cs_instruction_template_t committed[CS_MAX_INSTRUCTION_TEMPLATES];
+    cs_instruction_template_t **committed;  // demand-grown array of template pointers
     uint8_t committed_count;
 } cs_instruction_template_table_t;
 
@@ -37,11 +37,6 @@ static bool ensure_table(void) {
 
 cs_instruction_template_t *cs_instruction_template_open(const uint8_t target_hash[32]) {
     if (!ensure_table()) {
-        return NULL;
-    }
-    if (G_template_table->committed_count >= CS_MAX_INSTRUCTION_TEMPLATES) {
-        PRINTF("cs_instruction_template: committed array full (max %d)\n",
-               CS_MAX_INSTRUCTION_TEMPLATES);
         return NULL;
     }
 
@@ -329,20 +324,21 @@ int cs_instruction_template_commit(void) {
         PRINTF("cs_instruction_template_commit: no builder open\n");
         return -1;
     }
-    if (G_template_table->committed_count >= CS_MAX_INSTRUCTION_TEMPLATES) {
-        PRINTF("cs_instruction_template_commit: committed array full (max %d)\n",
-               CS_MAX_INSTRUCTION_TEMPLATES);
+
+    // Grow the pointer array by one, then hand the builder block over: a zero-copy
+    // transfer, so the builder's idl_type_pool rides along with no aliasing.
+    cs_instruction_template_t **grown =
+        APP_MEM_REALLOC(G_template_table->committed,
+                        (G_template_table->committed_count + 1) * sizeof(*grown));
+    if (grown == NULL) {
+        PRINTF("cs_instruction_template_commit: committed array growth failed\n");
         return -1;
     }
+    G_template_table->committed = grown;
 
-    // The struct copy shallow-copies idl_type_pool; ownership of that separate
-    // heap buffer transfers to the committed slot. Freeing the builder struct
-    // below releases only the struct block, never the pool buffer.
-    memcpy(&G_template_table->committed[G_template_table->committed_count],
-           G_template_table->builder,
-           sizeof(*G_template_table->builder));
+    G_template_table->committed[G_template_table->committed_count] = G_template_table->builder;
     G_template_table->committed_count++;
-    APP_MEM_FREE_AND_NULL((void **) &G_template_table->builder);
+    G_template_table->builder = NULL;
     return 0;
 }
 
@@ -368,7 +364,7 @@ const cs_instruction_template_t *cs_instruction_template_find(const uint8_t prog
     }
 
     for (uint8_t i = 0; i < G_template_table->committed_count; i++) {
-        const cs_instruction_template_t *template = &G_template_table->committed[i];
+        const cs_instruction_template_t *template = G_template_table->committed[i];
         if (memcmp(template->program_id, program_id, 32) != 0) {
             continue;
         }
@@ -392,11 +388,16 @@ void cs_instruction_template_table_reset(void) {
             }
             APP_MEM_FREE_AND_NULL((void **) &G_template_table->builder);
         }
-        // Each committed template owns its own IDL pool buffer; free before the table block.
+        // Each committed template owns its IDL pool buffer and its own block; free
+        // both per entry, then the pointer array, before the table block.
         for (uint8_t i = 0; i < G_template_table->committed_count; i++) {
-            if (G_template_table->committed[i].idl_type_pool != NULL) {
-                APP_MEM_FREE_AND_NULL((void **) &G_template_table->committed[i].idl_type_pool);
+            if (G_template_table->committed[i]->idl_type_pool != NULL) {
+                APP_MEM_FREE_AND_NULL((void **) &G_template_table->committed[i]->idl_type_pool);
             }
+            APP_MEM_FREE_AND_NULL((void **) &G_template_table->committed[i]);
+        }
+        if (G_template_table->committed != NULL) {
+            APP_MEM_FREE_AND_NULL((void **) &G_template_table->committed);
         }
         APP_MEM_FREE_AND_NULL((void **) &G_template_table);
     }

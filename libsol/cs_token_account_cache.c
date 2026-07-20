@@ -35,11 +35,6 @@ int cs_token_account_cache_add(const uint8_t account_address[32],
         PRINTF("cs_token_account_cache_add: duplicate account address\n");
         return -1;
     }
-    if (G_token_account_cache.count >= CS_MAX_TOKEN_ACCOUNTS) {
-        PRINTF("cs_token_account_cache_add: cache full (max %d)\n", CS_MAX_TOKEN_ACCOUNTS);
-        return -1;
-    }
-
     // Grow the pointer array to hold exactly one more entry.
     cs_token_account_t **grown = APP_MEM_REALLOC(
         G_token_account_cache.accounts,

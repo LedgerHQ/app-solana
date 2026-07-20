@@ -16,9 +16,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Fixed capacity. Inputs exceeding this fail closed rather than truncate.
-#define CS_MAX_TOKEN_ACCOUNTS 8
-
 // One cached token account state, keyed by account_address. Every field is the
 // chain-attested value committed to by the HSM signature verified at ingest.
 typedef struct cs_token_account_s {
@@ -29,8 +26,8 @@ typedef struct cs_token_account_s {
 } cs_token_account_t;
 
 // Store one token account state keyed by account_address. Returns 0 on success,
-// -1 when the table cannot be allocated, is full, or the key already exists
-// (duplicate descriptor).
+// -1 when the pool cannot allocate or the key already exists (duplicate
+// descriptor).
 int cs_token_account_cache_add(const uint8_t account_address[32],
                                const uint8_t mint[32],
                                const uint8_t owner[32],

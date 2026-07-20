@@ -114,22 +114,54 @@ static void test_invalid_name_rejected(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-static void test_cache_full_rejected(void) {
-    printf("  test_cache_full_rejected\n");
+// No count cap: the cache grows past the former CS_MAX_TRUSTED_NAMES (8),
+// bounded only by the pool. Every entry stays stored and findable.
+static void test_grows_past_old_cap(void) {
+    printf("  test_grows_past_old_cap\n");
     mock_mem_reset();
     cs_trusted_name_cache_reset();
 
-    for (uint8_t i = 0; i < CS_MAX_TRUSTED_NAMES; i++) {
+    const uint8_t count = 40;
+    for (uint8_t i = 0; i < count; i++) {
         uint8_t address[32] = {0};
         address[0] = i + 1;
         assert(cs_trusted_name_cache_add(address, "NAME", TYPE_TOKEN) == 0);
     }
-    assert(cs_trusted_name_cache_count() == CS_MAX_TRUSTED_NAMES);
+    assert(cs_trusted_name_cache_count() == count);
+    for (uint8_t i = 0; i < count; i++) {
+        uint8_t address[32] = {0};
+        address[0] = i + 1;
+        const cs_trusted_name_t *found = cs_trusted_name_cache_find(address);
+        assert(found != NULL && strcmp(found->name, "NAME") == 0);
+    }
 
-    // One more entry must be refused.
-    uint8_t overflow[32] = {0xFF};
-    assert(cs_trusted_name_cache_add(overflow, "NAME", TYPE_TOKEN) == -1);
-    assert(cs_trusted_name_cache_count() == CS_MAX_TRUSTED_NAMES);
+    cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// The only accepted refusal is an allocation failure: the entry is not stored
+// and nothing leaks after reset.
+static void test_oom_rejected(void) {
+    printf("  test_oom_rejected\n");
+    mock_mem_reset();
+    cs_trusted_name_cache_reset();
+
+    assert(cs_trusted_name_cache_add(ADDR_A, "CODE", TYPE_TOKEN) == 0);
+
+    // Fail the pointer-array growth (first allocation of the add).
+    mock_mem_fail_after(0);
+    assert(cs_trusted_name_cache_add(ADDR_B, "OTHER", TYPE_TOKEN) == -1);
+    assert(cs_trusted_name_cache_count() == 1);
+
+    // Fail the per-entry slot allocation (growth succeeds, slot alloc fails).
+    mock_mem_fail_after(1);
+    assert(cs_trusted_name_cache_add(ADDR_B, "OTHER", TYPE_TOKEN) == -1);
+    assert(cs_trusted_name_cache_count() == 1);
+
+    // Fail the name allocation (slot allocated then freed on unwind).
+    mock_mem_fail_after(2);
+    assert(cs_trusted_name_cache_add(ADDR_B, "OTHER", TYPE_TOKEN) == -1);
+    assert(cs_trusted_name_cache_count() == 1);
 
     cs_trusted_name_cache_reset();
     assert(mock_mem_outstanding() == 0);
@@ -159,7 +191,8 @@ int main(void) {
     test_key_disambiguation();
     test_duplicate_rejected();
     test_invalid_name_rejected();
-    test_cache_full_rejected();
+    test_grows_past_old_cap();
+    test_oom_rejected();
     test_reset_releases_memory();
     printf("  All passed!\n");
     return 0;
