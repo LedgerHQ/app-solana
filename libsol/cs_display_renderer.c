@@ -681,11 +681,16 @@ static int format_unit(const idl_resolved_leaf_t *leaf,
         PRINTF("format_unit: print_token_amount failed\n");
         return -1;
     }
-    // Affix the symbol before or after the scaled number, no separator.
+    // Affix the symbol before or after the scaled number, no separator. A field
+    // with no symbol renders the bare number.
+    const char *symbol = "";
+    if (unit->symbol != NULL) {
+        symbol = unit->symbol;
+    }
     if (unit->prefix) {
-        written = snprintf(value_out, value_out_size, "%s%s", unit->symbol, number);
+        written = snprintf(value_out, value_out_size, "%s%s", symbol, number);
     } else {
-        written = snprintf(value_out, value_out_size, "%s%s", number, unit->symbol);
+        written = snprintf(value_out, value_out_size, "%s%s", number, symbol);
     }
     if (written < 0 || (size_t) written >= value_out_size) {
         PRINTF("format_unit: output does not fit\n");

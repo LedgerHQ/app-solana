@@ -51,9 +51,8 @@ typedef struct cs_format_datetime_s {
 
 // Format-specific parameters for PARAM_UNIT. The resolved integer leaf is scaled
 // by `decimals` and rendered with `symbol` placed before (`prefix`) or after it.
-#define CS_MAX_UNIT_SYMBOL 12
 typedef struct cs_format_unit_s {
-    char symbol[CS_MAX_UNIT_SYMBOL];
+    char *symbol;  // heap, NUL-terminated; owned by this template, NULL when absent
     uint8_t decimals;
     bool prefix;
 } cs_format_unit_t;
@@ -248,10 +247,14 @@ int cs_instruction_template_set_format_token_amount(const cs_format_token_amount
 // Returns 0 on success, -1 when no matching field is open.
 int cs_instruction_template_set_format_datetime(uint32_t ticks_per_second);
 
-// Set UNIT format parameters on the last added display field.
+// Set UNIT format parameters on the last added display field. `symbol` (symbol_size
+// bytes, may be empty) is copied into a heap buffer owned by the template.
 // Must be called immediately after adding a field with param_type == UNIT.
-// Returns 0 on success, -1 when no matching field is open.
-int cs_instruction_template_set_format_unit(const cs_format_unit_t *format);
+// Returns 0 on success, -1 when no matching field is open or the allocation fails.
+int cs_instruction_template_set_format_unit(const uint8_t *symbol,
+                                            size_t symbol_size,
+                                            uint8_t decimals,
+                                            bool prefix);
 
 // Set STRING format parameters on the last added display field.
 // Must be called immediately after adding a field with param_type == STRING.

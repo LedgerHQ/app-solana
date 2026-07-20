@@ -768,31 +768,22 @@ static int register_param_unit(const display_field_out_t *display_field, const c
         return -1;
     }
 
-    cs_format_unit_t format = {0};
-    if (param.symbol.ptr != NULL && param.symbol.size > 0) {
-        if (param.symbol.size >= sizeof(format.symbol)) {
-            PRINTF("substructure: PARAM_UNIT symbol too long (%d >= %d)\n",
-                   param.symbol.size,
-                   (int) sizeof(format.symbol));
-            return -1;
-        }
-        memcpy(format.symbol, param.symbol.ptr, param.symbol.size);
-        format.symbol[param.symbol.size] = '\0';
-    }
+    uint8_t decimals = 0;
+    bool prefix = false;
     if (param.decimals.ptr != NULL) {
         if (param.decimals.size != 1) {
             PRINTF("substructure: PARAM_UNIT DECIMALS must be 1 byte (got %d)\n",
                    param.decimals.size);
             return -1;
         }
-        format.decimals = param.decimals.ptr[0];
+        decimals = param.decimals.ptr[0];
     }
     if (param.prefix.ptr != NULL) {
         if (param.prefix.size != 1) {
             PRINTF("substructure: PARAM_UNIT PREFIX must be 1 byte (got %d)\n", param.prefix.size);
             return -1;
         }
-        format.prefix = (param.prefix.ptr[0] == 1);
+        prefix = (param.prefix.ptr[0] == 1);
     }
 
     if (cs_instruction_template_add_display_path(value.payload,
@@ -801,16 +792,20 @@ static int register_param_unit(const display_field_out_t *display_field, const c
                                                  field_name) != 0) {
         return -1;
     }
-    if (cs_instruction_template_set_format_unit(&format) != 0) {
+    if (cs_instruction_template_set_format_unit(param.symbol.ptr,
+                                                param.symbol.size,
+                                                decimals,
+                                                prefix) != 0) {
         PRINTF("substructure: set_format_unit failed\n");
         return -1;
     }
-    PRINTF("substructure: registered UNIT path %.*H symbol=%s decimals=%d prefix=%d name=%s\n",
+    PRINTF("substructure: registered UNIT path %.*H symbol=%.*s decimals=%d prefix=%d name=%s\n",
            value.payload_size,
            value.payload,
-           format.symbol,
-           format.decimals,
-           format.prefix,
+           (int) param.symbol.size,
+           param.symbol.ptr,
+           decimals,
+           prefix,
            field_name ? field_name : "(none)");
     return 0;
 }
