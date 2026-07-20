@@ -902,9 +902,7 @@ static void test_render_unit_suffix(void) {
 
     cs_instruction_template_t template;
     init_argument_template(&template, "Rate", CS_PARAM_TYPE_UNIT);
-    strlcpy(template.display_fields[0].argument.format.unit.symbol,
-            "%",
-            sizeof(template.display_fields[0].argument.format.unit.symbol));
+    template.display_fields[0].argument.format.unit.symbol = "%";
     template.display_fields[0].argument.format.unit.decimals = 2;
     template.display_fields[0].argument.format.unit.prefix = false;
 
@@ -933,9 +931,7 @@ static void test_render_unit_prefix(void) {
 
     cs_instruction_template_t template;
     init_argument_template(&template, "Price", CS_PARAM_TYPE_UNIT);
-    strlcpy(template.display_fields[0].argument.format.unit.symbol,
-            "$",
-            sizeof(template.display_fields[0].argument.format.unit.symbol));
+    template.display_fields[0].argument.format.unit.symbol = "$";
     template.display_fields[0].argument.format.unit.decimals = 0;
     template.display_fields[0].argument.format.unit.prefix = true;
 

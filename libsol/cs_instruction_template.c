@@ -53,6 +53,11 @@ static void free_template_owned_buffers(cs_instruction_template_t *template) {
             template->display_fields[f].constant.data != NULL) {
             APP_MEM_FREE_AND_NULL((void **) &template->display_fields[f].constant.data);
         }
+        if (template->display_fields[f].source == CS_VALUE_SOURCE_ARGUMENT_PATH &&
+            template->display_fields[f].argument.param_type == CS_PARAM_TYPE_UNIT &&
+            template->display_fields[f].argument.format.unit.symbol != NULL) {
+            APP_MEM_FREE_AND_NULL((void **) &template->display_fields[f].argument.format.unit.symbol);
+        }
     }
 }
 
@@ -280,7 +285,10 @@ int cs_instruction_template_set_format_datetime(uint32_t ticks_per_second) {
     return 0;
 }
 
-int cs_instruction_template_set_format_unit(const cs_format_unit_t *format) {
+int cs_instruction_template_set_format_unit(const uint8_t *symbol,
+                                            size_t symbol_size,
+                                            uint8_t decimals,
+                                            bool prefix) {
     cs_instruction_template_t *builder = cs_instruction_template_current();
     if (builder == NULL || builder->display_field_count == 0) {
         PRINTF("cs_instruction_template_set_format_unit: no field to configure\n");
@@ -297,7 +305,19 @@ int cs_instruction_template_set_format_unit(const cs_format_unit_t *format) {
                field->argument.param_type);
         return -1;
     }
-    memcpy(&field->argument.format.unit, format, sizeof(*format));
+    if (field->argument.format.unit.symbol != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &field->argument.format.unit.symbol);
+    }
+    if (symbol_size > 0) {
+        if (!APP_MEM_CALLOC((void **) &field->argument.format.unit.symbol, symbol_size + 1)) {
+            PRINTF("cs_instruction_template_set_format_unit: symbol allocation failed (%d bytes)\n",
+                   (int) symbol_size + 1);
+            return -1;
+        }
+        memcpy(field->argument.format.unit.symbol, symbol, symbol_size);
+    }
+    field->argument.format.unit.decimals = decimals;
+    field->argument.format.unit.prefix = prefix;
     return 0;
 }
 
