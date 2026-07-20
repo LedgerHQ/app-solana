@@ -20,13 +20,9 @@ static cs_instruction_template_t G_dummy_template;
 
 static void init_dummy_template(void) {
     memset(&G_dummy_template, 0, sizeof(G_dummy_template));
-    strlcpy(G_dummy_template.operation_type, "Transfer", sizeof(G_dummy_template.operation_type));
-    strlcpy(G_dummy_template.display_fields[0].name,
-            "Amount",
-            sizeof(G_dummy_template.display_fields[0].name));
-    strlcpy(G_dummy_template.display_fields[1].name,
-            "Recipient",
-            sizeof(G_dummy_template.display_fields[1].name));
+    G_dummy_template.operation_type = "Transfer";
+    G_dummy_template.display_fields[0].name = "Amount";
+    G_dummy_template.display_fields[1].name = "Recipient";
 }
 
 static void test_initial_state(void) {
@@ -228,7 +224,7 @@ static void test_header_value_with_program_name(void) {
     mock_mem_reset();
     cs_display_renderer_reset();
     init_dummy_template();
-    strlcpy(G_dummy_template.program_name, "Jupiter", sizeof(G_dummy_template.program_name));
+    G_dummy_template.program_name = "Jupiter";
 
     cs_instruction_result_t instr;
     memset(&instr, 0, sizeof(instr));
@@ -283,19 +279,17 @@ static void test_render_mixed_argument_and_account_fields(void) {
 
     cs_instruction_template_t template;
     memset(&template, 0, sizeof(template));
-    strlcpy(template.operation_type, "Swap", sizeof(template.operation_type));
-    strlcpy(template.program_name, "Jupiter", sizeof(template.program_name));
+    template.operation_type = "Swap";
+    template.program_name = "Jupiter";
 
     // Field 0: ACCOUNT_PATH (resolved to pubkey externally)
     template.display_fields[0].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
     template.display_fields[0].account.index = 2;
-    strlcpy(template.display_fields[0].name,
-            "Destination",
-            sizeof(template.display_fields[0].name));
+    template.display_fields[0].name = "Destination";
 
     // Field 1: ARGUMENT_PATH (resolved by walker to u32)
     template.display_fields[1].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
-    strlcpy(template.display_fields[1].name, "Amount", sizeof(template.display_fields[1].name));
+    template.display_fields[1].name = "Amount";
 
     template.display_field_count = 2;
 
@@ -344,8 +338,8 @@ static void test_render_amount_with_decimals(void) {
 
     cs_instruction_template_t template;
     memset(&template, 0, sizeof(template));
-    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
-    strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
+    template.operation_type = "Transfer";
+    template.display_fields[0].name = "Amount";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_AMOUNT;
     template.display_fields[0].argument.format.amount.decimals = 9;
@@ -378,8 +372,8 @@ static void test_render_amount_zero_decimals(void) {
 
     cs_instruction_template_t template;
     memset(&template, 0, sizeof(template));
-    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
-    strlcpy(template.display_fields[0].name, "Count", sizeof(template.display_fields[0].name));
+    template.operation_type = "Transfer";
+    template.display_fields[0].name = "Count";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_AMOUNT;
     template.display_fields[0].argument.format.amount.decimals = 0;
@@ -410,8 +404,8 @@ static void test_render_token_amount_native(void) {
 
     cs_instruction_template_t template;
     memset(&template, 0, sizeof(template));
-    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
-    strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
+    template.operation_type = "Transfer";
+    template.display_fields[0].name = "Amount";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
     template.display_fields[0].argument.format.token_amount.mint_source = CS_TOKEN_MINT_NATIVE;
@@ -445,8 +439,8 @@ static void test_render_token_amount_none(void) {
 
     cs_instruction_template_t template;
     memset(&template, 0, sizeof(template));
-    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
-    strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
+    template.operation_type = "Transfer";
+    template.display_fields[0].name = "Amount";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
     template.display_fields[0].argument.format.token_amount.mint_source = CS_TOKEN_MINT_NONE;
@@ -481,8 +475,8 @@ static void test_render_token_amount_unknown(void) {
 
     cs_instruction_template_t template;
     memset(&template, 0, sizeof(template));
-    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
-    strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
+    template.operation_type = "Transfer";
+    template.display_fields[0].name = "Amount";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
     template.display_fields[0].argument.format.token_amount.mint_source = CS_TOKEN_MINT_CONSTANT;
@@ -518,8 +512,8 @@ static void test_render_account_full_address(void) {
 
     cs_instruction_template_t template;
     memset(&template, 0, sizeof(template));
-    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
-    strlcpy(template.display_fields[0].name, "To", sizeof(template.display_fields[0].name));
+    template.operation_type = "Transfer";
+    template.display_fields[0].name = "To";
     template.display_fields[0].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
     template.display_field_count = 1;
 
@@ -554,8 +548,8 @@ static void test_render_enum_variant_name(void) {
 
     cs_instruction_template_t template;
     memset(&template, 0, sizeof(template));
-    strlcpy(template.operation_type, "Test", sizeof(template.operation_type));
-    strlcpy(template.display_fields[0].name, "Kind", sizeof(template.display_fields[0].name));
+    template.operation_type = "Test";
+    template.display_fields[0].name = "Kind";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_ENUM;
     template.display_field_count = 1;
@@ -586,8 +580,8 @@ static void test_render_string_too_long_refused(void) {
 
     cs_instruction_template_t template;
     memset(&template, 0, sizeof(template));
-    strlcpy(template.operation_type, "Test", sizeof(template.operation_type));
-    strlcpy(template.display_fields[0].name, "Kind", sizeof(template.display_fields[0].name));
+    template.operation_type = "Test";
+    template.display_fields[0].name = "Kind";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_ENUM;
     template.display_field_count = 1;
@@ -617,8 +611,8 @@ static void test_render_string_long_now_renders(void) {
 
     cs_instruction_template_t template;
     memset(&template, 0, sizeof(template));
-    strlcpy(template.operation_type, "Test", sizeof(template.operation_type));
-    strlcpy(template.display_fields[0].name, "Kind", sizeof(template.display_fields[0].name));
+    template.operation_type = "Test";
+    template.display_fields[0].name = "Kind";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_ENUM;
     template.display_field_count = 1;
@@ -652,8 +646,8 @@ static void test_render_unsupported_param_type(void) {
 
     cs_instruction_template_t template;
     memset(&template, 0, sizeof(template));
-    strlcpy(template.operation_type, "Test", sizeof(template.operation_type));
-    strlcpy(template.display_fields[0].name, "Field", sizeof(template.display_fields[0].name));
+    template.operation_type = "Test";
+    template.display_fields[0].name = "Field";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = 0xFF;  // no such param type
     template.display_field_count = 1;
@@ -687,8 +681,8 @@ static void test_render_token_amount_resolved_mint(void) {
 
     cs_instruction_template_t template;
     memset(&template, 0, sizeof(template));
-    strlcpy(template.operation_type, "Transfer", sizeof(template.operation_type));
-    strlcpy(template.display_fields[0].name, "Amount", sizeof(template.display_fields[0].name));
+    template.operation_type = "Transfer";
+    template.display_fields[0].name = "Amount";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
     template.display_fields[0]
@@ -718,11 +712,11 @@ static void test_render_token_amount_resolved_mint(void) {
 
 // Helper: build a single-field template rooted at an ARGUMENT_PATH.
 static void init_argument_template(cs_instruction_template_t *template,
-                                   const char *field_name,
+                                   char *field_name,
                                    uint8_t param_type) {
     memset(template, 0, sizeof(*template));
-    strlcpy(template->operation_type, "Test", sizeof(template->operation_type));
-    strlcpy(template->display_fields[0].name, field_name, sizeof(template->display_fields[0].name));
+    template->operation_type = "Test";
+    template->display_fields[0].name = field_name;
     template->display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template->display_fields[0].argument.param_type = param_type;
     template->display_field_count = 1;

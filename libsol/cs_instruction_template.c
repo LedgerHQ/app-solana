@@ -24,6 +24,57 @@ typedef struct cs_instruction_template_table_s {
 
 static cs_instruction_template_table_t *G_template_table = NULL;
 
+// Free every heap buffer a template owns; leaves the template block itself intact.
+static void free_template_owned_buffers(cs_instruction_template_t *template) {
+    if (template == NULL) {
+        return;
+    }
+    if (template->discriminator != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &template->discriminator);
+    }
+    if (template->idl_type_pool != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &template->idl_type_pool);
+    }
+    if (template->operation_type != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &template->operation_type);
+    }
+    if (template->program_name != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &template->program_name);
+    }
+    for (uint8_t f = 0; f < template->display_field_count; f++) {
+        if (template->display_fields[f].name != NULL) {
+            APP_MEM_FREE_AND_NULL((void **) &template->display_fields[f].name);
+        }
+        if (template->display_fields[f].source == CS_VALUE_SOURCE_ARGUMENT_PATH &&
+            template->display_fields[f].argument.path != NULL) {
+            APP_MEM_FREE_AND_NULL((void **) &template->display_fields[f].argument.path);
+        }
+        if (template->display_fields[f].source == CS_VALUE_SOURCE_CONSTANT &&
+            template->display_fields[f].constant.data != NULL) {
+            APP_MEM_FREE_AND_NULL((void **) &template->display_fields[f].constant.data);
+        }
+    }
+}
+
+// NULL name is a valid unlabeled field (*out = NULL); a non-NULL name must be non-empty.
+static int copy_field_name(char **out, const char *name) {
+    *out = NULL;
+    if (name != NULL) {
+        size_t len = strlen(name);
+        if (len == 0) {
+            PRINTF("cs_instruction_template: empty field name rejected\n");
+            return -1;
+        }
+        if (!APP_MEM_CALLOC((void **) out, len + 1)) {
+            PRINTF("cs_instruction_template: field name allocation failed (%d bytes)\n",
+                   (int) len + 1);
+            return -1;
+        }
+        memcpy(*out, name, len);
+    }
+    return 0;
+}
+
 static bool ensure_table(void) {
     if (G_template_table != NULL) {
         return true;
@@ -42,9 +93,7 @@ cs_instruction_template_t *cs_instruction_template_open(const uint8_t target_has
 
     // Drop any previous unfinished builder before opening a fresh one.
     if (G_template_table->builder != NULL) {
-        if (G_template_table->builder->idl_type_pool != NULL) {
-            APP_MEM_FREE_AND_NULL((void **) &G_template_table->builder->idl_type_pool);
-        }
+        free_template_owned_buffers(G_template_table->builder);
         APP_MEM_FREE_AND_NULL((void **) &G_template_table->builder);
     }
     if (!APP_MEM_CALLOC((void **) &G_template_table->builder, sizeof(*G_template_table->builder))) {
@@ -71,10 +120,8 @@ int cs_instruction_template_add_display_path(const uint8_t *path,
         PRINTF("cs_instruction_template_add_display_path: no builder open\n");
         return -1;
     }
-    if (path_size > CS_MAX_ARGUMENT_PATH_SIZE) {
-        PRINTF("cs_instruction_template_add_display_path: path too long (%d > %d)\n",
-               path_size,
-               CS_MAX_ARGUMENT_PATH_SIZE);
+    if (path_size == 0 || path_size > UINT8_MAX) {
+        PRINTF("cs_instruction_template_add_display_path: invalid path size %d\n", (int) path_size);
         return -1;
     }
     if (builder->display_field_count >= CS_MAX_DISPLAY_FIELDS) {
@@ -83,17 +130,24 @@ int cs_instruction_template_add_display_path(const uint8_t *path,
         return -1;
     }
 
+    uint8_t *path_copy = NULL;
+    if (!APP_MEM_CALLOC((void **) &path_copy, path_size)) {
+        PRINTF("cs_instruction_template_add_display_path: path allocation failed (%d bytes)\n",
+               (int) path_size);
+        return -1;
+    }
+    memcpy(path_copy, path, path_size);
+    char *name_copy = NULL;
+    if (copy_field_name(&name_copy, name) != 0) {
+        APP_MEM_FREE_AND_NULL((void **) &path_copy);
+        return -1;
+    }
+
     builder->display_fields[builder->display_field_count].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     builder->display_fields[builder->display_field_count].argument.param_type = param_type;
-    memcpy(builder->display_fields[builder->display_field_count].argument.path, path, path_size);
+    builder->display_fields[builder->display_field_count].argument.path = path_copy;
     builder->display_fields[builder->display_field_count].argument.path_size = (uint8_t) path_size;
-    if (name != NULL) {
-        strlcpy(builder->display_fields[builder->display_field_count].name,
-                name,
-                sizeof(builder->display_fields[builder->display_field_count].name));
-    } else {
-        builder->display_fields[builder->display_field_count].name[0] = '\0';
-    }
+    builder->display_fields[builder->display_field_count].name = name_copy;
     builder->display_field_count++;
     return 0;
 }
@@ -110,15 +164,14 @@ int cs_instruction_template_add_account_field(uint8_t account_index, const char 
         return -1;
     }
 
+    char *name_copy = NULL;
+    if (copy_field_name(&name_copy, name) != 0) {
+        return -1;
+    }
+
     builder->display_fields[builder->display_field_count].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
     builder->display_fields[builder->display_field_count].account.index = account_index;
-    if (name != NULL) {
-        strlcpy(builder->display_fields[builder->display_field_count].name,
-                name,
-                sizeof(builder->display_fields[builder->display_field_count].name));
-    } else {
-        builder->display_fields[builder->display_field_count].name[0] = '\0';
-    }
+    builder->display_fields[builder->display_field_count].name = name_copy;
     builder->display_field_count++;
     return 0;
 }
@@ -132,10 +185,8 @@ int cs_instruction_template_add_constant_field(const uint8_t *data,
         PRINTF("cs_instruction_template_add_constant_field: no builder open\n");
         return -1;
     }
-    if (data_size > CS_MAX_CONSTANT_SIZE) {
-        PRINTF("cs_instruction_template_add_constant_field: data too long (%d > %d)\n",
-               (int) data_size,
-               CS_MAX_CONSTANT_SIZE);
+    if (data_size == 0 || data_size > UINT8_MAX) {
+        PRINTF("cs_instruction_template_add_constant_field: invalid data size %d\n", (int) data_size);
         return -1;
     }
     if (builder->display_field_count >= CS_MAX_DISPLAY_FIELDS) {
@@ -144,17 +195,24 @@ int cs_instruction_template_add_constant_field(const uint8_t *data,
         return -1;
     }
 
+    uint8_t *data_copy = NULL;
+    if (!APP_MEM_CALLOC((void **) &data_copy, data_size)) {
+        PRINTF("cs_instruction_template_add_constant_field: data allocation failed (%d bytes)\n",
+               (int) data_size);
+        return -1;
+    }
+    memcpy(data_copy, data, data_size);
+    char *name_copy = NULL;
+    if (copy_field_name(&name_copy, name) != 0) {
+        APP_MEM_FREE_AND_NULL((void **) &data_copy);
+        return -1;
+    }
+
     builder->display_fields[builder->display_field_count].source = CS_VALUE_SOURCE_CONSTANT;
-    memcpy(builder->display_fields[builder->display_field_count].constant.data, data, data_size);
+    builder->display_fields[builder->display_field_count].constant.data = data_copy;
     builder->display_fields[builder->display_field_count].constant.data_size = (uint8_t) data_size;
     builder->display_fields[builder->display_field_count].constant.kind = kind;
-    if (name != NULL) {
-        strlcpy(builder->display_fields[builder->display_field_count].name,
-                name,
-                sizeof(builder->display_fields[builder->display_field_count].name));
-    } else {
-        builder->display_fields[builder->display_field_count].name[0] = '\0';
-    }
+    builder->display_fields[builder->display_field_count].name = name_copy;
     builder->display_field_count++;
     return 0;
 }
@@ -305,6 +363,69 @@ int cs_instruction_template_set_idl_type_pool(const uint8_t *data, size_t size) 
     return 0;
 }
 
+// Copy str_size bytes into a fresh NUL-terminated heap buffer at *dst. Empty is
+// rejected; the caller skips the call when there is nothing to store.
+static int set_builder_string(char **dst, const char *str, size_t str_size) {
+    if (str_size == 0) {
+        PRINTF("cs_instruction_template: empty string rejected\n");
+        return -1;
+    }
+    if (*dst != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) dst);
+    }
+    if (!APP_MEM_CALLOC((void **) dst, str_size + 1)) {
+        PRINTF("cs_instruction_template: string allocation failed (%d bytes)\n", (int) str_size + 1);
+        return -1;
+    }
+    memcpy(*dst, str, str_size);
+    return 0;
+}
+
+int cs_instruction_template_set_operation_type(const char *str, size_t str_size) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL) {
+        PRINTF("cs_instruction_template_set_operation_type: no builder open\n");
+        return -1;
+    }
+    return set_builder_string(&builder->operation_type, str, str_size);
+}
+
+int cs_instruction_template_set_program_name(const char *str, size_t str_size) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL) {
+        PRINTF("cs_instruction_template_set_program_name: no builder open\n");
+        return -1;
+    }
+    return set_builder_string(&builder->program_name, str, str_size);
+}
+
+int cs_instruction_template_set_discriminator(const uint8_t *data, size_t size) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL) {
+        PRINTF("cs_instruction_template_set_discriminator: no builder open\n");
+        return -1;
+    }
+    if (size > UINT8_MAX) {
+        PRINTF("cs_instruction_template_set_discriminator: discriminator too long (%d)\n",
+               (int) size);
+        return -1;
+    }
+    if (builder->discriminator != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &builder->discriminator);
+    }
+    builder->discriminator_size = 0;
+    if (size > 0) {
+        if (!APP_MEM_CALLOC((void **) &builder->discriminator, size)) {
+            PRINTF("cs_instruction_template_set_discriminator: allocation failed (%d bytes)\n",
+                   (int) size);
+            return -1;
+        }
+        memcpy(builder->discriminator, data, size);
+    }
+    builder->discriminator_size = (uint8_t) size;
+    return 0;
+}
+
 // Record which instruction accounts carry the token account and the mint,
 // so the finalize step can resolve the mint pubkey for TOKEN_AMOUNT display.
 int cs_instruction_template_set_mint_assoc(uint8_t account_idx, uint8_t mint_idx) {
@@ -371,7 +492,9 @@ const cs_instruction_template_t *cs_instruction_template_find(const uint8_t prog
         if (data_size < template->discriminator_size) {
             continue;
         }
-        if (memcmp(data, template->discriminator, template->discriminator_size) != 0) {
+        // Empty discriminator matches any instruction (and keeps NULL out of memcmp).
+        if (template->discriminator_size > 0 &&
+            memcmp(data, template->discriminator, template->discriminator_size) != 0) {
             continue;
         }
         return template;
@@ -383,17 +506,13 @@ void cs_instruction_template_table_reset(void) {
     cs_substructure_reset();
     if (G_template_table != NULL) {
         if (G_template_table->builder != NULL) {
-            if (G_template_table->builder->idl_type_pool != NULL) {
-                APP_MEM_FREE_AND_NULL((void **) &G_template_table->builder->idl_type_pool);
-            }
+            free_template_owned_buffers(G_template_table->builder);
             APP_MEM_FREE_AND_NULL((void **) &G_template_table->builder);
         }
-        // Each committed template owns its IDL pool buffer and its own block; free
-        // both per entry, then the pointer array, before the table block.
+        // Each committed template owns heap buffers and its own block; free the
+        // buffers then the block per entry, then the pointer array, before the table.
         for (uint8_t i = 0; i < G_template_table->committed_count; i++) {
-            if (G_template_table->committed[i]->idl_type_pool != NULL) {
-                APP_MEM_FREE_AND_NULL((void **) &G_template_table->committed[i]->idl_type_pool);
-            }
+            free_template_owned_buffers(G_template_table->committed[i]);
             APP_MEM_FREE_AND_NULL((void **) &G_template_table->committed[i]);
         }
         if (G_template_table->committed != NULL) {

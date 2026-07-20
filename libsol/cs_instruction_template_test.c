@@ -25,8 +25,7 @@ static void commit_template(const uint8_t program_id[32], const uint8_t *disc, s
     cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
     assert(builder != NULL);
     memcpy(builder->program_id, program_id, 32);
-    memcpy(builder->discriminator, disc, disc_size);
-    builder->discriminator_size = (uint8_t) disc_size;
+    assert(cs_instruction_template_set_discriminator(disc, disc_size) == 0);
     assert(cs_instruction_template_commit() == 0);
 }
 
@@ -55,8 +54,7 @@ static void test_open_and_commit(void) {
     assert(cs_instruction_template_committed_count() == 0);
 
     memcpy(builder->program_id, PROGRAM_A, 32);
-    memcpy(builder->discriminator, DISC_A, sizeof(DISC_A));
-    builder->discriminator_size = sizeof(DISC_A);
+    assert(cs_instruction_template_set_discriminator(DISC_A, sizeof(DISC_A)) == 0);
     assert(cs_instruction_template_set_idl_type_pool(IDL_POOL, sizeof(IDL_POOL)) == 0);
 
     assert(cs_instruction_template_commit() == 0);
@@ -148,6 +146,26 @@ static void test_find_data_too_short(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+static void test_find_empty_discriminator_matches_any(void) {
+    printf("  test_find_empty_discriminator_matches_any\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    // A zero-length discriminator (discriminator == NULL) must match any instruction.
+    commit_template(PROGRAM_A, NULL, 0);
+    const cs_instruction_template_t *found = cs_instruction_template_find(PROGRAM_A, NULL, 0);
+    assert(found != NULL);
+    assert(found->discriminator == NULL);
+    assert(found->discriminator_size == 0);
+
+    const uint8_t data[] = {0xDE, 0xAD, 0xBE, 0xEF};
+    assert(cs_instruction_template_find(PROGRAM_A, data, sizeof(data)) == found);
+    assert(cs_instruction_template_find(PROGRAM_B, data, sizeof(data)) == NULL);
+
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 static void test_add_display_path(void) {
     printf("  test_add_display_path\n");
     mock_mem_reset();
@@ -187,21 +205,86 @@ static void test_add_display_path_no_builder(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-static void test_add_display_path_too_long(void) {
-    printf("  test_add_display_path_too_long\n");
+static void test_add_display_path_empty(void) {
+    printf("  test_add_display_path_empty\n");
     mock_mem_reset();
     cs_instruction_template_table_reset();
 
     cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
     assert(builder != NULL);
 
-    uint8_t long_path[CS_MAX_ARGUMENT_PATH_SIZE + 1];
-    memset(long_path, 0x20, sizeof(long_path));
-    assert(cs_instruction_template_add_display_path(long_path,
-                                                    sizeof(long_path),
-                                                    CS_PARAM_TYPE_RAW,
-                                                    NULL) == -1);
+    const uint8_t path[] = {0x20};
+    assert(cs_instruction_template_add_display_path(path, 0, CS_PARAM_TYPE_RAW, NULL) == -1);
     assert(builder->display_field_count == 0);
+
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_add_display_path_alloc_fail(void) {
+    printf("  test_add_display_path_alloc_fail\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
+    assert(builder != NULL);
+
+    const uint8_t path[] = {0x20, 0x00};
+    // Next allocation (the path copy) returns NULL: the field must not be stored.
+    mock_mem_fail_after(0);
+    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, NULL) ==
+           -1);
+    assert(builder->display_field_count == 0);
+
+    mock_mem_fail_after(-1);
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_add_field_name_variants(void) {
+    printf("  test_add_field_name_variants\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
+    assert(builder != NULL);
+
+    const uint8_t path[] = {0x20, 0x00};
+    // Empty (non-NULL) label rejected; the already-allocated path copy is released.
+    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, "") == -1);
+    assert(builder->display_field_count == 0);
+
+    // NULL label is valid (unlabeled field).
+    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, NULL) == 0);
+    assert(builder->display_field_count == 1);
+    assert(builder->display_fields[0].name == NULL);
+
+    assert(cs_instruction_template_add_account_field(1, "Owner") == 0);
+    assert(builder->display_field_count == 2);
+    assert(builder->display_fields[1].name != NULL);
+    assert(strcmp(builder->display_fields[1].name, "Owner") == 0);
+
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_set_strings_reject_empty(void) {
+    printf("  test_set_strings_reject_empty\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
+    assert(builder != NULL);
+
+    // Empty operation type / program name rejected, pointer stays NULL.
+    assert(cs_instruction_template_set_operation_type("ignored", 0) == -1);
+    assert(builder->operation_type == NULL);
+    assert(cs_instruction_template_set_program_name("ignored", 0) == -1);
+    assert(builder->program_name == NULL);
+
+    assert(cs_instruction_template_set_operation_type("Swap", 4) == 0);
+    assert(builder->operation_type != NULL);
+    assert(strcmp(builder->operation_type, "Swap") == 0);
 
     cs_instruction_template_table_reset();
     assert(mock_mem_outstanding() == 0);
@@ -318,8 +401,7 @@ static void test_reset_cleans_everything(void) {
     cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
     assert(builder != NULL);
     memcpy(builder->program_id, PROGRAM_A, 32);
-    memcpy(builder->discriminator, DISC_A, sizeof(DISC_A));
-    builder->discriminator_size = sizeof(DISC_A);
+    assert(cs_instruction_template_set_discriminator(DISC_A, sizeof(DISC_A)) == 0);
     assert(cs_instruction_template_set_idl_type_pool(IDL_POOL, sizeof(IDL_POOL)) == 0);
     assert(cs_instruction_template_commit() == 0);
 
@@ -480,19 +562,37 @@ static void test_add_constant_field_no_builder(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-static void test_add_constant_field_too_large(void) {
-    printf("  test_add_constant_field_too_large\n");
+static void test_add_constant_field_empty(void) {
+    printf("  test_add_constant_field_empty\n");
     mock_mem_reset();
     cs_instruction_template_table_reset();
 
     cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
     assert(builder != NULL);
 
-    uint8_t big[CS_MAX_CONSTANT_SIZE + 1];
-    memset(big, 0xAA, sizeof(big));
-    assert(cs_instruction_template_add_constant_field(big, sizeof(big), IDL_KIND_U8, NULL) == -1);
+    const uint8_t data[] = {0x01};
+    assert(cs_instruction_template_add_constant_field(data, 0, IDL_KIND_U8, NULL) == -1);
     assert(builder->display_field_count == 0);
 
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_add_constant_field_alloc_fail(void) {
+    printf("  test_add_constant_field_alloc_fail\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
+    assert(builder != NULL);
+
+    const uint8_t data[] = {0x01, 0x02, 0x03};
+    // The name copy (second allocation) fails: the data copy must be freed, no field stored.
+    mock_mem_fail_after(1);
+    assert(cs_instruction_template_add_constant_field(data, sizeof(data), IDL_KIND_U8, "Fee") == -1);
+    assert(builder->display_field_count == 0);
+
+    mock_mem_fail_after(-1);
     cs_instruction_template_table_reset();
     assert(mock_mem_outstanding() == 0);
 }
@@ -614,9 +714,13 @@ int main(void) {
     test_find_wrong_program();
     test_find_wrong_discriminator();
     test_find_data_too_short();
+    test_find_empty_discriminator_matches_any();
     test_add_display_path();
     test_add_display_path_no_builder();
-    test_add_display_path_too_long();
+    test_add_display_path_empty();
+    test_add_display_path_alloc_fail();
+    test_add_field_name_variants();
+    test_set_strings_reject_empty();
     test_add_display_path_slots_full();
     test_commit_no_builder();
     test_commit_grows_past_old_cap();
@@ -632,7 +736,8 @@ int main(void) {
     test_mixed_display_fields_order();
     test_add_constant_field();
     test_add_constant_field_no_builder();
-    test_add_constant_field_too_large();
+    test_add_constant_field_empty();
+    test_add_constant_field_alloc_fail();
     test_mixed_all_sources_order();
     test_param_type_stored_on_display_path();
     test_param_type_token_amount();

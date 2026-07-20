@@ -19,13 +19,11 @@ typedef struct tlv_out_s {
 
     uint8_t version;
     uint8_t program_id[32];
-    uint8_t discriminator[CS_MAX_DISCRIMINATOR_SIZE];
-    size_t discriminator_size;
-    // Sized from the template caps so oversized names are rejected at ingest, not truncated on copy.
-    char operation_type[CS_MAX_OPERATION_TYPE_SIZE];
-    char program_name[CS_MAX_PROGRAM_NAME_SIZE];
+    // Views into G_command.message, copied into the template's heap buffers at open time.
+    buffer_t discriminator;
+    buffer_t operation_type;
+    buffer_t program_name;
     uint8_t substructures_hash[32];
-    // Points into G_command.message; copied into the template's heap buffer at open time.
     buffer_t idl_type_pool;
     uint8_t idl_root_type;
     uint8_t mint_assoc_account;
@@ -53,23 +51,15 @@ static bool handle_program_id(const tlv_data_t *data, tlv_out_t *out) {
 }
 
 static bool handle_discriminator(const tlv_data_t *data, tlv_out_t *out) {
-    buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 0, CS_MAX_DISCRIMINATOR_SIZE)) {
-        return false;
-    }
-    out->discriminator_size = temp.size;
-    if (temp.size > 0) {
-        memcpy(out->discriminator, temp.ptr, temp.size);
-    }
-    return true;
+    return get_buffer_from_tlv_data(data, &out->discriminator, 0, MAX_MESSAGE_LENGTH);
 }
 
 static bool handle_operation_type(const tlv_data_t *data, tlv_out_t *out) {
-    return get_string_from_tlv_data(data, out->operation_type, 1, sizeof(out->operation_type));
+    return get_buffer_from_tlv_data(data, &out->operation_type, 1, MAX_MESSAGE_LENGTH);
 }
 
 static bool handle_program_name(const tlv_data_t *data, tlv_out_t *out) {
-    return get_string_from_tlv_data(data, out->program_name, 0, sizeof(out->program_name));
+    return get_buffer_from_tlv_data(data, &out->program_name, 0, MAX_MESSAGE_LENGTH);
 }
 
 static bool handle_substructures_hash(const tlv_data_t *data, tlv_out_t *out) {
@@ -222,10 +212,15 @@ int handle_provide_instruction_info(void) {
     PRINTF("=== INSTRUCTION INFO ===\n");
     PRINTF("version            = %d\n", tlv_extracted.version);
     PRINTF("program_id         = %.*H\n", 32, tlv_extracted.program_id);
-    PRINTF("discriminator      = %.*H\n", tlv_extracted.discriminator_size,
-           tlv_extracted.discriminator);
-    PRINTF("operation_type     = %s\n", tlv_extracted.operation_type);
-    PRINTF("program_name       = %s\n", tlv_extracted.program_name);
+    PRINTF("discriminator      = %.*H\n",
+           tlv_extracted.discriminator.size,
+           tlv_extracted.discriminator.ptr);
+    PRINTF("operation_type     = %.*s\n",
+           (int) tlv_extracted.operation_type.size,
+           tlv_extracted.operation_type.ptr);
+    PRINTF("program_name       = %.*s\n",
+           (int) tlv_extracted.program_name.size,
+           tlv_extracted.program_name.ptr);
     PRINTF("substructures_hash = %.*H\n", 32, tlv_extracted.substructures_hash);
     PRINTF("idl_type_pool_size = %d\n", (int) tlv_extracted.idl_type_pool.size);
     PRINTF("idl_root_type      = %d\n", tlv_extracted.idl_root_type);
@@ -239,14 +234,24 @@ int handle_provide_instruction_info(void) {
     }
 
     memcpy(template->program_id, tlv_extracted.program_id, sizeof(template->program_id));
-    memcpy(template->discriminator, tlv_extracted.discriminator, tlv_extracted.discriminator_size);
-    template->discriminator_size = (uint8_t) tlv_extracted.discriminator_size;
-    strlcpy(template->operation_type,
-            tlv_extracted.operation_type,
-            sizeof(template->operation_type));
-    strlcpy(template->program_name,
-            tlv_extracted.program_name,
-            sizeof(template->program_name));
+    if (cs_instruction_template_set_discriminator(tlv_extracted.discriminator.ptr,
+                                                  tlv_extracted.discriminator.size) != 0) {
+        PRINTF("Error: failed to store discriminator\n");
+        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+    }
+    if (cs_instruction_template_set_operation_type((const char *) tlv_extracted.operation_type.ptr,
+                                                   tlv_extracted.operation_type.size) != 0) {
+        PRINTF("Error: failed to store operation type\n");
+        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+    }
+    // PROGRAM_NAME is optional; when absent the header shows the program address.
+    if (tlv_extracted.program_name.size > 0) {
+        if (cs_instruction_template_set_program_name((const char *) tlv_extracted.program_name.ptr,
+                                                     tlv_extracted.program_name.size) != 0) {
+            PRINTF("Error: failed to store program name\n");
+            return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+        }
+    }
     if (cs_instruction_template_set_idl_type_pool(tlv_extracted.idl_type_pool.ptr,
                                                   tlv_extracted.idl_type_pool.size) != 0) {
         PRINTF("Error: failed to store IDL type pool\n");

@@ -134,14 +134,8 @@ typedef struct cs_format_trusted_name_s {
     uint8_t allowed_types_mask;
 } cs_format_trusted_name_t;
 
-// Fixed capacities. Inputs exceeding these fail closed rather than truncate.
-#define CS_MAX_DISCRIMINATOR_SIZE    8
+// Fixed capacities. Inputs exceeding these are refused rather than truncated.
 #define CS_MAX_DISPLAY_FIELDS        8
-#define CS_MAX_ARGUMENT_PATH_SIZE    16
-#define CS_MAX_CONSTANT_SIZE         32
-#define CS_MAX_OPERATION_TYPE_SIZE   32
-#define CS_MAX_PROGRAM_NAME_SIZE     32
-#define CS_MAX_DISPLAY_FIELD_NAME    32
 
 // One displayed field. Three source types are supported:
 //   - ARGUMENT_PATH (source == 0x00): the field value is extracted from the
@@ -157,10 +151,10 @@ typedef struct cs_format_trusted_name_s {
 // All share the same array so streaming order equals display order.
 typedef struct cs_display_field_s {
     uint8_t source;
-    char name[CS_MAX_DISPLAY_FIELD_NAME];
+    char *name;  // heap, NUL-terminated; owned by this template, NULL when unlabeled
     union {
         struct {
-            uint8_t path[CS_MAX_ARGUMENT_PATH_SIZE];
+            uint8_t *path;  // heap, sized to path_size; owned by this template
             uint8_t path_size;
             uint8_t param_type;
             union {
@@ -176,7 +170,7 @@ typedef struct cs_display_field_s {
             uint8_t index;
         } account;
         struct {
-            uint8_t data[CS_MAX_CONSTANT_SIZE];
+            uint8_t *data;  // heap, sized to data_size; owned by this template
             uint8_t data_size;
             uint8_t kind;
         } constant;
@@ -187,10 +181,10 @@ typedef struct cs_display_field_s {
 // Only ever exposed once fully assembled, so every field is valid.
 typedef struct cs_instruction_template_s {
     uint8_t program_id[32];
-    uint8_t discriminator[CS_MAX_DISCRIMINATOR_SIZE];
+    uint8_t *discriminator;  // heap, sized to discriminator_size; owned by this template
     uint8_t discriminator_size;
-    char operation_type[CS_MAX_OPERATION_TYPE_SIZE];
-    char program_name[CS_MAX_PROGRAM_NAME_SIZE];
+    char *operation_type;    // heap, NUL-terminated; owned by this template
+    char *program_name;      // heap, NUL-terminated; owned by this template, NULL when absent
     uint8_t *idl_type_pool;  // heap, sized to idl_type_pool_size; owned by this template
     size_t idl_type_pool_size;
     uint8_t idl_root_type;
@@ -211,30 +205,32 @@ cs_instruction_template_t *cs_instruction_template_open(const uint8_t target_has
 // The in-flight builder being assembled, or NULL when none is open.
 cs_instruction_template_t *cs_instruction_template_current(void);
 
-// Append one argument path to the in-flight builder's display-field list.
-// `name` is the human-readable field label (may be NULL or empty).
-// Returns 0 on success, -1 when no builder is open, the path is too long, or
-// the slot is full.
+// Append an argument-path display field. `name` is NULL (unlabeled) or non-empty.
+// Returns 0, or -1 on no builder / bad path / full slots / allocation failure.
 int cs_instruction_template_add_display_path(const uint8_t *path,
                                              size_t path_size,
                                              uint8_t param_type,
                                              const char *name);
 
-// Append one account-path field to the in-flight builder's display-field list.
-// `account_index` is the index into the instruction's accounts array.
-// `name` is the human-readable field label (may be NULL or empty).
-// Always rendered as a short-form base58 address; no param_type needed.
-// Returns 0 on success, -1 when no builder is open or the slot is full.
+// Append an account-path display field (rendered as a short base58 address).
+// `name` is NULL (unlabeled) or non-empty. Returns 0, -1 on error.
 int cs_instruction_template_add_account_field(uint8_t account_index, const char *name);
 
-// Append a CONSTANT display field. The value is embedded directly from the
-// descriptor payload. `kind` is the IDL kind code for formatting at render time.
-// Always rendered via format_leaf using the IDL kind; no param_type needed.
-// Returns 0 on success, -1 when no builder is open or the slot is full.
+// Append a CONSTANT display field carrying `data` and its IDL `kind` for format_leaf.
+// `name` is NULL (unlabeled) or non-empty. Returns 0, -1 on error.
 int cs_instruction_template_add_constant_field(const uint8_t *data,
                                                size_t data_size,
                                                uint8_t kind,
                                                const char *name);
+
+// Store the operation type / program name (str_size bytes, empty rejected). The
+// caller skips the call for an absent optional value. Returns 0, -1 on error.
+int cs_instruction_template_set_operation_type(const char *str, size_t str_size);
+int cs_instruction_template_set_program_name(const char *str, size_t str_size);
+
+// Store the discriminator; empty matches any instruction for the program id.
+// Returns 0, -1 on error.
+int cs_instruction_template_set_discriminator(const uint8_t *data, size_t size);
 
 // Set AMOUNT format parameters on the last added display field.
 // Must be called immediately after adding a field with param_type == AMOUNT.

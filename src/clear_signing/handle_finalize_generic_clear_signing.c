@@ -148,9 +148,7 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
         uint8_t argument_count = 0;
         for (uint8_t f = 0; f < template->display_field_count; f++) {
             if (template->display_fields[f].source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
-                memcpy(argument_paths[argument_count].path,
-                       template->display_fields[f].argument.path,
-                       template->display_fields[f].argument.path_size);
+                argument_paths[argument_count].path = template->display_fields[f].argument.path;
                 argument_paths[argument_count].path_size =
                     template->display_fields[f].argument.path_size;
                 argument_indices[argument_count] = f;

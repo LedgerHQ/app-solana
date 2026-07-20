@@ -52,8 +52,7 @@ static int run_walk(const uint8_t *pool,
 // Add a path to match at slot `index`.
 static void tw_add_path(test_walk_t *tw, uint8_t index, const uint8_t *path, size_t path_size) {
     assert(index < MAX_TEST_PATHS);
-    assert(path_size <= IDL_MATCH_PATH_MAX_SIZE);
-    memcpy(tw->paths[index].path, path, path_size);
+    tw->paths[index].path = path;
     tw->paths[index].path_size = (uint8_t) path_size;
     if (index >= tw->path_count) {
         tw->path_count = index + 1;
