@@ -12,27 +12,18 @@
 #include "dynamic_token_info.h"
 #include "cs_trusted_name_cache.h"
 
-// The value buffer must hold a maximum-length trusted name plus its NUL.
-_Static_assert(CS_DISPLAY_VALUE_SIZE >= CS_TRUSTED_NAME_MAX_LEN + 1,
-               "CS_DISPLAY_VALUE_SIZE too small for a maximum-length trusted name");
+#define CS_DISPLAY_ELEMENTS_CAP_STEP 8
 
 typedef struct cs_display_renderer_table_s {
     cs_display_element_t **elements;  // heap pointer array, grown on demand
-    size_t capacity;
+    size_t capacity; // Grows in CS_DISPLAY_ELEMENTS_CAP_STEP steps
     size_t count;
 } cs_display_renderer_table_t;
 
-// Scratch buffer size for encoding a PARAM_STRING value before slicing the
-// formatted result. Large enough to hold an encoded string from which a
-// display-sized window (CS_DISPLAY_VALUE_SIZE) can be sliced.
-#define CS_STRING_FORMATTED_MAX 128
-
 static cs_display_renderer_table_t G_cs_display_renderer;
 
-// Pointer-array capacity grows in fixed steps of this size (also the initial
-// allocation). The element count itself has no fixed cap: it is bounded by the
-// surviving instructions and their fields, and ultimately by the pool.
-#define CS_DISPLAY_ELEMENTS_CAP_STEP 8
+// Max size for formatting a single title or value before it is shrunk to its string length
+#define CS_RENDER_BUFFER_SIZE 128
 
 // Ensure the pointer array can hold one more element, growing it by one step on
 // demand. The first allocation uses CALLOC; later growth reallocates, so realloc
@@ -80,8 +71,14 @@ static cs_display_element_t *append_element(void) {
 }
 
 // Release every element and the pointer array, returning to the empty state.
+// Each element's strings are freed before the element struct that points at them.
 void cs_display_renderer_reset(void) {
     for (size_t i = 0; i < G_cs_display_renderer.count; i++) {
+        cs_display_element_t *element = G_cs_display_renderer.elements[i];
+        if (element != NULL) {
+            APP_MEM_FREE_AND_NULL((void **) &element->title);
+            APP_MEM_FREE_AND_NULL((void **) &element->value);
+        }
         APP_MEM_FREE_AND_NULL((void **) &G_cs_display_renderer.elements[i]);
     }
     if (G_cs_display_renderer.elements != NULL) {
@@ -89,6 +86,21 @@ void cs_display_renderer_reset(void) {
     }
     G_cs_display_renderer.capacity = 0;
     G_cs_display_renderer.count = 0;
+}
+
+// Shrink a formatted working buffer to its string length and hand it to *out.
+// On failure the working buffer is freed and -1 returned.
+static int commit_render_buffer(char *buffer, char **out) {
+    size_t fitted_size = strlen(buffer) + 1;
+    char *fitted = APP_MEM_REALLOC(buffer, fitted_size);
+    if (fitted == NULL) {
+        PRINTF("commit_render_buffer: shrink to %u bytes failed\n", (unsigned) fitted_size);
+        APP_MEM_FREE_AND_NULL((void **) &buffer);
+        return -1;
+    }
+    PRINTF("commit_render_buffer: %u bytes: %s\n", (unsigned) fitted_size, fitted);
+    *out = fitted;
+    return 0;
 }
 
 // Defined further down; needed by format_leaf for the raw byte kinds.
@@ -661,7 +673,7 @@ static int format_unit(const idl_resolved_leaf_t *leaf,
                        char *value_out,
                        size_t value_out_size) {
     uint64_t amount;
-    char number[CS_DISPLAY_VALUE_SIZE];
+    char number[CS_RENDER_BUFFER_SIZE];
     int written;
 
     if (read_leaf_u64(leaf, &amount) != 0) {
@@ -893,7 +905,7 @@ static int format_string(const idl_resolved_leaf_t *leaf,
         }
     } else {
         // Encode the whole value into scratch, then slice the formatted string.
-        char encoded[CS_STRING_FORMATTED_MAX];
+        char encoded[CS_RENDER_BUFFER_SIZE];
         int encoded_len = encode_string_bytes(string->encoding,
                                               leaf->value,
                                               leaf->value_size,
@@ -1013,6 +1025,97 @@ static int format_field(const cs_display_field_t *field,
     }
 }
 
+// Append the "[index/total] operation_type" header element for one instruction,
+// showing the program name when the template carries one, else its address.
+static int render_instruction_header(const cs_instruction_result_t *instruction,
+                                     size_t survivor_index,
+                                     size_t survivor_count) {
+    cs_display_element_t *header = append_element();
+    if (header == NULL) {
+        PRINTF("render_instruction_header: element append failed\n");
+        return -1;
+    }
+
+    char *title = NULL;
+    if (!APP_MEM_CALLOC((void **) &title, CS_RENDER_BUFFER_SIZE)) {
+        PRINTF("render_instruction_header: title buffer allocation failed\n");
+        return -1;
+    }
+    snprintf(title,
+             CS_RENDER_BUFFER_SIZE,
+             "[%u/%u] %s",
+             (unsigned) survivor_index,
+             (unsigned) survivor_count,
+             instruction->template->operation_type);
+    if (commit_render_buffer(title, &header->title) != 0) {
+        return -1;
+    }
+
+    char *value = NULL;
+    if (!APP_MEM_CALLOC((void **) &value, CS_RENDER_BUFFER_SIZE)) {
+        PRINTF("render_instruction_header: value buffer allocation failed\n");
+        return -1;
+    }
+    if (instruction->template->program_name[0] != '\0') {
+        snprintf(value, CS_RENDER_BUFFER_SIZE, "Program: %s", instruction->template->program_name);
+    } else {
+        char address[BASE58_PUBKEY_LENGTH];
+        if (encode_base58(instruction->template->program_id, 32, address, sizeof(address)) < 0) {
+            PRINTF("render_instruction_header: base58 encode program_id failed\n");
+            APP_MEM_FREE_AND_NULL((void **) &value);
+            return -1;
+        }
+        snprintf(value, CS_RENDER_BUFFER_SIZE, "Program: %s", address);
+    }
+    if (commit_render_buffer(value, &header->value) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+// Append the display element for one resolved field: its label (the template
+// name or "Field N") and its formatted value.
+static int render_field(const cs_instruction_result_t *instruction, size_t field) {
+    cs_display_element_t *element = append_element();
+    if (element == NULL) {
+        PRINTF("render_field: element append failed field=%u\n", (unsigned) field);
+        return -1;
+    }
+
+    char *title = NULL;
+    if (!APP_MEM_CALLOC((void **) &title, CS_RENDER_BUFFER_SIZE)) {
+        PRINTF("render_field: title buffer allocation failed field=%u\n", (unsigned) field);
+        return -1;
+    }
+    if (instruction->template->display_fields[field].name[0] != '\0') {
+        strlcpy(title, instruction->template->display_fields[field].name, CS_RENDER_BUFFER_SIZE);
+    } else {
+        snprintf(title, CS_RENDER_BUFFER_SIZE, "Field %u", (unsigned) (field + 1));
+    }
+    if (commit_render_buffer(title, &element->title) != 0) {
+        return -1;
+    }
+
+    char *value = NULL;
+    if (!APP_MEM_CALLOC((void **) &value, CS_RENDER_BUFFER_SIZE)) {
+        PRINTF("render_field: value buffer allocation failed field=%u\n", (unsigned) field);
+        return -1;
+    }
+    if (format_field(&instruction->template->display_fields[field],
+                     &instruction->resolved[field],
+                     instruction->field_mint[field],
+                     value,
+                     CS_RENDER_BUFFER_SIZE) != 0) {
+        PRINTF("render_field: format failed field=%u\n", (unsigned) field);
+        APP_MEM_FREE_AND_NULL((void **) &value);
+        return -1;
+    }
+    if (commit_render_buffer(value, &element->value) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
 int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
                             size_t walked_instructions_count,
                             const bool *survivors) {
@@ -1025,6 +1128,9 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
             survivor_count++;
         }
     }
+    PRINTF("cs_display_renderer_run: %u instructions, %u survivors\n",
+           (unsigned) walked_instructions_count,
+           (unsigned) survivor_count);
 
     size_t survivor_index = 0;
 
@@ -1033,63 +1139,26 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
             continue;
         }
         survivor_index++;
+        PRINTF("cs_display_renderer_run: rendering instruction ix=%u operation=%s\n",
+               (unsigned) ix,
+               walked_instructions[ix].template->operation_type);
 
-        // Instruction header element: "[ix/total] operation_type"
-        cs_display_element_t *header = append_element();
-        if (header == NULL) {
+        if (render_instruction_header(&walked_instructions[ix], survivor_index, survivor_count) !=
+            0) {
+            PRINTF("cs_display_renderer_run: header render failed ix=%u\n", (unsigned) ix);
             return -1;
         }
-        snprintf(header->title,
-                 CS_DISPLAY_TITLE_SIZE,
-                 "[%u/%u] %s",
-                 (unsigned) survivor_index,
-                 (unsigned) survivor_count,
-                 walked_instructions[ix].template->operation_type);
 
-        // Display Program, as name if the template told us, as address otherwise
-        if (walked_instructions[ix].template->program_name[0] != '\0') {
-            snprintf(header->value,
-                     CS_DISPLAY_VALUE_SIZE,
-                     "Program: %s",
-                     walked_instructions[ix].template->program_name);
-        } else {
-            char address[45];
-            if (encode_base58(walked_instructions[ix].template->program_id,
-                              32,
-                              address,
-                              sizeof(address)) < 0) {
-                PRINTF("cs_display_renderer_run: base58 encode program_id failed\n");
-                return -1;
-            }
-            snprintf(header->value, CS_DISPLAY_VALUE_SIZE, "Program: %s", address);
-        }
-
-        for (uint8_t field = 0; field < walked_instructions[ix].resolved_count; field++) {
+        for (size_t field = 0; field < walked_instructions[ix].resolved_count; field++) {
             if (walked_instructions[ix].resolved[field].value == NULL) {
+                PRINTF("cs_display_renderer_run: field=%u has no value, skipped\n",
+                       (unsigned) field);
                 continue;
             }
-
-            cs_display_element_t *element = append_element();
-            if (element == NULL) {
-                return -1;
-            }
-
-            if (walked_instructions[ix].template->display_fields[field].name[0] != '\0') {
-                strlcpy(element->title,
-                        walked_instructions[ix].template->display_fields[field].name,
-                        CS_DISPLAY_TITLE_SIZE);
-            } else {
-                snprintf(element->title, CS_DISPLAY_TITLE_SIZE, "Field %u", field + 1);
-            }
-
-            if (format_field(&walked_instructions[ix].template->display_fields[field],
-                             &walked_instructions[ix].resolved[field],
-                             walked_instructions[ix].field_mint[field],
-                             element->value,
-                             CS_DISPLAY_VALUE_SIZE) != 0) {
-                PRINTF("cs_display_renderer_run: format failed ix=%u field=%u\n",
+            if (render_field(&walked_instructions[ix], field) != 0) {
+                PRINTF("cs_display_renderer_run: field render failed ix=%u field=%u\n",
                        (unsigned) ix,
-                       field);
+                       (unsigned) field);
                 return -1;
             }
         }

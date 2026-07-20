@@ -11,15 +11,11 @@
 
 #include "cs_merge_engine.h"
 
-#define CS_DISPLAY_TITLE_SIZE 48
-// Holds the longest rendered value, a 64-char trusted name, plus its NUL.
-// cs_display_renderer.c asserts this against CS_TRUSTED_NAME_MAX_LEN.
-#define CS_DISPLAY_VALUE_SIZE 65
-
-// One key/value pair rendered on the review screen.
+// One key/value pair rendered on the review screen. Both strings are heap
+// buffers sized to their content (strlen+1), freed on reset.
 typedef struct cs_display_element_s {
-    char title[CS_DISPLAY_TITLE_SIZE];
-    char value[CS_DISPLAY_VALUE_SIZE];
+    char *title;
+    char *value;
 } cs_display_element_t;
 
 // Format all resolved leaves from survived instructions into display elements.
