@@ -238,20 +238,45 @@ static void test_commit_no_builder(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-static void test_committed_array_full(void) {
-    printf("  test_committed_array_full\n");
+static void test_commit_grows_past_old_cap(void) {
+    printf("  test_commit_grows_past_old_cap\n");
     mock_mem_reset();
     cs_instruction_template_table_reset();
 
-    for (int i = 0; i < CS_MAX_INSTRUCTION_TEMPLATES; i++) {
-        uint8_t disc = (uint8_t) i;
+    // The old CS_MAX_INSTRUCTION_TEMPLATES cap (4) is gone: commit well past it.
+    const uint8_t total = 10;
+    for (uint8_t i = 0; i < total; i++) {
+        uint8_t disc = i;
         commit_template(PROGRAM_A, &disc, 1);
     }
-    assert(cs_instruction_template_committed_count() == CS_MAX_INSTRUCTION_TEMPLATES);
+    assert(cs_instruction_template_committed_count() == total);
 
-    // Next open should fail — array full
-    assert(cs_instruction_template_open(TARGET_HASH) == NULL);
+    // Every committed template survives the pointer-array growth and is findable.
+    for (uint8_t i = 0; i < total; i++) {
+        uint8_t disc = i;
+        assert(cs_instruction_template_find(PROGRAM_A, &disc, 1) != NULL);
+    }
 
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_commit_pool_exhaustion_fail_closed(void) {
+    printf("  test_commit_pool_exhaustion_fail_closed\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
+    assert(builder != NULL);
+    memcpy(builder->program_id, PROGRAM_A, 32);
+
+    // The committed-array growth allocation fails: commit refuses, builder stays open.
+    mock_mem_fail_after(0);
+    assert(cs_instruction_template_commit() == -1);
+    assert(cs_instruction_template_committed_count() == 0);
+    assert(cs_instruction_template_pending() == true);
+
+    mock_mem_reset();
     cs_instruction_template_table_reset();
     assert(mock_mem_outstanding() == 0);
 }
@@ -594,7 +619,8 @@ int main(void) {
     test_add_display_path_too_long();
     test_add_display_path_slots_full();
     test_commit_no_builder();
-    test_committed_array_full();
+    test_commit_grows_past_old_cap();
+    test_commit_pool_exhaustion_fail_closed();
     test_open_discards_previous_builder();
     test_reset_cleans_everything();
     test_alloc_failure_on_open();

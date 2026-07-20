@@ -187,12 +187,15 @@ static void test_duplicate_rejected(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-static void test_cache_full_rejected(void) {
-    printf("  test_cache_full_rejected\n");
+// No arbitrary count cap: the cache holds as many variants as the pool allows.
+static void test_cache_grows_unbounded(void) {
+    printf("  test_cache_grows_unbounded\n");
     mock_mem_reset();
     cs_enum_cache_reset();
 
-    for (uint16_t i = 0; i < CS_MAX_ENUM_VARIANTS; i++) {
+    // Add well past the removed cap (was 8); every add must succeed.
+    const size_t added = 32;
+    for (size_t i = 0; i < added; i++) {
         assert(cs_enum_cache_add(PROGRAM_A,
                                  ENUM_ID_A,
                                  sizeof(ENUM_ID_A),
@@ -202,19 +205,44 @@ static void test_cache_full_rejected(void) {
                                  NULL,
                                  0) == 0);
     }
-    assert(cs_enum_cache_count() == CS_MAX_ENUM_VARIANTS);
+    assert(cs_enum_cache_count() == added);
+    // Every added variant is still retrievable.
+    assert(cs_enum_cache_find(PROGRAM_A, ENUM_ID_A, sizeof(ENUM_ID_A), added - 1) != NULL);
 
-    // One more variant must be refused.
+    cs_enum_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// OOM is the sole rejection path: a failed allocation refuses the add, leaves
+// the count untouched, and frees cleanly on reset.
+static void test_oom_rejected(void) {
+    printf("  test_oom_rejected\n");
+    mock_mem_reset();
+    cs_enum_cache_reset();
+
     assert(cs_enum_cache_add(PROGRAM_A,
                              ENUM_ID_A,
                              sizeof(ENUM_ID_A),
-                             CS_MAX_ENUM_VARIANTS,
-                             "overflow",
+                             0,
+                             "v",
+                             CS_VARIANT_PAYLOAD_EMPTY,
+                             NULL,
+                             0) == 0);
+    assert(cs_enum_cache_count() == 1);
+
+    // Next allocation (pointer-array growth) fails: the add must fail closed.
+    mock_mem_fail_after(0);
+    assert(cs_enum_cache_add(PROGRAM_A,
+                             ENUM_ID_A,
+                             sizeof(ENUM_ID_A),
+                             1,
+                             "v",
                              CS_VARIANT_PAYLOAD_EMPTY,
                              NULL,
                              0) == -1);
-    assert(cs_enum_cache_count() == CS_MAX_ENUM_VARIANTS);
+    assert(cs_enum_cache_count() == 1);
 
+    mock_mem_fail_after(-1);
     cs_enum_cache_reset();
     assert(mock_mem_outstanding() == 0);
 }
@@ -292,7 +320,8 @@ int main(void) {
     test_add_raw_size_payload();
     test_key_disambiguation();
     test_duplicate_rejected();
-    test_cache_full_rejected();
+    test_cache_grows_unbounded();
+    test_oom_rejected();
     test_oversized_fields_rejected();
     test_reset_releases_memory();
     printf("  All passed!\n");

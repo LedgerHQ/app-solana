@@ -24,8 +24,8 @@ typedef enum cs_variant_payload_kind_e {
     CS_VARIANT_PAYLOAD_RAW_SIZE = 0x03,
 } cs_variant_payload_kind_t;
 
-// Fixed capacities. Inputs exceeding these fail closed rather than truncate.
-#define CS_MAX_ENUM_VARIANTS        8
+// Fixed field capacities. Inputs exceeding these fail closed rather than
+// truncate. The variant count itself has no cap: it is bounded only by the pool.
 #define CS_ENUM_ID_MAX_SIZE         64
 #define CS_VARIANT_NAME_MAX_SIZE    64
 #define CS_VARIANT_PAYLOAD_MAX_SIZE 128
@@ -60,9 +60,9 @@ typedef struct cs_enum_variant_s {
 // `variant_name` may be NULL or empty. `payload`/`payload_size` are the raw wire
 // bytes interpreted per `payload_kind`: absent for EMPTY, the inline descriptor
 // for INLINE, or the 2-byte big-endian count for RAW_SIZE.
-// Returns 0 on success, -1 when the table cannot be allocated, is full, a field
-// exceeds its capacity, the payload does not match the kind, or the key already
-// exists (duplicate descriptor).
+// Returns 0 on success, -1 when the table cannot be allocated, a field exceeds
+// its capacity, the payload does not match the kind, or the key already exists
+// (duplicate descriptor).
 int cs_enum_cache_add(const uint8_t program_id[32],
                       const uint8_t *enum_id,
                       size_t enum_id_len,
@@ -80,7 +80,7 @@ const cs_enum_variant_t *cs_enum_cache_find(const uint8_t program_id[32],
                                             uint16_t variant_index);
 
 // Number of cached variants.
-uint8_t cs_enum_cache_count(void);
+size_t cs_enum_cache_count(void);
 
 // Release the cache, returning to the empty state. Safe when none allocated.
 void cs_enum_cache_reset(void);

@@ -681,9 +681,9 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
         }
     }
 
-    PRINTF("infos_length = %d\n", infos_length);
-    for (uint8_t i = 0; i < infos_length; ++i) {
-        PRINTF("infos[%d]->kind = %d\n", i, infos[i]->kind);
+    PRINTF("infos_length = %d\n", (int) infos_length);
+    for (size_t i = 0; i < infos_length; ++i) {
+        PRINTF("infos[%d]->kind = %d\n", (int) i, infos[i]->kind);
     }
     switch (infos_length) {
         case 1:

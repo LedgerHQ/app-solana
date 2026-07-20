@@ -56,6 +56,9 @@ void test_process_message_body_too_few_ix_fail() {
     assert(process_message_body(NULL, 0, &print_config) == 1);
 }
 
+// No instruction-count cap remains. A batch of transfers larger than any
+// supported display combination is refused by the display layer, not by an
+// arbitrary count guard (fail closed).
 void test_process_message_body_too_many_ix_fail() {
     Pubkey accounts[] = {
         {{171, 88, 202, 32, 185, 160, 182, 116, 130, 185, 73, 48, 13, 216, 170, 71, 172, 195, 165, 123, 87, 70, 130, 219, 5, 157, 240, 187, 26, 191, 158, 218}},
@@ -65,7 +68,7 @@ void test_process_message_body_too_many_ix_fail() {
     Blockhash blockhash = {{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
     uint8_t xfer_ix[] = {2, 2, 0, 1, 12, 2, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0};
 
-#define TOO_MANY_IX (MAX_INSTRUCTIONS + 1)
+#define TOO_MANY_IX 7
 #define XFER_IX_LEN ARRAY_LEN(xfer_ix)
 
     uint8_t msg_body[TOO_MANY_IX * XFER_IX_LEN];
@@ -74,7 +77,7 @@ void test_process_message_body_too_many_ix_fail() {
         memcpy(start, xfer_ix, XFER_IX_LEN);
     }
     PrintConfig print_config = { .header = {false, 0, {1, 0, 1, 3}, accounts, &blockhash, TOO_MANY_IX}, .expert_mode = true };
-    assert(process_message_body(msg_body, ARRAY_LEN(msg_body), &print_config) == 1);
+    assert(process_message_body(msg_body, ARRAY_LEN(msg_body), &print_config) == -1);
 }
 
 void test_process_message_body_data_too_short_fail() {

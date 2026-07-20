@@ -11,6 +11,7 @@
 #include "apdu.h"
 #include "globals.h"
 #include "io.h"
+#include "app_mem_utils.h"
 #include "sol/parser.h"
 #include "idl_pool.h"
 #include "idl_walker.h"
@@ -95,7 +96,8 @@ static const uint8_t *pubkey_from_account_index(const cs_transaction_t *cs_tx,
 // results for the merge engine. Every instruction must resolve to a template.
 static int walk_transaction(const cs_transaction_t *cs_tx,
                             cs_instruction_result_t *walked_instructions,
-                            size_t *walked_instructions_count) {
+                            size_t *walked_instructions_count,
+                            mint_binding_t *bindings) {
     Parser parser = {cs_tx->transaction, cs_tx->transaction_size};
     MessageHeader header;
     if (parse_message_header(&parser, &header) != 0) {
@@ -105,18 +107,12 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
 
     *walked_instructions_count = 0;
 
-    // Transaction-scoped mint-binding map, seeded below from each instruction's
-    // MINT_ASSOC pair and queried in the second pass.
-    mint_binding_t bindings[CS_MAX_INSTRUCTION_TEMPLATES];
+    // Transaction-scoped mint-binding map (caller-owned, sized to the instruction
+    // count), seeded below from each instruction's MINT_ASSOC pair and queried in
+    // the second pass.
     size_t binding_count = 0;
 
     for (size_t i = 0; i < header.instructions_length; i++) {
-        if (*walked_instructions_count >= CS_MAX_INSTRUCTION_TEMPLATES) {
-            PRINTF("finalize cs: more instructions than supported templates (max %d)\n",
-                   CS_MAX_INSTRUCTION_TEMPLATES);
-            return -1;
-        }
-
         Instruction instruction;
         if (parse_instruction(&parser, &instruction) != 0) {
             PRINTF("finalize cs: failed to parse instruction %d\n", i);
@@ -298,6 +294,29 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
     return 0;
 }
 
+// Walk, merge and render the transaction into the display buffer. The three walk
+// buffers are caller-owned (allocated and freed by the outer handler). Returns
+// the APDU status word to send.
+static uint16_t finalize_cs_run(const cs_transaction_t *cs_tx,
+                                cs_instruction_result_t *walked_instructions,
+                                bool *survivors,
+                                mint_binding_t *bindings) {
+    size_t walked_instructions_count = 0;
+    if (walk_transaction(cs_tx, walked_instructions, &walked_instructions_count, bindings) != 0) {
+        PRINTF("finalize cs: walk engine failed\n");
+        return ApduReplySolanaInvalidGenericPreview;
+    }
+    if (cs_merge_engine_run(walked_instructions, walked_instructions_count, survivors) != 0) {
+        PRINTF("finalize cs: merge engine failed\n");
+        return ApduReplySolanaInvalidGenericPreview;
+    }
+    if (cs_display_renderer_run(walked_instructions, walked_instructions_count, survivors) != 0) {
+        PRINTF("finalize cs: display renderer failed\n");
+        return ApduReplySolanaInvalidGenericPreview;
+    }
+    return ApduReplySuccess;
+}
+
 int handle_finalize_generic_clear_signing(void) {
     PRINTF("handle_finalize_generic_clear_signing\n");
 
@@ -332,31 +351,52 @@ int handle_finalize_generic_clear_signing(void) {
         return io_send_sw(ApduReplySolanaClearSigningIncomplete);
     }
 
-    cs_instruction_result_t walked_instructions[CS_MAX_INSTRUCTION_TEMPLATES];
-    size_t walked_instructions_count = 0;
-
-    if (walk_transaction(cs_tx, walked_instructions, &walked_instructions_count) != 0) {
-        PRINTF("finalize cs: walk engine failed\n");
+    // Size the walk buffers to the real instruction count, bounded only by the
+    // wire transaction and the pool. An empty transaction has nothing to sign.
+    Parser parser = {cs_tx->transaction, cs_tx->transaction_size};
+    MessageHeader header;
+    if (parse_message_header(&parser, &header) != 0 || header.instructions_length == 0) {
+        PRINTF("finalize cs: bad or empty transaction header\n");
         cs_transaction_reset();
         G_cs_session_state = CS_SESSION_IDLE;
-        return io_send_sw(ApduReplySolanaInvalidGenericPreview);
+        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+    }
+    size_t instruction_count = header.instructions_length;
+
+    cs_instruction_result_t *walked_instructions = NULL;
+    bool *survivors = NULL;
+    mint_binding_t *bindings = NULL;
+    bool alloc_ok =
+        APP_MEM_CALLOC((void **) &walked_instructions,
+                       instruction_count * sizeof(*walked_instructions)) &&
+        APP_MEM_CALLOC((void **) &survivors, instruction_count * sizeof(*survivors)) &&
+        APP_MEM_CALLOC((void **) &bindings, instruction_count * sizeof(*bindings));
+
+    uint16_t sw;
+    if (!alloc_ok) {
+        PRINTF("finalize cs: walk buffer allocation failed\n");
+        sw = ApduReplySolanaClearSigningIncomplete;
+    } else {
+        sw = finalize_cs_run(cs_tx, walked_instructions, survivors, bindings);
     }
 
-    bool survivors[CS_MAX_INSTRUCTION_TEMPLATES];
-    if (cs_merge_engine_run(walked_instructions, walked_instructions_count, survivors) != 0) {
-        PRINTF("finalize cs: merge engine failed\n");
+    // Free in strict reverse order of allocation; each guard tolerates a NULL from
+    // a short-circuited allocation above.
+    if (bindings != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &bindings);
+    }
+    if (survivors != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &survivors);
+    }
+    if (walked_instructions != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &walked_instructions);
+    }
+
+    if (sw == ApduReplySuccess) {
+        G_cs_session_state = CS_SESSION_FINALIZED;
+    } else {
         cs_transaction_reset();
         G_cs_session_state = CS_SESSION_IDLE;
-        return io_send_sw(ApduReplySolanaInvalidGenericPreview);
     }
-
-    if (cs_display_renderer_run(walked_instructions, walked_instructions_count, survivors) != 0) {
-        PRINTF("finalize cs: display renderer failed\n");
-        cs_transaction_reset();
-        G_cs_session_state = CS_SESSION_IDLE;
-        return io_send_sw(ApduReplySolanaInvalidGenericPreview);
-    }
-
-    G_cs_session_state = CS_SESSION_FINALIZED;
-    return io_send_sw(ApduReplySuccess);
+    return io_send_sw(sw);
 }

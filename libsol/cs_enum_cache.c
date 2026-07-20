@@ -21,7 +21,7 @@
 // static array of pointers plus a count, so it needs no allocation of its own.
 typedef struct cs_enum_cache_table_s {
     cs_enum_variant_t **variants;  // grown by one entry per add (APDU-paced)
-    uint8_t count;
+    size_t count;
 } cs_enum_cache_table_t;
 
 static cs_enum_cache_table_t G_enum_cache;
@@ -93,11 +93,6 @@ int cs_enum_cache_add(const uint8_t program_id[32],
         PRINTF("cs_enum_cache_add: duplicate variant %d for enum\n", variant_index);
         return -1;
     }
-    if (G_enum_cache.count >= CS_MAX_ENUM_VARIANTS) {
-        PRINTF("cs_enum_cache_add: cache full (max %d)\n", CS_MAX_ENUM_VARIANTS);
-        return -1;
-    }
-
     // Grow the pointer array to hold exactly one more variant.
     cs_enum_variant_t **grown = APP_MEM_REALLOC(G_enum_cache.variants,
                                                 (G_enum_cache.count + 1) * sizeof(*grown));
@@ -156,7 +151,7 @@ const cs_enum_variant_t *cs_enum_cache_find(const uint8_t program_id[32],
                                             const uint8_t *enum_id,
                                             size_t enum_id_len,
                                             uint16_t variant_index) {
-    for (uint8_t i = 0; i < G_enum_cache.count; i++) {
+    for (size_t i = 0; i < G_enum_cache.count; i++) {
         if (key_matches(G_enum_cache.variants[i],
                         program_id,
                         enum_id,
@@ -168,14 +163,14 @@ const cs_enum_variant_t *cs_enum_cache_find(const uint8_t program_id[32],
     return NULL;
 }
 
-uint8_t cs_enum_cache_count(void) {
+size_t cs_enum_cache_count(void) {
     return G_enum_cache.count;
 }
 
 void cs_enum_cache_reset(void) {
     // Release every per-variant descriptor; the static table stays but empties.
     // INLINE variants own a separate payload buffer, freed before the slot.
-    for (uint8_t i = 0; i < G_enum_cache.count; i++) {
+    for (size_t i = 0; i < G_enum_cache.count; i++) {
         if (G_enum_cache.variants[i]->payload_kind == CS_VARIANT_PAYLOAD_INLINE) {
             APP_MEM_FREE_AND_NULL(
                 (void **) &G_enum_cache.variants[i]->payload.inline_descriptor.bytes);
