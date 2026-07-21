@@ -14,15 +14,7 @@ static bool cs_value_handle_source(const tlv_data_t *data, cs_value_parse_ctx_t 
 }
 
 static bool cs_value_handle_payload(const tlv_data_t *data, cs_value_parse_ctx_t *ctx) {
-    buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 0, CS_VALUE_MAX_PAYLOAD_LENGTH)) {
-        return false;
-    }
-    ctx->value.payload_size = temp.size;
-    if (temp.size > 0) {
-        memcpy(ctx->value.payload, temp.ptr, temp.size);
-    }
-    return true;
+    return get_buffer_from_tlv_data(data, &ctx->value.payload, 0, 0);
 }
 
 // clang-format off

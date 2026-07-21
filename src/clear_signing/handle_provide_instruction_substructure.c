@@ -448,41 +448,41 @@ static int register_param_raw(const display_field_out_t *display_field, const ch
     }
 
     if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        if (cs_instruction_template_add_display_path(value.payload,
-                                                     value.payload_size,
+        if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                     value.payload.size,
                                                      CS_PARAM_TYPE_RAW,
                                                      field_name) != 0) {
             return -1;
         }
         PRINTF("substructure: registered RAW argument path %.*H name=%s\n",
-               value.payload_size,
-               value.payload,
+               value.payload.size,
+               value.payload.ptr,
                field_name ? field_name : "(none)");
     } else if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
-        if (value.payload_size != 1) {
-            PRINTF("substructure: ACCOUNT_PATH payload size %d != 1\n", value.payload_size);
+        if (value.payload.size != 1) {
+            PRINTF("substructure: ACCOUNT_PATH payload size %d != 1\n", value.payload.size);
             return -1;
         }
-        if (cs_instruction_template_add_account_field(value.payload[0], field_name) != 0) {
+        if (cs_instruction_template_add_account_field(value.payload.ptr[0], field_name) != 0) {
             return -1;
         }
         PRINTF("substructure: registered account field index=%d name=%s\n",
-               value.payload[0],
+               value.payload.ptr[0],
                field_name ? field_name : "(none)");
     } else if (value.source == CS_VALUE_SOURCE_CONSTANT) {
         uint8_t kind = 0;
         if (param.kind.ptr != NULL && param.kind.size == 1) {
             kind = param.kind.ptr[0];
         }
-        if (cs_instruction_template_add_constant_field(value.payload,
-                                                      value.payload_size,
+        if (cs_instruction_template_add_constant_field(value.payload.ptr,
+                                                      value.payload.size,
                                                       kind,
                                                       field_name) != 0) {
             return -1;
         }
         PRINTF("substructure: registered constant field kind=%d size=%d name=%s\n",
                kind,
-               value.payload_size,
+               value.payload.size,
                field_name ? field_name : "(none)");
     } else {
         PRINTF("substructure: PARAM_RAW source %d not supported\n", value.source);
@@ -513,15 +513,15 @@ static int register_param_enum(const display_field_out_t *display_field, const c
         return -1;
     }
 
-    if (cs_instruction_template_add_display_path(value.payload,
-                                                 value.payload_size,
+    if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                 value.payload.size,
                                                  CS_PARAM_TYPE_ENUM,
                                                  field_name) != 0) {
         return -1;
     }
     PRINTF("substructure: registered ENUM path %.*H name=%s\n",
-           value.payload_size,
-           value.payload,
+           value.payload.size,
+           value.payload.ptr,
            field_name ? field_name : "(none)");
     return 0;
 }
@@ -549,8 +549,8 @@ static int register_param_amount(const display_field_out_t *display_field,
         return -1;
     }
 
-    if (cs_instruction_template_add_display_path(value.payload,
-                                                 value.payload_size,
+    if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                 value.payload.size,
                                                  CS_PARAM_TYPE_AMOUNT,
                                                  field_name) != 0) {
         return -1;
@@ -565,8 +565,8 @@ static int register_param_amount(const display_field_out_t *display_field,
         return -1;
     }
     PRINTF("substructure: registered AMOUNT path %.*H decimals=%d name=%s\n",
-           value.payload_size,
-           value.payload,
+           value.payload.size,
+           value.payload.ptr,
            decimals,
            field_name ? field_name : "(none)");
     return 0;
@@ -595,8 +595,8 @@ static int register_param_token_amount(const display_field_out_t *display_field,
         return -1;
     }
 
-    if (cs_instruction_template_add_display_path(value.payload,
-                                                 value.payload_size,
+    if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                 value.payload.size,
                                                  CS_PARAM_TYPE_TOKEN_AMOUNT,
                                                  field_name) != 0) {
         return -1;
@@ -624,20 +624,20 @@ static int register_param_token_amount(const display_field_out_t *display_field,
             return -1;
         }
         if (token.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
-            if (token.payload_size != 1) {
+            if (token.payload.size != 1) {
                 PRINTF("substructure: TOKEN ACCOUNT_PATH payload size %d != 1\n",
-                       token.payload_size);
+                       token.payload.size);
                 return -1;
             }
             format.mint_source = CS_TOKEN_MINT_ACCOUNT_INDEX;
-            format.ref.account_index = token.payload[0];
+            format.ref.account_index = token.payload.ptr[0];
         } else if (token.source == CS_VALUE_SOURCE_CONSTANT) {
-            if (token.payload_size != 32) {
-                PRINTF("substructure: TOKEN CONSTANT payload size %d != 32\n", token.payload_size);
+            if (token.payload.size != 32) {
+                PRINTF("substructure: TOKEN CONSTANT payload size %d != 32\n", token.payload.size);
                 return -1;
             }
             format.mint_source = CS_TOKEN_MINT_CONSTANT;
-            memcpy(format.ref.mint, token.payload, 32);
+            memcpy(format.ref.mint, token.payload.ptr, 32);
         } else {
             PRINTF("substructure: TOKEN source %d unsupported\n", token.source);
             return -1;
@@ -653,14 +653,14 @@ static int register_param_token_amount(const display_field_out_t *display_field,
         if (extract_value(&param.decimals, &decimals) != 0) {
             return -1;
         }
-        if (decimals.source != CS_VALUE_SOURCE_CONSTANT || decimals.payload_size != 1) {
+        if (decimals.source != CS_VALUE_SOURCE_CONSTANT || decimals.payload.size != 1) {
             PRINTF("substructure: DECIMALS must be a 1-byte CONSTANT (source %d size %d)\n",
                    decimals.source,
-                   decimals.payload_size);
+                   decimals.payload.size);
             return -1;
         }
         format.has_decimals = true;
-        format.decimals = decimals.payload[0];
+        format.decimals = decimals.payload.ptr[0];
     }
 
     if (cs_instruction_template_set_format_token_amount(&format) != 0) {
@@ -669,8 +669,8 @@ static int register_param_token_amount(const display_field_out_t *display_field,
     }
 
     PRINTF("substructure: registered TOKEN_AMOUNT path %.*H mint_source=%d name=%s\n",
-           value.payload_size,
-           value.payload,
+           value.payload.size,
+           value.payload.ptr,
            format.mint_source,
            field_name ? field_name : "(none)");
     return 0;
@@ -729,8 +729,8 @@ static int register_param_datetime(const display_field_out_t *display_field,
         return -1;
     }
 
-    if (cs_instruction_template_add_display_path(value.payload,
-                                                 value.payload_size,
+    if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                 value.payload.size,
                                                  CS_PARAM_TYPE_DATETIME,
                                                  field_name) != 0) {
         return -1;
@@ -740,8 +740,8 @@ static int register_param_datetime(const display_field_out_t *display_field,
         return -1;
     }
     PRINTF("substructure: registered DATETIME path %.*H ticks=%d name=%s\n",
-           value.payload_size,
-           value.payload,
+           value.payload.size,
+           value.payload.ptr,
            ticks_per_second,
            field_name ? field_name : "(none)");
     return 0;
@@ -786,8 +786,8 @@ static int register_param_unit(const display_field_out_t *display_field, const c
         prefix = (param.prefix.ptr[0] == 1);
     }
 
-    if (cs_instruction_template_add_display_path(value.payload,
-                                                 value.payload_size,
+    if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                 value.payload.size,
                                                  CS_PARAM_TYPE_UNIT,
                                                  field_name) != 0) {
         return -1;
@@ -800,8 +800,8 @@ static int register_param_unit(const display_field_out_t *display_field, const c
         return -1;
     }
     PRINTF("substructure: registered UNIT path %.*H symbol=%.*s decimals=%d prefix=%d name=%s\n",
-           value.payload_size,
-           value.payload,
+           value.payload.size,
+           value.payload.ptr,
            (int) param.symbol.size,
            param.symbol.ptr,
            decimals,
@@ -939,8 +939,8 @@ static int register_param_string(const display_field_out_t *display_field,
         }
     }
 
-    if (cs_instruction_template_add_display_path(value.payload,
-                                                 value.payload_size,
+    if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                 value.payload.size,
                                                  CS_PARAM_TYPE_STRING,
                                                  field_name) != 0) {
         return -1;
@@ -950,8 +950,8 @@ static int register_param_string(const display_field_out_t *display_field,
         return -1;
     }
     PRINTF("substructure: registered STRING path %.*H encoding=%d has_slice=%d name=%s\n",
-           value.payload_size,
-           value.payload,
+           value.payload.size,
+           value.payload.ptr,
            format.encoding,
            format.has_slice,
            field_name ? field_name : "(none)");
@@ -1003,8 +1003,8 @@ static int register_param_trusted_name(const display_field_out_t *display_field,
         return -1;
     }
 
-    if (cs_instruction_template_add_display_path(value.payload,
-                                                 value.payload_size,
+    if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                 value.payload.size,
                                                  CS_PARAM_TYPE_TRUSTED_NAME,
                                                  field_name) != 0) {
         return -1;
@@ -1014,8 +1014,8 @@ static int register_param_trusted_name(const display_field_out_t *display_field,
         return -1;
     }
     PRINTF("substructure: registered TRUSTED_NAME path %.*H types=0x%02x name=%s\n",
-           value.payload_size,
-           value.payload,
+           value.payload.size,
+           value.payload.ptr,
            format.allowed_types_mask,
            field_name ? field_name : "(none)");
     return 0;
@@ -1048,16 +1048,16 @@ static int register_param_plain_argument(const display_field_out_t *display_fiel
         return -1;
     }
 
-    if (cs_instruction_template_add_display_path(value.payload,
-                                                 value.payload_size,
+    if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                 value.payload.size,
                                                  param_type,
                                                  field_name) != 0) {
         return -1;
     }
     PRINTF("substructure: registered param_type %d path %.*H name=%s\n",
            param_type,
-           value.payload_size,
-           value.payload,
+           value.payload.size,
+           value.payload.ptr,
            field_name ? field_name : "(none)");
     return 0;
 }
