@@ -6,14 +6,14 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "buffer.h"
 #include "sol/cs_value_source.h"
 
-#define CS_VALUE_MAX_PAYLOAD_LENGTH 64
-
+// payload is a zero-copy view into the source TLV buffer; it stays valid only as
+// long as the buffer passed to cs_parse_value_from_buffer is alive.
 typedef struct cs_value_s {
     uint8_t source;
-    uint8_t payload[CS_VALUE_MAX_PAYLOAD_LENGTH];
-    size_t payload_size;
+    buffer_t payload;
 } cs_value_t;
 
 // Parse a VALUE sub-TLV from a raw buffer. Returns true on success.
