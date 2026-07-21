@@ -612,6 +612,39 @@ def test_enum_variant_inline_payload(backend):
     )
 
 
+def test_enum_variant_long_id_and_name_accepted(backend):
+    """enum_id and variant_name well past the removed 64-byte caps are stored,
+    proving both fields are now sized to their input."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    sol.provide_enum_variant(
+        program_id=b'\x01' * 32,
+        enum_id="E" * 200,
+        variant_index=0,
+        variant_name="N" * 200,
+        payload_kind=0x00,  # EMPTY
+    )
+
+
+@pytest.mark.parametrize("field", ["enum_id", "variant_name"])
+def test_enum_variant_char_field_embedded_nul_rejected(backend, field):
+    """ENUM_ID and VARIANT_NAME are spec char[] fields: an embedded NUL is
+    malformed and rejected at ingest, not stored truncated."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    args = dict(
+        program_id=b'\x01' * 32,
+        enum_id="SwapRoute",
+        variant_index=0,
+        variant_name="Raydium",
+        payload_kind=0x00,  # EMPTY
+    )
+    args[field] = b"ab\x00cd"  # embedded NUL, sent as raw bytes
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_enum_variant(**args)
+    assert exc_info.value.status == ErrorType.INVALID_ENUM_VARIANT
+
+
 def test_enum_variant_inline_payload_max_length_accepted(backend):
     """An INLINE payload at the exact cache capacity (128 bytes) is accepted."""
     sol = SolanaClient(backend)
@@ -628,7 +661,7 @@ def test_enum_variant_inline_payload_max_length_accepted(backend):
 
 def test_enum_variant_inline_payload_too_long_rejected(backend):
     """An INLINE payload exceeding the cache capacity (129 > 128 bytes) is
-    rejected at ingest (fail closed)."""
+    rejected at ingest and not stored."""
     sol = SolanaClient(backend)
     _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     with pytest.raises(ExceptionRAPDU) as exc_info:

@@ -745,6 +745,7 @@ void test_enum_empty_payload() {
                              sizeof(ENUM_ID),
                              0,
                              "Alpha",
+                             strlen("Alpha"),
                              CS_VARIANT_PAYLOAD_EMPTY,
                              NULL,
                              0) == 0);
@@ -777,6 +778,7 @@ void test_enum_raw_size_payload() {
                              sizeof(ENUM_ID),
                              2,
                              "Gamma",
+                             strlen("Gamma"),
                              CS_VARIANT_PAYLOAD_RAW_SIZE,
                              raw_size,
                              sizeof(raw_size)) == 0);
@@ -809,6 +811,7 @@ void test_enum_missing_variant_fails() {
                              sizeof(ENUM_ID),
                              0,
                              "Alpha",
+                             strlen("Alpha"),
                              CS_VARIANT_PAYLOAD_EMPTY,
                              NULL,
                              0) == 0);
@@ -847,6 +850,7 @@ void test_enum_inline_struct_payload() {
                              sizeof(ENUM_ID),
                              1,
                              "Beta",
+                             strlen("Beta"),
                              CS_VARIANT_PAYLOAD_INLINE,
                              inline_desc,
                              sizeof(inline_desc)) == 0);
@@ -895,6 +899,7 @@ void test_enum_inline_nested_payload() {
                              sizeof(ENUM_ID),
                              1,
                              "Beta",
+                             strlen("Beta"),
                              CS_VARIANT_PAYLOAD_INLINE,
                              inline_desc,
                              sizeof(inline_desc)) == 0);
@@ -945,6 +950,7 @@ void test_enum_inline_option_payload() {
                              sizeof(ENUM_ID),
                              1,
                              "Beta",
+                             strlen("Beta"),
                              CS_VARIANT_PAYLOAD_INLINE,
                              inline_desc,
                              sizeof(inline_desc)) == 0);
@@ -971,6 +977,7 @@ void test_enum_inline_option_payload() {
                              sizeof(ENUM_ID),
                              1,
                              "Beta",
+                             strlen("Beta"),
                              CS_VARIANT_PAYLOAD_INLINE,
                              inline_desc,
                              sizeof(inline_desc)) == 0);
@@ -1015,6 +1022,7 @@ void test_enum_inline_option_fixed_absent() {
                              sizeof(ENUM_ID),
                              1,
                              "Beta",
+                             strlen("Beta"),
                              CS_VARIANT_PAYLOAD_INLINE,
                              inline_desc,
                              sizeof(inline_desc)) == 0);
@@ -1044,6 +1052,7 @@ void test_enum_inline_option_fixed_absent() {
                              sizeof(ENUM_ID),
                              1,
                              "Beta",
+                             strlen("Beta"),
                              CS_VARIANT_PAYLOAD_INLINE,
                              inline_desc,
                              sizeof(inline_desc)) == 0);
@@ -1089,6 +1098,7 @@ void test_enum_inline_option_fixed_aggregate_inner() {
                              sizeof(ENUM_ID),
                              1,
                              "Beta",
+                             strlen("Beta"),
                              CS_VARIANT_PAYLOAD_INLINE,
                              struct_inner_desc,
                              sizeof(struct_inner_desc)) == 0);
@@ -1128,6 +1138,7 @@ void test_enum_inline_option_fixed_aggregate_inner() {
                              sizeof(ENUM_ID),
                              1,
                              "Beta",
+                             strlen("Beta"),
                              CS_VARIANT_PAYLOAD_INLINE,
                              array_inner_desc,
                              sizeof(array_inner_desc)) == 0);
@@ -1170,6 +1181,7 @@ void test_enum_inline_option_fixed_empty_struct_inner() {
                              sizeof(ENUM_ID),
                              1,
                              "Beta",
+                             strlen("Beta"),
                              CS_VARIANT_PAYLOAD_INLINE,
                              inline_desc,
                              sizeof(inline_desc)) == 0);
@@ -1210,6 +1222,7 @@ void test_enum_inline_option_fixed_variable_inner_rejected() {
                              sizeof(ENUM_ID),
                              1,
                              "Beta",
+                             strlen("Beta"),
                              CS_VARIANT_PAYLOAD_INLINE,
                              inline_desc,
                              sizeof(inline_desc)) == 0);
@@ -1239,6 +1252,7 @@ void test_enum_inline_option_fixed_skip_past_end() {
                              sizeof(ENUM_ID),
                              1,
                              "Beta",
+                             strlen("Beta"),
                              CS_VARIANT_PAYLOAD_INLINE,
                              inline_desc,
                              sizeof(inline_desc)) == 0);
@@ -1262,6 +1276,7 @@ void test_enum_inline_payload_overruns_data() {
                              sizeof(ENUM_ID),
                              1,
                              "Beta",
+                             strlen("Beta"),
                              CS_VARIANT_PAYLOAD_INLINE,
                              inline_desc,
                              sizeof(inline_desc)) == 0);
