@@ -19,7 +19,7 @@ typedef struct {
     idl_match_path_t paths[MAX_TEST_PATHS];
     uint8_t path_count;
     idl_resolved_leaf_t resolved[MAX_TEST_PATHS];
-    uint8_t resolved_count;
+    size_t resolved_count;
 } test_walk_t;
 
 // Run a complete walk against an in-memory pool + data.

@@ -932,6 +932,37 @@ def test_cs_more_instructions_than_old_template_cap(backend, sol):
     assert rapdu.status == 0x9000
 
 
+def test_cs_more_display_fields_than_old_cap(backend, sol):
+    """Regression: a template carrying twelve display fields (one ARGUMENT_PATH
+    plus eleven CONSTANTs). The removed CS_MAX_DISPLAY_FIELDS (8) cap falsely
+    refused this; the demand-grown field array and the field-count-sized walk
+    buffers now assemble, walk and render it."""
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    fields = [_build_display_field(BRIDGE_PATH_U32)]
+    for i in range(11):
+        fields.append(_build_constant_display_field(struct.pack("<I", i), IDL_KIND_U32, f"Const{i}"))
+    substructures_hash = hashlib.sha256(b"".join(fields)).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    for field in fields:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+
 def test_bridge_with_account_path_field(backend, sol, scenario_navigator, root_pytest_dir):
     """An instruction with both ARGUMENT_PATH and ACCOUNT_PATH display fields.
     The ACCOUNT_PATH field should resolve to the base58 pubkey of the referenced account."""
