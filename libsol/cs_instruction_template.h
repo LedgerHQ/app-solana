@@ -133,9 +133,6 @@ typedef struct cs_format_trusted_name_s {
     uint8_t allowed_types_mask;
 } cs_format_trusted_name_t;
 
-// Fixed capacities. Inputs exceeding these are refused rather than truncated.
-#define CS_MAX_DISPLAY_FIELDS        8
-
 // One displayed field. Three source types are supported:
 //   - ARGUMENT_PATH (source == 0x00): the field value is extracted from the
 //     instruction data via the IDL walker using `argument.path`/`argument.path_size`.
@@ -187,8 +184,8 @@ typedef struct cs_instruction_template_s {
     uint8_t *idl_type_pool;  // heap, sized to idl_type_pool_size; owned by this template
     size_t idl_type_pool_size;
     uint8_t idl_root_type;
-    cs_display_field_t display_fields[CS_MAX_DISPLAY_FIELDS];
-    uint8_t display_field_count;
+    cs_display_field_t *display_fields;  // heap, sized to display_field_count; owned by this template
+    size_t display_field_count;
     uint8_t mint_assoc_account;
     uint8_t mint_assoc_mint;
     bool has_mint_assoc;

@@ -41,7 +41,8 @@ static void free_template_owned_buffers(cs_instruction_template_t *template) {
     if (template->program_name != NULL) {
         APP_MEM_FREE_AND_NULL((void **) &template->program_name);
     }
-    for (uint8_t f = 0; f < template->display_field_count; f++) {
+    // Free each field's owned buffers before the field array itself (two-level).
+    for (size_t f = 0; f < template->display_field_count; f++) {
         if (template->display_fields[f].name != NULL) {
             APP_MEM_FREE_AND_NULL((void **) &template->display_fields[f].name);
         }
@@ -59,6 +60,27 @@ static void free_template_owned_buffers(cs_instruction_template_t *template) {
             APP_MEM_FREE_AND_NULL((void **) &template->display_fields[f].argument.format.unit.symbol);
         }
     }
+    if (template->display_fields != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &template->display_fields);
+    }
+    template->display_field_count = 0;
+}
+
+// Grow the builder's display-field array by one zeroed slot and return it, or
+// NULL on allocation failure (the existing array is left intact).
+static cs_display_field_t *append_display_field(cs_instruction_template_t *builder) {
+    cs_display_field_t *grown =
+        APP_MEM_REALLOC(builder->display_fields,
+                        (builder->display_field_count + 1) * sizeof(*grown));
+    if (grown == NULL) {
+        PRINTF("cs_instruction_template: display field array growth failed\n");
+        return NULL;
+    }
+    builder->display_fields = grown;
+    cs_display_field_t *slot = &builder->display_fields[builder->display_field_count];
+    memset(slot, 0, sizeof(*slot));
+    builder->display_field_count++;
+    return slot;
 }
 
 // NULL name is a valid unlabeled field (*out = NULL); a non-NULL name must be non-empty.
@@ -129,11 +151,6 @@ int cs_instruction_template_add_display_path(const uint8_t *path,
         PRINTF("cs_instruction_template_add_display_path: invalid path size %d\n", (int) path_size);
         return -1;
     }
-    if (builder->display_field_count >= CS_MAX_DISPLAY_FIELDS) {
-        PRINTF("cs_instruction_template_add_display_path: too many display fields (max %d)\n",
-               CS_MAX_DISPLAY_FIELDS);
-        return -1;
-    }
 
     uint8_t *path_copy = NULL;
     if (!APP_MEM_CALLOC((void **) &path_copy, path_size)) {
@@ -148,12 +165,17 @@ int cs_instruction_template_add_display_path(const uint8_t *path,
         return -1;
     }
 
-    builder->display_fields[builder->display_field_count].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
-    builder->display_fields[builder->display_field_count].argument.param_type = param_type;
-    builder->display_fields[builder->display_field_count].argument.path = path_copy;
-    builder->display_fields[builder->display_field_count].argument.path_size = (uint8_t) path_size;
-    builder->display_fields[builder->display_field_count].name = name_copy;
-    builder->display_field_count++;
+    cs_display_field_t *slot = append_display_field(builder);
+    if (slot == NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &path_copy);
+        APP_MEM_FREE_AND_NULL((void **) &name_copy);
+        return -1;
+    }
+    slot->source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    slot->argument.param_type = param_type;
+    slot->argument.path = path_copy;
+    slot->argument.path_size = (uint8_t) path_size;
+    slot->name = name_copy;
     return 0;
 }
 
@@ -163,21 +185,19 @@ int cs_instruction_template_add_account_field(uint8_t account_index, const char 
         PRINTF("cs_instruction_template_add_account_field: no builder open\n");
         return -1;
     }
-    if (builder->display_field_count >= CS_MAX_DISPLAY_FIELDS) {
-        PRINTF("cs_instruction_template_add_account_field: too many display fields (max %d)\n",
-               CS_MAX_DISPLAY_FIELDS);
-        return -1;
-    }
-
     char *name_copy = NULL;
     if (copy_field_name(&name_copy, name) != 0) {
         return -1;
     }
 
-    builder->display_fields[builder->display_field_count].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
-    builder->display_fields[builder->display_field_count].account.index = account_index;
-    builder->display_fields[builder->display_field_count].name = name_copy;
-    builder->display_field_count++;
+    cs_display_field_t *slot = append_display_field(builder);
+    if (slot == NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &name_copy);
+        return -1;
+    }
+    slot->source = CS_VALUE_SOURCE_ACCOUNT_PATH;
+    slot->account.index = account_index;
+    slot->name = name_copy;
     return 0;
 }
 
@@ -194,11 +214,6 @@ int cs_instruction_template_add_constant_field(const uint8_t *data,
         PRINTF("cs_instruction_template_add_constant_field: invalid data size %d\n", (int) data_size);
         return -1;
     }
-    if (builder->display_field_count >= CS_MAX_DISPLAY_FIELDS) {
-        PRINTF("cs_instruction_template_add_constant_field: too many display fields (max %d)\n",
-               CS_MAX_DISPLAY_FIELDS);
-        return -1;
-    }
 
     uint8_t *data_copy = NULL;
     if (!APP_MEM_CALLOC((void **) &data_copy, data_size)) {
@@ -213,12 +228,17 @@ int cs_instruction_template_add_constant_field(const uint8_t *data,
         return -1;
     }
 
-    builder->display_fields[builder->display_field_count].source = CS_VALUE_SOURCE_CONSTANT;
-    builder->display_fields[builder->display_field_count].constant.data = data_copy;
-    builder->display_fields[builder->display_field_count].constant.data_size = (uint8_t) data_size;
-    builder->display_fields[builder->display_field_count].constant.kind = kind;
-    builder->display_fields[builder->display_field_count].name = name_copy;
-    builder->display_field_count++;
+    cs_display_field_t *slot = append_display_field(builder);
+    if (slot == NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &data_copy);
+        APP_MEM_FREE_AND_NULL((void **) &name_copy);
+        return -1;
+    }
+    slot->source = CS_VALUE_SOURCE_CONSTANT;
+    slot->constant.data = data_copy;
+    slot->constant.data_size = (uint8_t) data_size;
+    slot->constant.kind = kind;
+    slot->name = name_copy;
     return 0;
 }
 

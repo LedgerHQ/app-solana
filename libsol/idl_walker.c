@@ -309,9 +309,9 @@ typedef struct walk_ctx_s {
     // Collector I/O: paths to match, the slots filled on a match, and the
     // running count of matched leaves.
     const idl_match_path_t *match_paths;
-    uint8_t match_count;
+    size_t match_count;
     idl_resolved_leaf_t *resolved;
-    uint8_t *resolved_count;
+    size_t *resolved_count;
 } walk_ctx_t;
 
 // Byte width of one argument-path step under a parent of `parent_kind`, or 0
@@ -997,12 +997,12 @@ static int emit_leaf(walk_ctx_t *walk, uint8_t kind, const uint8_t *value, size_
            value_size,
            path_len);
 
-    for (uint8_t i = 0; i < walk->match_count; i++) {
+    for (size_t i = 0; i < walk->match_count; i++) {
         if (walk->match_paths[i].path_size != path_len) {
             continue;
         }
         if (memcmp(walk->match_paths[i].path, walk->path, path_len) == 0) {
-            PRINTF("idl_walker: leaf matched slot %d\n", i);
+            PRINTF("idl_walker: leaf matched slot %d\n", (int) i);
             walk->resolved[i].kind = kind;
             walk->resolved[i].value = value;
             walk->resolved[i].value_size = value_size;
@@ -1555,9 +1555,9 @@ int idl_walker_run(const uint8_t *data,
                    size_t data_size,
                    const uint8_t program_id[32],
                    const idl_match_path_t *match_paths,
-                   uint8_t match_count,
+                   size_t match_count,
                    idl_resolved_leaf_t *resolved,
-                   uint8_t *resolved_count) {
+                   size_t *resolved_count) {
     if (!idl_pool_ready()) {
         PRINTF("idl_walker_run: no pool provided\n");
         return -1;
@@ -1577,8 +1577,8 @@ int idl_walker_run(const uint8_t *data,
         "idl_walker_run: starting (entry_count=%d, root_index=%d, data_size=%d, match_count=%d)\n",
         entry_count,
         root_index,
-        data_size,
-        match_count);
+        (int) data_size,
+        (int) match_count);
 
     size_t *fixed_sizes = NULL;
     if (pool_has_option_fixed()) {
@@ -1590,7 +1590,9 @@ int idl_walker_run(const uint8_t *data,
     }
 
     *resolved_count = 0;
-    memset(resolved, 0, match_count * sizeof(idl_resolved_leaf_t));
+    if (match_count > 0) {
+        memset(resolved, 0, match_count * sizeof(idl_resolved_leaf_t));
+    }
 
     walk_ctx_t walk = {0};
     walk.data = data;

@@ -15,11 +15,36 @@
 #define TN_TYPE_TOKEN          0x04
 #define TN_TYPE_SMART_CONTRACT 0x02
 
+// display_fields, resolved and field_mint are dynamic in production. The renderer
+// only reads them, so tests back them with fixed local storage sized to the
+// largest fixture any renderer test builds, and bind the struct pointers to it.
+#define TEST_RENDER_MAX_FIELDS 4
+
+#define RENDER_TEST_TEMPLATE(tpl)                            \
+    cs_instruction_template_t tpl;                           \
+    cs_display_field_t tpl##_fields[TEST_RENDER_MAX_FIELDS]; \
+    memset(&(tpl), 0, sizeof(tpl));                          \
+    memset(tpl##_fields, 0, sizeof(tpl##_fields));           \
+    (tpl).display_fields = tpl##_fields
+
+#define RENDER_TEST_RESULT(res)                                  \
+    cs_instruction_result_t res;                                 \
+    idl_resolved_leaf_t res##_resolved[TEST_RENDER_MAX_FIELDS];  \
+    const uint8_t *res##_field_mint[TEST_RENDER_MAX_FIELDS];     \
+    memset(&(res), 0, sizeof(res));                              \
+    memset(res##_resolved, 0, sizeof(res##_resolved));           \
+    memset(res##_field_mint, 0, sizeof(res##_field_mint));       \
+    (res).resolved = res##_resolved;                             \
+    (res).field_mint = res##_field_mint
+
 // Dummy template used by tests that don't care about operation_type/names.
 static cs_instruction_template_t G_dummy_template;
+static cs_display_field_t G_dummy_fields[TEST_RENDER_MAX_FIELDS];
 
 static void init_dummy_template(void) {
     memset(&G_dummy_template, 0, sizeof(G_dummy_template));
+    memset(G_dummy_fields, 0, sizeof(G_dummy_fields));
+    G_dummy_template.display_fields = G_dummy_fields;
     G_dummy_template.operation_type = "Transfer";
     G_dummy_template.display_fields[0].name = "Amount";
     G_dummy_template.display_fields[1].name = "Recipient";
@@ -40,8 +65,7 @@ static void test_render_u64_leaf(void) {
 
     // 1000000 in little-endian
     uint8_t value[] = {0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00};
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &G_dummy_template;
     instr.resolved[0].kind = IDL_KIND_U64;
     instr.resolved[0].value = value;
@@ -75,8 +99,7 @@ static void test_render_bool_leaf(void) {
     uint8_t val_true = 1;
     uint8_t val_false = 0;
 
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &G_dummy_template;
     instr.resolved[0].kind = IDL_KIND_BOOL_U8;
     instr.resolved[0].value = &val_true;
@@ -106,8 +129,7 @@ static void test_render_skips_null_value(void) {
     cs_display_renderer_reset();
     init_dummy_template();
 
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &G_dummy_template;
     instr.resolved[0].kind = IDL_KIND_U8;
     instr.resolved[0].value = NULL;
@@ -143,8 +165,7 @@ static void test_alloc_failure(void) {
     init_dummy_template();
 
     uint8_t value[] = {0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00};
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &G_dummy_template;
     instr.resolved[0].kind = IDL_KIND_U64;
     instr.resolved[0].value = value;
@@ -172,8 +193,7 @@ static void test_partial_alloc_failure(void) {
     init_dummy_template();
 
     uint8_t value[] = {0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00};
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &G_dummy_template;
     instr.resolved[0].kind = IDL_KIND_U64;
     instr.resolved[0].value = value;
@@ -201,8 +221,7 @@ static void test_shrink_failure(void) {
     init_dummy_template();
 
     uint8_t value[] = {0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00};
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &G_dummy_template;
     instr.resolved[0].kind = IDL_KIND_U64;
     instr.resolved[0].value = value;
@@ -226,8 +245,7 @@ static void test_header_value_with_program_name(void) {
     init_dummy_template();
     G_dummy_template.program_name = "Jupiter";
 
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &G_dummy_template;
     instr.resolved_count = 0;
 
@@ -252,8 +270,7 @@ static void test_header_value_fallback_to_program_address(void) {
     // Set a known program_id: all-ones gives a deterministic base58
     memset(G_dummy_template.program_id, 1, 32);
 
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &G_dummy_template;
     instr.resolved_count = 0;
 
@@ -277,8 +294,7 @@ static void test_render_mixed_argument_and_account_fields(void) {
     mock_mem_reset();
     cs_display_renderer_reset();
 
-    cs_instruction_template_t template;
-    memset(&template, 0, sizeof(template));
+    RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Swap";
     template.program_name = "Jupiter";
 
@@ -298,8 +314,7 @@ static void test_render_mixed_argument_and_account_fields(void) {
     memset(pubkey, 0x42, 32);
     uint8_t amount_bytes[] = {0xE8, 0x03, 0x00, 0x00};  // 1000
 
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved_count = 2;
     instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
@@ -336,8 +351,7 @@ static void test_render_amount_with_decimals(void) {
     mock_mem_reset();
     cs_display_renderer_reset();
 
-    cs_instruction_template_t template;
-    memset(&template, 0, sizeof(template));
+    RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Transfer";
     template.display_fields[0].name = "Amount";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
@@ -347,8 +361,7 @@ static void test_render_amount_with_decimals(void) {
 
     // 1_000_000_000 lamports = 1 SOL (9 decimals)
     uint8_t value[] = {0x00, 0xCA, 0x9A, 0x3B, 0x00, 0x00, 0x00, 0x00};
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U64;
     instr.resolved[0].value = value;
@@ -370,8 +383,7 @@ static void test_render_amount_zero_decimals(void) {
     mock_mem_reset();
     cs_display_renderer_reset();
 
-    cs_instruction_template_t template;
-    memset(&template, 0, sizeof(template));
+    RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Transfer";
     template.display_fields[0].name = "Count";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
@@ -380,8 +392,7 @@ static void test_render_amount_zero_decimals(void) {
     template.display_field_count = 1;
 
     uint8_t value[] = {0xE8, 0x03, 0x00, 0x00};  // 1000 in u32 LE
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U32;
     instr.resolved[0].value = value;
@@ -402,8 +413,7 @@ static void test_render_token_amount_native(void) {
     mock_mem_reset();
     cs_display_renderer_reset();
 
-    cs_instruction_template_t template;
-    memset(&template, 0, sizeof(template));
+    RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Transfer";
     template.display_fields[0].name = "Amount";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
@@ -413,8 +423,7 @@ static void test_render_token_amount_native(void) {
 
     // 1_000_000_000 lamports = 1 SOL
     uint8_t value[] = {0x00, 0xCA, 0x9A, 0x3B, 0x00, 0x00, 0x00, 0x00};
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U64;
     instr.resolved[0].value = value;
@@ -437,8 +446,7 @@ static void test_render_token_amount_none(void) {
     mock_mem_reset();
     cs_display_renderer_reset();
 
-    cs_instruction_template_t template;
-    memset(&template, 0, sizeof(template));
+    RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Transfer";
     template.display_fields[0].name = "Amount";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
@@ -448,8 +456,7 @@ static void test_render_token_amount_none(void) {
 
     // 1000000 in u64 LE
     uint8_t value[] = {0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00};
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U64;
     instr.resolved[0].value = value;
@@ -473,8 +480,7 @@ static void test_render_token_amount_unknown(void) {
     mock_dynamic_token_info_reset();
     cs_display_renderer_reset();
 
-    cs_instruction_template_t template;
-    memset(&template, 0, sizeof(template));
+    RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Transfer";
     template.display_fields[0].name = "Amount";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
@@ -486,8 +492,7 @@ static void test_render_token_amount_unknown(void) {
     uint8_t value[] = {0x40, 0x42, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00};
     uint8_t unknown_mint[32];
     memset(unknown_mint, 0x55, 32);
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U64;
     instr.resolved[0].value = value;
@@ -510,8 +515,7 @@ static void test_render_account_full_address(void) {
     mock_mem_reset();
     cs_display_renderer_reset();
 
-    cs_instruction_template_t template;
-    memset(&template, 0, sizeof(template));
+    RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Transfer";
     template.display_fields[0].name = "To";
     template.display_fields[0].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
@@ -519,8 +523,7 @@ static void test_render_account_full_address(void) {
 
     uint8_t pubkey[32];
     memset(pubkey, 0x42, 32);
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
     instr.resolved[0].value = pubkey;
@@ -546,8 +549,7 @@ static void test_render_enum_variant_name(void) {
     mock_mem_reset();
     cs_display_renderer_reset();
 
-    cs_instruction_template_t template;
-    memset(&template, 0, sizeof(template));
+    RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Test";
     template.display_fields[0].name = "Kind";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
@@ -556,8 +558,7 @@ static void test_render_enum_variant_name(void) {
 
     // The walker resolves an enum leaf to the selected variant's display name.
     const char *variant_name = "Withdraw";
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_ENUM;
     instr.resolved[0].value = (const uint8_t *) variant_name;
@@ -578,8 +579,7 @@ static void test_render_string_too_long_refused(void) {
     mock_mem_reset();
     cs_display_renderer_reset();
 
-    cs_instruction_template_t template;
-    memset(&template, 0, sizeof(template));
+    RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Test";
     template.display_fields[0].name = "Kind";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
@@ -589,8 +589,7 @@ static void test_render_string_too_long_refused(void) {
     // A value larger than the render working buffer must be refused, not truncated.
     uint8_t oversized[256];
     memset(oversized, 'x', sizeof(oversized));
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_ENUM;
     instr.resolved[0].value = oversized;
@@ -609,8 +608,7 @@ static void test_render_string_long_now_renders(void) {
     mock_mem_reset();
     cs_display_renderer_reset();
 
-    cs_instruction_template_t template;
-    memset(&template, 0, sizeof(template));
+    RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Test";
     template.display_fields[0].name = "Kind";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
@@ -622,8 +620,7 @@ static void test_render_string_long_now_renders(void) {
     char long_value[101];
     memset(long_value, 'y', 100);
     long_value[100] = '\0';
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_ENUM;
     instr.resolved[0].value = (uint8_t *) long_value;
@@ -644,8 +641,7 @@ static void test_render_unsupported_param_type(void) {
     mock_mem_reset();
     cs_display_renderer_reset();
 
-    cs_instruction_template_t template;
-    memset(&template, 0, sizeof(template));
+    RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Test";
     template.display_fields[0].name = "Field";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
@@ -653,8 +649,7 @@ static void test_render_unsupported_param_type(void) {
     template.display_field_count = 1;
 
     uint8_t value = 1;
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U8;
     instr.resolved[0].value = &value;
@@ -679,8 +674,7 @@ static void test_render_token_amount_resolved_mint(void) {
     memset(usdc_mint, 0xAA, 32);
     mock_dynamic_token_info_set(usdc_mint, "USDC", 6);
 
-    cs_instruction_template_t template;
-    memset(&template, 0, sizeof(template));
+    RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Transfer";
     template.display_fields[0].name = "Amount";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
@@ -691,8 +685,7 @@ static void test_render_token_amount_resolved_mint(void) {
 
     // 1_500_000 = 1.5 USDC (6 decimals)
     uint8_t value[] = {0x60, 0xE3, 0x16, 0x00, 0x00, 0x00, 0x00, 0x00};
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U64;
     instr.resolved[0].value = value;
@@ -714,7 +707,11 @@ static void test_render_token_amount_resolved_mint(void) {
 static void init_argument_template(cs_instruction_template_t *template,
                                    char *field_name,
                                    uint8_t param_type) {
+    // Backing for the caller's template; one such template is live at a time.
+    static cs_display_field_t fields[TEST_RENDER_MAX_FIELDS];
     memset(template, 0, sizeof(*template));
+    memset(fields, 0, sizeof(fields));
+    template->display_fields = fields;
     template->operation_type = "Test";
     template->display_fields[0].name = field_name;
     template->display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
@@ -735,8 +732,7 @@ static void test_render_datetime(void) {
     // 1700000000 == 0x6553F100
     uint8_t value[] = {0x00, 0xF1, 0x53, 0x65, 0x00, 0x00, 0x00, 0x00};
 
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U64;
     instr.resolved[0].value = value;
@@ -769,8 +765,7 @@ static void test_render_datetime_ticks_scaling(void) {
         value[i] = (uint8_t) (ticks >> (8 * i));
     }
 
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U64;
     instr.resolved[0].value = value;
@@ -798,8 +793,7 @@ static void test_render_datetime_signed_i64(void) {
 
     // 1700000000 seconds -> 2023-11-14 22:13:20, stored as i64.
     uint8_t value[] = {0x00, 0xF1, 0x53, 0x65, 0x00, 0x00, 0x00, 0x00};
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_I64;
     instr.resolved[0].value = value;
@@ -827,8 +821,7 @@ static void test_render_datetime_negative_i64(void) {
     // -1 second -> 1969-12-31 23:59:59.
     uint8_t value[8];
     memset(value, 0xFF, sizeof(value));
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_I64;
     instr.resolved[0].value = value;
@@ -853,8 +846,7 @@ static void test_render_duration(void) {
 
     // 3661 seconds = 1:01:01
     uint8_t value[] = {0x4D, 0x0E, 0x00, 0x00};
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U32;
     instr.resolved[0].value = value;
@@ -878,8 +870,7 @@ static void test_render_duration_zero(void) {
     init_argument_template(&template, "Duration", CS_PARAM_TYPE_DURATION);
 
     uint8_t value = 0;
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U8;
     instr.resolved[0].value = &value;
@@ -908,8 +899,7 @@ static void test_render_unit_suffix(void) {
 
     // 1250 with 2 decimals -> "12.5"
     uint8_t value[] = {0xE2, 0x04, 0x00, 0x00};
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U32;
     instr.resolved[0].value = value;
@@ -936,8 +926,7 @@ static void test_render_unit_prefix(void) {
     template.display_fields[0].argument.format.unit.prefix = true;
 
     uint8_t value[] = {0x2A, 0x00, 0x00, 0x00};  // 42
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U32;
     instr.resolved[0].value = value;
@@ -962,8 +951,7 @@ static void test_render_account_short_form(void) {
 
     uint8_t pubkey[32];
     memset(pubkey, 0x42, 32);
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
     instr.resolved[0].value = pubkey;
@@ -999,8 +987,7 @@ static void test_render_trusted_name_resolved(void) {
     template.display_fields[0]
         .argument.format.trusted_name.allowed_types_mask = (uint8_t) (1 << TN_TYPE_TOKEN);
 
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
     instr.resolved[0].value = pubkey;
@@ -1036,8 +1023,7 @@ static void test_render_trusted_name_max_length(void) {
     cs_instruction_template_t template;
     init_argument_template(&template, "Token", CS_PARAM_TYPE_TRUSTED_NAME);
 
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
     instr.resolved[0].value = pubkey;
@@ -1067,8 +1053,7 @@ static void test_render_trusted_name_cache_miss(void) {
 
     uint8_t pubkey[32];
     memset(pubkey, 0x42, 32);
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
     instr.resolved[0].value = pubkey;
@@ -1105,8 +1090,7 @@ static void test_render_trusted_name_type_not_allowed(void) {
     template.display_fields[0]
         .argument.format.trusted_name.allowed_types_mask = (uint8_t) (1 << TN_TYPE_TOKEN);
 
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
     instr.resolved[0].value = pubkey;
@@ -1139,8 +1123,7 @@ static void test_render_trusted_name_unconstrained_mask(void) {
     init_argument_template(&template, "Program", CS_PARAM_TYPE_TRUSTED_NAME);
     // Masks left at 0 (unconstrained).
 
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
     instr.resolved[0].value = pubkey;
@@ -1171,8 +1154,7 @@ static void test_render_account_resolves_trusted_name(void) {
     cs_instruction_template_t template;
     init_argument_template(&template, "Mint", CS_PARAM_TYPE_ACCOUNT);
 
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
     instr.resolved[0].value = mint;
@@ -1199,8 +1181,7 @@ static void test_render_string_ascii(void) {
     template.display_fields[0].argument.format.string.has_slice = false;
 
     const char *text = "hello";
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
     instr.resolved[0].value = (const uint8_t *) text;
@@ -1226,8 +1207,7 @@ static void test_render_string_ascii_rejects_nonprintable(void) {
     template.display_fields[0].argument.format.string.has_slice = false;
 
     uint8_t bytes[] = {'h', 'i', 0x01};
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
     instr.resolved[0].value = bytes;
@@ -1252,8 +1232,7 @@ static void test_render_string_hex(void) {
     template.display_fields[0].argument.format.string.has_slice = false;
 
     uint8_t bytes[] = {0xDE, 0xAD, 0xBE, 0xEF};
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
     instr.resolved[0].value = bytes;
@@ -1280,8 +1259,7 @@ static void test_render_string_base64(void) {
 
     // "Man" -> "TWFu"; "Ma" -> "TWE="
     const char *text = "Man";
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
     instr.resolved[0].value = (const uint8_t *) text;
@@ -1307,8 +1285,7 @@ static void test_render_string_base64_padding(void) {
     template.display_fields[0].argument.format.string.has_slice = false;
 
     const char *text = "Ma";
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
     instr.resolved[0].value = (const uint8_t *) text;
@@ -1338,8 +1315,7 @@ static void test_render_string_slice_source_bounded(void) {
     template.display_fields[0].argument.format.string.slice_applies_to = CS_SLICE_APPLIES_TO_SOURCE;
 
     const char *text = "abcdef";
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
     instr.resolved[0].value = (const uint8_t *) text;
@@ -1371,8 +1347,7 @@ static void test_render_string_slice_formatted_sized_reversed(void) {
         .argument.format.string.slice_applies_to = CS_SLICE_APPLIES_TO_FORMATTED;
 
     uint8_t bytes[] = {0xDE, 0xAD, 0xBE, 0xEF};  // hex "deadbeef", last 4 chars "beef"
-    cs_instruction_result_t instr;
-    memset(&instr, 0, sizeof(instr));
+    RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_STRING_PREFIXED;
     instr.resolved[0].value = bytes;
@@ -1394,8 +1369,15 @@ static void run_raw_leaf(uint8_t kind,
                          size_t value_size,
                          cs_instruction_result_t *instr,
                          cs_instruction_template_t *template) {
+    // Backing for the caller's result; one such result is live at a time.
+    static idl_resolved_leaf_t resolved[TEST_RENDER_MAX_FIELDS];
+    static const uint8_t *field_mint[TEST_RENDER_MAX_FIELDS];
     init_argument_template(template, "Raw", CS_PARAM_TYPE_RAW);
     memset(instr, 0, sizeof(*instr));
+    memset(resolved, 0, sizeof(resolved));
+    memset(field_mint, 0, sizeof(field_mint));
+    instr->resolved = resolved;
+    instr->field_mint = field_mint;
     instr->template = template;
     instr->resolved[0].kind = kind;
     instr->resolved[0].value = value;

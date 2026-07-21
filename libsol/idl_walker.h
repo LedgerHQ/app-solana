@@ -64,6 +64,6 @@ int idl_walker_run(const uint8_t *data,
                    size_t data_size,
                    const uint8_t program_id[32],
                    const idl_match_path_t *match_paths,
-                   uint8_t match_count,
+                   size_t match_count,
                    idl_resolved_leaf_t *resolved,
-                   uint8_t *resolved_count);
+                   size_t *resolved_count);

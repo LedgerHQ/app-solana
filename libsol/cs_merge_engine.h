@@ -20,11 +20,12 @@
 // display-field leaf values.
 typedef struct cs_instruction_result_s {
     const cs_instruction_template_t *template;
-    idl_resolved_leaf_t resolved[CS_MAX_DISPLAY_FIELDS];
-    uint8_t resolved_count;
-    // Per display-field resolved mint pubkey, indexed like `resolved`. Non-NULL
-    // only for TOKEN_AMOUNT fields whose TOKEN reference resolved to a mint.
-    const uint8_t *field_mint[CS_MAX_DISPLAY_FIELDS];
+    idl_resolved_leaf_t *resolved;  // heap, sized to resolved_count; owned by the finalize walk
+    size_t resolved_count;
+    // Per display-field resolved mint pubkey, heap array sized to resolved_count,
+    // indexed like `resolved`. Non-NULL entry only for TOKEN_AMOUNT fields whose
+    // TOKEN reference resolved to a mint.
+    const uint8_t **field_mint;
 } cs_instruction_result_t;
 
 // Run the merge engine on walked instructions. Fills survivors[i] = true for

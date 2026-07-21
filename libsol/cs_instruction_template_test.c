@@ -290,8 +290,37 @@ static void test_set_strings_reject_empty(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-static void test_add_display_path_slots_full(void) {
-    printf("  test_add_display_path_slots_full\n");
+static void test_add_display_fields_grows_past_old_cap(void) {
+    printf("  test_add_display_fields_grows_past_old_cap\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
+    assert(builder != NULL);
+
+    // The old CS_MAX_DISPLAY_FIELDS cap (8) is gone: add well past it. Each field
+    // carries a distinct path so the demand-grown array is verified byte for byte.
+    const size_t total = 20;
+    for (size_t i = 0; i < total; i++) {
+        uint8_t path[] = {0x20, (uint8_t) i};
+        assert(cs_instruction_template_add_display_path(path,
+                                                        sizeof(path),
+                                                        CS_PARAM_TYPE_RAW,
+                                                        NULL) == 0);
+    }
+    assert(builder->display_field_count == total);
+    for (size_t i = 0; i < total; i++) {
+        assert(builder->display_fields[i].source == CS_VALUE_SOURCE_ARGUMENT_PATH);
+        assert(builder->display_fields[i].argument.path_size == 2);
+        assert(builder->display_fields[i].argument.path[1] == (uint8_t) i);
+    }
+
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+static void test_add_display_field_growth_alloc_fail(void) {
+    printf("  test_add_display_field_growth_alloc_fail\n");
     mock_mem_reset();
     cs_instruction_template_table_reset();
 
@@ -299,15 +328,15 @@ static void test_add_display_path_slots_full(void) {
     assert(builder != NULL);
 
     const uint8_t path[] = {0x20, 0x00};
-    for (int i = 0; i < CS_MAX_DISPLAY_FIELDS; i++) {
-        assert(
-            cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, NULL) ==
-            0);
-    }
-    // One more should fail
-    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, NULL) ==
+    // Path copy (0) and name copy (1) succeed; the array growth (2) fails: the two
+    // owned buffers must be released and no field stored.
+    mock_mem_fail_after(2);
+    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, "Amount") ==
            -1);
+    assert(builder->display_field_count == 0);
+    assert(builder->display_fields == NULL);
 
+    mock_mem_fail_after(-1);
     cs_instruction_template_table_reset();
     assert(mock_mem_outstanding() == 0);
 }
@@ -721,7 +750,8 @@ int main(void) {
     test_add_display_path_alloc_fail();
     test_add_field_name_variants();
     test_set_strings_reject_empty();
-    test_add_display_path_slots_full();
+    test_add_display_fields_grows_past_old_cap();
+    test_add_display_field_growth_alloc_fail();
     test_commit_no_builder();
     test_commit_grows_past_old_cap();
     test_commit_pool_exhaustion_fail_closed();
