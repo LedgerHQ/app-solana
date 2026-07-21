@@ -26,6 +26,20 @@ typedef struct cs_enum_cache_table_s {
 
 static cs_enum_cache_table_t G_enum_cache;
 
+// Release a variant and every buffer it owns, then null the slot pointer.
+// Safe on a partially-built slot: unset owned buffers are NULL after calloc.
+static void free_variant(cs_enum_variant_t **variant) {
+    if (*variant == NULL) {
+        return;
+    }
+    if ((*variant)->payload_kind == CS_VARIANT_PAYLOAD_INLINE) {
+        APP_MEM_FREE_AND_NULL((void **) &(*variant)->payload.inline_descriptor.bytes);
+    }
+    APP_MEM_FREE_AND_NULL((void **) &(*variant)->variant_name);
+    APP_MEM_FREE_AND_NULL((void **) &(*variant)->enum_id);
+    APP_MEM_FREE_AND_NULL((void **) variant);
+}
+
 // True when `variant` carries the (program_id, enum_id, variant_index) key.
 static bool key_matches(const cs_enum_variant_t *variant,
                         const uint8_t program_id[32],
@@ -43,18 +57,12 @@ int cs_enum_cache_add(const uint8_t program_id[32],
                       size_t enum_id_len,
                       uint16_t variant_index,
                       const char *variant_name,
+                      size_t variant_name_len,
                       uint8_t payload_kind,
                       const uint8_t *payload,
                       size_t payload_size) {
-    // Validate every field against its capacity before touching the heap.
-    if (enum_id_len > CS_ENUM_ID_MAX_SIZE) {
-        PRINTF("cs_enum_cache_add: enum_id too long (%d > %d)\n", enum_id_len, CS_ENUM_ID_MAX_SIZE);
-        return -1;
-    }
-    if (variant_name != NULL && strlen(variant_name) > CS_VARIANT_NAME_MAX_SIZE) {
-        PRINTF("cs_enum_cache_add: variant_name too long (%d > %d)\n",
-               (int) strlen(variant_name),
-               CS_VARIANT_NAME_MAX_SIZE);
+    if (enum_id_len == 0) {
+        PRINTF("cs_enum_cache_add: empty enum_id\n");
         return -1;
     }
     // The payload wire bytes must match the shape implied by payload_kind.
@@ -102,23 +110,38 @@ int cs_enum_cache_add(const uint8_t program_id[32],
     }
     G_enum_cache.variants = grown;
 
-    // One descriptor per variant, freed on reset. INLINE additionally owns a
-    // separately allocated payload buffer, released together with the slot.
+    // One descriptor per variant, freed on reset. It owns its enum_id and
+    // variant_name buffers, and (INLINE) a separate payload buffer; free_variant
+    // releases all of them, so any allocation failure below unwinds cleanly.
     cs_enum_variant_t *slot = NULL;
     if (!APP_MEM_CALLOC((void **) &slot, sizeof(*slot))) {
         PRINTF("cs_enum_cache_add: variant allocation failed\n");
         return -1;
     }
     memcpy(slot->program_id, program_id, 32);
-    memcpy(slot->enum_id, enum_id, enum_id_len);
-    slot->enum_id_len = (uint8_t) enum_id_len;
     slot->variant_index = variant_index;
     slot->payload_kind = (cs_variant_payload_kind_t) payload_kind;
-    if (variant_name != NULL) {
-        strlcpy(slot->variant_name, variant_name, sizeof(slot->variant_name));
-    } else {
-        slot->variant_name[0] = '\0';
+
+    // enum_id: sized to its exact byte length, owned by the slot.
+    if (!APP_MEM_CALLOC((void **) &slot->enum_id, enum_id_len)) {
+        PRINTF("cs_enum_cache_add: enum_id allocation failed\n");
+        free_variant(&slot);
+        return -1;
     }
+    memcpy(slot->enum_id, enum_id, enum_id_len);
+    slot->enum_id_len = enum_id_len;
+
+    // variant_name: sized to strlen+1 and NUL-terminated. An absent name stores
+    // an empty string so consumers can always strlen/strcmp it.
+    if (!APP_MEM_CALLOC((void **) &slot->variant_name, variant_name_len + 1)) {
+        PRINTF("cs_enum_cache_add: variant_name allocation failed\n");
+        free_variant(&slot);
+        return -1;
+    }
+    if (variant_name != NULL && variant_name_len > 0) {
+        memcpy(slot->variant_name, variant_name, variant_name_len);
+    }
+
     // Store only the union member the kind selects (EMPTY uses none). RAW_SIZE
     // is decoded to a host uint16 here so the walker never re-parses wire
     // bytes.
@@ -129,7 +152,7 @@ int cs_enum_cache_add(const uint8_t program_id[32],
             // Size the inline buffer to the exact payload length.
             if (!APP_MEM_CALLOC((void **) &slot->payload.inline_descriptor.bytes, payload_size)) {
                 PRINTF("cs_enum_cache_add: inline payload allocation failed\n");
-                APP_MEM_FREE_AND_NULL((void **) &slot);
+                free_variant(&slot);
                 return -1;
             }
             memcpy(slot->payload.inline_descriptor.bytes, payload, payload_size);
@@ -169,13 +192,10 @@ size_t cs_enum_cache_count(void) {
 
 void cs_enum_cache_reset(void) {
     // Release every per-variant descriptor; the static table stays but empties.
-    // INLINE variants own a separate payload buffer, freed before the slot.
+    // Each slot owns its enum_id, variant_name, and (INLINE) payload buffer,
+    // all freed before the slot itself.
     for (size_t i = 0; i < G_enum_cache.count; i++) {
-        if (G_enum_cache.variants[i]->payload_kind == CS_VARIANT_PAYLOAD_INLINE) {
-            APP_MEM_FREE_AND_NULL(
-                (void **) &G_enum_cache.variants[i]->payload.inline_descriptor.bytes);
-        }
-        APP_MEM_FREE_AND_NULL((void **) &G_enum_cache.variants[i]);
+        free_variant(&G_enum_cache.variants[i]);
     }
     if (G_enum_cache.variants != NULL) {
         APP_MEM_FREE_AND_NULL((void **) &G_enum_cache.variants);

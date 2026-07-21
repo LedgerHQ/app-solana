@@ -22,10 +22,11 @@ typedef struct tlv_out_s {
     uint8_t structure_type;
     uint8_t version;
     uint8_t program_id[32];
-    // Sized from the enum-cache caps so oversized inputs are rejected at ingest, not later.
-    char enum_id[CS_ENUM_ID_MAX_SIZE + 1];
+    // enum_id and variant_name point zero-copy into the APDU payload; it stays
+    // alive through cs_enum_cache_add, which copies both into owned buffers.
+    buffer_t enum_id;
     uint16_t variant_index;
-    char variant_name[CS_VARIANT_NAME_MAX_SIZE + 1];
+    buffer_t variant_name;
     uint8_t payload_kind;
     uint8_t payload[CS_VARIANT_PAYLOAD_MAX_SIZE];
     size_t payload_size;
@@ -51,8 +52,21 @@ static bool handle_program_id(const tlv_data_t *data, tlv_out_t *out) {
     return true;
 }
 
+// Extract a spec `char[]` field zero-copy into the APDU payload. Both ENUM_ID
+// and VARIANT_NAME are identifiers/names: at least one byte and no embedded NUL.
+static bool get_char_field_from_tlv_data(const tlv_data_t *data, buffer_t *out) {
+    if (!get_buffer_from_tlv_data(data, out, 1, 0)) {
+        return false;
+    }
+    if (strnlen((const char *) out->ptr, out->size) != out->size) {
+        PRINTF("get_char_field_from_tlv_data: embedded NUL\n");
+        return false;
+    }
+    return true;
+}
+
 static bool handle_enum_id(const tlv_data_t *data, tlv_out_t *out) {
-    return get_string_from_tlv_data(data, out->enum_id, 1, sizeof(out->enum_id));
+    return get_char_field_from_tlv_data(data, &out->enum_id);
 }
 
 static bool handle_variant_index(const tlv_data_t *data, tlv_out_t *out) {
@@ -60,7 +74,7 @@ static bool handle_variant_index(const tlv_data_t *data, tlv_out_t *out) {
 }
 
 static bool handle_variant_name(const tlv_data_t *data, tlv_out_t *out) {
-    return get_string_from_tlv_data(data, out->variant_name, 1, sizeof(out->variant_name));
+    return get_char_field_from_tlv_data(data, &out->variant_name);
 }
 
 static bool handle_payload_kind(const tlv_data_t *data, tlv_out_t *out) {
@@ -209,16 +223,19 @@ int handle_provide_enum_variant(void) {
     PRINTF("=== ENUM VARIANT ===\n");
     PRINTF("version       = %d\n", tlv_extracted.version);
     PRINTF("program_id    = %.*H\n", 32, tlv_extracted.program_id);
-    PRINTF("enum_id       = %s\n", tlv_extracted.enum_id);
+    PRINTF("enum_id       = %.*s\n", tlv_extracted.enum_id.size, tlv_extracted.enum_id.ptr);
     PRINTF("variant_index = %d\n", tlv_extracted.variant_index);
-    PRINTF("variant_name  = %s\n", tlv_extracted.variant_name);
+    PRINTF("variant_name  = %.*s\n",
+           tlv_extracted.variant_name.size,
+           tlv_extracted.variant_name.ptr);
     PRINTF("payload_kind  = 0x%02x\n", tlv_extracted.payload_kind);
 
     if (cs_enum_cache_add(tlv_extracted.program_id,
-                          (const uint8_t *) tlv_extracted.enum_id,
-                          strlen(tlv_extracted.enum_id),
+                          tlv_extracted.enum_id.ptr,
+                          tlv_extracted.enum_id.size,
                           tlv_extracted.variant_index,
-                          tlv_extracted.variant_name,
+                          (const char *) tlv_extracted.variant_name.ptr,
+                          tlv_extracted.variant_name.size,
                           tlv_extracted.payload_kind,
                           tlv_extracted.payload,
                           tlv_extracted.payload_size) != 0) {
