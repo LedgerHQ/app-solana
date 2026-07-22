@@ -24,12 +24,6 @@ typedef enum cs_variant_payload_kind_e {
     CS_VARIANT_PAYLOAD_RAW_SIZE = 0x03,
 } cs_variant_payload_kind_t;
 
-// Only the INLINE payload keeps a capacity: it bounds the opaque descriptor
-// copied into the cache. enum_id and variant_name are sized to their exact
-// input, so neither carries a cap. The variant count itself has no cap either:
-// it is bounded only by the pool.
-#define CS_VARIANT_PAYLOAD_MAX_SIZE 128
-
 // One cached enum variant descriptor. Only ever exposed once fully stored, so
 // every field is valid. `payload_kind` tags the union: only the member matching
 // the kind is valid (EMPTY leaves the union unused). Every variable-length

@@ -273,8 +273,8 @@ static void test_oom_rejected(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-// The only surviving field cap is the INLINE payload size; an empty enum_id is
-// also rejected. Neither leaves a partial entry behind.
+// Malformed inputs are rejected without leaving a partial entry: an empty
+// enum_id has no key to match on, and an INLINE payload must carry bytes.
 static void test_invalid_fields_rejected(void) {
     printf("  test_invalid_fields_rejected\n");
     mock_mem_reset();
@@ -291,8 +291,7 @@ static void test_invalid_fields_rejected(void) {
                              NULL,
                              0) == -1);
 
-    // INLINE payload larger than the descriptor cap.
-    uint8_t big_payload[CS_VARIANT_PAYLOAD_MAX_SIZE + 1] = {0};
+    // INLINE payload with no bytes: the walker would have nothing to decode.
     assert(cs_enum_cache_add(PROGRAM_A,
                              ENUM_ID_A,
                              sizeof(ENUM_ID_A),
@@ -300,16 +299,16 @@ static void test_invalid_fields_rejected(void) {
                              "x",
                              strlen("x"),
                              CS_VARIANT_PAYLOAD_INLINE,
-                             big_payload,
-                             sizeof(big_payload)) == -1);
+                             NULL,
+                             0) == -1);
 
     assert(cs_enum_cache_count() == 0);
     cs_enum_cache_reset();
     assert(mock_mem_outstanding() == 0);
 }
 
-// enum_id and variant_name are sized to their input, so lengths well past the
-// old 64-byte caps round-trip intact.
+// enum_id, variant_name and the INLINE payload are each sized to their input,
+// so lengths well past the old fixed caps round-trip intact.
 static void test_long_id_and_name_roundtrip(void) {
     printf("  test_long_id_and_name_roundtrip\n");
     mock_mem_reset();
@@ -320,6 +319,9 @@ static void test_long_id_and_name_roundtrip(void) {
     char long_name[201];
     memset(long_name, 'n', sizeof(long_name) - 1);
     long_name[sizeof(long_name) - 1] = '\0';
+    // Well past the old 128-byte payload cap: only the pool bounds this now.
+    uint8_t long_payload[512];
+    memset(long_payload, 'p', sizeof(long_payload));
 
     assert(cs_enum_cache_add(PROGRAM_A,
                              long_id,
@@ -327,15 +329,17 @@ static void test_long_id_and_name_roundtrip(void) {
                              0,
                              long_name,
                              strlen(long_name),
-                             CS_VARIANT_PAYLOAD_EMPTY,
-                             NULL,
-                             0) == 0);
+                             CS_VARIANT_PAYLOAD_INLINE,
+                             long_payload,
+                             sizeof(long_payload)) == 0);
 
     const cs_enum_variant_t *found = cs_enum_cache_find(PROGRAM_A, long_id, sizeof(long_id), 0);
     assert(found != NULL);
     assert(found->enum_id_len == sizeof(long_id));
     assert(memcmp(found->enum_id, long_id, sizeof(long_id)) == 0);
     assert(strcmp(found->variant_name, long_name) == 0);
+    assert(found->payload.inline_descriptor.size == sizeof(long_payload));
+    assert(memcmp(found->payload.inline_descriptor.bytes, long_payload, sizeof(long_payload)) == 0);
 
     cs_enum_cache_reset();
     assert(mock_mem_outstanding() == 0);

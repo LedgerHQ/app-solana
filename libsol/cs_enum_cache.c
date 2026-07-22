@@ -74,12 +74,8 @@ int cs_enum_cache_add(const uint8_t program_id[32],
             }
             break;
         case CS_VARIANT_PAYLOAD_INLINE:
-            if (payload_size == 0 || payload_size > CS_VARIANT_PAYLOAD_MAX_SIZE) {
-                PRINTF(
-                    "cs_enum_cache_add: INLINE payload size %d out of range "
-                    "(1..%d)\n",
-                    payload_size,
-                    CS_VARIANT_PAYLOAD_MAX_SIZE);
+            if (payload_size == 0) {
+                PRINTF("cs_enum_cache_add: INLINE payload must not be empty\n");
                 return -1;
             }
             break;

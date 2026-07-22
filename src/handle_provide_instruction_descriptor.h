@@ -6,7 +6,7 @@ int handle_provide_instruction_descriptor(void);
 
 void reset_saved_descriptors(void);
 
-uint8_t get_descriptor_count(void);
+size_t get_descriptor_count(void);
 
 bool instruction_descriptor_received(void);
 

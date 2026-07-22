@@ -22,14 +22,13 @@ typedef struct tlv_out_s {
     uint8_t structure_type;
     uint8_t version;
     uint8_t program_id[32];
-    // enum_id and variant_name point zero-copy into the APDU payload; it stays
-    // alive through cs_enum_cache_add, which copies both into owned buffers.
+    // enum_id, variant_name and payload point zero-copy into the APDU payload;
+    // it stays alive through cs_enum_cache_add, which copies them into owned buffers.
     buffer_t enum_id;
     uint16_t variant_index;
     buffer_t variant_name;
     uint8_t payload_kind;
-    uint8_t payload[CS_VARIANT_PAYLOAD_MAX_SIZE];
-    size_t payload_size;
+    buffer_t payload;
 
     cx_sha256_t hash_ctx;
     buffer_t signature;
@@ -82,15 +81,7 @@ static bool handle_payload_kind(const tlv_data_t *data, tlv_out_t *out) {
 }
 
 static bool handle_payload(const tlv_data_t *data, tlv_out_t *out) {
-    buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 0, CS_VARIANT_PAYLOAD_MAX_SIZE)) {
-        return false;
-    }
-    out->payload_size = temp.size;
-    if (temp.size > 0) {
-        memcpy(out->payload, temp.ptr, temp.size);
-    }
-    return true;
+    return get_buffer_from_tlv_data(data, &out->payload, 0, 0);
 }
 
 static bool handle_signature(const tlv_data_t *data, tlv_out_t *out) {
@@ -144,9 +135,9 @@ static bool validate_payload_kind(const tlv_out_t *tlv_extracted) {
                 PRINTF("Error: PAYLOAD missing for RAW_SIZE payload_kind\n");
                 return false;
             }
-            if (tlv_extracted->payload_size != 2) {
+            if (tlv_extracted->payload.size != 2) {
                 PRINTF("Error: RAW_SIZE payload must be 2 bytes, got %d\n",
-                       tlv_extracted->payload_size);
+                       tlv_extracted->payload.size);
                 return false;
             }
             break;
@@ -237,8 +228,8 @@ int handle_provide_enum_variant(void) {
                           (const char *) tlv_extracted.variant_name.ptr,
                           tlv_extracted.variant_name.size,
                           tlv_extracted.payload_kind,
-                          tlv_extracted.payload,
-                          tlv_extracted.payload_size) != 0) {
+                          tlv_extracted.payload.ptr,
+                          tlv_extracted.payload.size) != 0) {
         PRINTF("Error: cs_enum_cache_add rejected variant %d\n", tlv_extracted.variant_index);
         return io_send_sw(ApduReplySolanaInvalidEnumVariant);
     }

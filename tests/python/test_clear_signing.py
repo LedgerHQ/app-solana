@@ -645,8 +645,9 @@ def test_enum_variant_char_field_embedded_nul_rejected(backend, field):
     assert exc_info.value.status == ErrorType.INVALID_ENUM_VARIANT
 
 
-def test_enum_variant_inline_payload_max_length_accepted(backend):
-    """An INLINE payload at the exact cache capacity (128 bytes) is accepted."""
+def test_enum_variant_large_inline_payload_accepted(backend):
+    """An INLINE payload well past the removed 128-byte cap is stored: the
+    descriptor is spec uint8[], sized to its input and bounded only by the pool."""
     sol = SolanaClient(backend)
     _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
     sol.provide_enum_variant(
@@ -655,25 +656,8 @@ def test_enum_variant_inline_payload_max_length_accepted(backend):
         variant_index=1,
         variant_name="Orca",
         payload_kind=0x02,  # INLINE
-        variant_payload=b'\x05' * 128,
+        variant_payload=b'\x05' * 512,
     )
-
-
-def test_enum_variant_inline_payload_too_long_rejected(backend):
-    """An INLINE payload exceeding the cache capacity (129 > 128 bytes) is
-    rejected at ingest and not stored."""
-    sol = SolanaClient(backend)
-    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
-    with pytest.raises(ExceptionRAPDU) as exc_info:
-        sol.provide_enum_variant(
-            program_id=b'\x01' * 32,
-            enum_id="SwapRoute",
-            variant_index=1,
-            variant_name="Orca",
-            payload_kind=0x02,  # INLINE
-            variant_payload=b'\x05' * 129,
-        )
-    assert exc_info.value.status == ErrorType.INVALID_ENUM_VARIANT
 
 
 def test_enum_variant_raw_size_payload(backend):

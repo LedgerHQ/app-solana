@@ -6,5 +6,5 @@
 int validate_instruction_using_descriptor(const MessageHeader *header,
                                           const Instruction *instruction);
 
-uint8_t get_descriptor_count(void);
+size_t get_descriptor_count(void);
 bool instruction_descriptor_received(void);
