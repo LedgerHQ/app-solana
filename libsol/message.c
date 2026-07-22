@@ -260,11 +260,11 @@ int process_message_body_with_descriptor(const uint8_t *message_body,
     BAIL_IF(!instruction_descriptor_received());
 
     // We need to have recievied exactly 1 descriptor for each instruction
-    uint8_t received_descriptors = get_descriptor_count();
+    size_t received_descriptors = get_descriptor_count();
     if (received_descriptors != header->instructions_length) {
-        PRINTF("Error: received descriptors for %d instructions but received %d instructions\n",
-               received_descriptors,
-               header->instructions_length);
+        PRINTF("Error: received %u descriptors but message has %u instructions\n",
+               (unsigned) received_descriptors,
+               (unsigned) header->instructions_length);
         return -1;
     }
 
