@@ -46,6 +46,12 @@ qb -ce -f memory_profiling
 venv && pytest tests/python/ --device flex -s 2>&1 | tools/valground.py -q
 ```
 
+### Optimizing test duration
+
+The full ragger test suite takes a really long time, apply the following recommendation to quicken:
+- When testing a feature, ALWAYS start by running the single simple valid test case on one device to quickly ensure the overall code is correct.
+- Unless required, run the tests only on Flex
+
 ### Test pitfals
 
 - NEVER attempt to run both pytest instances, "pytest tests/python/ tests/swap/" it WILL NOT work as fixtures will fight each other.
@@ -99,6 +105,7 @@ Preview (INS 0x08) stores SHA-512 fingerprint of message with zeroed blockhash, 
 - Dynamic allocation is allowed but must be used with great care, ensuring the data is always freed after use.
 - Splitting a function in an internal one that performs the logic and an external one that calls the internal one and frees is a good pattern to ensure proper freeing of memory.
 - The size of the allocated pool can be increased if needed.
+- Never introduce arbitrary MAX_ capacities when specification does not and dynamic allocation handles the size footprint. The only memory related refusal accepted is OOM allocation rejection.
 
 ### Test pem keys
 
@@ -106,11 +113,22 @@ Preview (INS 0x08) stores SHA-512 fingerprint of message with zeroed blockhash, 
 
 ### Expected specification
 
-- "Documenting" a limitation or non compliance with spec is worthless. Spec shall be implemented or pushed back.
+- "Documenting" a limitation or non compliance with specification is worthless. Specification shall be implemented or pushed back.
+- When changing a behavior, ALWAYS refer to the specification to know if this is a FIX or a REGRESSION.
 
 ## Generic Clear Signing
 
-The generic clear signing does not replace nor deprecate the existing sign flows. InsSignMessage is NOT legacy.
+Generic clear signing is an ADDITION to the app, never a replacement. InsSignMessage and its parser (libsol/message.c, process_message_body) are a current, fully-supported, first-class sign flow — as first-class as generic clear signing, and serves a completely different purpose.
+You are FORBIDDEN from describing InsSignMessage, message.c, or any existing sign flow as "legacy".
+
+## Clean architecture and contract
+
+When working on the code, the ONLY acceptable outcome is an optimal final architecture. At no point internal functions APIs should be considered stable or frozen. The only stable API is the APDU interface, and the only stable code is the code that implements it. All other code can be modified, refactored, or replaced to achieve a better architecture.
+Internal function signatures are not 'contracts', the only contract is the APDU interface. You are FORBIDDEN from describing internal function signatures as 'contracts' or 'stable APIs'.
+
+## Onchain failures
+
+On-chain refusal of a signed transaction poses no threat to safety of assets, therefor it is not up to the application to enforce on-chain specifications, it is only responsible for clearly presenting the intent and all potential effects of the transaction to be signed shall it be valid.
 
 ## Code Patterns
 
@@ -123,15 +141,19 @@ Coding patterns described here are more important than uniformity cross applicat
 - Variable logs: Use `PRINTF("variable_name=%d\n", var)` or `PRINTF("buffer=%.*H\n", len, buf)` in calculations and new code
 - Log ALL error returns. No `return -1` shall exist without an associated `PRINTF`
 
+### Commenting
+
+- Comments are concise: 1 or 2 lines, and straight to the point. One line per function or `if` branch is almost always enough.
+- Comment only the non-obvious "why"; never restate what the code does. Prefer no comment over a redundant or explanatory one.
+- Do NOT narrate design decisions, spec/SDK references, or alternatives in code comments. No multi-line block above every struct/function/#define; match the LEANEST surrounding style, not the most verbose.
+- Reserve comment blocks for very tricky code that is not readable otherwise (memory juggling, API hacks, advanced cryptography, math optimizations, etc)
+- A fix does NOT warrant a comment on the fixed code. When modifying code, first PURGE old comment, THEN decide independantly if a adding a comment is needed.
+
 ### Coding conventions
 
 - bool return is used to indicate the result of a CHECK, NOT a success or failure.
 - int return is used to report a success or failure of a function by using -1 or 0.
 - Global or module variables are prefixed by `G_*`.
-- Comments are concise: 1 or 2 lines, and straight to the point. One line per function or `if` branch is almost always enough.
-- Comment only the non-obvious "why"; never restate what the code does. Prefer no comment over a redundant or explanatory one.
-- Do NOT narrate design decisions, spec/SDK references, or alternatives in code comments. No multi-line block above every struct/function/#define; match the LEANEST surrounding style, not the most verbose.
-- Reserve comment blocks for very tricky code that is not readable otherwise (memory juggling, API hacks, advanced cryptography, math optimizations, etc)
 
 - Functions and variables should have clear explicit names without abbreviation. BAD: `idl_leaf_cb_t cb`, GOOD: `idl_leaf_cb_t leaf_callback`.
 - Functions called in a wrong context shall return an error, not ignore or skip
@@ -139,7 +161,8 @@ Coding patterns described here are more important than uniformity cross applicat
 - Do not rely on C implicit struct copy, use a memcpy to highlight deep copy behavior.
 - Avoid enum-like defines. Prefer real enum definition.
 - Do NOT use early returns to separate different valid feature paths. Use `if/else` chains so branches are visually parallel and mutually exclusive. Early returns are fine ONLY for error guards, not for splitting valid execution paths. There shall be ONE and ONLY ONE valid return per function.
-- You are FORBIDDEN from writing the pattern "fail.*closed" in comments or doc.
+- You are FORBIDDEN from writing the pattern "fail.*closed" ANYWHERE you produce text: code comments, documentation, identifiers (function/variable/type/test names), log and PRINTF strings, commit messages, and your own chat responses to the user. There is no context that re-permits it. Describe the concrete behavior instead — what is returned and what is not stored/displayed/signed (e.g. "returns -1 and stores nothing") — never the label.
+
 
 ### FORBIDDEN patterns
 
@@ -181,8 +204,13 @@ This includes but is not limited to:
 ## Audit
 
 The user can request an audit : something in your configuration will have to be permanently modified as your behavior was not satisfying. When it happens, PERMANENTLY stop focusing on the code forever and ONLY focus on project rules (AI instructions, settings, etc). Making promises is empty since the chat will be restarted and local context lost ; only configuration files remain. In this mode, analyze your biases, suggest settings patch, etc.
+Even during audit, you are NEVER allowed to edit instruction files without explicit approval. Suggest them to the user highlighting the desired effect.
 
 ## Communication guidelines
 
 - NEVER end a response with a continuance or permission-seeking question ("Want me to...?", "Should I...?", "Let me know if..."). This is FORBIDDEN.
 - NEVER make promises or commitments about your own future behavior ("I'll stop...", "I will...", "Going forward..."). Context is ephemeral, so such promises are empty and misleading unless backed by an instruction change.
+- Do not use numbers in markdown titles, they are bothersome to maintain. Use the text directly `### Title`
+- Desired effect: "plan", "design", "review", "analyze", "suggest", "propose", "compare" are report-to-chat commands. The deliverable goes in the response only. Never create/edit/write any repository file — including plan, status, report, or notes docs — unless the REQUEST contains an explicit write/edit/create instruction. An existing report being included in a response is not a request to edit it.
+- NEVER switch from thinking or planning to writing code in the same response, even when you have high confidence.
+- before AskUserQuestion, check whether project rules already determine the answer. If they do, apply them and state the conclusion; never present a rules-settled matter as an open user choice.
