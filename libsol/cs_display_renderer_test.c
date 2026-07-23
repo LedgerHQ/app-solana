@@ -206,7 +206,7 @@ static void test_partial_alloc_failure(void) {
     mock_mem_fail_after(6);
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
-    assert(cs_display_renderer_element_count() == 1);
+    assert(cs_display_renderer_element_count() == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);

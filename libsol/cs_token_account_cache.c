@@ -21,7 +21,7 @@
 // table itself is a tiny static array of pointers plus a count.
 typedef struct cs_token_account_cache_table_s {
     cs_token_account_t **accounts;  // grown by one entry per add (APDU-paced)
-    uint8_t count;
+    size_t count;
 } cs_token_account_cache_table_t;
 
 static cs_token_account_cache_table_t G_token_account_cache;
@@ -61,7 +61,7 @@ int cs_token_account_cache_add(const uint8_t account_address[32],
 }
 
 const cs_token_account_t *cs_token_account_cache_find(const uint8_t account_address[32]) {
-    for (uint8_t i = 0; i < G_token_account_cache.count; i++) {
+    for (size_t i = 0; i < G_token_account_cache.count; i++) {
         if (memcmp(G_token_account_cache.accounts[i]->account_address, account_address, 32) == 0) {
             return G_token_account_cache.accounts[i];
         }
@@ -69,12 +69,12 @@ const cs_token_account_t *cs_token_account_cache_find(const uint8_t account_addr
     return NULL;
 }
 
-uint8_t cs_token_account_cache_count(void) {
+size_t cs_token_account_cache_count(void) {
     return G_token_account_cache.count;
 }
 
 void cs_token_account_cache_reset(void) {
-    for (uint8_t i = 0; i < G_token_account_cache.count; i++) {
+    for (size_t i = 0; i < G_token_account_cache.count; i++) {
         APP_MEM_FREE_AND_NULL((void **) &G_token_account_cache.accounts[i]);
     }
     if (G_token_account_cache.accounts != NULL) {

@@ -194,15 +194,15 @@ typedef struct cs_instruction_template_s {
 // Open a fresh in-flight builder committed to `target_hash` (the SHA-256 the
 // signed INSTRUCTION_INFO descriptor expects over its substructures) and start
 // the matching substructure hash accumulation. Returns the zeroed builder for
-// the caller to fill, or NULL when the committed array is already full or the
-// table cannot be allocated. Discards any previous unfinished builder.
+// the caller to fill, or NULL when the table or builder cannot be allocated.
+// Discards any previous unfinished builder.
 cs_instruction_template_t *cs_instruction_template_open(const uint8_t target_hash[32]);
 
 // The in-flight builder being assembled, or NULL when none is open.
 cs_instruction_template_t *cs_instruction_template_current(void);
 
 // Append an argument-path display field. `name` is NULL (unlabeled) or non-empty.
-// Returns 0, or -1 on no builder / bad path / full slots / allocation failure.
+// Returns 0, or -1 on no builder / bad path / allocation failure.
 int cs_instruction_template_add_display_path(const uint8_t *path,
                                              size_t path_size,
                                              uint8_t param_type,
@@ -276,11 +276,11 @@ int cs_instruction_template_set_mint_assoc(uint8_t account_idx, uint8_t mint_idx
 
 // Promote the in-flight builder into the committed array. Must be called only
 // once the substructure accumulation has matched the committed target. Returns 0
-// on success, -1 when no builder is open or the array is full.
+// on success, -1 when no builder is open or the array cannot be grown.
 int cs_instruction_template_commit(void);
 
 // Number of committed (whole, walker-ready) templates.
-uint8_t cs_instruction_template_committed_count(void);
+size_t cs_instruction_template_committed_count(void);
 
 // True while a builder is open but not yet committed.
 bool cs_instruction_template_pending(void);

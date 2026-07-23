@@ -2,10 +2,10 @@
 #include "app_mem_utils.h"
 #include "mem_utils.h"
 
-// Now that the reception buffer is allocated from this pool instead of a static array, the pool
-// must hold a full off-chain message (MAX_OFFCHAIN_MESSAGE_LENGTH). The allocator rounds a request
-// up to its power-of-two size class, so a ~15 KB block needs the 16384-byte segment to exist, which
-// requires (pool - heap header) >= 16384. 18 KB satisfies that and leaves clear-signing headroom.
+// The reception buffer is allocated from this pool, so it must hold a full off-chain message
+// (MAX_OFFCHAIN_MESSAGE_LENGTH, ~15 KB) as a single block, on top of the per-block header and
+// alignment overhead and any concurrent clear-signing allocations. 18 KB covers all of that while
+// staying under the allocator's ~32 KB ceiling.
 #define SIZE_MEM_BUFFER (1024 * 18)
 
 static uint8_t mem_buffer[SIZE_MEM_BUFFER] __attribute__((aligned(sizeof(intmax_t))));

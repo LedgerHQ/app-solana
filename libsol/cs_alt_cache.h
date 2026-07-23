@@ -41,7 +41,7 @@ int cs_alt_cache_add(const uint8_t alt_address[PUBKEY_SIZE],
 const uint8_t *cs_alt_cache_find(const uint8_t alt_address[PUBKEY_SIZE], uint8_t entry_index);
 
 // Number of cached ALT resolutions.
-uint8_t cs_alt_cache_count(void);
+size_t cs_alt_cache_count(void);
 
 // Release the cache, returning to the empty state. Safe when none allocated.
 void cs_alt_cache_reset(void);

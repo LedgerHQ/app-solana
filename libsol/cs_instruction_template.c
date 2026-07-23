@@ -19,7 +19,7 @@
 typedef struct cs_instruction_template_table_s {
     cs_instruction_template_t *builder;  // heap, non-NULL while a template is in flight
     cs_instruction_template_t **committed;  // demand-grown array of template pointers
-    uint8_t committed_count;
+    size_t committed_count;
 } cs_instruction_template_table_t;
 
 static cs_instruction_template_table_t *G_template_table = NULL;
@@ -389,6 +389,10 @@ int cs_instruction_template_set_idl_type_pool(const uint8_t *data, size_t size) 
         PRINTF("cs_instruction_template_set_idl_type_pool: no builder open\n");
         return -1;
     }
+    if (size == 0) {
+        PRINTF("cs_instruction_template_set_idl_type_pool: empty pool rejected\n");
+        return -1;
+    }
     // ENFORCE_UNIQUE_TAG bounds this to one call per builder; free defensively anyway.
     if (builder->idl_type_pool != NULL) {
         APP_MEM_FREE_AND_NULL((void **) &builder->idl_type_pool);
@@ -503,7 +507,7 @@ int cs_instruction_template_commit(void) {
     return 0;
 }
 
-uint8_t cs_instruction_template_committed_count(void) {
+size_t cs_instruction_template_committed_count(void) {
     if (G_template_table == NULL) {
         return 0;
     }
@@ -524,7 +528,7 @@ const cs_instruction_template_t *cs_instruction_template_find(const uint8_t prog
         return NULL;
     }
 
-    for (uint8_t i = 0; i < G_template_table->committed_count; i++) {
+    for (size_t i = 0; i < G_template_table->committed_count; i++) {
         const cs_instruction_template_t *template = G_template_table->committed[i];
         if (memcmp(template->program_id, program_id, 32) != 0) {
             continue;
@@ -551,7 +555,7 @@ void cs_instruction_template_table_reset(void) {
         }
         // Each committed template owns heap buffers and its own block; free the
         // buffers then the block per entry, then the pointer array, before the table.
-        for (uint8_t i = 0; i < G_template_table->committed_count; i++) {
+        for (size_t i = 0; i < G_template_table->committed_count; i++) {
             free_template_owned_buffers(G_template_table->committed[i]);
             APP_MEM_FREE_AND_NULL((void **) &G_template_table->committed[i]);
         }
