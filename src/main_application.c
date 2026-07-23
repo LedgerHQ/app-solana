@@ -56,9 +56,37 @@ cs_session_state_t G_cs_session_state;
 const internalStorage_t N_storage_real;
 
 static void reset_main_globals(void) {
-    MEMCLEAR(G_command);
+    apdu_reset_command(&G_command);
     MEMCLEAR(G_io_seproxyhal_spi_buffer);
     G_cs_session_state = CS_SESSION_IDLE;
+}
+
+void reset_unrelated_sessions(uint8_t instruction) {
+    if (instruction != InsSignMessageDelayed) {
+        clear_preview_state();
+    }
+
+    // Any non-CS, non-stateless APDU resets an active CS session.
+    // The delayed signing instruction DOES reset the CS session: InsPromptUiDisplay already stored
+    // the validated fingerprint in the delayed signing storage, so the CS session is over.
+    if (G_cs_session_state != CS_SESSION_IDLE
+        // CS instructions
+        && instruction != InsStartGenericClearSigningSession
+        && instruction != InsProvideInstructionInfo
+        && instruction != InsProvideInstructionSubstructure
+        && instruction != InsProvideEnumVariant
+        && instruction != InsProvideTokenAccountState
+        && instruction != InsProvideAltResolution
+        && instruction != InsProvideTrustedName
+        && instruction != InsFinalizeGenericClearSigning
+        && instruction != InsPromptUiDisplay
+
+        // Token CAL info
+        && instruction != InsTrustedInfoGetChallenge
+        && instruction != InsTrustedInfoProvideInfo
+        && instruction != InsTrustedInfoProvideDynamicDescriptor) {
+        cs_session_reset();
+    }
 }
 
 static int handle_apdu(int rx) {
@@ -69,43 +97,13 @@ static int handle_apdu(int rx) {
     const int ret = apdu_handle_message(G_io_apdu_buffer, rx, &G_command);
     if (ret != 0) {
         PRINTF("Clear received invalid command\n");
-        MEMCLEAR(G_command);
+        apdu_reset_command(&G_command);
         return io_send_sw(ret);
     }
 
     if (G_command.state == ApduStatePayloadInProgress) {
         PRINTF("Received first chunk of split payload\n");
         return io_send_sw(ApduReplySuccess);
-    }
-
-    if (G_command.instruction != InsSignMessageDelayed) {
-        PRINTF("Clearing preview state for non-delayed sign instruction\n");
-        clear_preview_state();
-    }
-
-    // Any non-CS, non-stateless APDU resets an active CS session
-    //
-    // In particular, the delayed signing instruction DOES reset the CS session.
-    // But InsPromptUiDisplay stored the validated fingerprint in the main delayed signing storage
-    // So CS session is actually over and can be wiped
-    if (G_cs_session_state != CS_SESSION_IDLE
-        // CS instructions
-        && G_command.instruction != InsStartGenericClearSigningSession
-        && G_command.instruction != InsProvideInstructionInfo
-        && G_command.instruction != InsProvideInstructionSubstructure
-        && G_command.instruction != InsProvideEnumVariant
-        && G_command.instruction != InsProvideTokenAccountState
-        && G_command.instruction != InsProvideAltResolution
-        && G_command.instruction != InsProvideTrustedName
-        && G_command.instruction != InsFinalizeGenericClearSigning
-        && G_command.instruction != InsPromptUiDisplay
-
-        // Token CAL info
-        && G_command.instruction != InsTrustedInfoGetChallenge
-        && G_command.instruction != InsTrustedInfoProvideInfo
-        && G_command.instruction != InsTrustedInfoProvideDynamicDescriptor) {
-        // Reset all clear signing progress
-        cs_session_reset();
     }
 
     switch (G_command.instruction) {

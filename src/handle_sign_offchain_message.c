@@ -10,11 +10,6 @@
 #include "ui_api.h"
 #include "io.h"
 
-// message_text_start is consumed as a NULL-terminated C string by NBGL / PRINTF.
-// apdu_handle_message() writes the NULL at message[message_length], which requires
-// message_length < MAX_MESSAGE_LENGTH.  Verify that the offchain limit satisfies this.
-CASSERT(MAX_OFFCHAIN_MESSAGE_LENGTH < MAX_MESSAGE_LENGTH, global_h);
-
 void ui_application_domain(const OffchainMessageHeader *header) {
     // V1 has no application domain
     if (header->application_domain == NULL) {

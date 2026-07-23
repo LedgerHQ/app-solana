@@ -29,19 +29,11 @@
 #define SOLANA_CHAIN_ID_DEVNET  901
 #define SOLANA_CHAIN_ID_TESTNET 902
 
-#define ROUND_TO_NEXT(x, next) (((x) == 0) ? 0 : ((((x - 1) / (next)) + 1) * (next)))
+// Off-chain message reception buffer size. v1 (sRFC 38) messages have no length prefix and no
+// format-imposed bound, so this is the size preallocated for a chunked off-chain message.
+#define MAX_OFFCHAIN_MESSAGE_LENGTH ((15 * 1024) - 40 - 8)
 
-/* See constant by same name in sdk/src/packet.rs */
-// Packet data size increased to allow handling bigger messages (OCMS)
-#define PACKET_DATA_SIZE ((15 * 1024) - 40 - 8)
-
-#define MAX_BIP32_PATH_LENGTH             5
-#define MAX_DERIVATION_PATH_BUFFER_LENGTH (1 + MAX_BIP32_PATH_LENGTH * 4)
-#define TOTAL_SIGN_MESSAGE_BUFFER_LENGTH  (PACKET_DATA_SIZE + MAX_DERIVATION_PATH_BUFFER_LENGTH)
-
-#define MAX_OFFCHAIN_MESSAGE_LENGTH PACKET_DATA_SIZE
-
-#define MAX_MESSAGE_LENGTH ROUND_TO_NEXT(TOTAL_SIGN_MESSAGE_BUFFER_LENGTH, USB_SEGMENT_SIZE)
+#define MAX_BIP32_PATH_LENGTH 5
 
 // credit: https://stackoverflow.com/questions/807244/c-compiler-asserts-how-to-implement
 #define CASSERT(predicate, file) _impl_CASSERT_LINE(predicate, __LINE__, file)
@@ -87,6 +79,10 @@ typedef enum cs_session_state_e {
 } cs_session_state_t;
 
 extern cs_session_state_t G_cs_session_state;
+
+// Tears down preview and clear-signing session state that the incoming instruction does not own.
+// Called when a new command begins, before its message buffer is allocated.
+void reset_unrelated_sessions(uint8_t instruction);
 
 // SWAP flow globals, defined in SDK
 extern volatile bool G_called_from_swap;
