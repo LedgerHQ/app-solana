@@ -14,6 +14,7 @@
 #include "io.h"
 #include "app_mem_utils.h"
 #include "cs_transaction.h"
+#include "reply.h"
 
 // Preview state for delayed signing
 typedef struct {
@@ -171,13 +172,13 @@ static int handle_sign_message_delayed_internal(void) {
     if (G_command.instruction != InsSignMessageDelayed ||
         G_command.state != ApduStatePayloadComplete) {
         // Small sanity check, should never happen but let's double check
-        return io_send_sw(ApduReplySdkInvalidParameter);
+        return reply_sw(ApduReplySdkInvalidParameter);
     }
 
     // Verify preview was initialized
     if (G_preview_state == NULL || !G_preview_state->initialized) {
         PRINTF("No preview state found - must preview before delayed sign\n");
-        return io_send_sw(ApduReplySolanaDelayedPreviewNotFound);
+        return reply_sw(ApduReplySolanaDelayedPreviewNotFound);
     }
 
     // Delayed signing does not make sense in swap context.
@@ -185,14 +186,14 @@ static int handle_sign_message_delayed_internal(void) {
     // G_preview_state->initialized is always false but let's double check
     if (G_called_from_swap) {
         PRINTF("Delayed signing not supported in swap context\n");
-        return io_send_sw(ApduReplySdkNotSupported);
+        return reply_sw(ApduReplySdkNotSupported);
     }
 
     // Verify the delayed message matches the preview fingerprint
     uint16_t verification_result = verify_delayed_message_matches_preview();
     if (verification_result != ApduReplySuccess) {
         ui_transaction_modal(false);
-        return io_send_sw(verification_result);
+        return reply_sw(verification_result);
     }
 
     // Sign the message directly (with real blockhash)
@@ -200,11 +201,11 @@ static int handle_sign_message_delayed_internal(void) {
     if (tx_len < 0) {
         PRINTF("set_result_sign_message failed\n");
         ui_transaction_modal(false);
-        return io_send_sw(ApduReplySdkException);
+        return reply_sw(ApduReplySdkException);
     }
 
     PRINTF("Delayed signing complete\n");
-    ret = io_send_response_pointer(G_io_apdu_buffer, tx_len, ApduReplySuccess);
+    ret = reply_data(G_io_apdu_buffer, tx_len, ApduReplySuccess);
     ui_transaction_modal(ret >= 0);
     return ret;
 }

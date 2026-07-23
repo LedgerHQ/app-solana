@@ -10,6 +10,7 @@
 #include "cs_instruction_template.h"
 #include "cs_substructure.h"
 #include "app_mem_utils.h"
+#include "reply.h"
 
 enum substructure_type {
     SUBSTRUCTURE_TYPE_DISPLAY_FIELD   = 0x00,
@@ -1137,16 +1138,16 @@ int handle_provide_instruction_substructure(void) {
 
     int state_err = cs_check_state(CS_SESSION_STREAMING);
     if (state_err != 0) {
-        return io_send_sw(state_err);
+        return reply_sw(state_err);
     }
 
     if (cs_instruction_template_current() == NULL) {
         PRINTF("substructure: no instruction template open\n");
-        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+        return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
     if (G_command.message_length < 1) {
         PRINTF("substructure: empty payload\n");
-        return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
+        return reply_sw(ApduReplySolanaInvalidInstructionSubstructure);
     }
 
     uint8_t type = G_command.message[0];
@@ -1156,7 +1157,7 @@ int handle_provide_instruction_substructure(void) {
     // Accumulate the substructure TLV (type byte excluded) into the running hash.
     if (cs_substructure_update(tlv, tlv_size) != 0) {
         PRINTF("substructure: hash accumulation refused\n");
-        return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
+        return reply_sw(ApduReplySolanaInvalidInstructionSubstructure);
     }
 
     // Only DISPLAY_FIELD is interpreted in this slice; the other substructure
@@ -1164,24 +1165,24 @@ int handle_provide_instruction_substructure(void) {
     if (type == SUBSTRUCTURE_TYPE_DISPLAY_FIELD) {
         if (register_display_field(type, tlv, tlv_size) != 0) {
             PRINTF("substructure: register_display_field failed\n");
-            return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
+            return reply_sw(ApduReplySolanaInvalidInstructionSubstructure);
         }
     }
 
     bool complete = false;
     if (cs_substructure_check_complete(&complete) != 0) {
         PRINTF("substructure: completeness check refused\n");
-        return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
+        return reply_sw(ApduReplySolanaInvalidInstructionSubstructure);
     }
     if (complete) {
         if (cs_instruction_template_commit() != 0) {
             PRINTF("substructure: template commit refused\n");
-            return io_send_sw(ApduReplySolanaInvalidInstructionSubstructure);
+            return reply_sw(ApduReplySolanaInvalidInstructionSubstructure);
         }
         PRINTF("substructure: running hash matched, template committed\n");
     } else {
         PRINTF("substructure: hash not yet matched, awaiting more substructures\n");
     }
 
-    return io_send_sw(ApduReplySuccess);
+    return reply_sw(ApduReplySuccess);
 }

@@ -12,6 +12,7 @@
 #include "io.h"
 #include "utils.h"
 #include "transaction_check_ui.h"
+#include "reply.h"
 
 typedef struct transaction_check_info_s {
     bool received;
@@ -107,19 +108,19 @@ int handle_provide_transaction_check(void) {
             // TX check data payload
             if (!N_storage.settings.tx_check_enable) {
                 PRINTF("Error: Transaction Check is disabled\n");
-                return io_send_sw(ApduReplySdkNotSupported);
+                return reply_sw(ApduReplySdkNotSupported);
             }
             if (handle_provide_transaction_check_internal() == 0) {
-                return io_send_sw(ApduReplySuccess);
+                return reply_sw(ApduReplySuccess);
             } else {
-                return io_send_sw(ApduReplySolanaInvalidTransactionCheck);
+                return reply_sw(ApduReplySolanaInvalidTransactionCheck);
             }
         case 0x01:
             // Opt-in request
             return handle_transaction_check_opt_in();
         default:
             PRINTF("Error: unknown P1 %d for Transaction Check\n", p1);
-            return io_send_sw(ApduReplySdkInvalidParameter);
+            return reply_sw(ApduReplySdkInvalidParameter);
     }
 }
 
@@ -266,7 +267,7 @@ int handle_transaction_check_opt_in(void) {
         PRINTF("Transaction Checks already opted in\n");
         // Already opted-in, respond immediately with current enable state
         G_io_apdu_buffer[0] = N_storage.settings.tx_check_enable;
-        return io_send_response_pointer(G_io_apdu_buffer, 1, ApduReplySuccess);
+        return reply_data(G_io_apdu_buffer, 1, ApduReplySuccess);
     } else {
         PRINTF("Opting in to Transaction Checks\n");
         // Show opt-in UI, response will be sent asynchronously

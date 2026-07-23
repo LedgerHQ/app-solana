@@ -9,6 +9,7 @@
 #include "handle_sign_offchain_message.h"
 #include "ui_api.h"
 #include "io.h"
+#include "reply.h"
 
 void ui_application_domain(const OffchainMessageHeader *header) {
     // V1 has no application domain
@@ -96,17 +97,17 @@ static int setup_offchain_signing_ui(const OffchainMessageHeader *header,
 int handle_sign_offchain_message(void) {
     if (G_command.instruction != InsSignOffchainMessage ||
         G_command.state != ApduStatePayloadComplete) {
-        return io_send_sw(ApduReplySdkInvalidParameter);
+        return reply_sw(ApduReplySdkInvalidParameter);
     }
 
     if (G_command.non_confirm) {
         // UI confirmation is not optional for message signing.
         PRINTF("G_command.non_confirm refused\n");
-        return io_send_sw(ApduReplySdkNotSupported);
+        return reply_sw(ApduReplySdkNotSupported);
     }
 
     if (G_command.message_length > MAX_OFFCHAIN_MESSAGE_LENGTH) {
-        return io_send_sw(ApduReplySolanaInvalidMessageSize);
+        return reply_sw(ApduReplySolanaInvalidMessageSize);
     }
 
     // parse header
@@ -115,7 +116,7 @@ int handle_sign_offchain_message(void) {
     Pubkey public_key;
 
     if (parse_offchain_message_header(&parser, &header)) {
-        return io_send_sw(ApduReplySolanaInvalidMessageHeader);
+        return reply_sw(ApduReplySolanaInvalidMessageHeader);
     }
 
     // Compute start of message content for later use in UI
@@ -126,43 +127,43 @@ int handle_sign_offchain_message(void) {
     // validate message
     if (header.version > 1 || header.length == 0 || header.length != parser.buffer_length ||
         header.signers_length == 0) {
-        return io_send_sw(ApduReplySolanaInvalidMessageHeader);
+        return reply_sw(ApduReplySolanaInvalidMessageHeader);
     }
     // V0: format must be 0 (RestrictedAscii) or 1 (LimitedUtf8).
     // Format 2 (ExtendedUtf8) is explicitly not intended for hardware wallet support per the spec.
     if (header.version == 0 && header.format > 1) {
-        return io_send_sw(ApduReplySolanaInvalidMessageHeader);
+        return reply_sw(ApduReplySolanaInvalidMessageHeader);
     }
 
     cx_err_t cx_err = get_public_key(public_key.data,
                                      G_command.derivation_path,
                                      G_command.derivation_path_length);
     if (cx_err != CX_OK) {
-        return io_send_sw(ApduReplySdkException);
+        return reply_sw(ApduReplySdkException);
     }
 
     // assert that the requested signer exists in the signers list
     size_t signer_index;
     if (get_pubkey_index(&public_key, header.signers, header.signers_length, &signer_index) != 0) {
-        return io_send_sw(ApduReplySolanaInvalidMessageHeader);
+        return reply_sw(ApduReplySolanaInvalidMessageHeader);
     }
 
     bool is_ascii = is_data_ascii(parser.buffer, parser.buffer_length);
     bool is_utf8 = is_ascii || is_data_utf8(parser.buffer, parser.buffer_length);
     if (!is_utf8) {
         // Message is not valid UTF-8
-        return io_send_sw(ApduReplySolanaInvalidMessageFormat);
+        return reply_sw(ApduReplySolanaInvalidMessageFormat);
     }
 
     // V0: non-ASCII requires format 1 (LimitedUtf8)
     if (header.version == 0 && !is_ascii && header.format == 0) {
-        return io_send_sw(ApduReplySolanaInvalidMessageFormat);
+        return reply_sw(ApduReplySolanaInvalidMessageFormat);
     }
     // Non-ASCII messages cannot be displayed by NBGL, require blind signing
     if (!is_ascii && N_storage.settings.allow_blind_sign != BlindSignEnabled) {
         PRINTF("Blind signing is disabled, cannot sign non-ASCII message.\n");
         start_blind_sign_error_ui();
-        return io_send_sw(ApduReplySdkNotSupported);
+        return reply_sw(ApduReplySdkNotSupported);
     }
 
     // compute message hash if needed
@@ -177,7 +178,7 @@ int handle_sign_offchain_message(void) {
 
     int ret = setup_offchain_signing_ui(&header, is_ascii, signer_index);
     if (ret != 0) {
-        return io_send_sw(ret);
+        return reply_sw(ret);
     }
 
     // If setup_offchain_signing_ui returned 0, it means it has started the UI and will send

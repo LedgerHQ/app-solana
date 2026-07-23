@@ -13,6 +13,7 @@
 #include "tlv_library.h"
 #include "tlv_parser_cs_value.h"
 #include "cs_instruction_template.h"
+#include "reply.h"
 
 typedef struct tlv_out_s {
     TLV_reception_t received_tags;
@@ -142,7 +143,7 @@ int handle_provide_instruction_info(void) {
 
     int state_err = cs_check_state(CS_SESSION_STREAMING);
     if (state_err != 0) {
-        return io_send_sw(state_err);
+        return reply_sw(state_err);
     }
 
     tlv_out_t tlv_extracted = {0};
@@ -152,7 +153,7 @@ int handle_provide_instruction_info(void) {
 
     if (!parse_instruction_info(&payload, &tlv_extracted, &tlv_extracted.received_tags)) {
         PRINTF("parse_instruction_info failed\n");
-        return io_send_sw(ApduReplySolanaInvalidInstructionInfo);
+        return reply_sw(ApduReplySolanaInvalidInstructionInfo);
     }
 
     // Check required fields
@@ -166,12 +167,12 @@ int handle_provide_instruction_info(void) {
                                  II_TAG_IDL_ROOT_TYPE,
                                  II_TAG_SIGNATURE)) {
         PRINTF("Error: missing required fields\n");
-        return io_send_sw(ApduReplySolanaInvalidInstructionInfo);
+        return reply_sw(ApduReplySolanaInvalidInstructionInfo);
     }
 
     if (tlv_extracted.version != 1) {
         PRINTF("Error: unsupported version %d\n", tlv_extracted.version);
-        return io_send_sw(ApduReplySolanaInvalidInstructionInfo);
+        return reply_sw(ApduReplySolanaInvalidInstructionInfo);
     }
 
     // MINT_ASSOC_ACCOUNT and MINT_ASSOC_MINT must both be present or both absent
@@ -181,7 +182,7 @@ int handle_provide_instruction_info(void) {
         TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, II_TAG_MINT_ASSOC_MINT);
     if (has_mint_account != has_mint_mint) {
         PRINTF("Error: MINT_ASSOC_ACCOUNT and MINT_ASSOC_MINT must both be present or absent\n");
-        return io_send_sw(ApduReplySolanaInvalidInstructionInfo);
+        return reply_sw(ApduReplySolanaInvalidInstructionInfo);
     }
 
     // OWNER_ASSOC_ACCOUNT and OWNER_ASSOC_OWNER must both be present or both absent
@@ -192,7 +193,7 @@ int handle_provide_instruction_info(void) {
     if (has_owner_account != has_owner_owner) {
         PRINTF(
             "Error: OWNER_ASSOC_ACCOUNT and OWNER_ASSOC_OWNER must both be present or absent\n");
-        return io_send_sw(ApduReplySolanaInvalidInstructionInfo);
+        return reply_sw(ApduReplySolanaInvalidInstructionInfo);
     }
 
     // Finalize hash and verify signature
@@ -206,7 +207,7 @@ int handle_provide_instruction_info(void) {
         check_signature_with_pki(hash, &expected_key_usage, &curve, tlv_extracted.signature);
     if (err != CHECK_SIGNATURE_WITH_PKI_SUCCESS) {
         PRINTF("Error: signature verification failed (%d)\n", err);
-        return io_send_sw(ApduReplySolanaInvalidInstructionInfo);
+        return reply_sw(ApduReplySolanaInvalidInstructionInfo);
     }
 
     PRINTF("=== INSTRUCTION INFO ===\n");
@@ -230,32 +231,32 @@ int handle_provide_instruction_info(void) {
         cs_instruction_template_open(tlv_extracted.substructures_hash);
     if (template == NULL) {
         PRINTF("Error: no clear-signing context or template capacity exhausted\n");
-        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+        return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
 
     memcpy(template->program_id, tlv_extracted.program_id, sizeof(template->program_id));
     if (cs_instruction_template_set_discriminator(tlv_extracted.discriminator.ptr,
                                                   tlv_extracted.discriminator.size) != 0) {
         PRINTF("Error: failed to store discriminator\n");
-        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+        return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
     if (cs_instruction_template_set_operation_type((const char *) tlv_extracted.operation_type.ptr,
                                                    tlv_extracted.operation_type.size) != 0) {
         PRINTF("Error: failed to store operation type\n");
-        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+        return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
     // PROGRAM_NAME is optional; when absent the header shows the program address.
     if (tlv_extracted.program_name.size > 0) {
         if (cs_instruction_template_set_program_name((const char *) tlv_extracted.program_name.ptr,
                                                      tlv_extracted.program_name.size) != 0) {
             PRINTF("Error: failed to store program name\n");
-            return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+            return reply_sw(ApduReplySolanaClearSigningIncomplete);
         }
     }
     if (cs_instruction_template_set_idl_type_pool(tlv_extracted.idl_type_pool.ptr,
                                                   tlv_extracted.idl_type_pool.size) != 0) {
         PRINTF("Error: failed to store IDL type pool\n");
-        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+        return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
     template->idl_root_type = tlv_extracted.idl_root_type;
 
@@ -263,9 +264,9 @@ int handle_provide_instruction_info(void) {
         if (cs_instruction_template_set_mint_assoc(tlv_extracted.mint_assoc_account,
                                                    tlv_extracted.mint_assoc_mint) != 0) {
             PRINTF("Error: failed to set mint association\n");
-            return io_send_sw(ApduReplySolanaInvalidInstructionInfo);
+            return reply_sw(ApduReplySolanaInvalidInstructionInfo);
         }
     }
 
-    return io_send_sw(ApduReplySuccess);
+    return reply_sw(ApduReplySuccess);
 }
