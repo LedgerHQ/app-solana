@@ -10,7 +10,7 @@
 // Entries are allocated on demand; the table is a static array of pointers.
 typedef struct cs_trusted_name_cache_table_s {
     cs_trusted_name_t **names;  // grown by one entry per add (APDU-paced)
-    uint8_t count;
+    size_t count;
 } cs_trusted_name_cache_table_t;
 
 static cs_trusted_name_cache_table_t G_trusted_name_cache;
@@ -60,7 +60,7 @@ int cs_trusted_name_cache_add(const uint8_t address[32], const char *name, uint8
 }
 
 const cs_trusted_name_t *cs_trusted_name_cache_find(const uint8_t address[32]) {
-    for (uint8_t i = 0; i < G_trusted_name_cache.count; i++) {
+    for (size_t i = 0; i < G_trusted_name_cache.count; i++) {
         if (memcmp(G_trusted_name_cache.names[i]->address, address, 32) == 0) {
             return G_trusted_name_cache.names[i];
         }
@@ -68,12 +68,12 @@ const cs_trusted_name_t *cs_trusted_name_cache_find(const uint8_t address[32]) {
     return NULL;
 }
 
-uint8_t cs_trusted_name_cache_count(void) {
+size_t cs_trusted_name_cache_count(void) {
     return G_trusted_name_cache.count;
 }
 
 void cs_trusted_name_cache_reset(void) {
-    for (uint8_t i = 0; i < G_trusted_name_cache.count; i++) {
+    for (size_t i = 0; i < G_trusted_name_cache.count; i++) {
         APP_MEM_FREE_AND_NULL((void **) &G_trusted_name_cache.names[i]->name);
         APP_MEM_FREE_AND_NULL((void **) &G_trusted_name_cache.names[i]);
     }

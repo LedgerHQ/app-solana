@@ -38,7 +38,7 @@ int cs_token_account_cache_add(const uint8_t account_address[32],
 const cs_token_account_t *cs_token_account_cache_find(const uint8_t account_address[32]);
 
 // Number of cached token account states.
-uint8_t cs_token_account_cache_count(void);
+size_t cs_token_account_cache_count(void);
 
 // Release the cache, returning to the empty state. Safe when none allocated.
 void cs_token_account_cache_reset(void);

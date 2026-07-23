@@ -125,6 +125,8 @@ int store_preview_fingerprint(const uint8_t *message,
                               size_t message_length,
                               const uint32_t *derivation_path,
                               uint32_t derivation_path_length) {
+    // Release any state left by a prior preview so a re-store cannot leak it.
+    clear_preview_state();
     if (!APP_MEM_CALLOC((void **) &G_preview_state, sizeof(preview_state_t))) {
         PRINTF("Failed to allocate preview state\n");
         return -1;

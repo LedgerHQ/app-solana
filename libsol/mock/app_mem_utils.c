@@ -1,6 +1,7 @@
 // Host-side mock of the SDK dynamic allocator. See app_mem_utils.h for the
 // rationale and the test-control API.
 
+#include <assert.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdbool.h>
@@ -52,6 +53,13 @@ void *mock_mem_alloc(size_t size) {
 }
 
 void *mock_mem_realloc(void *ptr, size_t size) {
+    // The SDK realloc frees ptr and returns NULL when size is 0. Match it here
+    // (and keep the accounting exact) instead of forwarding a 0 to libc realloc,
+    // whose result is implementation-defined.
+    if (size == 0) {
+        mock_mem_free(ptr);
+        return NULL;
+    }
     if (should_fail()) {
         return NULL;
     }
@@ -84,11 +92,12 @@ bool mock_mem_calloc(void **ptr, size_t size) {
     if (ptr == NULL) {
         return false;
     }
-    // Free any previous allocation before allocating a new one
-    if (*ptr != NULL) {
-        mock_mem_free(*ptr);
-        *ptr = NULL;
-    }
+    // The SDK APP_MEM_CALLOC neither frees a non-NULL *ptr (it overwrites the
+    // slot, leaking the old block) nor allocates when size is 0 (it returns
+    // success leaving *ptr untouched). Both are silent on device, so the mock
+    // aborts to surface the caller bug in unit tests rather than masking it.
+    assert(*ptr == NULL);
+    assert(size > 0);
     void *new_ptr = mock_mem_alloc(size);
     if (new_ptr == NULL) {
         return false;

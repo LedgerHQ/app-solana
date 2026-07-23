@@ -20,7 +20,7 @@
 // itself is a tiny static array of pointers plus a count.
 typedef struct cs_alt_cache_table_s {
     cs_alt_entry_t **entries;  // grown by one entry per add (APDU-paced)
-    uint8_t count;
+    size_t count;
 } cs_alt_cache_table_t;
 
 static cs_alt_cache_table_t G_alt_cache;
@@ -28,7 +28,9 @@ static cs_alt_cache_table_t G_alt_cache;
 int cs_alt_cache_add(const uint8_t alt_address[PUBKEY_SIZE],
                      uint8_t entry_index,
                      const uint8_t resolved_address[PUBKEY_SIZE]) {
-    PRINTF("cs_alt_cache_add: entry_index %d, current count %d\n", entry_index, G_alt_cache.count);
+    PRINTF("cs_alt_cache_add: entry_index %d, current count %u\n",
+           entry_index,
+           (unsigned) G_alt_cache.count);
     // The (alt_address, entry_index) key must be unique.
     if (cs_alt_cache_find(alt_address, entry_index) != NULL) {
         PRINTF("cs_alt_cache_add: duplicate (alt_address, entry_index)\n");
@@ -54,7 +56,7 @@ int cs_alt_cache_add(const uint8_t alt_address[PUBKEY_SIZE],
 
     G_alt_cache.entries[G_alt_cache.count] = slot;
     G_alt_cache.count++;
-    PRINTF("cs_alt_cache_add: stored entry %d\n", G_alt_cache.count - 1);
+    PRINTF("cs_alt_cache_add: stored entry %u\n", (unsigned) (G_alt_cache.count - 1));
     PRINTF("  alt_address      = %.*H\n", PUBKEY_SIZE, alt_address);
     PRINTF("  entry_index      = %d\n", entry_index);
     PRINTF("  resolved_address = %.*H\n", PUBKEY_SIZE, resolved_address);
@@ -62,10 +64,12 @@ int cs_alt_cache_add(const uint8_t alt_address[PUBKEY_SIZE],
 }
 
 const uint8_t *cs_alt_cache_find(const uint8_t alt_address[PUBKEY_SIZE], uint8_t entry_index) {
-    for (uint8_t i = 0; i < G_alt_cache.count; i++) {
+    for (size_t i = 0; i < G_alt_cache.count; i++) {
         if (G_alt_cache.entries[i]->entry_index == entry_index &&
             memcmp(G_alt_cache.entries[i]->alt_address, alt_address, PUBKEY_SIZE) == 0) {
-            PRINTF("cs_alt_cache_find: hit at slot %d for entry_index %d\n", i, entry_index);
+            PRINTF("cs_alt_cache_find: hit at slot %u for entry_index %d\n",
+                   (unsigned) i,
+                   entry_index);
             return G_alt_cache.entries[i]->resolved_address;
         }
     }
@@ -74,13 +78,13 @@ const uint8_t *cs_alt_cache_find(const uint8_t alt_address[PUBKEY_SIZE], uint8_t
     return NULL;
 }
 
-uint8_t cs_alt_cache_count(void) {
+size_t cs_alt_cache_count(void) {
     return G_alt_cache.count;
 }
 
 void cs_alt_cache_reset(void) {
-    PRINTF("cs_alt_cache_reset: releasing %d entries\n", G_alt_cache.count);
-    for (uint8_t i = 0; i < G_alt_cache.count; i++) {
+    PRINTF("cs_alt_cache_reset: releasing %u entries\n", (unsigned) G_alt_cache.count);
+    for (size_t i = 0; i < G_alt_cache.count; i++) {
         APP_MEM_FREE_AND_NULL((void **) &G_alt_cache.entries[i]);
     }
     if (G_alt_cache.entries != NULL) {

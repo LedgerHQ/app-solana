@@ -29,7 +29,7 @@ int cs_trusted_name_cache_add(const uint8_t address[32], const char *name, uint8
 // Returns the entry matching address, or NULL when none was provided.
 const cs_trusted_name_t *cs_trusted_name_cache_find(const uint8_t address[32]);
 
-uint8_t cs_trusted_name_cache_count(void);
+size_t cs_trusted_name_cache_count(void);
 
 // Release the cache. Safe when none allocated.
 void cs_trusted_name_cache_reset(void);
