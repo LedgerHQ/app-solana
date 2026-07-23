@@ -11,6 +11,7 @@
 #include "tlv_use_case_trusted_name.h"
 
 #include "sol/printer.h"
+#include "reply.h"
 
 // Address is 32 raw bytes, not base58.
 #define TRUSTED_NAME_ADDRESS_LEN 32
@@ -91,11 +92,11 @@ int handle_provide_trusted_name(void) {
 
     int state_err = cs_check_state(CS_SESSION_STREAMING);
     if (state_err != 0) {
-        return io_send_sw(state_err);
+        return reply_sw(state_err);
     }
 
     if (handle_provide_trusted_name_internal() != 0) {
-        return io_send_sw(ApduReplySolanaInvalidTrustedName);
+        return reply_sw(ApduReplySolanaInvalidTrustedName);
     }
-    return io_send_sw(ApduReplySuccess);
+    return reply_sw(ApduReplySuccess);
 }

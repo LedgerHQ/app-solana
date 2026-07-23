@@ -20,6 +20,7 @@
 #include "handle_provide_dynamic_descriptor.h"
 #include "io.h"
 #include "app_mem_utils.h"
+#include "reply.h"
 
 #define SOLANA_SLIP_44_VALUE          501
 #define SOLANA_SLIP_44_VALUE_HARDENED (0x80000000 | SOLANA_SLIP_44_VALUE)
@@ -181,10 +182,8 @@ static int handle_provide_dynamic_descriptor_internal(void) {
 int handle_provide_dynamic_descriptor(void) {
     int ret = handle_provide_dynamic_descriptor_internal();
     if (ret == 0) {
-        return io_send_sw(ApduReplySuccess);
+        return reply_sw(ApduReplySuccess);
     } else {
-        // Free the partially filled struct on failure to avoid leaking memory
-        reset_dynamic_token_info();
-        return io_send_sw(ApduReplySolanaInvalidDynamicToken);
+        return reply_sw(ApduReplySolanaInvalidDynamicToken);
     }
 }

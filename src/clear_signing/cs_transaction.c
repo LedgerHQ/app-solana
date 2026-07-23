@@ -8,6 +8,7 @@
 #include "cs_token_account_cache.h"
 #include "cs_trusted_name_cache.h"
 #include "cs_alt_cache.h"
+#include "idl_pool.h"
 #include "apdu.h"
 #include "app_mem_utils.h"
 
@@ -34,6 +35,7 @@ void cs_transaction_reset(void) {
     cs_token_account_cache_reset();
     cs_trusted_name_cache_reset();
     cs_alt_cache_reset();
+    idl_pool_reset();
     if (G_cs_transaction != NULL) {
         if (G_cs_transaction->transaction != NULL) {
             APP_MEM_FREE_AND_NULL((void **) &G_cs_transaction->transaction);

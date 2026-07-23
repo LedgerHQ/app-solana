@@ -14,6 +14,7 @@
 #include "tlv_library.h"
 #include "cs_transaction.h"
 #include "cs_token_account_cache.h"
+#include "reply.h"
 
 #define TYPE_TOKEN_ACCOUNT_STATE 0x15
 
@@ -110,7 +111,7 @@ int handle_provide_token_account_state(void) {
 
     int state_err = cs_check_state(CS_SESSION_STREAMING);
     if (state_err != 0) {
-        return io_send_sw(state_err);
+        return reply_sw(state_err);
     }
 
     tlv_out_t tlv_extracted = {0};
@@ -120,17 +121,17 @@ int handle_provide_token_account_state(void) {
 
     if (!parse_token_account_state(&payload, &tlv_extracted, &tlv_extracted.received_tags)) {
         PRINTF("parse_token_account_state failed\n");
-        return io_send_sw(ApduReplySolanaInvalidTokenAccountState);
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
     }
 
     if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAS_TAG_STRUCT_TYPE)) {
         PRINTF("Error: missing struct type\n");
-        return io_send_sw(ApduReplySolanaInvalidTokenAccountState);
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
     }
 
     if (tlv_extracted.structure_type != TYPE_TOKEN_ACCOUNT_STATE) {
         PRINTF("Error: unexpected struct type 0x%02x\n", tlv_extracted.structure_type);
-        return io_send_sw(ApduReplySolanaInvalidTokenAccountState);
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
     }
 
     if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags,
@@ -142,17 +143,17 @@ int handle_provide_token_account_state(void) {
                                  TAS_TAG_PRE_BALANCE,
                                  TAS_TAG_SIGNATURE)) {
         PRINTF("Error: missing required fields\n");
-        return io_send_sw(ApduReplySolanaInvalidTokenAccountState);
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
     }
 
     if (tlv_extracted.version != 1) {
         PRINTF("Error: unsupported version %d\n", tlv_extracted.version);
-        return io_send_sw(ApduReplySolanaInvalidTokenAccountState);
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
     }
 
     if (tlv_extracted.challenge != get_challenge()) {
         PRINTF("Error: challenge mismatch %u != %u\n", tlv_extracted.challenge, get_challenge());
-        return io_send_sw(ApduReplySolanaInvalidTokenAccountState);
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
     }
 
     // Finalize hash and verify signature
@@ -166,7 +167,7 @@ int handle_provide_token_account_state(void) {
         check_signature_with_pki(hash, &expected_key_usage, &curve, tlv_extracted.signature);
     if (err != CHECK_SIGNATURE_WITH_PKI_SUCCESS) {
         PRINTF("Error: signature verification failed (%d)\n", err);
-        return io_send_sw(ApduReplySolanaInvalidTokenAccountState);
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
     }
 
     // Consume the challenge to prevent replay
@@ -184,8 +185,8 @@ int handle_provide_token_account_state(void) {
                                    tlv_extracted.owner,
                                    tlv_extracted.pre_balance) != 0) {
         PRINTF("Error: cs_token_account_cache_add rejected account\n");
-        return io_send_sw(ApduReplySolanaInvalidTokenAccountState);
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
     }
 
-    return io_send_sw(ApduReplySuccess);
+    return reply_sw(ApduReplySuccess);
 }

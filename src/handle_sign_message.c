@@ -17,6 +17,7 @@
 #include "handle_provide_instruction_descriptor.h"
 #include "ui_api.h"
 #include "io.h"
+#include "reply.h"
 
 // Accept amount + recipient (+ fees)
 static bool check_swap_validity_native(const SummaryItemKind_t kinds[MAX_TRANSACTION_SUMMARY_ITEMS],
@@ -455,7 +456,7 @@ int handle_sign_message_parse_message(void) {
          G_command.instruction != InsSignMessage &&
          G_command.instruction != InsSignMessagePreview) ||
         G_command.state != ApduStatePayloadComplete) {
-        return io_send_sw(ApduReplySdkInvalidParameter);
+        return reply_sw(ApduReplySdkInvalidParameter);
     }
     // Handle the transaction message signing
     Parser parser = {G_command.message, G_command.message_length};
@@ -474,7 +475,7 @@ int handle_sign_message_parse_message(void) {
 
     if (parse_message_header(&parser, header) != 0) {
         // This is not a valid Solana message
-        return io_send_sw(ApduReplySolanaInvalidMessage);
+        return reply_sw(ApduReplySolanaInvalidMessage);
     }
 
     // Ensure the requested signer is present in the header
@@ -483,14 +484,14 @@ int handle_sign_message_parse_message(void) {
                                &signer_index,
                                header) != 0) {
         PRINTF("scan_header_for_signer failed\n");
-        return io_send_sw(ApduReplySolanaInvalidMessageHeader);
+        return reply_sw(ApduReplySolanaInvalidMessageHeader);
     }
     print_config.signer_pubkey = &header->pubkeys[signer_index];
 
     if (G_command.non_confirm) {
         // UI confirmation is not optional for message signing.
         PRINTF("G_command.non_confirm refused\n");
-        return io_send_sw(ApduReplySdkNotSupported);
+        return reply_sw(ApduReplySdkNotSupported);
     }
 
     // Set the transaction summary
@@ -502,13 +503,13 @@ int handle_sign_message_parse_message(void) {
             // Parser should have refused at parsing handler step but let's double check
             PRINTF("instruction_descriptor_received outside of swap context\n");
             reset_saved_descriptors();
-            return io_send_sw(ApduReplySdkNotSupported);
+            return reply_sw(ApduReplySdkNotSupported);
         }
 
         if (G_command.is_preview_mode) {
             PRINTF("Preview mode not supported with instruction descriptors\n");
             reset_saved_descriptors();
-            return io_send_sw(ApduReplySdkNotSupported);
+            return reply_sw(ApduReplySdkNotSupported);
         }
 
         PRINTF("Using instruction descriptor\n");
@@ -516,9 +517,6 @@ int handle_sign_message_parse_message(void) {
                                                  parser.buffer_length,
                                                  &print_config) != 0) {
             PRINTF("Error in process_message_body_with_descriptor\n");
-            reset_saved_descriptors();
-            reset_trusted_info();
-            reset_dynamic_token_info();
             send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
                                    SWAP_EC_ERROR_GENERIC,
                                    SWAP_EC_APP_DESCRIPTOR_PROCESSING_FAILED);
@@ -533,17 +531,11 @@ int handle_sign_message_parse_message(void) {
                            CX_SHA256_SIZE);
             if (!check_swap_tx_hash(computed_tx_hash)) {
                 PRINTF("Transaction hash mismatch\n");
-                reset_saved_descriptors();
-                reset_trusted_info();
-                reset_dynamic_token_info();
                 send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
                                        SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
                                        SWAP_EC_APP_TX_HASH_MISMATCH);
                 // Unreachable
             }
-            reset_saved_descriptors();
-            reset_trusted_info();
-            reset_dynamic_token_info();
             swap_finalize();
             // Unreachable
         }
@@ -552,7 +544,7 @@ int handle_sign_message_parse_message(void) {
             // Clear signing UI OR Swap bypass
             int ret = handle_sign_message_ui();
             if (ret != 0) {
-                return io_send_sw(ret);
+                return reply_sw(ret);
             }
             // If handle_sign_message_ui returned 0, it means it has started the UI and will send
             // the response async later, we just return here.
@@ -569,7 +561,7 @@ int handle_sign_message_parse_message(void) {
                 PRINTF("Blind signing is not enabled\n");
                 // Prompt the BS error + suggest settings change. We delegate this to UI module
                 start_blind_sign_error_ui();
-                return io_send_sw(ApduReplySdkNotSupported);
+                return reply_sw(ApduReplySdkNotSupported);
             } else {
                 // Blind sign allowed. Prepare UI items content
                 transaction_summary_set_blind_signing(true);
@@ -595,7 +587,7 @@ int handle_sign_message_parse_message(void) {
                 // Call the blind sign UI we prepared above
                 int ret = handle_sign_message_ui();
                 if (ret != 0) {
-                    return io_send_sw(ret);
+                    return reply_sw(ret);
                 }
                 // If handle_sign_message_ui returned 0, it means it has started the UI and will
                 // send the response async later, we just return here.

@@ -13,6 +13,7 @@
 #include "tlv_library.h"
 #include "cs_transaction.h"
 #include "cs_enum_cache.h"
+#include "reply.h"
 
 #define TYPE_ENUM_VARIANT 0x17
 
@@ -153,7 +154,7 @@ int handle_provide_enum_variant(void) {
 
     int state_err = cs_check_state(CS_SESSION_STREAMING);
     if (state_err != 0) {
-        return io_send_sw(state_err);
+        return reply_sw(state_err);
     }
 
     tlv_out_t tlv_extracted = {0};
@@ -163,17 +164,17 @@ int handle_provide_enum_variant(void) {
 
     if (!parse_enum_variant(&payload, &tlv_extracted, &tlv_extracted.received_tags)) {
         PRINTF("parse_enum_variant failed\n");
-        return io_send_sw(ApduReplySolanaInvalidEnumVariant);
+        return reply_sw(ApduReplySolanaInvalidEnumVariant);
     }
 
     if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, EV_TAG_STRUCT_TYPE)) {
         PRINTF("Error: missing struct type\n");
-        return io_send_sw(ApduReplySolanaInvalidEnumVariant);
+        return reply_sw(ApduReplySolanaInvalidEnumVariant);
     }
 
     if (tlv_extracted.structure_type != TYPE_ENUM_VARIANT) {
         PRINTF("Error: unexpected struct type 0x%02x\n", tlv_extracted.structure_type);
-        return io_send_sw(ApduReplySolanaInvalidEnumVariant);
+        return reply_sw(ApduReplySolanaInvalidEnumVariant);
     }
 
     if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags,
@@ -185,16 +186,16 @@ int handle_provide_enum_variant(void) {
                                  EV_TAG_PAYLOAD_KIND,
                                  EV_TAG_SIGNATURE)) {
         PRINTF("Error: missing required fields\n");
-        return io_send_sw(ApduReplySolanaInvalidEnumVariant);
+        return reply_sw(ApduReplySolanaInvalidEnumVariant);
     }
 
     if (tlv_extracted.version != 1) {
         PRINTF("Error: unsupported version %d\n", tlv_extracted.version);
-        return io_send_sw(ApduReplySolanaInvalidEnumVariant);
+        return reply_sw(ApduReplySolanaInvalidEnumVariant);
     }
 
     if (!validate_payload_kind(&tlv_extracted)) {
-        return io_send_sw(ApduReplySolanaInvalidEnumVariant);
+        return reply_sw(ApduReplySolanaInvalidEnumVariant);
     }
 
     // Finalize hash and verify signature
@@ -208,7 +209,7 @@ int handle_provide_enum_variant(void) {
         check_signature_with_pki(hash, &expected_key_usage, &curve, tlv_extracted.signature);
     if (err != CHECK_SIGNATURE_WITH_PKI_SUCCESS) {
         PRINTF("Error: signature verification failed (%d)\n", err);
-        return io_send_sw(ApduReplySolanaInvalidEnumVariant);
+        return reply_sw(ApduReplySolanaInvalidEnumVariant);
     }
 
     PRINTF("=== ENUM VARIANT ===\n");
@@ -231,8 +232,8 @@ int handle_provide_enum_variant(void) {
                           tlv_extracted.payload.ptr,
                           tlv_extracted.payload.size) != 0) {
         PRINTF("Error: cs_enum_cache_add rejected variant %d\n", tlv_extracted.variant_index);
-        return io_send_sw(ApduReplySolanaInvalidEnumVariant);
+        return reply_sw(ApduReplySolanaInvalidEnumVariant);
     }
 
-    return io_send_sw(ApduReplySuccess);
+    return reply_sw(ApduReplySuccess);
 }

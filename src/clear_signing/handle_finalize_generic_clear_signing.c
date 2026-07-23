@@ -11,6 +11,7 @@
 #include "apdu.h"
 #include "globals.h"
 #include "io.h"
+#include "reply.h"
 #include "app_mem_utils.h"
 #include "sol/parser.h"
 #include "idl_pool.h"
@@ -402,33 +403,26 @@ int handle_finalize_generic_clear_signing(void) {
 
     int state_err = cs_check_state(CS_SESSION_STREAMING);
     if (state_err != 0) {
-        return io_send_sw(state_err);
+        return reply_sw(state_err);
     }
 
     if (G_command.instruction != InsFinalizeGenericClearSigning ||
         G_command.state != ApduStatePayloadComplete) {
-        cs_transaction_reset();
-        G_cs_session_state = CS_SESSION_IDLE;
-        return io_send_sw(ApduReplySdkInvalidParameter);
+        return reply_sw(ApduReplySdkInvalidParameter);
     }
 
     const cs_transaction_t *cs_tx = cs_transaction_get();
     if (cs_tx == NULL) {
         PRINTF("finalize cs: no clear-signing context\n");
-        G_cs_session_state = CS_SESSION_IDLE;
-        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+        return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
     if (cs_instruction_template_pending()) {
         PRINTF("finalize cs: an instruction template was never completed\n");
-        cs_transaction_reset();
-        G_cs_session_state = CS_SESSION_IDLE;
-        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+        return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
     if (cs_instruction_template_committed_count() == 0) {
         PRINTF("finalize cs: no instruction templates provided\n");
-        cs_transaction_reset();
-        G_cs_session_state = CS_SESSION_IDLE;
-        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+        return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
 
     // Size the walk buffers to the real instruction count, bounded only by the
@@ -437,9 +431,7 @@ int handle_finalize_generic_clear_signing(void) {
     MessageHeader header;
     if (parse_message_header(&parser, &header) != 0 || header.instructions_length == 0) {
         PRINTF("finalize cs: bad or empty transaction header\n");
-        cs_transaction_reset();
-        G_cs_session_state = CS_SESSION_IDLE;
-        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+        return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
     size_t instruction_count = header.instructions_length;
 
@@ -473,11 +465,9 @@ int handle_finalize_generic_clear_signing(void) {
         APP_MEM_FREE_AND_NULL((void **) &walked_instructions);
     }
 
+    // On success the session survives to PROMPT UI DISPLAY; on error reply_sw abandons it.
     if (sw == ApduReplySuccess) {
         G_cs_session_state = CS_SESSION_FINALIZED;
-    } else {
-        cs_transaction_reset();
-        G_cs_session_state = CS_SESSION_IDLE;
     }
-    return io_send_sw(sw);
+    return reply_sw(sw);
 }

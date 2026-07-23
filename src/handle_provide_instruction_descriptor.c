@@ -26,6 +26,7 @@
 #include "io.h"
 #include "sol/safe_math.h"
 #include "app_mem_utils.h"
+#include "reply.h"
 
 // https://ledgerhq.atlassian.net/wiki/spaces/TA/pages/5764022544/ARCH+Solana+LiFi+swap+support
 
@@ -416,15 +417,15 @@ static bool handle_provide_instruction_descriptor_internal(void) {
 int handle_provide_instruction_descriptor(void) {
     if (!G_called_from_swap) {
         PRINTF("Error: instruction descriptors are only allowed in swap context\n");
-        return io_send_sw(ApduReplySolanaInvalidInstructionDescriptor);
+        return reply_sw(ApduReplySolanaInvalidInstructionDescriptor);
     }
 
     // Sends a swap error and exits on failure, only returns on success
     if (handle_provide_instruction_descriptor_internal()) {
-        return io_send_sw(ApduReplySuccess);
+        return reply_sw(ApduReplySuccess);
     } else {
         // Unreachable in theory, handle_provide_instruction_descriptor_internal exits on failure
-        return io_send_sw(ApduReplySolanaInvalidInstructionDescriptor);
+        return reply_sw(ApduReplySolanaInvalidInstructionDescriptor);
     }
 }
 

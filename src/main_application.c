@@ -49,6 +49,7 @@
 #include "handle_swap_sign_transaction.h"
 #include "handle_get_printable_amount.h"
 #include "handle_check_address.h"
+#include "reply.h"
 
 apdu_command_t G_command;
 cs_session_state_t G_cs_session_state;
@@ -91,19 +92,19 @@ void reset_unrelated_sessions(uint8_t instruction) {
 
 static int handle_apdu(int rx) {
     if (rx < 0) {
-        return io_send_sw(ApduReplySdkExceptionIoOverflow);
+        return reply_sw(ApduReplySdkExceptionIoOverflow);
     }
 
     const int ret = apdu_handle_message(G_io_apdu_buffer, rx, &G_command);
     if (ret != 0) {
         PRINTF("Clear received invalid command\n");
         apdu_reset_command(&G_command);
-        return io_send_sw(ret);
+        return reply_sw(ret);
     }
 
     if (G_command.state == ApduStatePayloadInProgress) {
         PRINTF("Received first chunk of split payload\n");
-        return io_send_sw(ApduReplySuccess);
+        return reply_sw(ApduReplySuccess);
     }
 
     switch (G_command.instruction) {
@@ -119,7 +120,7 @@ static int handle_apdu(int rx) {
             G_io_apdu_buffer[offset++] = N_storage.settings.tx_check_opt_in;
             G_io_apdu_buffer[offset++] = N_storage.settings.tx_check_enable;
 #endif
-            return io_send_response_pointer(G_io_apdu_buffer, offset, ApduReplySuccess);
+            return reply_data(G_io_apdu_buffer, offset, ApduReplySuccess);
         }
 
         case InsDeprecatedGetPubkey:
@@ -133,7 +134,7 @@ static int handle_apdu(int rx) {
         case InsSignMessagePreview:
             if (G_called_from_swap) {
                 PRINTF("Preview mode not supported in swap context\n");
-                return io_send_sw(ApduReplySdkNotSupported);
+                return reply_sw(ApduReplySdkNotSupported);
             }
             G_command.is_preview_mode = true;
             return handle_sign_message_parse_message();
@@ -142,7 +143,7 @@ static int handle_apdu(int rx) {
             // This instruction is called after both InsSignMessagePreview and InsPromptUiDisplay
             if (G_called_from_swap) {
                 PRINTF("Delayed signing is not supported in swap context\n");
-                return io_send_sw(ApduReplySdkNotSupported);
+                return reply_sw(ApduReplySdkNotSupported);
             }
             return handle_sign_message_delayed();
 
@@ -165,7 +166,7 @@ static int handle_apdu(int rx) {
         case InsProvideTransactionCheck:
             if (G_called_from_swap) {
                 PRINTF("Transaction check mode not supported in swap context\n");
-                return io_send_sw(ApduReplySdkNotSupported);
+                return reply_sw(ApduReplySdkNotSupported);
             }
             return handle_provide_transaction_check();
 #endif
@@ -173,7 +174,7 @@ static int handle_apdu(int rx) {
         case InsStartGenericClearSigningSession:
             if (G_called_from_swap) {
                 PRINTF("Start generic clear signing session not supported in swap context\n");
-                return io_send_sw(ApduReplySdkNotSupported);
+                return reply_sw(ApduReplySdkNotSupported);
             }
             return handle_start_generic_clear_signing_session();
         case InsProvideInstructionInfo:
@@ -197,21 +198,21 @@ static int handle_apdu(int rx) {
         case InsPromptUiDisplay:
             if (G_called_from_swap) {
                 PRINTF("Prompt UI display not supported in swap context\n");
-                return io_send_sw(ApduReplySdkNotSupported);
+                return reply_sw(ApduReplySdkNotSupported);
             }
             return handle_prompt_ui_display();
 
         case InsFinalizeGenericClearSigning:
             if (G_called_from_swap) {
                 PRINTF("Finalize generic clear signing not supported in swap context\n");
-                return io_send_sw(ApduReplySdkNotSupported);
+                return reply_sw(ApduReplySdkNotSupported);
             }
             return handle_finalize_generic_clear_signing();
 
         default:
             // Should have been caught by apdu_handle_message
             PRINTF("Received unknown instruction %d\n", G_command.instruction);
-            return io_send_sw(ApduReplyUnimplementedInstruction);
+            return reply_sw(ApduReplyUnimplementedInstruction);
     }
 }
 
@@ -269,7 +270,7 @@ void app_main(void) {
         }
 
         if (input_len == 0) {
-            io_send_sw(ApduReplyNoApduReceived);
+            reply_sw(ApduReplyNoApduReceived);
             continue;
         }
 

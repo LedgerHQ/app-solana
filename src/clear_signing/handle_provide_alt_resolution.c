@@ -14,6 +14,7 @@
 #include "tlv_library.h"
 #include "cs_transaction.h"
 #include "cs_alt_cache.h"
+#include "reply.h"
 
 #define TYPE_ALT_RESOLUTION 0x16
 
@@ -99,7 +100,7 @@ int handle_provide_alt_resolution(void) {
 
     int state_err = cs_check_state(CS_SESSION_STREAMING);
     if (state_err != 0) {
-        return io_send_sw(state_err);
+        return reply_sw(state_err);
     }
 
     tlv_out_t tlv_extracted = {0};
@@ -109,17 +110,17 @@ int handle_provide_alt_resolution(void) {
 
     if (!parse_alt_resolution(&payload, &tlv_extracted, &tlv_extracted.received_tags)) {
         PRINTF("parse_alt_resolution failed\n");
-        return io_send_sw(ApduReplySolanaInvalidAltResolution);
+        return reply_sw(ApduReplySolanaInvalidAltResolution);
     }
 
     if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, ALT_TAG_STRUCT_TYPE)) {
         PRINTF("Error: missing struct type\n");
-        return io_send_sw(ApduReplySolanaInvalidAltResolution);
+        return reply_sw(ApduReplySolanaInvalidAltResolution);
     }
 
     if (tlv_extracted.structure_type != TYPE_ALT_RESOLUTION) {
         PRINTF("Error: unexpected struct type 0x%02x\n", tlv_extracted.structure_type);
-        return io_send_sw(ApduReplySolanaInvalidAltResolution);
+        return reply_sw(ApduReplySolanaInvalidAltResolution);
     }
 
     if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags,
@@ -130,17 +131,17 @@ int handle_provide_alt_resolution(void) {
                                  ALT_TAG_RESOLVED_ADDRESS,
                                  ALT_TAG_SIGNATURE)) {
         PRINTF("Error: missing required fields\n");
-        return io_send_sw(ApduReplySolanaInvalidAltResolution);
+        return reply_sw(ApduReplySolanaInvalidAltResolution);
     }
 
     if (tlv_extracted.version != 1) {
         PRINTF("Error: unsupported version %d\n", tlv_extracted.version);
-        return io_send_sw(ApduReplySolanaInvalidAltResolution);
+        return reply_sw(ApduReplySolanaInvalidAltResolution);
     }
 
     if (tlv_extracted.challenge != get_challenge()) {
         PRINTF("Error: challenge mismatch %u != %u\n", tlv_extracted.challenge, get_challenge());
-        return io_send_sw(ApduReplySolanaInvalidAltResolution);
+        return reply_sw(ApduReplySolanaInvalidAltResolution);
     }
 
     // Finalize hash and verify signature
@@ -154,7 +155,7 @@ int handle_provide_alt_resolution(void) {
         check_signature_with_pki(hash, &expected_key_usage, &curve, tlv_extracted.signature);
     if (err != CHECK_SIGNATURE_WITH_PKI_SUCCESS) {
         PRINTF("Error: signature verification failed (%d)\n", err);
-        return io_send_sw(ApduReplySolanaInvalidAltResolution);
+        return reply_sw(ApduReplySolanaInvalidAltResolution);
     }
 
     // Consume the challenge to prevent replay
@@ -170,8 +171,8 @@ int handle_provide_alt_resolution(void) {
                          tlv_extracted.entry_index,
                          tlv_extracted.resolved_address) != 0) {
         PRINTF("Error: ALT resolution cache rejected entry (full or duplicate)\n");
-        return io_send_sw(ApduReplySolanaInvalidAltResolution);
+        return reply_sw(ApduReplySolanaInvalidAltResolution);
     }
 
-    return io_send_sw(ApduReplySuccess);
+    return reply_sw(ApduReplySuccess);
 }

@@ -9,6 +9,7 @@
 #include "apdu.h"
 #include "globals.h"
 #include "io.h"
+#include "reply.h"
 #include "ui_api.h"
 
 int handle_prompt_ui_display(void) {
@@ -16,21 +17,17 @@ int handle_prompt_ui_display(void) {
 
     int state_err = cs_check_state(CS_SESSION_FINALIZED);
     if (state_err != 0) {
-        return io_send_sw(state_err);
+        return reply_sw(state_err);
     }
 
     if (G_command.instruction != InsPromptUiDisplay ||
         G_command.state != ApduStatePayloadComplete) {
-        cs_transaction_reset();
-        G_cs_session_state = CS_SESSION_IDLE;
-        return io_send_sw(ApduReplySdkInvalidParameter);
+        return reply_sw(ApduReplySdkInvalidParameter);
     }
 
     if (cs_display_renderer_element_count() == 0) {
         PRINTF("prompt ui: no display elements produced\n");
-        cs_transaction_reset();
-        G_cs_session_state = CS_SESSION_IDLE;
-        return io_send_sw(ApduReplySolanaClearSigningIncomplete);
+        return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
 
     // Signing is deferred to InsSignMessageDelayed

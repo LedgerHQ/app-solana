@@ -7,6 +7,7 @@
 #include "handle_sign_message_preview.h"
 #include "handle_sign_offchain_message.h"
 #include "io.h"
+#include "reply.h"
 #include "main_std_app.h"
 #include "nbgl_use_case.h"
 #include "sol/message.h"
@@ -101,9 +102,11 @@ static nbgl_reviewStatusType_t get_status_type(bool accepted) {
     }
 }
 
+// Release everything the interactive sign/preview flow consumed once the review is answered: the
+// CS session (its fingerprint, if any, was already extracted) and the token-metadata pools. The
+// received buffer and the delayed fingerprint are handled by the reply_* teardown points.
 static void reset_signing_context(void) {
-    cs_transaction_reset();
-    G_cs_session_state = CS_SESSION_IDLE;
+    cs_session_reset();
     reset_trusted_info();
     reset_dynamic_token_info();
 #ifdef HAVE_TRANSACTION_CHECKS
@@ -114,9 +117,7 @@ static void reset_signing_context(void) {
 void ui_signing_review_choice(bool confirm) {
     // Refusal
     if (!confirm) {
-        // Free the message before io_send: the send yields and may not return here.
-        apdu_free_message(&G_command);
-        io_send_sw(ApduReplyUserRefusal);
+        reply_sw(ApduReplyUserRefusal);
         nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
     } else if (G_command.is_preview_mode) {
         // Preview flows: arm the fingerprint for delayed signing
@@ -128,26 +129,22 @@ void ui_signing_review_choice(bool confirm) {
                 G_command.message, G_command.message_length,
                 G_command.derivation_path, G_command.derivation_path_length);
         }
-        // The message has been consumed; free it before io_send yields.
-        apdu_free_message(&G_command);
         if (ret == 0) {
-            io_send_sw(ApduReplySuccess);
+            reply_sw(ApduReplySuccess);
             nbgl_useCaseSpinner("Signing");
         } else {
             PRINTF("Fingerprint storage failed\n");
-            io_send_sw(ApduReplySolanaInvalidMessage);
+            reply_sw(ApduReplySolanaInvalidMessage);
             nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
         }
     } else {
         // Direct sign
         int tx = set_result_sign_message();
-        // The signature is in G_io_apdu_buffer now; free the message before io_send yields.
-        apdu_free_message(&G_command);
         if (tx <= 0) {
-            io_send_sw(ApduReplySdkException);
+            reply_sw(ApduReplySdkException);
             nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
         } else {
-            io_send_response_pointer(G_io_apdu_buffer, tx, ApduReplySuccess);
+            reply_data(G_io_apdu_buffer, tx, ApduReplySuccess);
             nbgl_useCaseReviewStatus(get_status_type(true), ui_idle);
         }
     }
