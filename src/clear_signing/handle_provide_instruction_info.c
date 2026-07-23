@@ -51,15 +51,15 @@ static bool handle_program_id(const tlv_data_t *data, tlv_out_t *out) {
 }
 
 static bool handle_discriminator(const tlv_data_t *data, tlv_out_t *out) {
-    return get_buffer_from_tlv_data(data, &out->discriminator, 0, MAX_MESSAGE_LENGTH);
+    return get_buffer_from_tlv_data(data, &out->discriminator, 0, G_command.message_length);
 }
 
 static bool handle_operation_type(const tlv_data_t *data, tlv_out_t *out) {
-    return get_buffer_from_tlv_data(data, &out->operation_type, 1, MAX_MESSAGE_LENGTH);
+    return get_buffer_from_tlv_data(data, &out->operation_type, 1, G_command.message_length);
 }
 
 static bool handle_program_name(const tlv_data_t *data, tlv_out_t *out) {
-    return get_buffer_from_tlv_data(data, &out->program_name, 0, MAX_MESSAGE_LENGTH);
+    return get_buffer_from_tlv_data(data, &out->program_name, 0, G_command.message_length);
 }
 
 static bool handle_substructures_hash(const tlv_data_t *data, tlv_out_t *out) {
@@ -72,8 +72,8 @@ static bool handle_substructures_hash(const tlv_data_t *data, tlv_out_t *out) {
 }
 
 static bool handle_idl_type_pool(const tlv_data_t *data, tlv_out_t *out) {
-    // No copy: keep a view into the message, bounded only by the reception buffer.
-    return get_buffer_from_tlv_data(data, &out->idl_type_pool, 1, MAX_MESSAGE_LENGTH);
+    // No copy: keep a view into the message, bounded by the bytes actually received.
+    return get_buffer_from_tlv_data(data, &out->idl_type_pool, 1, G_command.message_length);
 }
 
 static bool handle_idl_root_type(const tlv_data_t *data, tlv_out_t *out) {

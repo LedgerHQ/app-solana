@@ -114,6 +114,8 @@ static void reset_signing_context(void) {
 void ui_signing_review_choice(bool confirm) {
     // Refusal
     if (!confirm) {
+        // Free the message before io_send: the send yields and may not return here.
+        apdu_free_message(&G_command);
         io_send_sw(ApduReplyUserRefusal);
         nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
     } else if (G_command.is_preview_mode) {
@@ -126,6 +128,8 @@ void ui_signing_review_choice(bool confirm) {
                 G_command.message, G_command.message_length,
                 G_command.derivation_path, G_command.derivation_path_length);
         }
+        // The message has been consumed; free it before io_send yields.
+        apdu_free_message(&G_command);
         if (ret == 0) {
             io_send_sw(ApduReplySuccess);
             nbgl_useCaseSpinner("Signing");
@@ -137,6 +141,8 @@ void ui_signing_review_choice(bool confirm) {
     } else {
         // Direct sign
         int tx = set_result_sign_message();
+        // The signature is in G_io_apdu_buffer now; free the message before io_send yields.
+        apdu_free_message(&G_command);
         if (tx <= 0) {
             io_send_sw(ApduReplySdkException);
             nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
