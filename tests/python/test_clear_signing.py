@@ -88,6 +88,14 @@ def _begin_session(sol: SolanaClient, message: bytes) -> None:
     sol.start_generic_clear_signing_session(SOL.SOL_PACKED_DERIVATION_PATH, message)
 
 
+def _wipe_session(sol: SolanaClient) -> None:
+    """End a partial clear-signing flow. A garbage APDU is rejected with 0x6d00 and, on that error
+    reply, the app wipes the parked session and delayed-sign fingerprint so nothing lingers."""
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.send_false_apdu()
+    assert exc_info.value.status == ErrorType.UNIMPLEMENTED_INSTRUCTION
+
+
 def _craft_single_instruction_message(sol: SolanaClient, program_id: bytes, data: bytes) -> bytes:
     sender = Pubkey.from_bytes(sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH))
     instruction = Instruction(
@@ -402,6 +410,7 @@ def test_token_account_state_valid(backend):
         owner=b'\x33' * 32,
         pre_balance=1_000_000,
     )
+    _wipe_session(sol)
 
 
 def test_token_account_state_bad_challenge(backend):
@@ -497,6 +506,7 @@ def test_alt_resolution_valid(backend):
         entry_index=5,
         resolved_address=b'\xbb' * 32,
     )
+    _wipe_session(sol)
 
 
 def test_alt_resolution_without_session_rejected(backend):
@@ -597,6 +607,7 @@ def test_enum_variant_empty_payload(backend):
         variant_name="Raydium",
         payload_kind=0x00,  # EMPTY
     )
+    _wipe_session(sol)
 
 
 def test_enum_variant_inline_payload(backend):
@@ -610,6 +621,7 @@ def test_enum_variant_inline_payload(backend):
         payload_kind=0x02,  # INLINE
         variant_payload=b'\x05\x01\x02',
     )
+    _wipe_session(sol)
 
 
 def test_enum_variant_long_id_and_name_accepted(backend):
@@ -624,6 +636,7 @@ def test_enum_variant_long_id_and_name_accepted(backend):
         variant_name="N" * 200,
         payload_kind=0x00,  # EMPTY
     )
+    _wipe_session(sol)
 
 
 @pytest.mark.parametrize("field", ["enum_id", "variant_name"])
@@ -658,6 +671,7 @@ def test_enum_variant_large_inline_payload_accepted(backend):
         payload_kind=0x02,  # INLINE
         variant_payload=b'\x05' * 512,
     )
+    _wipe_session(sol)
 
 
 def test_enum_variant_raw_size_payload(backend):
@@ -671,6 +685,7 @@ def test_enum_variant_raw_size_payload(backend):
         payload_kind=0x03,  # RAW_SIZE
         variant_payload=b'\x00\x10',  # 16 bytes
     )
+    _wipe_session(sol)
 
 
 def test_enum_variant_bad_payload_kind(backend):
@@ -748,6 +763,7 @@ def test_instruction_info_valid_minimal(backend):
         idl_type_pool=b'\x01\x02\x03',
         idl_root_type=0,
     )
+    _wipe_session(sol)
 
 
 def test_instruction_info_long_names_accepted(backend):
@@ -764,6 +780,7 @@ def test_instruction_info_long_names_accepted(backend):
         idl_type_pool=b'\x01\x02\x03',
         idl_root_type=0,
     )
+    _wipe_session(sol)
 
 
 def test_instruction_info_with_mint_assoc(backend):
@@ -780,6 +797,7 @@ def test_instruction_info_with_mint_assoc(backend):
         mint_assoc_account=3,
         mint_assoc_mint=4,
     )
+    _wipe_session(sol)
 
 
 def test_instruction_info_mint_assoc_incomplete(backend):
@@ -831,6 +849,7 @@ def test_instruction_info_with_owner_assoc(backend):
         owner_assoc_account=5,
         owner_assoc_owner_value=value_sub_tlv,
     )
+    _wipe_session(sol)
 
 
 # ── BRIDGE: GENERIC PREVIEW → INFO → SUBSTRUCTURE → PROMPT UI DISPLAY ─────────
@@ -888,6 +907,7 @@ def test_bridge_walks_instruction(backend, sol, scenario_navigator, root_pytest_
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_cs_more_instructions_than_old_template_cap(backend, sol):
@@ -914,6 +934,7 @@ def test_cs_more_instructions_than_old_template_cap(backend, sol):
 
     rapdu = sol.finalize_generic_clear_signing()
     assert rapdu.status == 0x9000
+    _wipe_session(sol)
 
 
 def test_cs_more_display_fields_than_old_cap(backend, sol):
@@ -945,6 +966,7 @@ def test_cs_more_display_fields_than_old_cap(backend, sol):
 
     rapdu = sol.finalize_generic_clear_signing()
     assert rapdu.status == 0x9000
+    _wipe_session(sol)
 
 
 def test_bridge_with_account_path_field(backend, sol, scenario_navigator, root_pytest_dir):
@@ -986,6 +1008,7 @@ def test_bridge_with_account_path_field(backend, sol, scenario_navigator, root_p
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_bridge_with_constant_field(backend, sol, scenario_navigator, root_pytest_dir):
@@ -1024,6 +1047,7 @@ def test_bridge_with_constant_field(backend, sol, scenario_navigator, root_pytes
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_bridge_raw_scalar_kinds(backend, sol, scenario_navigator, root_pytest_dir):
@@ -1069,6 +1093,7 @@ def test_bridge_raw_scalar_kinds(backend, sol, scenario_navigator, root_pytest_d
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_bridge_prompt_without_complete_substructures_rejected(backend):
@@ -1210,6 +1235,7 @@ def test_bridge_amount_with_decimals(backend, sol, scenario_navigator, root_pyte
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_bridge_token_amount_native(backend, sol, scenario_navigator, root_pytest_dir):
@@ -1241,6 +1267,7 @@ def test_bridge_token_amount_native(backend, sol, scenario_navigator, root_pytes
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_bridge_token_amount_unknown(backend, sol, scenario_navigator, root_pytest_dir):
@@ -1273,6 +1300,7 @@ def test_bridge_token_amount_unknown(backend, sol, scenario_navigator, root_pyte
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 # ── TOKEN_AMOUNT mint resolution (TOKEN_ACCOUNT_STATE consumption) ────────────
@@ -1328,6 +1356,7 @@ def test_token_amount_resolved_via_token_account_state(backend, sol, scenario_na
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_token_amount_constant_mint(backend, sol, scenario_navigator, root_pytest_dir):
@@ -1366,6 +1395,7 @@ def test_token_amount_constant_mint(backend, sol, scenario_navigator, root_pytes
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_token_amount_decimals_override(backend, sol, scenario_navigator, root_pytest_dir):
@@ -1404,6 +1434,7 @@ def test_token_amount_decimals_override(backend, sol, scenario_navigator, root_p
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_token_amount_mint_assoc_priority_over_tas(backend, sol, scenario_navigator,
@@ -1459,6 +1490,7 @@ def test_token_amount_mint_assoc_priority_over_tas(backend, sol, scenario_naviga
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_token_amount_argument_path_token_rejected(backend):
@@ -1523,6 +1555,7 @@ def test_bridge_account_param_type(backend, sol, scenario_navigator, root_pytest
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 # ── ENUM end-to-end: variant name resolution and payload consumption ─────────
@@ -1588,6 +1621,7 @@ def test_enum_empty_variant_displays_name(backend, sol, scenario_navigator, root
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_enum_missing_variant_refused(backend, sol):
@@ -1671,6 +1705,7 @@ def test_enum_raw_size_variant_skips_payload(backend, sol, scenario_navigator, r
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_enum_inline_variant_inner_field(backend, sol, scenario_navigator, root_pytest_dir):
@@ -1719,6 +1754,7 @@ def test_enum_inline_variant_inner_field(backend, sol, scenario_navigator, root_
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 # ─── End-to-end: clear signing + delayed signing ─────────────────────────────
@@ -1934,6 +1970,17 @@ def test_cs_non_cs_apdu_resets_streaming_session(backend, reset_fn):
     assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
 
 
+# A rejected garbage APDU wipes a STREAMING session too (any error abandons the session).
+def test_cs_false_apdu_resets_streaming_session(backend):
+    sol = SolanaClient(backend)
+    _begin_session(sol, _dummy_cs_message(sol))
+    _wipe_session(sol)
+    # Session is gone: FINALIZE now fails as if none were open.
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
+
+
 # Stateless APDUs do NOT reset a STREAMING session.
 @pytest.mark.parametrize("stateless_fn", [
     lambda sol: sol.get_challenge(),
@@ -2016,6 +2063,7 @@ def test_typed_datetime(backend, sol, scenario_navigator, root_pytest_dir):
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_typed_datetime_millisecond_ticks(backend, sol, scenario_navigator, root_pytest_dir):
@@ -2033,6 +2081,7 @@ def test_typed_datetime_millisecond_ticks(backend, sol, scenario_navigator, root
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_typed_datetime_signed_i64(backend, sol, scenario_navigator, root_pytest_dir):
@@ -2064,6 +2113,7 @@ def test_typed_datetime_signed_i64(backend, sol, scenario_navigator, root_pytest
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_typed_duration(backend, sol, scenario_navigator, root_pytest_dir):
@@ -2081,6 +2131,7 @@ def test_typed_duration(backend, sol, scenario_navigator, root_pytest_dir):
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_typed_unit_suffix(backend, sol, scenario_navigator, root_pytest_dir):
@@ -2098,6 +2149,7 @@ def test_typed_unit_suffix(backend, sol, scenario_navigator, root_pytest_dir):
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_typed_account_short_form(backend, sol, scenario_navigator, root_pytest_dir):
@@ -2116,6 +2168,7 @@ def test_typed_account_short_form(backend, sol, scenario_navigator, root_pytest_
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_typed_string_ascii(backend, sol, scenario_navigator, root_pytest_dir):
@@ -2139,6 +2192,7 @@ def test_typed_string_ascii(backend, sol, scenario_navigator, root_pytest_dir):
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_typed_string_hex(backend, sol, scenario_navigator, root_pytest_dir):
@@ -2157,6 +2211,7 @@ def test_typed_string_hex(backend, sol, scenario_navigator, root_pytest_dir):
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_typed_string_slice_source_bounded(backend, sol, scenario_navigator, root_pytest_dir):
@@ -2178,6 +2233,7 @@ def test_typed_string_slice_source_bounded(backend, sol, scenario_navigator, roo
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 # ── TYPED PARAM ingest error paths (rejected before any UI) ──────────────────
@@ -2246,6 +2302,7 @@ def test_typed_string_base64(backend, sol, scenario_navigator, root_pytest_dir):
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_typed_string_slice_formatted_sized_reversed(backend, sol, scenario_navigator,
@@ -2269,6 +2326,7 @@ def test_typed_string_slice_formatted_sized_reversed(backend, sol, scenario_navi
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 # ── TRUSTED_NAME end-to-end (PARAM_TRUSTED_NAME + INS 0x29) ───────────────────
@@ -2295,6 +2353,7 @@ def test_trusted_name_resolves_and_displays(backend, sol, scenario_navigator, ro
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_trusted_name_type_not_allowed_shows_address(backend, sol, scenario_navigator,
@@ -2320,6 +2379,7 @@ def test_trusted_name_type_not_allowed_shows_address(backend, sol, scenario_navi
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 # ── FINALIZE failure: descriptors do not match the streamed transaction ───────
@@ -2483,6 +2543,7 @@ def test_alt_loaded_account_resolved_and_displayed(backend, sol, scenario_naviga
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve(path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
 
 
 def test_alt_loaded_account_without_resolution_refused(backend, sol):

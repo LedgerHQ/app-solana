@@ -489,6 +489,11 @@ class SolanaClient:
         rapdu: RAPDU = self._client.exchange(CLA, INS.INS_GET_APP_CONFIGURATION, P1_NON_CONFIRM, P2_NONE)
         return rapdu.data
 
+    def send_false_apdu(self) -> RAPDU:
+        # Garbage instruction: the app rejects it with 0x6d00 and, on that error reply, wipes any
+        # parked clear-signing session and delayed-sign fingerprint. Raises ExceptionRAPDU.
+        return self._client.exchange(CLA, ins=0xFF, p1=P1_NON_CONFIRM, p2=P2_NONE, data=b"")
+
 
     def get_challenge(self) -> bytes:
         challenge: RAPDU = self._client.exchange(CLA, INS.INS_GET_CHALLENGE,P1_NON_CONFIRM, P2_NONE)
