@@ -1046,9 +1046,16 @@ static int render_field(const cs_instruction_result_t *instruction, size_t field
     return 0;
 }
 
-static int cs_display_renderer_run_inner(const cs_instruction_result_t *walked_instructions,
-                                         size_t walked_instructions_count,
-                                         const bool *survivors) {
+int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
+                            size_t walked_instructions_count,
+                            const bool *survivors) {
+    // A run builds from empty; a populated renderer is a scheduling error. On any
+    // failure below the partial list is left for the caller's session teardown.
+    if (G_cs_display_renderer.count != 0 || G_cs_display_renderer.elements != NULL) {
+        PRINTF("cs_display_renderer_run: renderer already populated, refusing to run\n");
+        return -1;
+    }
+
     // Count surviving instructions for the [ix/total] header
     size_t survivor_count = 0;
     for (size_t i = 0; i < walked_instructions_count; i++) {
@@ -1095,19 +1102,6 @@ static int cs_display_renderer_run_inner(const cs_instruction_result_t *walked_i
     PRINTF("cs_display_renderer_run: produced %u elements\n",
            (unsigned) G_cs_display_renderer.count);
     return 0;
-}
-
-int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
-                            size_t walked_instructions_count,
-                            const bool *survivors) {
-    cs_display_renderer_reset();
-    int result =
-        cs_display_renderer_run_inner(walked_instructions, walked_instructions_count, survivors);
-    // A partially rendered list must never be exposed: drop it on failure.
-    if (result != 0) {
-        cs_display_renderer_reset();
-    }
-    return result;
 }
 
 size_t cs_display_renderer_element_count(void) {

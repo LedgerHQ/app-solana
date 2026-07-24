@@ -172,8 +172,8 @@ static void test_alloc_failure(void) {
     instr.resolved[0].value_size = 8;
     instr.resolved_count = 1;
 
-    // The very first allocation (the pointer table) fails: render must fail
-    // closed and keep nothing.
+    // The very first allocation (the pointer table) fails before any element is
+    // appended, so the run returns -1 with the renderer still empty.
     mock_mem_fail_after(0);
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
@@ -184,8 +184,8 @@ static void test_alloc_failure(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-// The header element allocates, then a field element allocation fails: the
-// partially built table must be released with nothing retained.
+// The header element allocates, then a field element allocation fails: the run
+// returns -1 keeping the partial table, which the session teardown then frees.
 static void test_partial_alloc_failure(void) {
     printf("  test_partial_alloc_failure\n");
     mock_mem_reset();
@@ -206,8 +206,10 @@ static void test_partial_alloc_failure(void) {
     mock_mem_fail_after(6);
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
-    assert(cs_display_renderer_element_count() == 0);
+    // The header element built before the failure is retained, not self-dropped.
+    assert(cs_display_renderer_element_count() == 1);
 
+    // The session teardown releases the partial table with no leak.
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
 }
