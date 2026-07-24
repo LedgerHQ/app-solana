@@ -81,6 +81,52 @@ IDL_KIND_PUBKEY_32 = 0x11
 IDL_KIND_BYTES_FIXED = 0x12
 IDL_KIND_STRING_PREFIXED = 0x14
 SUBSTRUCTURE_TYPE_DISPLAY_FIELD = 0x00
+SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT = 0x01
+SUBSTRUCTURE_TYPE_HIDE_RULE = 0x02
+SUBSTRUCTURE_TYPE_ACCOUNT_RESET = 0x03
+
+# VALUE_FLOW_PORT / HIDE_RULE / ACCOUNT_RESET tag values (spec/device/tlv_structs.md)
+VFP_TAG_VERSION = 0x00
+VFP_TAG_SUBSTRUCT_TYPE = 0x01
+VFP_TAG_DIRECTION = 0x02
+VFP_TAG_ACCOUNT_INDEX = 0x03
+VFP_TAG_VALUE_KIND = 0x04
+VFP_TAG_AMOUNT_VALUE = 0x05
+VFP_TAG_TOKEN_VALUE = 0x06
+VFP_TAG_ACTIVE_WHEN = 0x07
+VFP_TAG_STRATEGY = 0x08
+PORT_DIRECTION_INPUT = 0x00
+PORT_DIRECTION_OUTPUT = 0x01
+PORT_VALUE_KIND_NATIVE = 0x00
+PORT_VALUE_KIND_SPL_TOKEN = 0x01
+AMOUNT_VALUE_TAG_KIND = 0x01
+AMOUNT_VALUE_TAG_VALUE = 0x02
+AMOUNT_KIND_NUMERIC = 0x00
+AMOUNT_KIND_BALANCE = 0x01
+TOKEN_VALUE_TAG_KIND = 0x01
+TOKEN_VALUE_TAG_VALUE = 0x02
+TOKEN_VALUE_TAG_ACCOUNT = 0x03
+TOKEN_VALUE_TAG_FALLBACK = 0x04
+TOKEN_KIND_DIRECT = 0x00
+TOKEN_KIND_RESOLVE = 0x01
+TOKEN_KIND_NULL = 0x02
+TOKEN_KIND_NATIVE = 0x03
+OPTIONAL_ACCOUNT_STRATEGY_PROGRAM_ID = 0x00
+OPTIONAL_ACCOUNT_STRATEGY_OMITTED = 0x01
+HIDE_RULE_TAG_VERSION = 0x00
+HIDE_RULE_TAG_SUBSTRUCT_TYPE = 0x01
+HIDE_RULE_TAG_RULE_SET_INDEX = 0x02
+HIDE_RULE_TAG_TARGET = 0x03
+HIDE_RULE_TAG_CONDITION = 0x04
+HIDE_CONDITION_IS_SIGNER = 0x01
+ACCOUNT_RESET_TAG_VERSION = 0x00
+ACCOUNT_RESET_TAG_SUBSTRUCT_TYPE = 0x01
+ACCOUNT_RESET_TAG_ACCOUNT_INDEX = 0x02
+ACCOUNT_RESET_TAG_REQUIRE_ZERO = 0x03
+ACCOUNT_RESET_TAG_RESET_VALUE = 0x04
+ACCOUNT_RESET_TAG_RESET_SCOPE = 0x05
+RESET_SCOPE_TAG_PROGRAM_ID = 0x01
+RESET_SCOPE_TAG_DISCRIMINATOR = 0x02
 
 
 def _begin_session(sol: SolanaClient, message: bytes) -> None:
@@ -907,6 +953,210 @@ def test_bridge_walks_instruction(backend, sol, scenario_navigator, root_pytest_
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def _build_value_flow_port(*, account_index: int, amount_path: bytes,
+                           value_kind: int = PORT_VALUE_KIND_NATIVE,
+                           direction: int = PORT_DIRECTION_OUTPUT) -> bytes:
+    """A VALUE_FLOW_PORT: one account candidate, a NUMERIC amount read from an
+    ARGUMENT_PATH leaf, and a native value kind (no token)."""
+    amount_value = (format_tlv(AMOUNT_VALUE_TAG_KIND, AMOUNT_KIND_NUMERIC)
+                    + format_tlv(AMOUNT_VALUE_TAG_VALUE,
+                                 format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                                 + format_tlv(ValueTag.PAYLOAD, amount_path)))
+    return (format_tlv(VFP_TAG_VERSION, 1)
+            + format_tlv(VFP_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT)
+            + format_tlv(VFP_TAG_DIRECTION, direction)
+            + format_tlv(VFP_TAG_ACCOUNT_INDEX, account_index)
+            + format_tlv(VFP_TAG_VALUE_KIND, value_kind)
+            + format_tlv(VFP_TAG_AMOUNT_VALUE, amount_value))
+
+
+def _build_hide_rule(*, target_account_index: int, condition: int = HIDE_CONDITION_IS_SIGNER,
+                     rule_set_index: int = 0) -> bytes:
+    """A HIDE_RULE whose target is a pubkey-resolving ACCOUNT_PATH VALUE."""
+    target = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ACCOUNT_PATH)
+              + format_tlv(ValueTag.PAYLOAD, bytes([target_account_index])))
+    return (format_tlv(HIDE_RULE_TAG_VERSION, 1)
+            + format_tlv(HIDE_RULE_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_HIDE_RULE)
+            + format_tlv(HIDE_RULE_TAG_RULE_SET_INDEX, rule_set_index)
+            + format_tlv(HIDE_RULE_TAG_TARGET, target)
+            + format_tlv(HIDE_RULE_TAG_CONDITION, condition))
+
+
+def _build_account_reset(*, account_index: int, require_zero: bool = True,
+                         reset_constant: bytes = None, scope_program_id: bytes = None,
+                         scope_discriminators: list = None) -> bytes:
+    """An ACCOUNT_RESET with an optional CONSTANT reset value and RESET_SCOPE."""
+    payload = (format_tlv(ACCOUNT_RESET_TAG_VERSION, 1)
+               + format_tlv(ACCOUNT_RESET_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_ACCOUNT_RESET)
+               + format_tlv(ACCOUNT_RESET_TAG_ACCOUNT_INDEX, account_index)
+               + format_tlv(ACCOUNT_RESET_TAG_REQUIRE_ZERO, 1 if require_zero else 0))
+    if reset_constant is not None:
+        reset_value = (format_tlv(AMOUNT_VALUE_TAG_KIND, AMOUNT_KIND_NUMERIC)
+                       + format_tlv(AMOUNT_VALUE_TAG_VALUE,
+                                    format_tlv(ValueTag.SOURCE, VALUE_SOURCE_CONSTANT)
+                                    + format_tlv(ValueTag.PAYLOAD, reset_constant)))
+        payload += format_tlv(ACCOUNT_RESET_TAG_RESET_VALUE, reset_value)
+    if scope_program_id is not None:
+        scope = format_tlv(RESET_SCOPE_TAG_PROGRAM_ID, scope_program_id)
+        for disc in (scope_discriminators or []):
+            scope += format_tlv(RESET_SCOPE_TAG_DISCRIMINATOR, disc)
+        payload += format_tlv(ACCOUNT_RESET_TAG_RESET_SCOPE, scope)
+    return payload
+
+
+def test_cs_value_flow_port_forwarded(backend, sol):
+    """A DISPLAY_FIELD plus a VALUE_FLOW_PORT: the port is decoded, its account and
+    ARGUMENT_PATH amount resolve during the walk/render (merge MVP keeps every
+    instruction), and the session finalizes."""
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    port = _build_value_flow_port(account_index=0, amount_path=BRIDGE_PATH_U64)
+    substructures_hash = hashlib.sha256(display_field + port).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT, port)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_hide_rule_forwarded(backend, sol):
+    """A HIDE_RULE substructure is decoded and its ACCOUNT_PATH target resolves;
+    the session finalizes (merge MVP keeps every instruction)."""
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    hide_rule = _build_hide_rule(target_account_index=0)
+    substructures_hash = hashlib.sha256(display_field + hide_rule).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_HIDE_RULE, hide_rule)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_account_reset_forwarded(backend, sol):
+    """An ACCOUNT_RESET with a CONSTANT reset value and a RESET_SCOPE (program id +
+    discriminator) is decoded, its account resolves, and the session finalizes."""
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    account_reset = _build_account_reset(account_index=0,
+                                         reset_constant=struct.pack("<Q", 0),
+                                         scope_program_id=BRIDGE_PROGRAM_ID,
+                                         scope_discriminators=[BRIDGE_DISCRIMINATOR])
+    substructures_hash = hashlib.sha256(display_field + account_reset).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_ACCOUNT_RESET, account_reset)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_owner_assoc_forwarded(backend, sol):
+    """OWNER_ASSOC on the INSTRUCTION_INFO is stored and its owner (an ACCOUNT_PATH
+    VALUE) plus token account resolve into the owner-binding map at finalize."""
+    owner_pubkey = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+    message = _craft_instruction_with_accounts(
+        sol,
+        BRIDGE_PROGRAM_ID,
+        _bridge_instruction_data(1000, 5_000_000),
+        extra_accounts=[owner_pubkey],
+    )
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    # OWNER_ASSOC_ACCOUNT = token account index 0, OWNER = ACCOUNT_PATH index 1.
+    owner_value = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ACCOUNT_PATH)
+                   + format_tlv(ValueTag.PAYLOAD, bytes([1])))
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+        owner_assoc_account=0,
+        owner_assoc_owner_value=owner_value,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_unknown_substructure_type_rejected(backend, sol):
+    """An unknown substructure type byte is refused even though its bytes still
+    fold into the substructure hash."""
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(0x7F, display_field)
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
     _wipe_session(sol)
 
 

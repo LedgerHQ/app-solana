@@ -24,6 +24,41 @@ typedef struct cs_instruction_template_table_s {
 
 static cs_instruction_template_table_t *G_template_table = NULL;
 
+static void free_stored_value(cs_stored_value_t *value) {
+    if (value->payload != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &value->payload);
+    }
+    value->payload_size = 0;
+}
+
+static void free_port_owned_buffers(cs_value_flow_port_t *port) {
+    if (port->account_candidates != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &port->account_candidates);
+    }
+    if (port->active_when != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &port->active_when);
+    }
+    free_stored_value(&port->amount.value);
+    free_stored_value(&port->token.value);
+}
+
+static void free_hide_rule_owned_buffers(cs_hide_rule_t *rule) {
+    free_stored_value(&rule->target);
+}
+
+static void free_account_reset_owned_buffers(cs_account_reset_t *reset) {
+    free_stored_value(&reset->reset_value.value);
+    for (size_t d = 0; d < reset->scope.discriminator_count; d++) {
+        if (reset->scope.discriminators[d].data != NULL) {
+            APP_MEM_FREE_AND_NULL((void **) &reset->scope.discriminators[d].data);
+        }
+    }
+    if (reset->scope.discriminators != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &reset->scope.discriminators);
+    }
+    reset->scope.discriminator_count = 0;
+}
+
 // Free every heap buffer a template owns; leaves the template block itself intact.
 static void free_template_owned_buffers(cs_instruction_template_t *template) {
     if (template == NULL) {
@@ -64,6 +99,33 @@ static void free_template_owned_buffers(cs_instruction_template_t *template) {
         APP_MEM_FREE_AND_NULL((void **) &template->display_fields);
     }
     template->display_field_count = 0;
+
+    // Merge-engine substructures: free each entry's owned buffers before its array.
+    for (size_t p = 0; p < template->port_count; p++) {
+        free_port_owned_buffers(&template->ports[p]);
+    }
+    if (template->ports != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &template->ports);
+    }
+    template->port_count = 0;
+
+    for (size_t h = 0; h < template->hide_rule_count; h++) {
+        free_hide_rule_owned_buffers(&template->hide_rules[h]);
+    }
+    if (template->hide_rules != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &template->hide_rules);
+    }
+    template->hide_rule_count = 0;
+
+    for (size_t r = 0; r < template->account_reset_count; r++) {
+        free_account_reset_owned_buffers(&template->account_resets[r]);
+    }
+    if (template->account_resets != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &template->account_resets);
+    }
+    template->account_reset_count = 0;
+
+    free_stored_value(&template->owner_assoc_owner);
 }
 
 // Grow the builder's display-field array by one zeroed slot and return it, or
@@ -80,6 +142,100 @@ static cs_display_field_t *append_display_field(cs_instruction_template_t *build
     cs_display_field_t *slot = &builder->display_fields[builder->display_field_count];
     memset(slot, 0, sizeof(*slot));
     builder->display_field_count++;
+    return slot;
+}
+
+// Deep-copy a borrowed VALUE into template-owned heap. On alloc failure the dst
+// payload stays NULL, so the caller's teardown is a no-op for it.
+static int copy_stored_value(cs_stored_value_t *dst,
+                             uint8_t source,
+                             const uint8_t *payload,
+                             size_t payload_size) {
+    dst->source = source;
+    dst->payload = NULL;
+    dst->payload_size = 0;
+    if (payload_size > 0) {
+        if (!APP_MEM_CALLOC((void **) &dst->payload, payload_size)) {
+            PRINTF("cs_instruction_template: stored value allocation failed (%d bytes)\n",
+                   (int) payload_size);
+            return -1;
+        }
+        memcpy(dst->payload, payload, payload_size);
+        dst->payload_size = payload_size;
+    }
+    return 0;
+}
+
+static int copy_amount_value(cs_amount_value_t *dst, const cs_amount_value_t *source) {
+    dst->kind = source->kind;
+    dst->has_value = source->has_value;
+    if (source->has_value) {
+        return copy_stored_value(&dst->value,
+                                 source->value.source,
+                                 source->value.payload,
+                                 source->value.payload_size);
+    }
+    return 0;
+}
+
+static int copy_token_value(cs_token_value_t *dst, const cs_token_value_t *source) {
+    dst->kind = source->kind;
+    dst->has_value = source->has_value;
+    dst->has_account = source->has_account;
+    dst->account_index = source->account_index;
+    dst->has_fallback_account = source->has_fallback_account;
+    dst->fallback_account_index = source->fallback_account_index;
+    if (source->has_value) {
+        return copy_stored_value(&dst->value,
+                                 source->value.source,
+                                 source->value.payload,
+                                 source->value.payload_size);
+    }
+    return 0;
+}
+
+// Grow a merge-engine substructure array by one zeroed slot, returning it or NULL
+// on allocation failure (the existing array is left intact).
+static cs_value_flow_port_t *append_port(cs_instruction_template_t *builder) {
+    cs_value_flow_port_t *grown =
+        APP_MEM_REALLOC(builder->ports, (builder->port_count + 1) * sizeof(*grown));
+    if (grown == NULL) {
+        PRINTF("cs_instruction_template: port array growth failed\n");
+        return NULL;
+    }
+    builder->ports = grown;
+    cs_value_flow_port_t *slot = &builder->ports[builder->port_count];
+    memset(slot, 0, sizeof(*slot));
+    builder->port_count++;
+    return slot;
+}
+
+static cs_hide_rule_t *append_hide_rule(cs_instruction_template_t *builder) {
+    cs_hide_rule_t *grown =
+        APP_MEM_REALLOC(builder->hide_rules, (builder->hide_rule_count + 1) * sizeof(*grown));
+    if (grown == NULL) {
+        PRINTF("cs_instruction_template: hide rule array growth failed\n");
+        return NULL;
+    }
+    builder->hide_rules = grown;
+    cs_hide_rule_t *slot = &builder->hide_rules[builder->hide_rule_count];
+    memset(slot, 0, sizeof(*slot));
+    builder->hide_rule_count++;
+    return slot;
+}
+
+static cs_account_reset_t *append_account_reset(cs_instruction_template_t *builder) {
+    cs_account_reset_t *grown =
+        APP_MEM_REALLOC(builder->account_resets,
+                        (builder->account_reset_count + 1) * sizeof(*grown));
+    if (grown == NULL) {
+        PRINTF("cs_instruction_template: account reset array growth failed\n");
+        return NULL;
+    }
+    builder->account_resets = grown;
+    cs_account_reset_t *slot = &builder->account_resets[builder->account_reset_count];
+    memset(slot, 0, sizeof(*slot));
+    builder->account_reset_count++;
     return slot;
 }
 
@@ -481,6 +637,150 @@ int cs_instruction_template_set_mint_assoc(uint8_t account_idx, uint8_t mint_idx
     builder->mint_assoc_account = account_idx;
     builder->mint_assoc_mint = mint_idx;
     builder->has_mint_assoc = true;
+    return 0;
+}
+
+int cs_instruction_template_add_port(const cs_value_flow_port_t *port) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL) {
+        PRINTF("cs_instruction_template_add_port: no builder open\n");
+        return -1;
+    }
+    cs_value_flow_port_t *slot = append_port(builder);
+    if (slot == NULL) {
+        return -1;
+    }
+    slot->direction = port->direction;
+    slot->value_kind = port->value_kind;
+    slot->optional_account_strategy = port->optional_account_strategy;
+    slot->has_token = port->has_token;
+
+    if (port->candidate_count > 0) {
+        if (!APP_MEM_CALLOC((void **) &slot->account_candidates, port->candidate_count)) {
+            PRINTF("cs_instruction_template_add_port: candidate list allocation failed\n");
+            free_port_owned_buffers(slot);
+            return -1;
+        }
+        memcpy(slot->account_candidates, port->account_candidates, port->candidate_count);
+        slot->candidate_count = port->candidate_count;
+    }
+    if (copy_amount_value(&slot->amount, &port->amount) != 0) {
+        free_port_owned_buffers(slot);
+        return -1;
+    }
+    if (port->has_token) {
+        if (copy_token_value(&slot->token, &port->token) != 0) {
+            free_port_owned_buffers(slot);
+            return -1;
+        }
+    }
+    if (port->active_when_size > 0) {
+        if (!APP_MEM_CALLOC((void **) &slot->active_when, port->active_when_size)) {
+            PRINTF("cs_instruction_template_add_port: active_when allocation failed\n");
+            free_port_owned_buffers(slot);
+            return -1;
+        }
+        memcpy(slot->active_when, port->active_when, port->active_when_size);
+        slot->active_when_size = port->active_when_size;
+    }
+    return 0;
+}
+
+int cs_instruction_template_add_hide_rule(const cs_hide_rule_t *rule) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL) {
+        PRINTF("cs_instruction_template_add_hide_rule: no builder open\n");
+        return -1;
+    }
+    cs_hide_rule_t *slot = append_hide_rule(builder);
+    if (slot == NULL) {
+        return -1;
+    }
+    slot->rule_set_index = rule->rule_set_index;
+    slot->condition = rule->condition;
+    if (copy_stored_value(&slot->target,
+                          rule->target.source,
+                          rule->target.payload,
+                          rule->target.payload_size) != 0) {
+        free_hide_rule_owned_buffers(slot);
+        return -1;
+    }
+    return 0;
+}
+
+int cs_instruction_template_add_account_reset(const cs_account_reset_t *reset) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL) {
+        PRINTF("cs_instruction_template_add_account_reset: no builder open\n");
+        return -1;
+    }
+    cs_account_reset_t *slot = append_account_reset(builder);
+    if (slot == NULL) {
+        return -1;
+    }
+    slot->account_index = reset->account_index;
+    slot->require_pre_balance_zero = reset->require_pre_balance_zero;
+    slot->has_reset_value = reset->has_reset_value;
+    slot->has_scope = reset->has_scope;
+
+    if (reset->has_reset_value) {
+        if (copy_amount_value(&slot->reset_value, &reset->reset_value) != 0) {
+            free_account_reset_owned_buffers(slot);
+            return -1;
+        }
+    }
+    if (reset->has_scope) {
+        slot->scope.has_program_id = reset->scope.has_program_id;
+        if (reset->scope.has_program_id) {
+            memcpy(slot->scope.scope_program_id, reset->scope.scope_program_id, 32);
+        }
+        if (reset->scope.discriminator_count > 0) {
+            if (!APP_MEM_CALLOC(
+                    (void **) &slot->scope.discriminators,
+                    reset->scope.discriminator_count * sizeof(*slot->scope.discriminators))) {
+                PRINTF("cs_instruction_template_add_account_reset: discriminator array alloc failed\n");
+                free_account_reset_owned_buffers(slot);
+                return -1;
+            }
+            // Set the count before filling data so a mid-loop failure frees cleanly.
+            slot->scope.discriminator_count = reset->scope.discriminator_count;
+            for (size_t d = 0; d < reset->scope.discriminator_count; d++) {
+                if (reset->scope.discriminators[d].size == 0) {
+                    continue;
+                }
+                if (!APP_MEM_CALLOC((void **) &slot->scope.discriminators[d].data,
+                                    reset->scope.discriminators[d].size)) {
+                    PRINTF("cs_instruction_template_add_account_reset: discriminator alloc failed\n");
+                    free_account_reset_owned_buffers(slot);
+                    return -1;
+                }
+                memcpy(slot->scope.discriminators[d].data,
+                       reset->scope.discriminators[d].data,
+                       reset->scope.discriminators[d].size);
+                slot->scope.discriminators[d].size = reset->scope.discriminators[d].size;
+            }
+        }
+    }
+    return 0;
+}
+
+int cs_instruction_template_set_owner_assoc(uint8_t account_idx,
+                                            uint8_t owner_source,
+                                            const uint8_t *owner_payload,
+                                            size_t owner_payload_size) {
+    cs_instruction_template_t *builder = cs_instruction_template_current();
+    if (builder == NULL) {
+        PRINTF("cs_instruction_template_set_owner_assoc: no builder open\n");
+        return -1;
+    }
+    if (copy_stored_value(&builder->owner_assoc_owner,
+                          owner_source,
+                          owner_payload,
+                          owner_payload_size) != 0) {
+        return -1;
+    }
+    builder->owner_assoc_account = account_idx;
+    builder->has_owner_assoc = true;
     return 0;
 }
 

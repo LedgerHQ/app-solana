@@ -1133,6 +1133,583 @@ static int register_display_field(uint8_t apdu_type, const uint8_t *tlv, size_t 
     return result;
 }
 
+// ---- Merge-engine substructures: VALUE_FLOW_PORT / HIDE_RULE / ACCOUNT_RESET --
+// These are decoded and forwarded into the instruction template so the merge
+// engine can perform value-flow matching and hiding. Embedded VALUE / AMOUNT_VALUE
+// / TOKEN_VALUE / RESET_SCOPE are parsed with their own nested parsers; the built
+// structs carry borrowed views that the template's add_* setters deep-copy.
+
+// Copy a parsed VALUE into a borrowed cs_stored_value_t (no allocation).
+static void borrow_value(cs_stored_value_t *dst, const cs_value_t *value) {
+    dst->source = value->source;
+    dst->payload = (uint8_t *) value->payload.ptr;
+    dst->payload_size = value->payload.size;
+}
+
+// ---- AMOUNT_VALUE nested parser ---------------------------------------------
+
+typedef struct amount_value_out_s {
+    TLV_reception_t received_tags;
+    uint8_t kind;
+    buffer_t value;
+} amount_value_out_t;
+
+static bool amount_value_handle_kind(const tlv_data_t *data, amount_value_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->kind);
+}
+
+static bool amount_value_handle_value(const tlv_data_t *data, amount_value_out_t *out) {
+    out->value = data->value;
+    return true;
+}
+
+// clang-format off
+#define AMOUNT_VALUE_TAGS(X) \
+    X(0x01, AMOUNT_VALUE_TAG_KIND,  amount_value_handle_kind,  ENFORCE_UNIQUE_TAG) \
+    X(0x02, AMOUNT_VALUE_TAG_VALUE, amount_value_handle_value, ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(AMOUNT_VALUE_TAGS, NULL, parse_amount_value)
+
+// Parse an AMOUNT_VALUE buffer into a borrowed cs_amount_value_t. Returns 0, -1.
+static int parse_amount_value_into(const buffer_t *buf, cs_amount_value_t *out) {
+    amount_value_out_t parsed = {0};
+    if (!parse_amount_value(buf, &parsed, &parsed.received_tags)) {
+        PRINTF("substructure: AMOUNT_VALUE parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(parsed.received_tags, AMOUNT_VALUE_TAG_KIND)) {
+        PRINTF("substructure: AMOUNT_VALUE missing KIND\n");
+        return -1;
+    }
+    bool has_value = TLV_CHECK_RECEIVED_TAGS(parsed.received_tags, AMOUNT_VALUE_TAG_VALUE);
+    if (parsed.kind == CS_AMOUNT_KIND_NUMERIC) {
+        if (!has_value) {
+            PRINTF("substructure: AMOUNT_VALUE NUMERIC requires VALUE\n");
+            return -1;
+        }
+    } else if (parsed.kind == CS_AMOUNT_KIND_BALANCE) {
+        if (has_value) {
+            PRINTF("substructure: AMOUNT_VALUE BALANCE cannot carry VALUE\n");
+            return -1;
+        }
+    } else {
+        PRINTF("substructure: AMOUNT_VALUE unknown KIND %d\n", parsed.kind);
+        return -1;
+    }
+    out->kind = parsed.kind;
+    out->has_value = has_value;
+    if (has_value) {
+        cs_value_t value;
+        if (extract_value(&parsed.value, &value) != 0) {
+            return -1;
+        }
+        borrow_value(&out->value, &value);
+    }
+    return 0;
+}
+
+// ---- TOKEN_VALUE nested parser ----------------------------------------------
+
+typedef struct token_value_out_s {
+    TLV_reception_t received_tags;
+    uint8_t kind;
+    buffer_t value;
+    uint8_t account;
+    uint8_t fallback_account;
+} token_value_out_t;
+
+static bool token_value_handle_kind(const tlv_data_t *data, token_value_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->kind);
+}
+
+static bool token_value_handle_value(const tlv_data_t *data, token_value_out_t *out) {
+    out->value = data->value;
+    return true;
+}
+
+static bool token_value_handle_account(const tlv_data_t *data, token_value_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->account);
+}
+
+static bool token_value_handle_fallback(const tlv_data_t *data, token_value_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->fallback_account);
+}
+
+// clang-format off
+#define TOKEN_VALUE_TAGS(X) \
+    X(0x01, TOKEN_VALUE_TAG_KIND,     token_value_handle_kind,     ENFORCE_UNIQUE_TAG) \
+    X(0x02, TOKEN_VALUE_TAG_VALUE,    token_value_handle_value,    ENFORCE_UNIQUE_TAG) \
+    X(0x03, TOKEN_VALUE_TAG_ACCOUNT,  token_value_handle_account,  ENFORCE_UNIQUE_TAG) \
+    X(0x04, TOKEN_VALUE_TAG_FALLBACK, token_value_handle_fallback, ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(TOKEN_VALUE_TAGS, NULL, parse_token_value)
+
+// Parse a TOKEN_VALUE buffer into a borrowed cs_token_value_t. Returns 0, -1.
+static int parse_token_value_into(const buffer_t *buf, cs_token_value_t *out) {
+    token_value_out_t parsed = {0};
+    if (!parse_token_value(buf, &parsed, &parsed.received_tags)) {
+        PRINTF("substructure: TOKEN_VALUE parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(parsed.received_tags, TOKEN_VALUE_TAG_KIND)) {
+        PRINTF("substructure: TOKEN_VALUE missing KIND\n");
+        return -1;
+    }
+    bool has_value = TLV_CHECK_RECEIVED_TAGS(parsed.received_tags, TOKEN_VALUE_TAG_VALUE);
+    bool has_account = TLV_CHECK_RECEIVED_TAGS(parsed.received_tags, TOKEN_VALUE_TAG_ACCOUNT);
+    bool has_fallback = TLV_CHECK_RECEIVED_TAGS(parsed.received_tags, TOKEN_VALUE_TAG_FALLBACK);
+    switch (parsed.kind) {
+        case CS_TOKEN_KIND_DIRECT:
+            if (!has_value) {
+                PRINTF("substructure: TOKEN_VALUE DIRECT requires VALUE\n");
+                return -1;
+            }
+            if (has_account) {
+                PRINTF("substructure: TOKEN_VALUE DIRECT cannot carry ACCOUNT\n");
+                return -1;
+            }
+            break;
+        case CS_TOKEN_KIND_RESOLVE:
+            if (has_value) {
+                PRINTF("substructure: TOKEN_VALUE RESOLVE cannot carry VALUE\n");
+                return -1;
+            }
+            break;
+        case CS_TOKEN_KIND_NULL:
+        case CS_TOKEN_KIND_NATIVE:
+            if (has_value || has_account) {
+                PRINTF("substructure: TOKEN_VALUE NULL/NATIVE cannot carry VALUE/ACCOUNT\n");
+                return -1;
+            }
+            break;
+        default:
+            PRINTF("substructure: TOKEN_VALUE unknown KIND %d\n", parsed.kind);
+            return -1;
+    }
+    out->kind = parsed.kind;
+    out->has_value = has_value;
+    if (has_value) {
+        cs_value_t value;
+        if (extract_value(&parsed.value, &value) != 0) {
+            return -1;
+        }
+        borrow_value(&out->value, &value);
+    }
+    // ACCOUNT / FALLBACK_ACCOUNT are only meaningful for RESOLVE.
+    if (parsed.kind == CS_TOKEN_KIND_RESOLVE) {
+        out->has_account = has_account;
+        out->account_index = parsed.account;
+        out->has_fallback_account = has_fallback;
+        out->fallback_account_index = parsed.fallback_account;
+    }
+    return 0;
+}
+
+// ---- RESET_SCOPE nested parser ----------------------------------------------
+
+typedef struct reset_scope_out_s {
+    TLV_reception_t received_tags;
+    buffer_t program_id;
+    cs_reset_discriminator_t *discriminators;  // heap scratch; borrowed data pointers
+    size_t discriminator_count;
+} reset_scope_out_t;
+
+static bool reset_scope_handle_program_id(const tlv_data_t *data, reset_scope_out_t *out) {
+    return get_buffer_from_tlv_data(data, &out->program_id, 32, 32);
+}
+
+static bool reset_scope_handle_discriminator(const tlv_data_t *data, reset_scope_out_t *out) {
+    if (data->value.size > 8) {
+        PRINTF("substructure: SCOPE_DISCRIMINATOR too long (%d)\n", data->value.size);
+        return false;
+    }
+    cs_reset_discriminator_t *grown =
+        APP_MEM_REALLOC(out->discriminators, (out->discriminator_count + 1) * sizeof(*grown));
+    if (grown == NULL) {
+        PRINTF("substructure: SCOPE_DISCRIMINATOR list growth failed\n");
+        return false;
+    }
+    out->discriminators = grown;
+    out->discriminators[out->discriminator_count].data = (uint8_t *) data->value.ptr;
+    out->discriminators[out->discriminator_count].size = (uint8_t) data->value.size;
+    out->discriminator_count++;
+    return true;
+}
+
+// clang-format off
+#define RESET_SCOPE_TAGS(X) \
+    X(0x01, RESET_SCOPE_TAG_PROGRAM_ID,    reset_scope_handle_program_id,    ENFORCE_UNIQUE_TAG) \
+    X(0x02, RESET_SCOPE_TAG_DISCRIMINATOR, reset_scope_handle_discriminator, ALLOW_MULTIPLE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(RESET_SCOPE_TAGS, NULL, parse_reset_scope)
+
+// ---- VALUE_FLOW_PORT parser -------------------------------------------------
+
+typedef struct value_flow_port_out_s {
+    TLV_reception_t received_tags;
+    uint8_t substruct_type;
+    uint8_t direction;
+    uint8_t *account_candidates;  // heap scratch, ordered
+    size_t candidate_count;
+    uint8_t value_kind;
+    buffer_t amount_value;
+    buffer_t token_value;
+    buffer_t active_when;
+    uint8_t optional_account_strategy;
+} value_flow_port_out_t;
+
+static bool vfp_handle_substruct_type(const tlv_data_t *data, value_flow_port_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->substruct_type);
+}
+
+static bool vfp_handle_direction(const tlv_data_t *data, value_flow_port_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->direction);
+}
+
+static bool vfp_handle_account_index(const tlv_data_t *data, value_flow_port_out_t *out) {
+    uint8_t index;
+    if (!get_uint8_t_from_tlv_data(data, &index)) {
+        return false;
+    }
+    uint8_t *grown = APP_MEM_REALLOC(out->account_candidates, out->candidate_count + 1);
+    if (grown == NULL) {
+        PRINTF("substructure: VALUE_FLOW_PORT candidate list growth failed\n");
+        return false;
+    }
+    out->account_candidates = grown;
+    out->account_candidates[out->candidate_count] = index;
+    out->candidate_count++;
+    return true;
+}
+
+static bool vfp_handle_value_kind(const tlv_data_t *data, value_flow_port_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->value_kind);
+}
+
+static bool vfp_handle_amount_value(const tlv_data_t *data, value_flow_port_out_t *out) {
+    out->amount_value = data->value;
+    return true;
+}
+
+static bool vfp_handle_token_value(const tlv_data_t *data, value_flow_port_out_t *out) {
+    out->token_value = data->value;
+    return true;
+}
+
+static bool vfp_handle_active_when(const tlv_data_t *data, value_flow_port_out_t *out) {
+    out->active_when = data->value;
+    return true;
+}
+
+static bool vfp_handle_strategy(const tlv_data_t *data, value_flow_port_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->optional_account_strategy);
+}
+
+// clang-format off
+#define VALUE_FLOW_PORT_TAGS(X) \
+    X(0x00, VFP_TAG_VERSION,        NULL,                    ENFORCE_UNIQUE_TAG) \
+    X(0x01, VFP_TAG_SUBSTRUCT_TYPE, vfp_handle_substruct_type, ENFORCE_UNIQUE_TAG) \
+    X(0x02, VFP_TAG_DIRECTION,      vfp_handle_direction,    ENFORCE_UNIQUE_TAG) \
+    X(0x03, VFP_TAG_ACCOUNT_INDEX,  vfp_handle_account_index, ALLOW_MULTIPLE_TAG) \
+    X(0x04, VFP_TAG_VALUE_KIND,     vfp_handle_value_kind,   ENFORCE_UNIQUE_TAG) \
+    X(0x05, VFP_TAG_AMOUNT_VALUE,   vfp_handle_amount_value, ENFORCE_UNIQUE_TAG) \
+    X(0x06, VFP_TAG_TOKEN_VALUE,    vfp_handle_token_value,  ENFORCE_UNIQUE_TAG) \
+    X(0x07, VFP_TAG_ACTIVE_WHEN,    vfp_handle_active_when,  ENFORCE_UNIQUE_TAG) \
+    X(0x08, VFP_TAG_STRATEGY,       vfp_handle_strategy,     ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(VALUE_FLOW_PORT_TAGS, NULL, parse_value_flow_port)
+
+// Parse a VALUE_FLOW_PORT, build a borrowed port, and add it to the template.
+// The candidate-list scratch in *parsed is freed by the caller. Returns 0, -1.
+static int value_flow_port_build_and_add(uint8_t apdu_type,
+                                         const uint8_t *tlv,
+                                         size_t tlv_size,
+                                         value_flow_port_out_t *parsed) {
+    buffer_t payload = {.ptr = (uint8_t *) tlv, .size = tlv_size};
+    if (!parse_value_flow_port(&payload, parsed, &parsed->received_tags)) {
+        PRINTF("substructure: VALUE_FLOW_PORT parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(parsed->received_tags,
+                                 VFP_TAG_SUBSTRUCT_TYPE,
+                                 VFP_TAG_DIRECTION,
+                                 VFP_TAG_ACCOUNT_INDEX,
+                                 VFP_TAG_VALUE_KIND,
+                                 VFP_TAG_AMOUNT_VALUE)) {
+        PRINTF("substructure: VALUE_FLOW_PORT missing required tags\n");
+        return -1;
+    }
+    if (parsed->substruct_type != apdu_type) {
+        PRINTF("substructure: VALUE_FLOW_PORT SUBSTRUCT_TYPE=%d != APDU type=%d\n",
+               parsed->substruct_type,
+               apdu_type);
+        return -1;
+    }
+    if (parsed->direction != CS_PORT_DIRECTION_INPUT &&
+        parsed->direction != CS_PORT_DIRECTION_OUTPUT) {
+        PRINTF("substructure: VALUE_FLOW_PORT unknown DIRECTION %d\n", parsed->direction);
+        return -1;
+    }
+    if (parsed->value_kind != CS_PORT_VALUE_KIND_NATIVE &&
+        parsed->value_kind != CS_PORT_VALUE_KIND_SPL_TOKEN) {
+        PRINTF("substructure: VALUE_FLOW_PORT unknown VALUE_KIND %d\n", parsed->value_kind);
+        return -1;
+    }
+
+    cs_value_flow_port_t port = {0};
+    port.direction = parsed->direction;
+    port.account_candidates = parsed->account_candidates;
+    port.candidate_count = parsed->candidate_count;
+    port.value_kind = parsed->value_kind;
+    if (parse_amount_value_into(&parsed->amount_value, &port.amount) != 0) {
+        return -1;
+    }
+    if (TLV_CHECK_RECEIVED_TAGS(parsed->received_tags, VFP_TAG_TOKEN_VALUE)) {
+        port.has_token = true;
+        if (parse_token_value_into(&parsed->token_value, &port.token) != 0) {
+            return -1;
+        }
+    }
+    if (TLV_CHECK_RECEIVED_TAGS(parsed->received_tags, VFP_TAG_ACTIVE_WHEN)) {
+        port.active_when = (uint8_t *) parsed->active_when.ptr;
+        port.active_when_size = parsed->active_when.size;
+    }
+    port.optional_account_strategy = CS_OPTIONAL_ACCOUNT_STRATEGY_PROGRAM_ID;
+    if (TLV_CHECK_RECEIVED_TAGS(parsed->received_tags, VFP_TAG_STRATEGY)) {
+        if (parsed->optional_account_strategy != CS_OPTIONAL_ACCOUNT_STRATEGY_PROGRAM_ID &&
+            parsed->optional_account_strategy != CS_OPTIONAL_ACCOUNT_STRATEGY_OMITTED) {
+            PRINTF("substructure: VALUE_FLOW_PORT unknown OPTIONAL_ACCOUNT_STRATEGY %d\n",
+                   parsed->optional_account_strategy);
+            return -1;
+        }
+        port.optional_account_strategy = parsed->optional_account_strategy;
+    }
+
+    if (cs_instruction_template_add_port(&port) != 0) {
+        PRINTF("substructure: add_port failed\n");
+        return -1;
+    }
+    PRINTF("substructure: registered VALUE_FLOW_PORT direction=%d candidates=%d\n",
+           port.direction,
+           (int) port.candidate_count);
+    return 0;
+}
+
+static int register_value_flow_port(uint8_t apdu_type, const uint8_t *tlv, size_t tlv_size) {
+    value_flow_port_out_t parsed = {0};
+    int rc = value_flow_port_build_and_add(apdu_type, tlv, tlv_size, &parsed);
+    if (parsed.account_candidates != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &parsed.account_candidates);
+    }
+    return rc;
+}
+
+// ---- HIDE_RULE parser -------------------------------------------------------
+
+typedef struct hide_rule_out_s {
+    TLV_reception_t received_tags;
+    uint8_t substruct_type;
+    uint8_t rule_set_index;
+    buffer_t target;
+    uint8_t condition;
+} hide_rule_out_t;
+
+static bool hide_rule_handle_substruct_type(const tlv_data_t *data, hide_rule_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->substruct_type);
+}
+
+static bool hide_rule_handle_rule_set_index(const tlv_data_t *data, hide_rule_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->rule_set_index);
+}
+
+static bool hide_rule_handle_target(const tlv_data_t *data, hide_rule_out_t *out) {
+    out->target = data->value;
+    return true;
+}
+
+static bool hide_rule_handle_condition(const tlv_data_t *data, hide_rule_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->condition);
+}
+
+// clang-format off
+#define HIDE_RULE_TAGS(X) \
+    X(0x00, HIDE_RULE_TAG_VERSION,        NULL,                          ENFORCE_UNIQUE_TAG) \
+    X(0x01, HIDE_RULE_TAG_SUBSTRUCT_TYPE, hide_rule_handle_substruct_type, ENFORCE_UNIQUE_TAG) \
+    X(0x02, HIDE_RULE_TAG_RULE_SET_INDEX, hide_rule_handle_rule_set_index, ENFORCE_UNIQUE_TAG) \
+    X(0x03, HIDE_RULE_TAG_TARGET,         hide_rule_handle_target,       ENFORCE_UNIQUE_TAG) \
+    X(0x04, HIDE_RULE_TAG_CONDITION,      hide_rule_handle_condition,    ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(HIDE_RULE_TAGS, NULL, parse_hide_rule)
+
+static int register_hide_rule(uint8_t apdu_type, const uint8_t *tlv, size_t tlv_size) {
+    hide_rule_out_t parsed = {0};
+    buffer_t payload = {.ptr = (uint8_t *) tlv, .size = tlv_size};
+    if (!parse_hide_rule(&payload, &parsed, &parsed.received_tags)) {
+        PRINTF("substructure: HIDE_RULE parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(parsed.received_tags,
+                                 HIDE_RULE_TAG_SUBSTRUCT_TYPE,
+                                 HIDE_RULE_TAG_RULE_SET_INDEX,
+                                 HIDE_RULE_TAG_TARGET,
+                                 HIDE_RULE_TAG_CONDITION)) {
+        PRINTF("substructure: HIDE_RULE missing required tags\n");
+        return -1;
+    }
+    if (parsed.substruct_type != apdu_type) {
+        PRINTF("substructure: HIDE_RULE SUBSTRUCT_TYPE=%d != APDU type=%d\n",
+               parsed.substruct_type,
+               apdu_type);
+        return -1;
+    }
+    if (parsed.condition > CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE) {
+        PRINTF("substructure: HIDE_RULE unknown CONDITION %d\n", parsed.condition);
+        return -1;
+    }
+
+    cs_value_t target;
+    if (extract_value(&parsed.target, &target) != 0) {
+        return -1;
+    }
+    cs_hide_rule_t rule = {0};
+    rule.rule_set_index = parsed.rule_set_index;
+    rule.condition = parsed.condition;
+    borrow_value(&rule.target, &target);
+    if (cs_instruction_template_add_hide_rule(&rule) != 0) {
+        PRINTF("substructure: add_hide_rule failed\n");
+        return -1;
+    }
+    PRINTF("substructure: registered HIDE_RULE set=%d condition=%d\n",
+           rule.rule_set_index,
+           rule.condition);
+    return 0;
+}
+
+// ---- ACCOUNT_RESET parser ---------------------------------------------------
+
+typedef struct account_reset_out_s {
+    TLV_reception_t received_tags;
+    uint8_t substruct_type;
+    uint8_t account_index;
+    uint8_t require_pre_balance_zero;
+    buffer_t reset_value;
+    buffer_t reset_scope;
+} account_reset_out_t;
+
+static bool account_reset_handle_substruct_type(const tlv_data_t *data, account_reset_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->substruct_type);
+}
+
+static bool account_reset_handle_account_index(const tlv_data_t *data, account_reset_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->account_index);
+}
+
+static bool account_reset_handle_require_zero(const tlv_data_t *data, account_reset_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->require_pre_balance_zero);
+}
+
+static bool account_reset_handle_reset_value(const tlv_data_t *data, account_reset_out_t *out) {
+    out->reset_value = data->value;
+    return true;
+}
+
+static bool account_reset_handle_reset_scope(const tlv_data_t *data, account_reset_out_t *out) {
+    out->reset_scope = data->value;
+    return true;
+}
+
+// clang-format off
+#define ACCOUNT_RESET_TAGS(X) \
+    X(0x00, AR_TAG_VERSION,         NULL,                              ENFORCE_UNIQUE_TAG) \
+    X(0x01, AR_TAG_SUBSTRUCT_TYPE,  account_reset_handle_substruct_type, ENFORCE_UNIQUE_TAG) \
+    X(0x02, AR_TAG_ACCOUNT_INDEX,   account_reset_handle_account_index, ENFORCE_UNIQUE_TAG) \
+    X(0x03, AR_TAG_REQUIRE_ZERO,    account_reset_handle_require_zero,  ENFORCE_UNIQUE_TAG) \
+    X(0x04, AR_TAG_RESET_VALUE,     account_reset_handle_reset_value,   ENFORCE_UNIQUE_TAG) \
+    X(0x05, AR_TAG_RESET_SCOPE,     account_reset_handle_reset_scope,   ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(ACCOUNT_RESET_TAGS, NULL, parse_account_reset)
+
+// Parse an ACCOUNT_RESET, build a borrowed reset, and add it to the template.
+// The RESET_SCOPE discriminator scratch in *scope_scratch is freed by the caller.
+static int account_reset_build_and_add(uint8_t apdu_type,
+                                       const uint8_t *tlv,
+                                       size_t tlv_size,
+                                       reset_scope_out_t *scope_scratch) {
+    account_reset_out_t parsed = {0};
+    buffer_t payload = {.ptr = (uint8_t *) tlv, .size = tlv_size};
+    if (!parse_account_reset(&payload, &parsed, &parsed.received_tags)) {
+        PRINTF("substructure: ACCOUNT_RESET parsing failed\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(parsed.received_tags,
+                                 AR_TAG_SUBSTRUCT_TYPE,
+                                 AR_TAG_ACCOUNT_INDEX)) {
+        PRINTF("substructure: ACCOUNT_RESET missing required tags\n");
+        return -1;
+    }
+    if (parsed.substruct_type != apdu_type) {
+        PRINTF("substructure: ACCOUNT_RESET SUBSTRUCT_TYPE=%d != APDU type=%d\n",
+               parsed.substruct_type,
+               apdu_type);
+        return -1;
+    }
+
+    cs_account_reset_t reset = {0};
+    reset.account_index = parsed.account_index;
+    if (TLV_CHECK_RECEIVED_TAGS(parsed.received_tags, AR_TAG_REQUIRE_ZERO)) {
+        reset.require_pre_balance_zero = (parsed.require_pre_balance_zero != 0);
+    }
+    if (TLV_CHECK_RECEIVED_TAGS(parsed.received_tags, AR_TAG_RESET_VALUE)) {
+        reset.has_reset_value = true;
+        if (parse_amount_value_into(&parsed.reset_value, &reset.reset_value) != 0) {
+            return -1;
+        }
+        if (reset.reset_value.kind == CS_AMOUNT_KIND_BALANCE) {
+            PRINTF("substructure: ACCOUNT_RESET RESET_VALUE cannot be BALANCE\n");
+            return -1;
+        }
+    }
+    if (TLV_CHECK_RECEIVED_TAGS(parsed.received_tags, AR_TAG_RESET_SCOPE)) {
+        if (!parse_reset_scope(&parsed.reset_scope, scope_scratch, &scope_scratch->received_tags)) {
+            PRINTF("substructure: RESET_SCOPE parsing failed\n");
+            return -1;
+        }
+        if (!TLV_CHECK_RECEIVED_TAGS(scope_scratch->received_tags, RESET_SCOPE_TAG_PROGRAM_ID)) {
+            PRINTF("substructure: RESET_SCOPE missing SCOPE_PROGRAM_ID\n");
+            return -1;
+        }
+        reset.has_scope = true;
+        reset.scope.has_program_id = true;
+        memcpy(reset.scope.scope_program_id, scope_scratch->program_id.ptr, 32);
+        reset.scope.discriminators = scope_scratch->discriminators;
+        reset.scope.discriminator_count = scope_scratch->discriminator_count;
+    }
+
+    if (cs_instruction_template_add_account_reset(&reset) != 0) {
+        PRINTF("substructure: add_account_reset failed\n");
+        return -1;
+    }
+    PRINTF("substructure: registered ACCOUNT_RESET account=%d require_zero=%d\n",
+           reset.account_index,
+           reset.require_pre_balance_zero);
+    return 0;
+}
+
+static int register_account_reset(uint8_t apdu_type, const uint8_t *tlv, size_t tlv_size) {
+    reset_scope_out_t scope_scratch = {0};
+    int rc = account_reset_build_and_add(apdu_type, tlv, tlv_size, &scope_scratch);
+    if (scope_scratch.discriminators != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &scope_scratch.discriminators);
+    }
+    return rc;
+}
+
 int handle_provide_instruction_substructure(void) {
     PRINTF("handle_provide_instruction_substructure\n");
 
@@ -1160,13 +1737,31 @@ int handle_provide_instruction_substructure(void) {
         return reply_sw(ApduReplySolanaInvalidInstructionSubstructure);
     }
 
-    // Only DISPLAY_FIELD is interpreted in this slice; the other substructure
-    // types contribute to the hash but are not decoded.
+    // Every substructure type is decoded and forwarded into the template. The
+    // hash was already accumulated above, so an unknown type is refused here.
     if (type == SUBSTRUCTURE_TYPE_DISPLAY_FIELD) {
         if (register_display_field(type, tlv, tlv_size) != 0) {
             PRINTF("substructure: register_display_field failed\n");
             return reply_sw(ApduReplySolanaInvalidInstructionSubstructure);
         }
+    } else if (type == SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT) {
+        if (register_value_flow_port(type, tlv, tlv_size) != 0) {
+            PRINTF("substructure: register_value_flow_port failed\n");
+            return reply_sw(ApduReplySolanaInvalidInstructionSubstructure);
+        }
+    } else if (type == SUBSTRUCTURE_TYPE_HIDE_RULE) {
+        if (register_hide_rule(type, tlv, tlv_size) != 0) {
+            PRINTF("substructure: register_hide_rule failed\n");
+            return reply_sw(ApduReplySolanaInvalidInstructionSubstructure);
+        }
+    } else if (type == SUBSTRUCTURE_TYPE_ACCOUNT_RESET) {
+        if (register_account_reset(type, tlv, tlv_size) != 0) {
+            PRINTF("substructure: register_account_reset failed\n");
+            return reply_sw(ApduReplySolanaInvalidInstructionSubstructure);
+        }
+    } else {
+        PRINTF("substructure: unknown substructure type %d\n", type);
+        return reply_sw(ApduReplySolanaInvalidInstructionSubstructure);
     }
 
     bool complete = false;
