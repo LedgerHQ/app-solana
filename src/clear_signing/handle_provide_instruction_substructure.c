@@ -54,6 +54,42 @@ static bool param_raw_handle_ignore(const tlv_data_t *data, param_raw_out_t *out
 
 DEFINE_TLV_PARSER(PARAM_RAW_TAGS, NULL, parse_param_raw)
 
+// ---- PARAM_ENUM parser ------------------------------------------------------
+// Used for ARGUMENT_PATH with CS_PARAM_TYPE_ENUM. SKIP_INNER (0x02) collides in
+// tag number with PARAM_RAW's KIND, so PARAM_ENUM needs its own tag set rather
+// than borrowing the PARAM_RAW parser.
+
+typedef struct param_enum_out_s {
+    TLV_reception_t received_tags;
+    buffer_t value;
+    buffer_t skip_inner;
+} param_enum_out_t;
+
+static bool param_enum_handle_value(const tlv_data_t *data, param_enum_out_t *out) {
+    out->value = data->value;
+    return true;
+}
+
+static bool param_enum_handle_skip_inner(const tlv_data_t *data, param_enum_out_t *out) {
+    out->skip_inner = data->value;
+    return true;
+}
+
+static bool param_enum_handle_ignore(const tlv_data_t *data, param_enum_out_t *out) {
+    UNUSED(data);
+    UNUSED(out);
+    return true;
+}
+
+// clang-format off
+#define PARAM_ENUM_TAGS(X) \
+    X(0x00, PARAM_ENUM_TAG_VERSION,    param_enum_handle_ignore,     ENFORCE_UNIQUE_TAG) \
+    X(0x01, PARAM_ENUM_TAG_VALUE,      param_enum_handle_value,      ENFORCE_UNIQUE_TAG) \
+    X(0x02, PARAM_ENUM_TAG_SKIP_INNER, param_enum_handle_skip_inner, ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(PARAM_ENUM_TAGS, NULL, parse_param_enum)
+
 // ---- PARAM_AMOUNT parser ----------------------------------------------------
 // Used for ARGUMENT_PATH with CS_PARAM_TYPE_AMOUNT.
 
@@ -510,13 +546,23 @@ static int register_param_raw(const display_field_out_t *display_field, const ch
 // Register a PARAM_ENUM display field (ARGUMENT_PATH only).
 // The enum leaf is resolved by the walker to its selected variant's display name.
 static int register_param_enum(const display_field_out_t *display_field, const char *field_name) {
-    param_raw_out_t param = {0};
-    if (!parse_param_raw(&display_field->param, &param, &param.received_tags)) {
+    param_enum_out_t param = {0};
+    if (!parse_param_enum(&display_field->param, &param, &param.received_tags)) {
         PRINTF("substructure: PARAM_ENUM parsing failed\n");
         return -1;
     }
-    if (!TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_RAW_TAG_VALUE)) {
+    if (!TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_ENUM_TAG_VALUE)) {
         PRINTF("substructure: PARAM_ENUM missing VALUE\n");
+        return -1;
+    }
+
+    // SKIP_INNER is optional and must be a single 0/1 byte. The path-driven
+    // renderer already shows the variant name alone and displays inner-payload
+    // fields only when the descriptor emits explicit inner display fields, so the
+    // flag drives no rendering state; it is validated and accepted here.
+    if (param.skip_inner.ptr != NULL && (param.skip_inner.size != 1 || param.skip_inner.ptr[0] > 1)) {
+        PRINTF("substructure: PARAM_ENUM SKIP_INNER must be a 0/1 byte (size %d)\n",
+               param.skip_inner.size);
         return -1;
     }
 

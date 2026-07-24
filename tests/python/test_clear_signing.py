@@ -42,6 +42,7 @@ PARAM_TAG_KIND = 0x02      # PARAM_RAW/CONSTANT tag for IDL kind
 PARAM_TAG_IS_NATIVE = 0x04  # PARAM_TOKEN_AMOUNT tag for is_native flag
 PARAM_AMOUNT_TAG_MAX_LABEL = 0x03  # PARAM_AMOUNT MAX_LABEL sentinel string
 PARAM_TOKEN_TAG_MAX_LABEL = 0x05   # PARAM_TOKEN_AMOUNT MAX_LABEL sentinel string
+PARAM_ENUM_TAG_SKIP_INNER = 0x02   # PARAM_ENUM 1=render variant name only
 PARAM_DATETIME_TAG_TICKS = 0x02       # PARAM_DATETIME ticks-per-second (BE uint)
 PARAM_UNIT_TAG_SYMBOL = 0x02          # PARAM_UNIT symbol string
 PARAM_UNIT_TAG_DECIMALS = 0x03        # PARAM_UNIT decimal scaling
@@ -298,13 +299,17 @@ def _build_token_amount_field_with_token(argument_path: bytes, name: str, *,
             + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_token))
 
 
-def _build_enum_display_field(argument_path: bytes, name: str) -> bytes:
+def _build_enum_display_field(argument_path: bytes, name: str, *,
+                              skip_inner: bytes = None) -> bytes:
     """A DISPLAY_FIELD (PARAM_ENUM) pointing at one ARGUMENT_PATH enum leaf.
-    The walker resolves the leaf to the selected variant's display name."""
+    The walker resolves the leaf to the selected variant's display name. An
+    optional SKIP_INNER byte marks the inner payload as display-suppressed."""
     value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
                  + format_tlv(ValueTag.PAYLOAD, argument_path))
     param_enum = (format_tlv(PARAM_TAG_VERSION, 1)
                   + format_tlv(PARAM_TAG_VALUE, value_tlv))
+    if skip_inner is not None:
+        param_enum += format_tlv(PARAM_ENUM_TAG_SKIP_INNER, skip_inner)
     return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
             + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
             + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
@@ -2070,6 +2075,116 @@ def test_enum_inline_variant_inner_field(backend, sol, scenario_navigator, root_
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
+
+
+def test_enum_skip_inner_true_accepted(backend, sol):
+    """SKIP_INNER=1 on a PARAM_ENUM is accepted: the walker still consumes the
+    INLINE payload bytes and, with no inner display field, only the variant name
+    is displayable. The session finalizes."""
+    inline_desc = bytes([0x20, 0x01, 0x01])  # STRUCT{ U8 }
+    data = ENUM_DISCRIMINATOR + bytes([1]) + bytes([0x42])
+    message = _craft_single_instruction_message(sol, ENUM_PROGRAM_ID, data)
+    _begin_session(sol, message)
+
+    enum_field = _build_enum_display_field(ENUM_PATH, "Route", skip_inner=b'\x01')
+    substructures_hash = hashlib.sha256(enum_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=ENUM_PROGRAM_ID,
+        discriminator=ENUM_DISCRIMINATOR,
+        operation_type="Swap",
+        program_name="SwapDex",
+        substructures_hash=substructures_hash,
+        idl_type_pool=_enum_pool_empty(),
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, enum_field)
+    sol.provide_enum_variant(
+        program_id=ENUM_PROGRAM_ID,
+        enum_id=ENUM_ID,
+        variant_index=1,
+        variant_name="Orca",
+        payload_kind=0x02,  # INLINE
+        variant_payload=inline_desc,
+    )
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+    _wipe_session(sol)
+
+
+def test_enum_skip_inner_false_accepted(backend, sol):
+    """SKIP_INNER=0 (explicit) on a PARAM_ENUM is accepted and finalizes."""
+    data = ENUM_DISCRIMINATOR + bytes([1])
+    message = _craft_single_instruction_message(sol, ENUM_PROGRAM_ID, data)
+    _begin_session(sol, message)
+
+    enum_field = _build_enum_display_field(ENUM_PATH, "Route", skip_inner=b'\x00')
+    substructures_hash = hashlib.sha256(enum_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=ENUM_PROGRAM_ID,
+        discriminator=ENUM_DISCRIMINATOR,
+        operation_type="Swap",
+        program_name="SwapDex",
+        substructures_hash=substructures_hash,
+        idl_type_pool=_enum_pool_empty(),
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, enum_field)
+    sol.provide_enum_variant(
+        program_id=ENUM_PROGRAM_ID,
+        enum_id=ENUM_ID,
+        variant_index=1,
+        variant_name="Orca",
+        payload_kind=0x00,  # EMPTY
+    )
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+    _wipe_session(sol)
+
+
+def test_enum_skip_inner_invalid_value_rejected(backend, sol):
+    """A PARAM_ENUM SKIP_INNER byte outside {0, 1} is refused at ingest."""
+    data = ENUM_DISCRIMINATOR + bytes([1])
+    message = _craft_single_instruction_message(sol, ENUM_PROGRAM_ID, data)
+    _begin_session(sol, message)
+
+    enum_field = _build_enum_display_field(ENUM_PATH, "Route", skip_inner=b'\x02')
+    sol.provide_instruction_info(
+        program_id=ENUM_PROGRAM_ID,
+        discriminator=ENUM_DISCRIMINATOR,
+        operation_type="Swap",
+        program_name="SwapDex",
+        substructures_hash=hashlib.sha256(enum_field).digest(),
+        idl_type_pool=_enum_pool_empty(),
+        idl_root_type=0,
+    )
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, enum_field)
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
+
+
+def test_enum_skip_inner_invalid_size_rejected(backend, sol):
+    """A multi-byte PARAM_ENUM SKIP_INNER is refused at ingest."""
+    data = ENUM_DISCRIMINATOR + bytes([1])
+    message = _craft_single_instruction_message(sol, ENUM_PROGRAM_ID, data)
+    _begin_session(sol, message)
+
+    enum_field = _build_enum_display_field(ENUM_PATH, "Route", skip_inner=b'\x00\x00')
+    sol.provide_instruction_info(
+        program_id=ENUM_PROGRAM_ID,
+        discriminator=ENUM_DISCRIMINATOR,
+        operation_type="Swap",
+        program_name="SwapDex",
+        substructures_hash=hashlib.sha256(enum_field).digest(),
+        idl_type_pool=_enum_pool_empty(),
+        idl_root_type=0,
+    )
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, enum_field)
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
 
 
 # ─── End-to-end: clear signing + delayed signing ─────────────────────────────
