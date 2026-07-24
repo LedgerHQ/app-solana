@@ -381,9 +381,38 @@ static int read_leaf_u64(const idl_resolved_leaf_t *leaf, uint64_t *out) {
     return 0;
 }
 
-// PARAM_AMOUNT: numeric value with fixed decimal scaling.
+// True when `value` equals the maximum of the leaf's unsigned IDL number type.
+// Only the unsigned kinds read_leaf_u64 accepts can reach an amount formatter.
+static bool leaf_at_unsigned_max(uint8_t kind, uint64_t value) {
+    switch (kind) {
+        case IDL_KIND_U8:
+            return value == UINT8_MAX;
+        case IDL_KIND_U16:
+            return value == UINT16_MAX;
+        case IDL_KIND_U32:
+            return value == UINT32_MAX;
+        case IDL_KIND_U64:
+            return value == UINT64_MAX;
+        default:
+            return false;
+    }
+}
+
+// Render a MAX_LABEL sentinel. Refuses rather than truncate: a shortened label
+// would misrepresent the amount being signed. Returns 0, -1 when it does not fit.
+static int render_max_label(const char *max_label, char *value_out, size_t value_out_size) {
+    if (strlen(max_label) >= value_out_size) {
+        PRINTF("render_max_label: label does not fit buffer (%u)\n", (unsigned) value_out_size);
+        return -1;
+    }
+    strlcpy(value_out, max_label, value_out_size);
+    return 0;
+}
+
+// PARAM_AMOUNT: numeric value with fixed decimal scaling, or the MAX_LABEL
+// sentinel when the raw integer is at its IDL type's maximum.
 static int format_amount(const idl_resolved_leaf_t *leaf,
-                         uint8_t decimals,
+                         const cs_format_amount_t *fmt,
                          char *value_out,
                          size_t value_out_size) {
     uint64_t amount;
@@ -391,11 +420,18 @@ static int format_amount(const idl_resolved_leaf_t *leaf,
         PRINTF("format_amount: unsupported leaf kind %d\n", leaf->kind);
         return -1;
     }
-    if (print_token_amount(amount, NULL, decimals, value_out, value_out_size) != 0) {
-        PRINTF("format_amount: print_token_amount failed\n");
-        return -1;
+
+    int status;
+    if (fmt->max_label != NULL && leaf_at_unsigned_max(leaf->kind, amount)) {
+        status = render_max_label(fmt->max_label, value_out, value_out_size);
+    } else {
+        status = print_token_amount(amount, NULL, fmt->decimals, value_out, value_out_size);
+        if (status != 0) {
+            PRINTF("format_amount: print_token_amount failed\n");
+            status = -1;
+        }
     }
-    return 0;
+    return status;
 }
 
 // PARAM_TOKEN_AMOUNT: renders a raw amount with the ticker and decimal scaling
@@ -412,61 +448,67 @@ static int format_token_amount(const idl_resolved_leaf_t *leaf,
         return -1;
     }
 
-    const char *symbol;
-    int magnitude;
+    int status;
+    if (fmt->max_label != NULL && leaf_at_unsigned_max(leaf->kind, amount)) {
+        status = render_max_label(fmt->max_label, value_out, value_out_size);
+    } else {
+        const char *symbol;
+        int magnitude;
 
-    switch (fmt->mint_source) {
-        case CS_TOKEN_MINT_NATIVE:
-            PRINTF("format_token_amount: native SOL\n");
-            symbol = "SOL";
-            magnitude = SOL_DECIMALS;
-            break;
+        switch (fmt->mint_source) {
+            case CS_TOKEN_MINT_NATIVE:
+                PRINTF("format_token_amount: native SOL\n");
+                symbol = "SOL";
+                magnitude = SOL_DECIMALS;
+                break;
 
-        case CS_TOKEN_MINT_NONE:
-            symbol = NULL;
-            magnitude = 0;
-            if (fmt->has_decimals) {
-                magnitude = fmt->decimals;
-            }
-            PRINTF("format_token_amount: no mint, bare render decimals=%d\n", magnitude);
-            break;
-
-        case CS_TOKEN_MINT_ACCOUNT_INDEX:
-        case CS_TOKEN_MINT_CONSTANT:
-            // finalize resolves referenced mints; a NULL here is an upstream bug.
-            if (mint_pubkey == NULL) {
-                PRINTF("format_token_amount: mint_source %d has no resolved mint\n",
-                       fmt->mint_source);
-                return -1;
-            }
-            symbol = get_token_symbol(mint_pubkey, false);
-            magnitude = get_token_magnitude(mint_pubkey, false);
-            PRINTF("format_token_amount: registry symbol=%s magnitude=%d\n",
-                   symbol == NULL ? "(none)" : symbol,
-                   magnitude);
-            // An explicit override wins over the registry magnitude.
-            if (fmt->has_decimals) {
-                magnitude = fmt->decimals;
-                PRINTF("format_token_amount: decimals overridden to %d\n", magnitude);
-            }
-            // Keep the amount visible when the mint is unknown to the registry.
-            if (magnitude < 0) {
-                PRINTF("format_token_amount: mint unknown, ticker=???\n");
-                symbol = "???";
+            case CS_TOKEN_MINT_NONE:
+                symbol = NULL;
                 magnitude = 0;
-            }
-            break;
+                if (fmt->has_decimals) {
+                    magnitude = fmt->decimals;
+                }
+                PRINTF("format_token_amount: no mint, bare render decimals=%d\n", magnitude);
+                break;
 
-        default:
-            PRINTF("format_token_amount: unknown mint_source %d\n", fmt->mint_source);
-            return -1;
-    }
+            case CS_TOKEN_MINT_ACCOUNT_INDEX:
+            case CS_TOKEN_MINT_CONSTANT:
+                // finalize resolves referenced mints; a NULL here is an upstream bug.
+                if (mint_pubkey == NULL) {
+                    PRINTF("format_token_amount: mint_source %d has no resolved mint\n",
+                           fmt->mint_source);
+                    return -1;
+                }
+                symbol = get_token_symbol(mint_pubkey, false);
+                magnitude = get_token_magnitude(mint_pubkey, false);
+                PRINTF("format_token_amount: registry symbol=%s magnitude=%d\n",
+                       symbol == NULL ? "(none)" : symbol,
+                       magnitude);
+                // An explicit override wins over the registry magnitude.
+                if (fmt->has_decimals) {
+                    magnitude = fmt->decimals;
+                    PRINTF("format_token_amount: decimals overridden to %d\n", magnitude);
+                }
+                // Keep the amount visible when the mint is unknown to the registry.
+                if (magnitude < 0) {
+                    PRINTF("format_token_amount: mint unknown, ticker=???\n");
+                    symbol = "???";
+                    magnitude = 0;
+                }
+                break;
 
-    if (print_token_amount(amount, symbol, (uint8_t) magnitude, value_out, value_out_size) != 0) {
-        PRINTF("format_token_amount: print_token_amount failed\n");
-        return -1;
+            default:
+                PRINTF("format_token_amount: unknown mint_source %d\n", fmt->mint_source);
+                return -1;
+        }
+
+        status = print_token_amount(amount, symbol, (uint8_t) magnitude, value_out, value_out_size);
+        if (status != 0) {
+            PRINTF("format_token_amount: print_token_amount failed\n");
+            status = -1;
+        }
     }
-    return 0;
+    return status;
 }
 
 // Write the cached name for a 32-byte address leaf when its type satisfies the
@@ -873,10 +915,7 @@ static int format_argument_field(const cs_display_field_t *field,
             return format_leaf(leaf, value_out, value_out_size);
 
         case CS_PARAM_TYPE_AMOUNT:
-            return format_amount(leaf,
-                                 field->argument.format.amount.decimals,
-                                 value_out,
-                                 value_out_size);
+            return format_amount(leaf, &field->argument.format.amount, value_out, value_out_size);
 
         case CS_PARAM_TYPE_TOKEN_AMOUNT:
             return format_token_amount(leaf,

@@ -38,9 +38,11 @@ enum cs_param_type {
     CS_PARAM_TYPE_STRING = 0x09,
 };
 
-// Format-specific parameters for PARAM_AMOUNT.
+// Format-specific parameters for PARAM_AMOUNT. `max_label` is rendered in place
+// of the number when the raw integer equals its IDL type's maximum value.
 typedef struct cs_format_amount_s {
     uint8_t decimals;
+    char *max_label;  // heap, NUL-terminated; owned by this template, NULL when absent
 } cs_format_amount_t;
 
 // Format-specific parameters for PARAM_DATETIME. The resolved integer leaf is
@@ -124,6 +126,7 @@ typedef struct cs_format_token_amount_s {
     } ref;
     bool has_decimals;
     uint8_t decimals;
+    char *max_label;  // heap, NUL-terminated; owned by this template, NULL when absent
 } cs_format_token_amount_t;
 
 // PARAM_TRUSTED_NAME: the TYPES allow-list as a bitmask (bit i = TrustedNameType
@@ -364,16 +367,25 @@ int cs_instruction_template_set_program_name(const char *str, size_t str_size);
 // Returns 0, -1 on error.
 int cs_instruction_template_set_discriminator(const uint8_t *data, size_t size);
 
-// Set AMOUNT format parameters on the last added display field.
-// Must be called immediately after adding a field with param_type == AMOUNT.
-int cs_instruction_template_set_format_amount(uint8_t decimals);
+// Set AMOUNT format parameters on the last added display field. `max_label`
+// (max_label_size bytes, absent when the size is 0) is copied into a heap buffer
+// owned by the template. Must be called immediately after adding a field with
+// param_type == AMOUNT. Returns 0, -1 on no matching field or allocation failure.
+int cs_instruction_template_set_format_amount(uint8_t decimals,
+                                             const uint8_t *max_label,
+                                             size_t max_label_size);
 
 // Set TOKEN_AMOUNT format parameters on the last added display field. The
 // caller builds a fully-validated `format` (mint source, optional embedded mint
-// or account index, optional decimals override) and hands it over atomically.
-// Must be called immediately after adding a field with param_type == TOKEN_AMOUNT.
-// Returns 0 on success, -1 when no matching field is open.
-int cs_instruction_template_set_format_token_amount(const cs_format_token_amount_t *format);
+// or account index, optional decimals override) and hands it over atomically;
+// its `max_label` field is ignored in favour of the `max_label` argument
+// (max_label_size bytes, absent when the size is 0), which is copied into a heap
+// buffer owned by the template. Must be called immediately after adding a field
+// with param_type == TOKEN_AMOUNT. Returns 0, -1 on no matching field or
+// allocation failure.
+int cs_instruction_template_set_format_token_amount(const cs_format_token_amount_t *format,
+                                                    const uint8_t *max_label,
+                                                    size_t max_label_size);
 
 // Set DATETIME format parameters on the last added display field.
 // Must be called immediately after adding a field with param_type == DATETIME.
