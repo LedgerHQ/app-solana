@@ -268,5 +268,16 @@ int handle_provide_instruction_info(void) {
         }
     }
 
+    if (has_owner_account) {
+        if (cs_instruction_template_set_owner_assoc(tlv_extracted.owner_assoc_account,
+                                                    tlv_extracted.owner_assoc_owner.source,
+                                                    tlv_extracted.owner_assoc_owner.payload.ptr,
+                                                    tlv_extracted.owner_assoc_owner.payload.size) !=
+            0) {
+            PRINTF("Error: failed to set owner association\n");
+            return reply_sw(ApduReplySolanaInvalidInstructionInfo);
+        }
+    }
+
     return reply_sw(ApduReplySuccess);
 }

@@ -27,13 +27,12 @@ typedef struct mint_binding_s {
     const uint8_t *mint;
 } mint_binding_t;
 
-// Resolve a 32-byte token reference (a token account or a mint) to the mint that
-// identifies its token, per spec "Token amount metadata resolution": the
-// MINT_ASSOC bindings take priority, then the chain-attested TOKEN_ACCOUNT_STATE
-// cache, and finally the reference is treated as the mint itself.
-static const uint8_t *resolve_field_mint(const mint_binding_t *bindings,
-                                         size_t binding_count,
-                                         const uint8_t *token_ref) {
+// Look up the mint that identifies a token reference (a token account) through
+// the MINT_ASSOC bindings first, then the chain-attested TOKEN_ACCOUNT_STATE
+// cache. Returns NULL when neither source covers the reference.
+static const uint8_t *lookup_mint_binding(const mint_binding_t *bindings,
+                                          size_t binding_count,
+                                          const uint8_t *token_ref) {
     for (size_t b = 0; b < binding_count; b++) {
         if (memcmp(bindings[b].token_account, token_ref, 32) == 0) {
             return bindings[b].mint;
@@ -42,6 +41,20 @@ static const uint8_t *resolve_field_mint(const mint_binding_t *bindings,
     const cs_token_account_t *entry = cs_token_account_cache_find(token_ref);
     if (entry != NULL) {
         return entry->mint;
+    }
+    return NULL;
+}
+
+// Resolve a 32-byte token reference (a token account or a mint) to the mint that
+// identifies its token, per spec "Token amount metadata resolution": the
+// MINT_ASSOC bindings take priority, then the chain-attested TOKEN_ACCOUNT_STATE
+// cache, and finally the reference is treated as the mint itself.
+static const uint8_t *resolve_field_mint(const mint_binding_t *bindings,
+                                         size_t binding_count,
+                                         const uint8_t *token_ref) {
+    const uint8_t *mint = lookup_mint_binding(bindings, binding_count, token_ref);
+    if (mint != NULL) {
+        return mint;
     }
     return token_ref;
 }
@@ -92,6 +105,216 @@ static const uint8_t *pubkey_from_account_index(const cs_transaction_t *cs_tx,
     return pubkey;
 }
 
+// Where an ARGUMENT_PATH walker result must be scattered after the single walk.
+enum walk_scatter_kind {
+    WALK_SCATTER_DISPLAY_FIELD,
+    WALK_SCATTER_PORT_AMOUNT,
+    WALK_SCATTER_PORT_MINT,
+    WALK_SCATTER_RESET_AMOUNT,
+    WALK_SCATTER_HIDE_TARGET,
+    WALK_SCATTER_OWNER,
+};
+
+typedef struct walk_scatter_target_s {
+    uint8_t kind;   // enum walk_scatter_kind
+    size_t index;   // display field / port / reset / hide-rule index (unused for OWNER)
+} walk_scatter_target_t;
+
+// Register one ARGUMENT_PATH VALUE path into the walker match set, recording where
+// its result is scattered. Returns 0, -1 when the path length is out of range.
+static int match_set_register(idl_match_path_t *paths,
+                              walk_scatter_target_t *targets,
+                              size_t *count,
+                              const uint8_t *path,
+                              size_t path_size,
+                              uint8_t kind,
+                              size_t index) {
+    if (path_size == 0 || path_size > UINT8_MAX) {
+        PRINTF("finalize cs: argument path size %d out of range\n", (int) path_size);
+        return -1;
+    }
+    paths[*count].path = path;
+    paths[*count].path_size = (uint8_t) path_size;
+    targets[*count].kind = kind;
+    targets[*count].index = index;
+    (*count)++;
+    return 0;
+}
+
+// Resolve the port's ACCOUNT_INDEX candidate list to one concrete account, per
+// spec "Account resolution": scan in order, skipping a non-final candidate that
+// is out of range or (PROGRAM_ID strategy) whose slot holds the program id; the
+// final candidate always resolves. Returns NULL when no candidate resolves.
+static const uint8_t *resolve_port_account(const cs_transaction_t *cs_tx,
+                                           const MessageHeader *header,
+                                           const Instruction *instruction,
+                                           const cs_value_flow_port_t *port) {
+    for (size_t c = 0; c < port->candidate_count; c++) {
+        bool is_final = (c + 1 == port->candidate_count);
+        if (port->account_candidates[c] >= instruction->accounts_length) {
+            if (is_final) {
+                PRINTF("finalize cs: final port candidate index out of range\n");
+                return NULL;
+            }
+            continue;
+        }
+        // In range but unresolved means an ALT-loaded account with no attested
+        // resolution: a provided candidate we cannot resolve, so refuse rather
+        // than skip to a later/default candidate.
+        const uint8_t *pubkey =
+            pubkey_from_account_index(cs_tx, header, instruction, port->account_candidates[c]);
+        if (pubkey == NULL) {
+            PRINTF("finalize cs: in-range port candidate unresolved, refusing to sign\n");
+            return NULL;
+        }
+        if (!is_final &&
+            port->optional_account_strategy == CS_OPTIONAL_ACCOUNT_STRATEGY_PROGRAM_ID &&
+            memcmp(pubkey, header->pubkeys[instruction->program_id_index].data, 32) == 0) {
+            continue;
+        }
+        return pubkey;
+    }
+    PRINTF("finalize cs: port has no resolvable account candidate\n");
+    return NULL;
+}
+
+// Resolve a non-ARGUMENT_PATH VALUE that must yield a 32-byte pubkey. ARGUMENT_PATH
+// is handled through the walker instead. Returns the pubkey or NULL on error.
+static const uint8_t *resolve_pubkey_value_direct(const cs_transaction_t *cs_tx,
+                                                  const MessageHeader *header,
+                                                  const Instruction *instruction,
+                                                  const cs_stored_value_t *value) {
+    if (value->source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        if (value->payload_size != 1) {
+            PRINTF("finalize cs: pubkey ACCOUNT_PATH payload size %d != 1\n",
+                   (int) value->payload_size);
+            return NULL;
+        }
+        return pubkey_from_account_index(cs_tx, header, instruction, value->payload[0]);
+    } else if (value->source == CS_VALUE_SOURCE_CONSTANT) {
+        if (value->payload_size != 32) {
+            PRINTF("finalize cs: pubkey CONSTANT payload size %d != 32\n",
+                   (int) value->payload_size);
+            return NULL;
+        }
+        return value->payload;
+    }
+    PRINTF("finalize cs: unexpected pubkey VALUE source %d\n", value->source);
+    return NULL;
+}
+
+// Resolve a non-ARGUMENT_PATH amount VALUE to its raw bytes. CONSTANT bytes are
+// little-endian; an ACCOUNT_PATH yields the 32-byte account address. Returns 0, -1.
+static int resolve_amount_value_direct(const cs_transaction_t *cs_tx,
+                                       const MessageHeader *header,
+                                       const Instruction *instruction,
+                                       const cs_stored_value_t *value,
+                                       const uint8_t **out_bytes,
+                                       size_t *out_size,
+                                       uint8_t *out_kind) {
+    if (value->source == CS_VALUE_SOURCE_CONSTANT) {
+        *out_bytes = value->payload;
+        *out_size = value->payload_size;
+        *out_kind = 0;
+        return 0;
+    } else if (value->source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        if (value->payload_size != 1) {
+            PRINTF("finalize cs: amount ACCOUNT_PATH payload size %d != 1\n",
+                   (int) value->payload_size);
+            return -1;
+        }
+        const uint8_t *pubkey =
+            pubkey_from_account_index(cs_tx, header, instruction, value->payload[0]);
+        if (pubkey == NULL) {
+            return -1;
+        }
+        *out_bytes = pubkey;
+        *out_size = 32;
+        *out_kind = IDL_KIND_PUBKEY_32;
+        return 0;
+    }
+    PRINTF("finalize cs: unexpected amount VALUE source %d\n", value->source);
+    return -1;
+}
+
+// Resolve everything local to one port except ARGUMENT_PATH values (filled by the
+// walker scatter) and the RESOLVE mint (deferred to the binding second pass).
+static int resolve_port_local(const cs_transaction_t *cs_tx,
+                              const MessageHeader *header,
+                              const Instruction *instruction,
+                              const cs_value_flow_port_t *port,
+                              cs_resolved_port_t *out) {
+    out->value_kind = port->value_kind;
+    out->amount_kind = port->amount.kind;
+    if (port->has_token) {
+        out->token_kind = port->token.kind;
+    } else {
+        out->token_kind = CS_TOKEN_KIND_NULL;
+    }
+
+    const uint8_t *account = resolve_port_account(cs_tx, header, instruction, port);
+    if (account == NULL) {
+        return -1;
+    }
+    out->account = account;
+    out->resolved = true;
+
+    if (port->amount.kind == CS_AMOUNT_KIND_NUMERIC && port->amount.has_value &&
+        port->amount.value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        if (resolve_amount_value_direct(cs_tx,
+                                        header,
+                                        instruction,
+                                        &port->amount.value,
+                                        &out->amount_le,
+                                        &out->amount_size,
+                                        &out->amount_leaf_kind) != 0) {
+            return -1;
+        }
+    }
+
+    // DIRECT non-ARGUMENT_PATH mint resolves now; RESOLVE waits for the binding
+    // map (second pass); ARGUMENT_PATH mint is filled by the walker scatter.
+    if (port->has_token && port->token.kind == CS_TOKEN_KIND_DIRECT && port->token.has_value &&
+        port->token.value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        const uint8_t *mint =
+            resolve_pubkey_value_direct(cs_tx, header, instruction, &port->token.value);
+        if (mint == NULL) {
+            return -1;
+        }
+        out->mint = mint;
+    }
+    return 0;
+}
+
+// Resolve everything local to one account reset (ARGUMENT_PATH amount deferred to
+// the walker scatter). Returns 0, -1 on error.
+static int resolve_reset_local(const cs_transaction_t *cs_tx,
+                              const MessageHeader *header,
+                              const Instruction *instruction,
+                              const cs_account_reset_t *reset,
+                              cs_resolved_reset_t *out) {
+    const uint8_t *account =
+        pubkey_from_account_index(cs_tx, header, instruction, reset->account_index);
+    if (account == NULL) {
+        return -1;
+    }
+    out->account = account;
+    if (reset->has_reset_value && reset->reset_value.has_value &&
+        reset->reset_value.value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        if (resolve_amount_value_direct(cs_tx,
+                                        header,
+                                        instruction,
+                                        &reset->reset_value.value,
+                                        &out->amount_le,
+                                        &out->amount_size,
+                                        &out->amount_leaf_kind) != 0) {
+            return -1;
+        }
+        out->has_amount = true;
+    }
+    return 0;
+}
+
 // Fill one result slot from one parsed instruction, using the caller-allocated
 // scratch (all sized to the template's field count) and the result's own
 // resolved / field_mint arrays. Returns 0, -1 on error.
@@ -102,10 +325,12 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
                                   const cs_instruction_template_t *template,
                                   cs_instruction_result_t *result,
                                   idl_match_path_t *argument_paths,
-                                  size_t *argument_indices,
+                                  walk_scatter_target_t *scatter_targets,
                                   idl_resolved_leaf_t *walker_results,
                                   mint_binding_t *bindings,
-                                  size_t *binding_count) {
+                                  size_t *binding_count,
+                                  cs_owner_binding_t *owner_bindings,
+                                  size_t *owner_binding_count) {
     if (idl_pool_provide(template->idl_type_pool,
                          template->idl_type_pool_size,
                          template->idl_root_type) != 0) {
@@ -113,17 +338,85 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
         return -1;
     }
 
-    // Compact only the ARGUMENT_PATH fields for the walker, tracking their
-    // original field indices so results can be scattered back.
-    size_t argument_count = 0;
-    for (size_t f = 0; f < template->display_field_count; f++) {
+    // Build the ARGUMENT_PATH match set from every ARGUMENT_PATH VALUE across the
+    // display fields and the merge-engine substructures, recording each result's
+    // scatter destination so a single walk resolves them all.
+    size_t match_count = 0;
+    int register_status = 0;
+    for (size_t f = 0; f < template->display_field_count && register_status == 0; f++) {
         if (template->display_fields[f].source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
-            argument_paths[argument_count].path = template->display_fields[f].argument.path;
-            argument_paths[argument_count].path_size =
-                template->display_fields[f].argument.path_size;
-            argument_indices[argument_count] = f;
-            argument_count++;
+            register_status = match_set_register(argument_paths,
+                                                 scatter_targets,
+                                                 &match_count,
+                                                 template->display_fields[f].argument.path,
+                                                 template->display_fields[f].argument.path_size,
+                                                 WALK_SCATTER_DISPLAY_FIELD,
+                                                 f);
         }
+    }
+    for (size_t p = 0; p < template->port_count && register_status == 0; p++) {
+        if (template->ports[p].amount.kind == CS_AMOUNT_KIND_NUMERIC &&
+            template->ports[p].amount.has_value &&
+            template->ports[p].amount.value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+            register_status = match_set_register(argument_paths,
+                                                 scatter_targets,
+                                                 &match_count,
+                                                 template->ports[p].amount.value.payload,
+                                                 template->ports[p].amount.value.payload_size,
+                                                 WALK_SCATTER_PORT_AMOUNT,
+                                                 p);
+        }
+        if (register_status == 0 && template->ports[p].has_token &&
+            template->ports[p].token.kind == CS_TOKEN_KIND_DIRECT &&
+            template->ports[p].token.has_value &&
+            template->ports[p].token.value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+            register_status = match_set_register(argument_paths,
+                                                 scatter_targets,
+                                                 &match_count,
+                                                 template->ports[p].token.value.payload,
+                                                 template->ports[p].token.value.payload_size,
+                                                 WALK_SCATTER_PORT_MINT,
+                                                 p);
+        }
+    }
+    for (size_t r = 0; r < template->account_reset_count && register_status == 0; r++) {
+        if (template->account_resets[r].has_reset_value &&
+            template->account_resets[r].reset_value.has_value &&
+            template->account_resets[r].reset_value.value.source ==
+                CS_VALUE_SOURCE_ARGUMENT_PATH) {
+            register_status = match_set_register(argument_paths,
+                                                 scatter_targets,
+                                                 &match_count,
+                                                 template->account_resets[r].reset_value.value.payload,
+                                                 template->account_resets[r].reset_value.value.payload_size,
+                                                 WALK_SCATTER_RESET_AMOUNT,
+                                                 r);
+        }
+    }
+    for (size_t h = 0; h < template->hide_rule_count && register_status == 0; h++) {
+        if (template->hide_rules[h].target.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+            register_status = match_set_register(argument_paths,
+                                                 scatter_targets,
+                                                 &match_count,
+                                                 template->hide_rules[h].target.payload,
+                                                 template->hide_rules[h].target.payload_size,
+                                                 WALK_SCATTER_HIDE_TARGET,
+                                                 h);
+        }
+    }
+    if (register_status == 0 && template->has_owner_assoc &&
+        template->owner_assoc_owner.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        register_status = match_set_register(argument_paths,
+                                             scatter_targets,
+                                             &match_count,
+                                             template->owner_assoc_owner.payload,
+                                             template->owner_assoc_owner.payload_size,
+                                             WALK_SCATTER_OWNER,
+                                             0);
+    }
+    if (register_status != 0) {
+        idl_pool_reset();
+        return -1;
     }
 
     size_t walker_resolved_count = 0;
@@ -131,7 +424,7 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
                                      instruction->data_length,
                                      program_id,
                                      argument_paths,
-                                     argument_count,
+                                     match_count,
                                      walker_results,
                                      &walker_resolved_count);
     idl_pool_reset();
@@ -140,9 +433,54 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
         return -1;
     }
 
-    // Scatter the compacted walker results back to their original field slots.
-    for (size_t w = 0; w < argument_count; w++) {
-        result->resolved[argument_indices[w]] = walker_results[w];
+    // Scatter each walker result to its recorded destination. Pubkey-resolving
+    // targets must reach a 32-byte publicKey leaf.
+    const uint8_t *owner_walker_pubkey = NULL;
+    for (size_t w = 0; w < match_count; w++) {
+        size_t index = scatter_targets[w].index;
+        switch (scatter_targets[w].kind) {
+            case WALK_SCATTER_DISPLAY_FIELD:
+                result->resolved[index] = walker_results[w];
+                break;
+            case WALK_SCATTER_PORT_AMOUNT:
+                result->resolved_ports[index].amount_le = walker_results[w].value;
+                result->resolved_ports[index].amount_size = walker_results[w].value_size;
+                result->resolved_ports[index].amount_leaf_kind = walker_results[w].kind;
+                break;
+            case WALK_SCATTER_PORT_MINT:
+                if (walker_results[w].kind != IDL_KIND_PUBKEY_32 ||
+                    walker_results[w].value_size != 32) {
+                    PRINTF("finalize cs: port %d DIRECT mint path is not a pubkey\n", (int) index);
+                    return -1;
+                }
+                result->resolved_ports[index].mint = walker_results[w].value;
+                break;
+            case WALK_SCATTER_RESET_AMOUNT:
+                result->resolved_resets[index].amount_le = walker_results[w].value;
+                result->resolved_resets[index].amount_size = walker_results[w].value_size;
+                result->resolved_resets[index].amount_leaf_kind = walker_results[w].kind;
+                result->resolved_resets[index].has_amount = true;
+                break;
+            case WALK_SCATTER_HIDE_TARGET:
+                if (walker_results[w].kind != IDL_KIND_PUBKEY_32 ||
+                    walker_results[w].value_size != 32) {
+                    PRINTF("finalize cs: hide rule %d target path is not a pubkey\n", (int) index);
+                    return -1;
+                }
+                result->resolved_hide_rules[index].target = walker_results[w].value;
+                break;
+            case WALK_SCATTER_OWNER:
+                if (walker_results[w].kind != IDL_KIND_PUBKEY_32 ||
+                    walker_results[w].value_size != 32) {
+                    PRINTF("finalize cs: owner assoc path is not a pubkey\n");
+                    return -1;
+                }
+                owner_walker_pubkey = walker_results[w].value;
+                break;
+            default:
+                PRINTF("finalize cs: unknown scatter kind %d\n", scatter_targets[w].kind);
+                return -1;
+        }
     }
 
     // Resolve ACCOUNT_PATH fields from the instruction's accounts array
@@ -187,6 +525,75 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
         bindings[*binding_count].token_account = token_account;
         bindings[*binding_count].mint = mint;
         (*binding_count)++;
+    }
+
+    // Resolve each port's local values (account, non-ARGUMENT_PATH amount and
+    // DIRECT mint). RESOLVE mints wait for the transaction-wide binding map.
+    for (size_t p = 0; p < template->port_count; p++) {
+        if (resolve_port_local(cs_tx,
+                               header,
+                               instruction,
+                               &template->ports[p],
+                               &result->resolved_ports[p]) != 0) {
+            PRINTF("finalize cs: port %d resolution failed\n", (int) p);
+            return -1;
+        }
+    }
+
+    // Resolve each account reset's local values.
+    for (size_t r = 0; r < template->account_reset_count; r++) {
+        if (resolve_reset_local(cs_tx,
+                                header,
+                                instruction,
+                                &template->account_resets[r],
+                                &result->resolved_resets[r]) != 0) {
+            PRINTF("finalize cs: reset %d resolution failed\n", (int) r);
+            return -1;
+        }
+    }
+
+    // Resolve non-ARGUMENT_PATH hide-rule targets (ARGUMENT_PATH filled above).
+    for (size_t h = 0; h < template->hide_rule_count; h++) {
+        if (template->hide_rules[h].target.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+            const uint8_t *target = resolve_pubkey_value_direct(cs_tx,
+                                                                header,
+                                                                instruction,
+                                                                &template->hide_rules[h].target);
+            if (target == NULL) {
+                PRINTF("finalize cs: hide rule %d target resolution failed\n", (int) h);
+                return -1;
+            }
+            result->resolved_hide_rules[h].target = target;
+        }
+    }
+
+    // Seed the owner-binding map from this instruction's OWNER_ASSOC pair.
+    if (template->has_owner_assoc) {
+        const uint8_t *owner;
+        if (template->owner_assoc_owner.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+            if (owner_walker_pubkey == NULL) {
+                PRINTF("finalize cs: owner assoc argument path not resolved\n");
+                return -1;
+            }
+            owner = owner_walker_pubkey;
+        } else {
+            owner = resolve_pubkey_value_direct(cs_tx,
+                                                header,
+                                                instruction,
+                                                &template->owner_assoc_owner);
+            if (owner == NULL) {
+                return -1;
+            }
+        }
+        const uint8_t *owner_token_account =
+            pubkey_from_account_index(cs_tx, header, instruction, template->owner_assoc_account);
+        if (owner_token_account == NULL) {
+            PRINTF("finalize cs: owner assoc account index out of range\n");
+            return -1;
+        }
+        owner_bindings[*owner_binding_count].token_account = owner_token_account;
+        owner_bindings[*owner_binding_count].owner = owner;
+        (*owner_binding_count)++;
     }
 
     // Resolve each TOKEN_AMOUNT field's mint reference to a token_ref pubkey.
@@ -239,7 +646,9 @@ static int walk_instruction(const cs_transaction_t *cs_tx,
                             const uint8_t *program_id,
                             cs_instruction_result_t *result,
                             mint_binding_t *bindings,
-                            size_t *binding_count) {
+                            size_t *binding_count,
+                            cs_owner_binding_t *owner_bindings,
+                            size_t *owner_binding_count) {
     const cs_instruction_template_t *template =
         cs_instruction_template_find(program_id, instruction->data, instruction->data_length);
     if (template == NULL) {
@@ -248,32 +657,49 @@ static int walk_instruction(const cs_transaction_t *cs_tx,
     }
     result->template = template;
     result->resolved_count = template->display_field_count;
+    result->resolved_port_count = template->port_count;
+    result->resolved_hide_rule_count = template->hide_rule_count;
+    result->resolved_reset_count = template->account_reset_count;
 
     size_t field_count = template->display_field_count;
+    bool alloc_ok = true;
     if (field_count > 0) {
-        if (!APP_MEM_CALLOC((void **) &result->resolved,
-                            field_count * sizeof(*result->resolved)) ||
-            !APP_MEM_CALLOC((void **) &result->field_mint,
-                            field_count * sizeof(*result->field_mint))) {
-            PRINTF("finalize cs: result array allocation failed\n");
-            return -1;
-        }
+        alloc_ok = APP_MEM_CALLOC((void **) &result->resolved,
+                                  field_count * sizeof(*result->resolved)) &&
+                   APP_MEM_CALLOC((void **) &result->field_mint,
+                                  field_count * sizeof(*result->field_mint));
+    }
+    if (alloc_ok && template->port_count > 0) {
+        alloc_ok = APP_MEM_CALLOC((void **) &result->resolved_ports,
+                                  template->port_count * sizeof(*result->resolved_ports));
+    }
+    if (alloc_ok && template->hide_rule_count > 0) {
+        alloc_ok = APP_MEM_CALLOC((void **) &result->resolved_hide_rules,
+                                  template->hide_rule_count * sizeof(*result->resolved_hide_rules));
+    }
+    if (alloc_ok && template->account_reset_count > 0) {
+        alloc_ok = APP_MEM_CALLOC((void **) &result->resolved_resets,
+                                  template->account_reset_count * sizeof(*result->resolved_resets));
+    }
+    if (!alloc_ok) {
+        PRINTF("finalize cs: result array allocation failed\n");
+        return -1;
     }
 
+    // Scratch sized to the total possible ARGUMENT_PATH match count: display
+    // fields, one per port amount and per port DIRECT mint, one per reset amount,
+    // one per hide-rule target, and one owner-assoc owner.
+    size_t max_paths = field_count + template->port_count * 2 + template->account_reset_count +
+                       template->hide_rule_count + 1;
     idl_match_path_t *argument_paths = NULL;
-    size_t *argument_indices = NULL;
+    walk_scatter_target_t *scatter_targets = NULL;
     idl_resolved_leaf_t *walker_results = NULL;
     int rc = 0;
-    if (field_count > 0) {
-        if (!APP_MEM_CALLOC((void **) &argument_paths,
-                            field_count * sizeof(*argument_paths)) ||
-            !APP_MEM_CALLOC((void **) &argument_indices,
-                            field_count * sizeof(*argument_indices)) ||
-            !APP_MEM_CALLOC((void **) &walker_results,
-                            field_count * sizeof(*walker_results))) {
-            PRINTF("finalize cs: walk scratch allocation failed\n");
-            rc = -1;
-        }
+    if (!APP_MEM_CALLOC((void **) &argument_paths, max_paths * sizeof(*argument_paths)) ||
+        !APP_MEM_CALLOC((void **) &scatter_targets, max_paths * sizeof(*scatter_targets)) ||
+        !APP_MEM_CALLOC((void **) &walker_results, max_paths * sizeof(*walker_results))) {
+        PRINTF("finalize cs: walk scratch allocation failed\n");
+        rc = -1;
     }
     if (rc == 0) {
         rc = walk_instruction_inner(cs_tx,
@@ -283,18 +709,20 @@ static int walk_instruction(const cs_transaction_t *cs_tx,
                                     template,
                                     result,
                                     argument_paths,
-                                    argument_indices,
+                                    scatter_targets,
                                     walker_results,
                                     bindings,
-                                    binding_count);
+                                    binding_count,
+                                    owner_bindings,
+                                    owner_binding_count);
     }
 
-    // Free scratch in reverse order of allocation; NULL-safe when field_count is 0.
+    // Free scratch in reverse order of allocation.
     if (walker_results != NULL) {
         APP_MEM_FREE_AND_NULL((void **) &walker_results);
     }
-    if (argument_indices != NULL) {
-        APP_MEM_FREE_AND_NULL((void **) &argument_indices);
+    if (scatter_targets != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &scatter_targets);
     }
     if (argument_paths != NULL) {
         APP_MEM_FREE_AND_NULL((void **) &argument_paths);
@@ -302,13 +730,96 @@ static int walk_instruction(const cs_transaction_t *cs_tx,
     return rc;
 }
 
+// Resolve one instruction's RESOLVE-kind port token mints through the completed
+// binding map: the map first, then the fallback account address, then the token
+// reference treated as the mint itself. Returns 0, -1 on error.
+static int resolve_port_mints_for_instruction(const cs_transaction_t *cs_tx,
+                                              const MessageHeader *header,
+                                              const Instruction *instruction,
+                                              const cs_instruction_template_t *template,
+                                              cs_resolved_port_t *resolved_ports,
+                                              const mint_binding_t *bindings,
+                                              size_t binding_count) {
+    for (size_t p = 0; p < template->port_count; p++) {
+        if (!template->ports[p].has_token ||
+            template->ports[p].token.kind != CS_TOKEN_KIND_RESOLVE) {
+            continue;
+        }
+        const uint8_t *token_ref;
+        if (template->ports[p].token.has_account) {
+            token_ref = pubkey_from_account_index(cs_tx,
+                                                  header,
+                                                  instruction,
+                                                  template->ports[p].token.account_index);
+        } else {
+            token_ref = resolved_ports[p].account;
+        }
+        if (token_ref == NULL) {
+            PRINTF("finalize cs: port %d RESOLVE token reference unresolved\n", (int) p);
+            return -1;
+        }
+        const uint8_t *mint = lookup_mint_binding(bindings, binding_count, token_ref);
+        if (mint == NULL && template->ports[p].token.has_fallback_account) {
+            mint = pubkey_from_account_index(cs_tx,
+                                             header,
+                                             instruction,
+                                             template->ports[p].token.fallback_account_index);
+            if (mint == NULL) {
+                PRINTF("finalize cs: port %d fallback account unresolved\n", (int) p);
+                return -1;
+            }
+        }
+        if (mint == NULL) {
+            mint = token_ref;
+        }
+        resolved_ports[p].mint = mint;
+    }
+    return 0;
+}
+
+// Second pass over ports: resolve every RESOLVE-kind token mint now that the
+// whole transaction's binding map is complete. Re-parses the buffered
+// transaction for each instruction's account context. Returns 0, -1 on error.
+static int resolve_port_mints(const cs_transaction_t *cs_tx,
+                             cs_instruction_result_t *walked_instructions,
+                             size_t count,
+                             const mint_binding_t *bindings,
+                             size_t binding_count) {
+    Parser parser = {cs_tx->transaction, cs_tx->transaction_size};
+    MessageHeader header;
+    if (parse_message_header(&parser, &header) != 0) {
+        PRINTF("finalize cs: port mint pass header parse failed\n");
+        return -1;
+    }
+    for (size_t i = 0; i < count; i++) {
+        Instruction instruction;
+        if (parse_instruction(&parser, &instruction) != 0) {
+            PRINTF("finalize cs: port mint pass instruction %d parse failed\n", (int) i);
+            return -1;
+        }
+        if (resolve_port_mints_for_instruction(cs_tx,
+                                               &header,
+                                               &instruction,
+                                               walked_instructions[i].template,
+                                               walked_instructions[i].resolved_ports,
+                                               bindings,
+                                               binding_count) != 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 // Walk every transaction instruction against the IDL type pool of its matching
-// template, collecting the display-field leaf values into per-instruction
-// results for the merge engine. Every instruction must resolve to a template.
+// template, collecting the display-field leaf values and resolved merge-engine
+// substructures into per-instruction results. Seeds the caller-owned mint- and
+// owner-binding maps. Every instruction must resolve to a template.
 static int walk_transaction(const cs_transaction_t *cs_tx,
                             cs_instruction_result_t *walked_instructions,
                             size_t *walked_instructions_count,
-                            mint_binding_t *bindings) {
+                            mint_binding_t *bindings,
+                            cs_owner_binding_t *owner_bindings,
+                            size_t *owner_binding_count) {
     Parser parser = {cs_tx->transaction, cs_tx->transaction_size};
     MessageHeader header;
     if (parse_message_header(&parser, &header) != 0) {
@@ -318,9 +829,10 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
 
     *walked_instructions_count = 0;
 
-    // Transaction-scoped mint-binding map (caller-owned, sized to the instruction
-    // count), seeded from each instruction's MINT_ASSOC pair and queried below.
+    // Transaction-scoped binding maps (caller-owned, sized to the instruction
+    // count), seeded from each instruction's MINT_ASSOC / OWNER_ASSOC pairs.
     size_t binding_count = 0;
+    *owner_binding_count = 0;
 
     for (size_t i = 0; i < header.instructions_length; i++) {
         Instruction instruction;
@@ -336,7 +848,7 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
 
         cs_instruction_result_t *result = &walked_instructions[*walked_instructions_count];
         if (walk_instruction(cs_tx, &header, &instruction, program_id, result, bindings,
-                             &binding_count) != 0) {
+                             &binding_count, owner_bindings, owner_binding_count) != 0) {
             PRINTF("finalize cs: instruction %d walk failed\n", (int) i);
             return -1;
         }
@@ -356,6 +868,12 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
             }
         }
     }
+
+    // Resolve RESOLVE-kind port token mints against the same completed map.
+    if (resolve_port_mints(cs_tx, walked_instructions, *walked_instructions_count, bindings,
+                           binding_count) != 0) {
+        return -1;
+    }
     return 0;
 }
 
@@ -366,6 +884,15 @@ static void free_walked_instructions(cs_instruction_result_t *walked_instruction
         return;
     }
     for (size_t i = 0; i < count; i++) {
+        if (walked_instructions[i].resolved_resets != NULL) {
+            APP_MEM_FREE_AND_NULL((void **) &walked_instructions[i].resolved_resets);
+        }
+        if (walked_instructions[i].resolved_hide_rules != NULL) {
+            APP_MEM_FREE_AND_NULL((void **) &walked_instructions[i].resolved_hide_rules);
+        }
+        if (walked_instructions[i].resolved_ports != NULL) {
+            APP_MEM_FREE_AND_NULL((void **) &walked_instructions[i].resolved_ports);
+        }
         if (walked_instructions[i].field_mint != NULL) {
             APP_MEM_FREE_AND_NULL((void **) &walked_instructions[i].field_mint);
         }
@@ -381,13 +908,29 @@ static void free_walked_instructions(cs_instruction_result_t *walked_instruction
 static uint16_t finalize_cs_run(const cs_transaction_t *cs_tx,
                                 cs_instruction_result_t *walked_instructions,
                                 bool *survivors,
-                                mint_binding_t *bindings) {
+                                mint_binding_t *bindings,
+                                cs_owner_binding_t *owner_bindings) {
     size_t walked_instructions_count = 0;
-    if (walk_transaction(cs_tx, walked_instructions, &walked_instructions_count, bindings) != 0) {
+    size_t owner_binding_count = 0;
+    if (walk_transaction(cs_tx, walked_instructions, &walked_instructions_count, bindings,
+                         owner_bindings, &owner_binding_count) != 0) {
         PRINTF("finalize cs: walk engine failed\n");
         return ApduReplySolanaInvalidGenericPreview;
     }
-    if (cs_merge_engine_run(walked_instructions, walked_instructions_count, survivors) != 0) {
+
+    // Parse the header for the merge context's signer set. Its pubkeys reference
+    // the buffered transaction, which outlives the merge run.
+    Parser parser = {cs_tx->transaction, cs_tx->transaction_size};
+    MessageHeader header;
+    if (parse_message_header(&parser, &header) != 0) {
+        PRINTF("finalize cs: merge context header parse failed\n");
+        return ApduReplySolanaInvalidGenericPreview;
+    }
+    cs_merge_context_t context = {.header = &header,
+                                  .owner_bindings = owner_bindings,
+                                  .owner_binding_count = owner_binding_count};
+    if (cs_merge_engine_run(walked_instructions, walked_instructions_count, &context, survivors) !=
+        0) {
         PRINTF("finalize cs: merge engine failed\n");
         return ApduReplySolanaInvalidGenericPreview;
     }
@@ -438,22 +981,27 @@ int handle_finalize_generic_clear_signing(void) {
     cs_instruction_result_t *walked_instructions = NULL;
     bool *survivors = NULL;
     mint_binding_t *bindings = NULL;
+    cs_owner_binding_t *owner_bindings = NULL;
     bool alloc_ok =
         APP_MEM_CALLOC((void **) &walked_instructions,
                        instruction_count * sizeof(*walked_instructions)) &&
         APP_MEM_CALLOC((void **) &survivors, instruction_count * sizeof(*survivors)) &&
-        APP_MEM_CALLOC((void **) &bindings, instruction_count * sizeof(*bindings));
+        APP_MEM_CALLOC((void **) &bindings, instruction_count * sizeof(*bindings)) &&
+        APP_MEM_CALLOC((void **) &owner_bindings, instruction_count * sizeof(*owner_bindings));
 
     uint16_t sw;
     if (!alloc_ok) {
         PRINTF("finalize cs: walk buffer allocation failed\n");
         sw = ApduReplySolanaClearSigningIncomplete;
     } else {
-        sw = finalize_cs_run(cs_tx, walked_instructions, survivors, bindings);
+        sw = finalize_cs_run(cs_tx, walked_instructions, survivors, bindings, owner_bindings);
     }
 
     // Free in strict reverse order of allocation; each guard tolerates a NULL from
     // a short-circuited allocation above.
+    if (owner_bindings != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &owner_bindings);
+    }
     if (bindings != NULL) {
         APP_MEM_FREE_AND_NULL((void **) &bindings);
     }

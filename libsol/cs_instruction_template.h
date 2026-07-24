@@ -173,6 +173,133 @@ typedef struct cs_display_field_s {
     };
 } cs_display_field_t;
 
+// =============================================================================
+// Merge-engine substructures (VALUE_FLOW_PORT / HIDE_RULE / ACCOUNT_RESET) and
+// the OWNER_ASSOC pair. These carry the descriptor form: account indices,
+// embedded VALUE descriptors and raw predicate/scope bytes. The finalize walk
+// resolves them into concrete pubkeys/amounts/mints for the merge engine.
+// =============================================================================
+
+enum cs_port_direction {
+    CS_PORT_DIRECTION_INPUT = 0x00,
+    CS_PORT_DIRECTION_OUTPUT = 0x01,
+};
+
+enum cs_port_value_kind {
+    CS_PORT_VALUE_KIND_NATIVE = 0x00,
+    CS_PORT_VALUE_KIND_SPL_TOKEN = 0x01,
+};
+
+enum cs_amount_kind {
+    CS_AMOUNT_KIND_NUMERIC = 0x00,
+    CS_AMOUNT_KIND_BALANCE = 0x01,
+};
+
+enum cs_token_kind {
+    CS_TOKEN_KIND_DIRECT = 0x00,
+    CS_TOKEN_KIND_RESOLVE = 0x01,
+    CS_TOKEN_KIND_NULL = 0x02,
+    CS_TOKEN_KIND_NATIVE = 0x03,
+};
+
+enum cs_optional_account_strategy {
+    CS_OPTIONAL_ACCOUNT_STRATEGY_PROGRAM_ID = 0x00,
+    CS_OPTIONAL_ACCOUNT_STRATEGY_OMITTED = 0x01,
+};
+
+enum cs_active_when_predicate {
+    CS_ACTIVE_WHEN_CREATED_IN_TRANSACTION = 0x00,
+    CS_ACTIVE_WHEN_IS_SIGNER = 0x01,
+    CS_ACTIVE_WHEN_ACCOUNT_USED_ELSEWHERE = 0x02,
+    CS_ACTIVE_WHEN_MINT_PREDICATE = 0x03,
+    CS_ACTIVE_WHEN_IS_ANOTHER_SIGNER = 0x04,
+};
+
+enum cs_hide_condition {
+    CS_HIDE_CONDITION_CREATED_IN_TRANSACTION = 0x00,
+    CS_HIDE_CONDITION_IS_SIGNER = 0x01,
+    CS_HIDE_CONDITION_ACCOUNT_USED_ELSEWHERE = 0x02,
+    CS_HIDE_CONDITION_IS_ANOTHER_SIGNER = 0x03,
+    CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE = 0x04,
+};
+
+// An owned deep copy of a parsed VALUE sub-TLV. `source` is enum cs_value_source;
+// `payload` is heap, sized to payload_size, owned by the enclosing template.
+typedef struct cs_stored_value_s {
+    uint8_t source;
+    uint8_t *payload;
+    size_t payload_size;
+} cs_stored_value_t;
+
+// AMOUNT_VALUE carried by a port or an account reset. NUMERIC wraps a VALUE;
+// BALANCE is symbolic and carries no value.
+typedef struct cs_amount_value_s {
+    uint8_t kind;  // enum cs_amount_kind
+    bool has_value;
+    cs_stored_value_t value;
+} cs_amount_value_t;
+
+// TOKEN_VALUE carried by a port. `kind` selects the resolution path: DIRECT uses
+// `value`, RESOLVE optionally uses `account_index` / `fallback_account_index`,
+// NULL and NATIVE carry nothing.
+typedef struct cs_token_value_s {
+    uint8_t kind;  // enum cs_token_kind
+    bool has_value;
+    cs_stored_value_t value;
+    bool has_account;
+    uint8_t account_index;
+    bool has_fallback_account;
+    uint8_t fallback_account_index;
+} cs_token_value_t;
+
+// One VALUE_FLOW_PORT: a leg of value movement. `account_candidates` is an
+// ordered list resolved to the first-provided candidate at finalize;
+// `active_when` holds the raw packed predicate bytes evaluated by the merge engine.
+typedef struct cs_value_flow_port_s {
+    uint8_t direction;           // enum cs_port_direction
+    uint8_t *account_candidates;  // heap, sized to candidate_count
+    size_t candidate_count;
+    uint8_t value_kind;  // enum cs_port_value_kind
+    cs_amount_value_t amount;
+    bool has_token;
+    cs_token_value_t token;
+    uint8_t *active_when;  // heap, raw packed predicate bytes; NULL when absent
+    size_t active_when_size;
+    uint8_t optional_account_strategy;  // enum cs_optional_account_strategy
+} cs_value_flow_port_t;
+
+// One HIDE_RULE. Rules sharing rule_set_index are ANDed; different indices ORed.
+typedef struct cs_hide_rule_s {
+    uint8_t rule_set_index;
+    cs_stored_value_t target;  // pubkey-resolving VALUE
+    uint8_t condition;         // enum cs_hide_condition
+} cs_hide_rule_t;
+
+// One SCOPE_DISCRIMINATOR prefix (0..8 bytes) inside a RESET_SCOPE.
+typedef struct cs_reset_discriminator_s {
+    uint8_t *data;  // heap, sized to size
+    uint8_t size;
+} cs_reset_discriminator_t;
+
+// RESET_SCOPE: restricts which downstream consumers may rely on a reset. The
+// discriminator prefixes carry OR semantics.
+typedef struct cs_reset_scope_s {
+    bool has_program_id;
+    uint8_t scope_program_id[32];
+    cs_reset_discriminator_t *discriminators;  // heap, sized to discriminator_count
+    size_t discriminator_count;
+} cs_reset_scope_t;
+
+// One ACCOUNT_RESET: a known post-instruction balance for an account.
+typedef struct cs_account_reset_s {
+    uint8_t account_index;
+    bool require_pre_balance_zero;
+    bool has_reset_value;
+    cs_amount_value_t reset_value;  // BALANCE kind rejected at ingest
+    bool has_scope;
+    cs_reset_scope_t scope;
+} cs_account_reset_t;
+
 // One complete instruction template, keyed by (program_id, discriminator).
 // Only ever exposed once fully assembled, so every field is valid.
 typedef struct cs_instruction_template_s {
@@ -189,6 +316,15 @@ typedef struct cs_instruction_template_s {
     uint8_t mint_assoc_account;
     uint8_t mint_assoc_mint;
     bool has_mint_assoc;
+    cs_value_flow_port_t *ports;  // heap, sized to port_count; owned by this template
+    size_t port_count;
+    cs_hide_rule_t *hide_rules;  // heap, sized to hide_rule_count; owned by this template
+    size_t hide_rule_count;
+    cs_account_reset_t *account_resets;  // heap, sized to account_reset_count; owned
+    size_t account_reset_count;
+    bool has_owner_assoc;
+    uint8_t owner_assoc_account;
+    cs_stored_value_t owner_assoc_owner;  // pubkey-resolving VALUE, owned
 } cs_instruction_template_t;
 
 // Open a fresh in-flight builder committed to `target_hash` (the SHA-256 the
@@ -273,6 +409,22 @@ int cs_instruction_template_set_idl_type_pool(const uint8_t *data, size_t size);
 // `mint_idx` is the mint account whose pubkey identifies the token.
 // Returns 0 on success, -1 when no builder is open.
 int cs_instruction_template_set_mint_assoc(uint8_t account_idx, uint8_t mint_idx);
+
+// Append a VALUE_FLOW_PORT / HIDE_RULE / ACCOUNT_RESET to the in-flight builder.
+// The passed struct carries borrowed pointers (views into the APDU message); the
+// setter deep-copies every buffer into template-owned heap. Returns 0, -1 on no
+// builder / allocation failure.
+int cs_instruction_template_add_port(const cs_value_flow_port_t *port);
+int cs_instruction_template_add_hide_rule(const cs_hide_rule_t *rule);
+int cs_instruction_template_add_account_reset(const cs_account_reset_t *reset);
+
+// Store the OWNER_ASSOC pair on the in-flight builder: the bound token account
+// index and the owner as a pubkey-resolving VALUE (source + borrowed payload,
+// deep-copied). Returns 0, -1 on no builder / allocation failure.
+int cs_instruction_template_set_owner_assoc(uint8_t account_idx,
+                                            uint8_t owner_source,
+                                            const uint8_t *owner_payload,
+                                            size_t owner_payload_size);
 
 // Promote the in-flight builder into the committed array. Must be called only
 // once the substructure accumulation has matched the committed target. Returns 0
