@@ -36,12 +36,13 @@ typedef struct idl_pool_entry_s {
 } idl_pool_entry_t;
 
 // Parse the raw IDL_TYPE_POOL payload (`u8 count || entries`) into the
-// module-global parsed pool, replacing any previously parsed pool. The raw
-// `pool` bytes are borrowed and MUST stay alive until idl_pool_reset().
-// `root_index` selects the pool entry that is the root argument struct.
+// module-global parsed pool. The pool must be cleared first: loading over an
+// already-loaded pool is refused. The raw `pool` bytes are borrowed and MUST
+// stay alive until idl_pool_reset(). `root_index` selects the pool entry that
+// is the root argument struct.
 //
-// Returns 0 on success, -1 on invalid arguments, a malformed pool, a
-// root_index out of range, or allocator out-of-space.
+// Returns 0 on success, -1 on invalid arguments, an already-loaded pool, a
+// malformed pool, a root_index out of range, or allocator out-of-space.
 int idl_pool_provide(const uint8_t *pool, size_t pool_size, uint8_t root_index);
 
 // True once a pool has been parsed and is ready to walk.

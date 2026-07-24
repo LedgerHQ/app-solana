@@ -51,7 +51,7 @@ void test_pool_provide() {
     assert(mock_mem_outstanding() == 0);
 }
 
-void test_pool_provide_replaces_previous() {
+void test_pool_provide_refuses_when_loaded() {
     setup();
 
     const uint8_t pool_a[] = {0x01, IDL_KIND_U8};
@@ -60,13 +60,19 @@ void test_pool_provide_replaces_previous() {
     assert(idl_pool_count() == 1);
     assert(mock_mem_outstanding() == 1);
 
-    // Re-providing frees the previous parsed pool and replaces it; no leak.
+    // Loading over a still-loaded pool is refused; the first pool stays intact.
+    assert(idl_pool_provide(pool_b, sizeof(pool_b), 1) == -1);
+    assert(idl_pool_count() == 1);
+    assert(idl_pool_entry(0)->kind == IDL_KIND_U8);
+    assert(mock_mem_outstanding() == 1);
+
+    // After a reset the pool is clear and a fresh load succeeds.
+    idl_pool_reset();
     assert(idl_pool_provide(pool_b, sizeof(pool_b), 1) == 0);
     assert(idl_pool_count() == 2);
     assert(idl_pool_root_index() == 1);
     assert(idl_pool_entry(0)->kind == IDL_KIND_U16);
     assert(idl_pool_entry(1)->kind == IDL_KIND_U32);
-    assert(mock_mem_outstanding() == 1);
 
     idl_pool_reset();
     assert(mock_mem_outstanding() == 0);
@@ -232,7 +238,7 @@ int main() {
     // Lifecycle
     RUN_TEST(test_pool_empty_state);
     RUN_TEST(test_pool_provide);
-    RUN_TEST(test_pool_provide_replaces_previous);
+    RUN_TEST(test_pool_provide_refuses_when_loaded);
     RUN_TEST(test_pool_reset_idempotent);
 
     // Argument rejection

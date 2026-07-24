@@ -282,8 +282,11 @@ int idl_pool_provide(const uint8_t *pool, size_t pool_size, uint8_t root_index) 
         return -1;
     }
 
-    // Providing replaces any previously parsed pool.
-    idl_pool_reset();
+    // A load builds from a cleared pool; a still-loaded one is a scheduling error.
+    if (G_idl_pool.ready) {
+        PRINTF("idl_pool_provide: pool already loaded, refusing to load\n");
+        return -1;
+    }
 
     idl_pool_entry_t *entries = NULL;
     uint8_t count = 0;

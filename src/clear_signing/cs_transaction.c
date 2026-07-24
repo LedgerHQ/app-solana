@@ -48,7 +48,11 @@ int cs_transaction_begin(const uint8_t *transaction,
                          size_t transaction_size,
                          const uint32_t *derivation_path,
                          uint32_t derivation_path_length) {
-    cs_transaction_reset();
+    // A begin builds from a cleared context; an existing one is a scheduling error.
+    if (G_cs_transaction != NULL) {
+        PRINTF("cs_transaction_begin: context already allocated, refusing to begin\n");
+        return -1;
+    }
 
     if (transaction == NULL || transaction_size == 0) {
         PRINTF("cs_transaction_begin: empty transaction\n");
@@ -69,7 +73,6 @@ int cs_transaction_begin(const uint8_t *transaction,
     G_cs_transaction->transaction = APP_MEM_ALLOC(transaction_size);
     if (G_cs_transaction->transaction == NULL) {
         PRINTF("cs_transaction_begin: transaction copy allocation failed\n");
-        cs_transaction_reset();
         return -1;
     }
 
