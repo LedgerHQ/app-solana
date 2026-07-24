@@ -94,6 +94,18 @@ static void free_template_owned_buffers(cs_instruction_template_t *template) {
             template->display_fields[f].argument.format.unit.symbol != NULL) {
             APP_MEM_FREE_AND_NULL((void **) &template->display_fields[f].argument.format.unit.symbol);
         }
+        if (template->display_fields[f].source == CS_VALUE_SOURCE_ARGUMENT_PATH &&
+            template->display_fields[f].argument.param_type == CS_PARAM_TYPE_AMOUNT &&
+            template->display_fields[f].argument.format.amount.max_label != NULL) {
+            APP_MEM_FREE_AND_NULL(
+                (void **) &template->display_fields[f].argument.format.amount.max_label);
+        }
+        if (template->display_fields[f].source == CS_VALUE_SOURCE_ARGUMENT_PATH &&
+            template->display_fields[f].argument.param_type == CS_PARAM_TYPE_TOKEN_AMOUNT &&
+            template->display_fields[f].argument.format.token_amount.max_label != NULL) {
+            APP_MEM_FREE_AND_NULL(
+                (void **) &template->display_fields[f].argument.format.token_amount.max_label);
+        }
     }
     if (template->display_fields != NULL) {
         APP_MEM_FREE_AND_NULL((void **) &template->display_fields);
@@ -398,7 +410,27 @@ int cs_instruction_template_add_constant_field(const uint8_t *data,
     return 0;
 }
 
-int cs_instruction_template_set_format_amount(uint8_t decimals) {
+// Copy an optional label (NUL-terminated string) into a template-owned heap
+// buffer, freeing any previous one first. An empty label leaves *dst NULL.
+// Returns 0, -1 on allocation failure (leaving *dst NULL).
+static int copy_optional_label(char **dst, const uint8_t *label, size_t label_size) {
+    if (*dst != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) dst);
+    }
+    if (label_size > 0) {
+        if (!APP_MEM_CALLOC((void **) dst, label_size + 1)) {
+            PRINTF("cs_instruction_template: label allocation failed (%d bytes)\n",
+                   (int) label_size + 1);
+            return -1;
+        }
+        memcpy(*dst, label, label_size);
+    }
+    return 0;
+}
+
+int cs_instruction_template_set_format_amount(uint8_t decimals,
+                                             const uint8_t *max_label,
+                                             size_t max_label_size) {
     cs_instruction_template_t *builder = cs_instruction_template_current();
     if (builder == NULL || builder->display_field_count == 0) {
         PRINTF("cs_instruction_template_set_format_amount: no field to configure\n");
@@ -416,10 +448,12 @@ int cs_instruction_template_set_format_amount(uint8_t decimals) {
         return -1;
     }
     field->argument.format.amount.decimals = decimals;
-    return 0;
+    return copy_optional_label(&field->argument.format.amount.max_label, max_label, max_label_size);
 }
 
-int cs_instruction_template_set_format_token_amount(const cs_format_token_amount_t *format) {
+int cs_instruction_template_set_format_token_amount(const cs_format_token_amount_t *format,
+                                                    const uint8_t *max_label,
+                                                    size_t max_label_size) {
     cs_instruction_template_t *builder = cs_instruction_template_current();
     if (builder == NULL || builder->display_field_count == 0) {
         PRINTF("cs_instruction_template_set_format_token_amount: no field to configure\n");
@@ -437,7 +471,11 @@ int cs_instruction_template_set_format_token_amount(const cs_format_token_amount
         return -1;
     }
     memcpy(&field->argument.format.token_amount, format, sizeof(*format));
-    return 0;
+    // The label is template-owned; never keep the caller's borrowed pointer.
+    field->argument.format.token_amount.max_label = NULL;
+    return copy_optional_label(&field->argument.format.token_amount.max_label,
+                               max_label,
+                               max_label_size);
 }
 
 int cs_instruction_template_set_format_datetime(uint32_t ticks_per_second) {

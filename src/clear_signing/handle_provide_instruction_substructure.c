@@ -61,6 +61,7 @@ typedef struct param_amount_out_s {
     TLV_reception_t received_tags;
     buffer_t value;
     buffer_t decimals;
+    buffer_t max_label;
 } param_amount_out_t;
 
 static bool param_amount_handle_value(const tlv_data_t *data, param_amount_out_t *out) {
@@ -73,6 +74,11 @@ static bool param_amount_handle_decimals(const tlv_data_t *data, param_amount_ou
     return true;
 }
 
+static bool param_amount_handle_max_label(const tlv_data_t *data, param_amount_out_t *out) {
+    out->max_label = data->value;
+    return true;
+}
+
 static bool param_amount_handle_ignore(const tlv_data_t *data, param_amount_out_t *out) {
     UNUSED(data);
     UNUSED(out);
@@ -81,9 +87,10 @@ static bool param_amount_handle_ignore(const tlv_data_t *data, param_amount_out_
 
 // clang-format off
 #define PARAM_AMOUNT_TAGS(X) \
-    X(0x00, PARAM_AMOUNT_TAG_VERSION,  param_amount_handle_ignore,   ENFORCE_UNIQUE_TAG) \
-    X(0x01, PARAM_AMOUNT_TAG_VALUE,    param_amount_handle_value,    ENFORCE_UNIQUE_TAG) \
-    X(0x02, PARAM_AMOUNT_TAG_DECIMALS, param_amount_handle_decimals, ENFORCE_UNIQUE_TAG)
+    X(0x00, PARAM_AMOUNT_TAG_VERSION,   param_amount_handle_ignore,    ENFORCE_UNIQUE_TAG) \
+    X(0x01, PARAM_AMOUNT_TAG_VALUE,     param_amount_handle_value,     ENFORCE_UNIQUE_TAG) \
+    X(0x02, PARAM_AMOUNT_TAG_DECIMALS,  param_amount_handle_decimals,  ENFORCE_UNIQUE_TAG) \
+    X(0x03, PARAM_AMOUNT_TAG_MAX_LABEL, param_amount_handle_max_label, ENFORCE_UNIQUE_TAG)
 // clang-format on
 
 DEFINE_TLV_PARSER(PARAM_AMOUNT_TAGS, NULL, parse_param_amount)
@@ -97,6 +104,7 @@ typedef struct param_token_amount_out_s {
     buffer_t token;
     buffer_t decimals;
     buffer_t is_native;
+    buffer_t max_label;
 } param_token_amount_out_t;
 
 static bool param_token_amount_handle_value(const tlv_data_t *data,
@@ -123,6 +131,12 @@ static bool param_token_amount_handle_is_native(const tlv_data_t *data,
     return true;
 }
 
+static bool param_token_amount_handle_max_label(const tlv_data_t *data,
+                                                param_token_amount_out_t *out) {
+    out->max_label = data->value;
+    return true;
+}
+
 static bool param_token_amount_handle_ignore(const tlv_data_t *data,
                                              param_token_amount_out_t *out) {
     UNUSED(data);
@@ -132,11 +146,12 @@ static bool param_token_amount_handle_ignore(const tlv_data_t *data,
 
 // clang-format off
 #define PARAM_TOKEN_AMOUNT_TAGS(X) \
-    X(0x00, PARAM_TOKEN_AMOUNT_TAG_VERSION,   param_token_amount_handle_ignore,    ENFORCE_UNIQUE_TAG) \
-    X(0x01, PARAM_TOKEN_AMOUNT_TAG_VALUE,     param_token_amount_handle_value,     ENFORCE_UNIQUE_TAG) \
-    X(0x02, PARAM_TOKEN_AMOUNT_TAG_TOKEN,     param_token_amount_handle_token,     ENFORCE_UNIQUE_TAG) \
-    X(0x03, PARAM_TOKEN_AMOUNT_TAG_DECIMALS,  param_token_amount_handle_decimals,  ENFORCE_UNIQUE_TAG) \
-    X(0x04, PARAM_TOKEN_AMOUNT_TAG_IS_NATIVE, param_token_amount_handle_is_native, ENFORCE_UNIQUE_TAG)
+    X(0x00, PARAM_TOKEN_AMOUNT_TAG_VERSION,   param_token_amount_handle_ignore,     ENFORCE_UNIQUE_TAG) \
+    X(0x01, PARAM_TOKEN_AMOUNT_TAG_VALUE,     param_token_amount_handle_value,      ENFORCE_UNIQUE_TAG) \
+    X(0x02, PARAM_TOKEN_AMOUNT_TAG_TOKEN,     param_token_amount_handle_token,      ENFORCE_UNIQUE_TAG) \
+    X(0x03, PARAM_TOKEN_AMOUNT_TAG_DECIMALS,  param_token_amount_handle_decimals,   ENFORCE_UNIQUE_TAG) \
+    X(0x04, PARAM_TOKEN_AMOUNT_TAG_IS_NATIVE, param_token_amount_handle_is_native,  ENFORCE_UNIQUE_TAG) \
+    X(0x05, PARAM_TOKEN_AMOUNT_TAG_MAX_LABEL, param_token_amount_handle_max_label,  ENFORCE_UNIQUE_TAG)
 // clang-format on
 
 DEFINE_TLV_PARSER(PARAM_TOKEN_AMOUNT_TAGS, NULL, parse_param_token_amount)
@@ -561,7 +576,9 @@ static int register_param_amount(const display_field_out_t *display_field,
     if (param.decimals.ptr != NULL && param.decimals.size == 1) {
         decimals = param.decimals.ptr[0];
     }
-    if (cs_instruction_template_set_format_amount(decimals) != 0) {
+    if (cs_instruction_template_set_format_amount(decimals,
+                                                  param.max_label.ptr,
+                                                  param.max_label.size) != 0) {
         PRINTF("substructure: set_format_amount failed\n");
         return -1;
     }
@@ -664,7 +681,9 @@ static int register_param_token_amount(const display_field_out_t *display_field,
         format.decimals = decimals.payload.ptr[0];
     }
 
-    if (cs_instruction_template_set_format_token_amount(&format) != 0) {
+    if (cs_instruction_template_set_format_token_amount(&format,
+                                                         param.max_label.ptr,
+                                                         param.max_label.size) != 0) {
         PRINTF("substructure: set_format_token_amount failed\n");
         return -1;
     }

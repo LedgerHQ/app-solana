@@ -40,6 +40,8 @@ PARAM_TAG_VALUE = 0x01
 PARAM_TAG_DECIMALS = 0x02  # PARAM_AMOUNT tag for decimals
 PARAM_TAG_KIND = 0x02      # PARAM_RAW/CONSTANT tag for IDL kind
 PARAM_TAG_IS_NATIVE = 0x04  # PARAM_TOKEN_AMOUNT tag for is_native flag
+PARAM_AMOUNT_TAG_MAX_LABEL = 0x03  # PARAM_AMOUNT MAX_LABEL sentinel string
+PARAM_TOKEN_TAG_MAX_LABEL = 0x05   # PARAM_TOKEN_AMOUNT MAX_LABEL sentinel string
 PARAM_DATETIME_TAG_TICKS = 0x02       # PARAM_DATETIME ticks-per-second (BE uint)
 PARAM_UNIT_TAG_SYMBOL = 0x02          # PARAM_UNIT symbol string
 PARAM_UNIT_TAG_DECIMALS = 0x03        # PARAM_UNIT decimal scaling
@@ -235,13 +237,17 @@ def _build_constant_display_field(data: bytes, kind: int, name: str) -> bytes:
             + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_raw))
 
 
-def _build_amount_display_field(argument_path: bytes, decimals: int, name: str) -> bytes:
-    """A DISPLAY_FIELD with PARAM_AMOUNT: numeric value with fixed decimal scaling."""
+def _build_amount_display_field(argument_path: bytes, decimals: int, name: str, *,
+                                max_label: str = None) -> bytes:
+    """A DISPLAY_FIELD with PARAM_AMOUNT: numeric value with fixed decimal scaling.
+    An optional MAX_LABEL is rendered when the raw leaf is at its type maximum."""
     value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
                  + format_tlv(ValueTag.PAYLOAD, argument_path))
     param_amount = (format_tlv(PARAM_TAG_VERSION, 1)
                     + format_tlv(PARAM_TAG_VALUE, value_tlv)
                     + format_tlv(PARAM_TAG_DECIMALS, decimals))
+    if max_label is not None:
+        param_amount += format_tlv(PARAM_AMOUNT_TAG_MAX_LABEL, max_label)
     return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
             + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
             + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
@@ -249,14 +255,18 @@ def _build_amount_display_field(argument_path: bytes, decimals: int, name: str) 
             + format_tlv(DISPLAY_FIELD_TAG_PARAM, param_amount))
 
 
-def _build_token_amount_display_field(argument_path: bytes, is_native: bool, name: str) -> bytes:
-    """A DISPLAY_FIELD with PARAM_TOKEN_AMOUNT: native SOL or unknown token."""
+def _build_token_amount_display_field(argument_path: bytes, is_native: bool, name: str, *,
+                                      max_label: str = None) -> bytes:
+    """A DISPLAY_FIELD with PARAM_TOKEN_AMOUNT: native SOL or unknown token.
+    An optional MAX_LABEL is rendered when the raw leaf is at its type maximum."""
     value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
                  + format_tlv(ValueTag.PAYLOAD, argument_path))
     param_token = (format_tlv(PARAM_TAG_VERSION, 1)
                    + format_tlv(PARAM_TAG_VALUE, value_tlv))
     if is_native:
         param_token += format_tlv(PARAM_TAG_IS_NATIVE, 1)
+    if max_label is not None:
+        param_token += format_tlv(PARAM_TOKEN_TAG_MAX_LABEL, max_label)
     return (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
             + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
             + format_tlv(DISPLAY_FIELD_TAG_NAME, name)
@@ -953,6 +963,61 @@ def test_bridge_walks_instruction(backend, sol, scenario_navigator, root_pytest_
         scenario_navigator.review_approve(path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_bridge_amount_max_label_accepted(backend, sol):
+    """A PARAM_AMOUNT descriptor carrying the optional MAX_LABEL tag is accepted by
+    the substructure parser (previously an unregistered tag aborted the session)
+    and the session finalizes with the u64 leaf at its type maximum."""
+    message = _craft_single_instruction_message(
+        sol, BRIDGE_PROGRAM_ID, _bridge_instruction_data(1000, 0xFFFFFFFFFFFFFFFF))
+    _begin_session(sol, message)
+
+    display_field = _build_amount_display_field(BRIDGE_PATH_U64, 9, "Amount",
+                                                max_label="Unlimited")
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Approve",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+    _wipe_session(sol)
+
+
+def test_bridge_token_amount_max_label_accepted(backend, sol):
+    """A PARAM_TOKEN_AMOUNT descriptor carrying the optional MAX_LABEL tag is
+    accepted by the substructure parser and the session finalizes."""
+    message = _craft_single_instruction_message(
+        sol, BRIDGE_PROGRAM_ID, _bridge_instruction_data(1000, 0xFFFFFFFFFFFFFFFF))
+    _begin_session(sol, message)
+
+    display_field = _build_token_amount_display_field(BRIDGE_PATH_U64, True, "Amount",
+                                                      max_label="Unlimited")
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Approve",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
     _wipe_session(sol)
 
 

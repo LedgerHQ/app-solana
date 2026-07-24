@@ -672,8 +672,57 @@ static void test_param_type_stored_on_display_path(void) {
                                                     "Amount") == 0);
     assert(builder->display_fields[0].argument.param_type == CS_PARAM_TYPE_AMOUNT);
 
-    assert(cs_instruction_template_set_format_amount(9) == 0);
+    assert(cs_instruction_template_set_format_amount(9, NULL, 0) == 0);
     assert(builder->display_fields[0].argument.format.amount.decimals == 9);
+    assert(builder->display_fields[0].argument.format.amount.max_label == NULL);
+
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// The optional MAX_LABEL is copied into a template-owned buffer and freed on
+// reset with no leak.
+static void test_set_format_amount_max_label(void) {
+    printf("  test_set_format_amount_max_label\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
+    assert(builder != NULL);
+
+    const uint8_t path[] = {0x01, 0x00};
+    assert(cs_instruction_template_add_display_path(path,
+                                                    sizeof(path),
+                                                    CS_PARAM_TYPE_AMOUNT,
+                                                    "Amount") == 0);
+    const char label[] = "Unlimited";
+    assert(cs_instruction_template_set_format_amount(0,
+                                                     (const uint8_t *) label,
+                                                     strlen(label)) == 0);
+    assert(builder->display_fields[0].argument.format.amount.max_label != NULL);
+    assert(strcmp(builder->display_fields[0].argument.format.amount.max_label, "Unlimited") == 0);
+
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// An empty MAX_LABEL (size 0) is treated as absent: no buffer is owned.
+static void test_set_format_amount_empty_max_label(void) {
+    printf("  test_set_format_amount_empty_max_label\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
+    assert(builder != NULL);
+
+    const uint8_t path[] = {0x01, 0x00};
+    assert(cs_instruction_template_add_display_path(path,
+                                                    sizeof(path),
+                                                    CS_PARAM_TYPE_AMOUNT,
+                                                    "Amount") == 0);
+    const uint8_t empty[] = {0};
+    assert(cs_instruction_template_set_format_amount(9, empty, 0) == 0);
+    assert(builder->display_fields[0].argument.format.amount.max_label == NULL);
 
     cs_instruction_template_table_reset();
     assert(mock_mem_outstanding() == 0);
@@ -696,9 +745,14 @@ static void test_param_type_token_amount(void) {
 
     cs_format_token_amount_t format = {0};
     format.mint_source = CS_TOKEN_MINT_NATIVE;
-    assert(cs_instruction_template_set_format_token_amount(&format) == 0);
+    const char label[] = "Unlimited";
+    assert(cs_instruction_template_set_format_token_amount(&format,
+                                                           (const uint8_t *) label,
+                                                           strlen(label)) == 0);
     assert(builder->display_fields[0].argument.format.token_amount.mint_source ==
            CS_TOKEN_MINT_NATIVE);
+    assert(strcmp(builder->display_fields[0].argument.format.token_amount.max_label, "Unlimited") ==
+           0);
 
     cs_instruction_template_table_reset();
     assert(mock_mem_outstanding() == 0);
@@ -715,7 +769,7 @@ static void test_set_format_amount_wrong_type(void) {
     const uint8_t path[] = {0x01};
     assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, "Raw") ==
            0);
-    assert(cs_instruction_template_set_format_amount(6) == -1);
+    assert(cs_instruction_template_set_format_amount(6, NULL, 0) == -1);
 
     cs_instruction_template_table_reset();
     assert(mock_mem_outstanding() == 0);
@@ -726,10 +780,10 @@ static void test_set_format_no_builder(void) {
     mock_mem_reset();
     cs_instruction_template_table_reset();
 
-    assert(cs_instruction_template_set_format_amount(9) == -1);
+    assert(cs_instruction_template_set_format_amount(9, NULL, 0) == -1);
     cs_format_token_amount_t format = {0};
     format.mint_source = CS_TOKEN_MINT_NONE;
-    assert(cs_instruction_template_set_format_token_amount(&format) == -1);
+    assert(cs_instruction_template_set_format_token_amount(&format, NULL, 0) == -1);
     assert(mock_mem_outstanding() == 0);
 }
 
@@ -770,6 +824,8 @@ int main(void) {
     test_add_constant_field_alloc_fail();
     test_mixed_all_sources_order();
     test_param_type_stored_on_display_path();
+    test_set_format_amount_max_label();
+    test_set_format_amount_empty_max_label();
     test_param_type_token_amount();
     test_set_format_amount_wrong_type();
     test_set_format_no_builder();

@@ -410,6 +410,206 @@ static void test_render_amount_zero_decimals(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+// A PARAM_AMOUNT whose leaf is at the u64 maximum renders its MAX_LABEL instead
+// of the scaled number.
+static void test_render_amount_max_label(void) {
+    printf("  test_render_amount_max_label\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Approve";
+    template.display_fields[0].name = "Amount";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_AMOUNT;
+    template.display_fields[0].argument.format.amount.decimals = 9;
+    template.display_fields[0].argument.format.amount.max_label = "Unlimited";
+    template.display_field_count = 1;
+
+    uint8_t value[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // u64 max
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
+    assert(strcmp(cs_display_renderer_element(1)->value, "Unlimited") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A MAX_LABEL present but the leaf below its type maximum renders the number.
+static void test_render_amount_max_label_below_max(void) {
+    printf("  test_render_amount_max_label_below_max\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Approve";
+    template.display_fields[0].name = "Amount";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_AMOUNT;
+    template.display_fields[0].argument.format.amount.decimals = 0;
+    template.display_fields[0].argument.format.amount.max_label = "Unlimited";
+    template.display_field_count = 1;
+
+    uint8_t value[] = {0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // u64 max - 1
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
+    assert(strcmp(cs_display_renderer_element(1)->value, "18446744073709551614") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// MAX_LABEL applies to the leaf's own IDL width: a u8 leaf at 0xFF is at max even
+// though it is far below the u64 maximum.
+static void test_render_amount_max_label_u8_width(void) {
+    printf("  test_render_amount_max_label_u8_width\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Approve";
+    template.display_fields[0].name = "Amount";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_AMOUNT;
+    template.display_fields[0].argument.format.amount.decimals = 0;
+    template.display_fields[0].argument.format.amount.max_label = "Max";
+    template.display_field_count = 1;
+
+    uint8_t value[] = {0xFF};  // u8 max
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U8;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 1;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
+    assert(strcmp(cs_display_renderer_element(1)->value, "Max") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A PARAM_TOKEN_AMOUNT at its type maximum renders MAX_LABEL instead of the
+// amount + ticker.
+static void test_render_token_amount_max_label(void) {
+    printf("  test_render_token_amount_max_label\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Approve";
+    template.display_fields[0].name = "Amount";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
+    template.display_fields[0].argument.format.token_amount.mint_source = CS_TOKEN_MINT_NATIVE;
+    template.display_fields[0].argument.format.token_amount.max_label = "Unlimited";
+    template.display_field_count = 1;
+
+    uint8_t value[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // u64 max
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
+    assert(strcmp(cs_display_renderer_element(1)->value, "Unlimited") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A MAX_LABEL that does not fit the render working buffer is refused, not
+// truncated: a shortened label would misrepresent the amount.
+static void test_render_amount_max_label_too_long_refused(void) {
+    printf("  test_render_amount_max_label_too_long_refused\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    char long_label[200];
+    memset(long_label, 'x', sizeof(long_label) - 1);
+    long_label[sizeof(long_label) - 1] = '\0';
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Approve";
+    template.display_fields[0].name = "Amount";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_AMOUNT;
+    template.display_fields[0].argument.format.amount.decimals = 0;
+    template.display_fields[0].argument.format.amount.max_label = long_label;
+    template.display_field_count = 1;
+
+    uint8_t value[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};  // u64 max
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A MAX_LABEL present but the token amount below its type maximum renders the
+// normal amount + ticker, not the label.
+static void test_render_token_amount_below_max_with_label(void) {
+    printf("  test_render_token_amount_below_max_with_label\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Approve";
+    template.display_fields[0].name = "Amount";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
+    template.display_fields[0].argument.format.token_amount.mint_source = CS_TOKEN_MINT_NATIVE;
+    template.display_fields[0].argument.format.token_amount.max_label = "Unlimited";
+    template.display_field_count = 1;
+
+    // 1_000_000_000 lamports = 1 SOL, well below the u64 maximum.
+    uint8_t value[] = {0x00, 0xCA, 0x9A, 0x3B, 0x00, 0x00, 0x00, 0x00};
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 2);
+    assert(strcmp(cs_display_renderer_element(1)->value, "1 SOL") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 static void test_render_token_amount_native(void) {
     printf("  test_render_token_amount_native\n");
     mock_mem_reset();
@@ -1619,6 +1819,12 @@ int main(void) {
     test_render_mixed_argument_and_account_fields();
     test_render_amount_with_decimals();
     test_render_amount_zero_decimals();
+    test_render_amount_max_label();
+    test_render_amount_max_label_below_max();
+    test_render_amount_max_label_u8_width();
+    test_render_amount_max_label_too_long_refused();
+    test_render_token_amount_max_label();
+    test_render_token_amount_below_max_with_label();
     test_render_token_amount_native();
     test_render_token_amount_none();
     test_render_token_amount_unknown();
