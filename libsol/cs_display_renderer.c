@@ -987,6 +987,116 @@ static int format_field(const cs_display_field_t *field,
     }
 }
 
+// Find a resolved port whose account candidate resolved to `account_index`, so
+// its (possibly merged) value overrides a field referencing the same account.
+// Returns NULL when no port covers the slot.
+static const cs_resolved_port_t *find_port_by_account_index(const cs_instruction_template_t *template,
+                                                            const cs_resolved_port_t *resolved_ports,
+                                                            size_t resolved_port_count,
+                                                            uint8_t account_index) {
+    const cs_resolved_port_t *match = NULL;
+    bool match_is_output = false;
+    for (size_t p = 0; p < resolved_port_count; p++) {
+        if (!resolved_ports[p].resolved || resolved_ports[p].account_index != account_index) {
+            continue;
+        }
+        // Output ports win over input ports; within a direction the later port wins.
+        // A transformer touches one account as both input and output, and the output
+        // endpoint is the one a field must display.
+        bool is_output = (template->ports[p].direction == CS_PORT_DIRECTION_OUTPUT);
+        if (match == NULL || is_output || !match_is_output) {
+            match = &resolved_ports[p];
+            match_is_output = is_output;
+        }
+    }
+    if (match != NULL) {
+        PRINTF("find_port_by_account_index: slot %u matched, is_output=%d\n",
+               (unsigned) account_index,
+               (int) match_is_output);
+    }
+    return match;
+}
+
+// Find a resolved NUMERIC-amount port whose amount reads the same ARGUMENT_PATH
+// as `path`, so its amount overrides a field reading that argument.
+static const cs_resolved_port_t *find_port_by_argument_path(const cs_instruction_template_t *template,
+                                                            const cs_resolved_port_t *resolved_ports,
+                                                            size_t resolved_port_count,
+                                                            const uint8_t *path,
+                                                            uint8_t path_size) {
+    const cs_resolved_port_t *match = NULL;
+    for (size_t p = 0; p < resolved_port_count && match == NULL; p++) {
+        if (!resolved_ports[p].resolved ||
+            resolved_ports[p].amount_kind != CS_AMOUNT_KIND_NUMERIC ||
+            resolved_ports[p].amount_le == NULL || !template->ports[p].amount.has_value ||
+            template->ports[p].amount.value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
+            continue;
+        }
+        if (template->ports[p].amount.value.payload_size == path_size &&
+            memcmp(template->ports[p].amount.value.payload, path, path_size) == 0) {
+            match = &resolved_ports[p];
+            PRINTF("find_port_by_argument_path: matched port %u path_size=%u\n",
+                   (unsigned) p,
+                   (unsigned) path_size);
+        }
+    }
+    return match;
+}
+
+// Override a field's leaf and mint from a value-flow port before formatting: a
+// port covering the field's account slot replaces the displayed address and, for
+// a TOKEN_AMOUNT, its mint; a port whose amount reads the field's ARGUMENT_PATH
+// replaces the displayed amount. `override_leaf` is caller-owned scratch; on
+// substitution `*leaf` is repointed to it.
+static void apply_port_overrides(const cs_instruction_result_t *instruction,
+                                 const cs_display_field_t *display_field,
+                                 idl_resolved_leaf_t *override_leaf,
+                                 const idl_resolved_leaf_t **leaf,
+                                 const uint8_t **mint) {
+    if (display_field->source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        const cs_resolved_port_t *port = find_port_by_account_index(instruction->template,
+                                                                    instruction->resolved_ports,
+                                                                    instruction->resolved_port_count,
+                                                                    display_field->account.index);
+        if (port != NULL) {
+            memcpy(override_leaf, *leaf, sizeof(*override_leaf));
+            override_leaf->value = port->account;
+            override_leaf->value_size = 32;
+            *leaf = override_leaf;
+            PRINTF("apply_port_overrides: account field overridden by port\n");
+        }
+    } else if (display_field->source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        if (display_field->argument.param_type == CS_PARAM_TYPE_AMOUNT ||
+            display_field->argument.param_type == CS_PARAM_TYPE_TOKEN_AMOUNT) {
+            const cs_resolved_port_t *port = find_port_by_argument_path(instruction->template,
+                                                                        instruction->resolved_ports,
+                                                                        instruction->resolved_port_count,
+                                                                        display_field->argument.path,
+                                                                        display_field->argument.path_size);
+            if (port != NULL) {
+                memcpy(override_leaf, *leaf, sizeof(*override_leaf));
+                override_leaf->value = port->amount_le;
+                override_leaf->value_size = port->amount_size;
+                override_leaf->kind = port->amount_leaf_kind;
+                *leaf = override_leaf;
+                PRINTF("apply_port_overrides: amount field overridden by port\n");
+            }
+        }
+        if (display_field->argument.param_type == CS_PARAM_TYPE_TOKEN_AMOUNT &&
+            display_field->argument.format.token_amount.mint_source == CS_TOKEN_MINT_ACCOUNT_INDEX) {
+            const cs_resolved_port_t *port =
+                find_port_by_account_index(instruction->template,
+                                           instruction->resolved_ports,
+                                           instruction->resolved_port_count,
+                                           display_field->argument.format.token_amount.ref.account_index);
+            if (port != NULL && port->mint != NULL) {
+                *mint = port->mint;
+                PRINTF("apply_port_overrides: token mint overridden by port\n");
+            }
+        }
+    }
+}
+
 // Append the "[index/total] operation_type" header element for one instruction,
 // showing the program name when the template carries one, else its address.
 static int render_instruction_header(const cs_instruction_result_t *instruction,
@@ -1069,9 +1179,18 @@ static int render_field(const cs_instruction_result_t *instruction, size_t field
         PRINTF("render_field: value buffer allocation failed field=%u\n", (unsigned) field);
         return -1;
     }
+    const idl_resolved_leaf_t *leaf = &instruction->resolved[field];
+    const uint8_t *mint = instruction->field_mint[field];
+    idl_resolved_leaf_t override_leaf;
+    apply_port_overrides(instruction,
+                         &instruction->template->display_fields[field],
+                         &override_leaf,
+                         &leaf,
+                         &mint);
+
     if (format_field(&instruction->template->display_fields[field],
-                     &instruction->resolved[field],
-                     instruction->field_mint[field],
+                     leaf,
+                     mint,
                      element->value,
                      CS_RENDER_BUFFER_SIZE) != 0) {
         PRINTF("render_field: format failed field=%u\n", (unsigned) field);

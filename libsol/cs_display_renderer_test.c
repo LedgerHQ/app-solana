@@ -1804,6 +1804,565 @@ static void test_render_raw_f64(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+// A resolved port covering the field's account slot substitutes the displayed
+// address. The port's (post-merge) account differs from the field's own leaf, so
+// the rendered name is the port's, proving the override fires.
+static void test_override_account_address(void) {
+    printf("  test_override_account_address\n");
+    mock_mem_reset();
+    cs_trusted_name_cache_reset();
+    cs_display_renderer_reset();
+
+    uint8_t field_account[32];
+    memset(field_account, 0x11, 32);
+    uint8_t port_account[32];
+    memset(port_account, 0x22, 32);
+    assert(cs_trusted_name_cache_add(field_account, "FIELD_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(cs_trusted_name_cache_add(port_account, "PORT_ACCT", TN_TYPE_TOKEN) == 0);
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Transfer";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
+    template.display_fields[0].account.index = 2;
+    template.display_fields[0].name = "Source";
+    template.display_field_count = 1;
+
+    cs_value_flow_port_t ports[1];
+    memset(ports, 0, sizeof(ports));
+    ports[0].direction = CS_PORT_DIRECTION_INPUT;
+    template.ports = ports;
+    template.port_count = 1;
+
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = field_account;
+    instr.resolved[0].value_size = 32;
+    instr.resolved_count = 1;
+
+    cs_resolved_port_t resolved_ports[1];
+    memset(resolved_ports, 0, sizeof(resolved_ports));
+    resolved_ports[0].resolved = true;
+    resolved_ports[0].account = port_account;
+    resolved_ports[0].account_index = 2;  // same slot the field references
+    instr.resolved_ports = resolved_ports;
+    instr.resolved_port_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "PORT_ACCT") == 0);
+
+    cs_display_renderer_reset();
+    cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A port resolving to a different account slot than the field does not override
+// it: the field keeps its own resolved address.
+static void test_override_account_no_match(void) {
+    printf("  test_override_account_no_match\n");
+    mock_mem_reset();
+    cs_trusted_name_cache_reset();
+    cs_display_renderer_reset();
+
+    uint8_t field_account[32];
+    memset(field_account, 0x11, 32);
+    uint8_t port_account[32];
+    memset(port_account, 0x22, 32);
+    assert(cs_trusted_name_cache_add(field_account, "FIELD_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(cs_trusted_name_cache_add(port_account, "PORT_ACCT", TN_TYPE_TOKEN) == 0);
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Transfer";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
+    template.display_fields[0].account.index = 2;
+    template.display_fields[0].name = "Source";
+    template.display_field_count = 1;
+
+    cs_value_flow_port_t ports[1];
+    memset(ports, 0, sizeof(ports));
+    template.ports = ports;
+    template.port_count = 1;
+
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = field_account;
+    instr.resolved[0].value_size = 32;
+    instr.resolved_count = 1;
+
+    cs_resolved_port_t resolved_ports[1];
+    memset(resolved_ports, 0, sizeof(resolved_ports));
+    resolved_ports[0].resolved = true;
+    resolved_ports[0].account = port_account;
+    resolved_ports[0].account_index = 5;  // different slot: no override
+    instr.resolved_ports = resolved_ports;
+    instr.resolved_port_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "FIELD_ACCT") == 0);
+
+    cs_display_renderer_reset();
+    cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A port whose amount is sourced from the same ARGUMENT_PATH as the field
+// substitutes the displayed amount with the port's (post-merge) value.
+static void test_override_amount_argument_path(void) {
+    printf("  test_override_amount_argument_path\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    uint8_t path[] = {0x00};
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Transfer";
+    template.display_fields[0].name = "Amount";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_AMOUNT;
+    template.display_fields[0].argument.format.amount.decimals = 0;
+    template.display_fields[0].argument.path = path;
+    template.display_fields[0].argument.path_size = sizeof(path);
+    template.display_field_count = 1;
+
+    cs_value_flow_port_t ports[1];
+    memset(ports, 0, sizeof(ports));
+    ports[0].amount.kind = CS_AMOUNT_KIND_NUMERIC;
+    ports[0].amount.has_value = true;
+    ports[0].amount.value.source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    ports[0].amount.value.payload = path;  // same path the field reads
+    ports[0].amount.value.payload_size = sizeof(path);
+    template.ports = ports;
+    template.port_count = 1;
+
+    uint8_t field_amount[] = {0x64, 0x00, 0x00, 0x00};   // 100
+    uint8_t port_amount[] = {0xFA, 0x00, 0x00, 0x00};    // 250
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U32;
+    instr.resolved[0].value = field_amount;
+    instr.resolved[0].value_size = sizeof(field_amount);
+    instr.resolved_count = 1;
+
+    cs_resolved_port_t resolved_ports[1];
+    memset(resolved_ports, 0, sizeof(resolved_ports));
+    resolved_ports[0].resolved = true;
+    resolved_ports[0].amount_kind = CS_AMOUNT_KIND_NUMERIC;
+    resolved_ports[0].amount_le = port_amount;
+    resolved_ports[0].amount_size = sizeof(port_amount);
+    resolved_ports[0].amount_leaf_kind = IDL_KIND_U32;
+    instr.resolved_ports = resolved_ports;
+    instr.resolved_port_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "250") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A TOKEN_AMOUNT whose mint comes from an account slot a port covers uses the
+// port's (post-merge) mint for the ticker and decimals.
+static void test_override_token_mint(void) {
+    printf("  test_override_token_mint\n");
+    mock_mem_reset();
+    mock_dynamic_token_info_reset();
+    cs_display_renderer_reset();
+
+    uint8_t field_mint[32];
+    memset(field_mint, 0xAA, 32);
+    mock_dynamic_token_info_set(field_mint, "AAA", 6);
+    uint8_t port_mint[32];
+    memset(port_mint, 0xBB, 32);
+    mock_dynamic_token_info_set(port_mint, "BBB", 6);
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Transfer";
+    template.display_fields[0].name = "Amount";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
+    template.display_fields[0].argument.format.token_amount.mint_source = CS_TOKEN_MINT_ACCOUNT_INDEX;
+    template.display_fields[0].argument.format.token_amount.ref.account_index = 3;
+    template.display_field_count = 1;
+
+    cs_value_flow_port_t ports[1];
+    memset(ports, 0, sizeof(ports));
+    template.ports = ports;
+    template.port_count = 1;
+
+    // 1_500_000 = 1.5 at 6 decimals
+    uint8_t value[] = {0x60, 0xE3, 0x16, 0x00, 0x00, 0x00, 0x00, 0x00};
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+    instr.field_mint[0] = field_mint;
+
+    cs_resolved_port_t resolved_ports[1];
+    memset(resolved_ports, 0, sizeof(resolved_ports));
+    resolved_ports[0].resolved = true;
+    resolved_ports[0].account_index = 3;  // same slot as the mint reference
+    resolved_ports[0].mint = port_mint;
+    instr.resolved_ports = resolved_ports;
+    instr.resolved_port_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "1.5 BBB") == 0);
+
+    cs_display_renderer_reset();
+    mock_dynamic_token_info_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A port covering the field but carrying the same value the field resolved to
+// leaves the output unchanged: the pre-merge identity the all-survive path relies on.
+static void test_override_identity_when_value_matches(void) {
+    printf("  test_override_identity_when_value_matches\n");
+    mock_mem_reset();
+    cs_trusted_name_cache_reset();
+    cs_display_renderer_reset();
+
+    uint8_t account[32];
+    memset(account, 0x33, 32);
+    assert(cs_trusted_name_cache_add(account, "SAME_ACCT", TN_TYPE_TOKEN) == 0);
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Transfer";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
+    template.display_fields[0].account.index = 1;
+    template.display_fields[0].name = "Source";
+    template.display_field_count = 1;
+
+    cs_value_flow_port_t ports[1];
+    memset(ports, 0, sizeof(ports));
+    template.ports = ports;
+    template.port_count = 1;
+
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = account;
+    instr.resolved[0].value_size = 32;
+    instr.resolved_count = 1;
+
+    cs_resolved_port_t resolved_ports[1];
+    memset(resolved_ports, 0, sizeof(resolved_ports));
+    resolved_ports[0].resolved = true;
+    resolved_ports[0].account = account;  // identical to the field's own account
+    resolved_ports[0].account_index = 1;
+    instr.resolved_ports = resolved_ports;
+    instr.resolved_port_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "SAME_ACCT") == 0);
+
+    cs_display_renderer_reset();
+    cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// When one account slot is covered by both an input and an output port (a
+// transformer touches its token account as both), the output port's account
+// wins the display override, matching the POC build order. Streamed input-first.
+static void test_override_output_port_wins(void) {
+    printf("  test_override_output_port_wins\n");
+    mock_mem_reset();
+    cs_trusted_name_cache_reset();
+    cs_display_renderer_reset();
+
+    uint8_t field_account[32];
+    memset(field_account, 0x11, 32);
+    uint8_t input_account[32];
+    memset(input_account, 0x22, 32);
+    uint8_t output_account[32];
+    memset(output_account, 0x33, 32);
+    assert(cs_trusted_name_cache_add(field_account, "FIELD_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(cs_trusted_name_cache_add(input_account, "INPUT_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(cs_trusted_name_cache_add(output_account, "OUTPUT_ACCT", TN_TYPE_TOKEN) == 0);
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Wrap";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
+    template.display_fields[0].account.index = 2;
+    template.display_fields[0].name = "Account";
+    template.display_field_count = 1;
+
+    cs_value_flow_port_t ports[2];
+    memset(ports, 0, sizeof(ports));
+    ports[0].direction = CS_PORT_DIRECTION_INPUT;
+    ports[1].direction = CS_PORT_DIRECTION_OUTPUT;
+    template.ports = ports;
+    template.port_count = 2;
+
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = field_account;
+    instr.resolved[0].value_size = 32;
+    instr.resolved_count = 1;
+
+    cs_resolved_port_t resolved_ports[2];
+    memset(resolved_ports, 0, sizeof(resolved_ports));
+    resolved_ports[0].resolved = true;
+    resolved_ports[0].account = input_account;
+    resolved_ports[0].account_index = 2;
+    resolved_ports[1].resolved = true;
+    resolved_ports[1].account = output_account;
+    resolved_ports[1].account_index = 2;
+    instr.resolved_ports = resolved_ports;
+    instr.resolved_port_count = 2;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "OUTPUT_ACCT") == 0);
+
+    cs_display_renderer_reset();
+    cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// Same as above but the output port is streamed first: the output must still win,
+// proving the precedence is by direction, not array order.
+static void test_override_output_port_wins_output_streamed_first(void) {
+    printf("  test_override_output_port_wins_output_streamed_first\n");
+    mock_mem_reset();
+    cs_trusted_name_cache_reset();
+    cs_display_renderer_reset();
+
+    uint8_t input_account[32];
+    memset(input_account, 0x22, 32);
+    uint8_t output_account[32];
+    memset(output_account, 0x33, 32);
+    assert(cs_trusted_name_cache_add(input_account, "INPUT_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(cs_trusted_name_cache_add(output_account, "OUTPUT_ACCT", TN_TYPE_TOKEN) == 0);
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Wrap";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
+    template.display_fields[0].account.index = 2;
+    template.display_fields[0].name = "Account";
+    template.display_field_count = 1;
+
+    cs_value_flow_port_t ports[2];
+    memset(ports, 0, sizeof(ports));
+    ports[0].direction = CS_PORT_DIRECTION_OUTPUT;
+    ports[1].direction = CS_PORT_DIRECTION_INPUT;
+    template.ports = ports;
+    template.port_count = 2;
+
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = input_account;
+    instr.resolved[0].value_size = 32;
+    instr.resolved_count = 1;
+
+    cs_resolved_port_t resolved_ports[2];
+    memset(resolved_ports, 0, sizeof(resolved_ports));
+    resolved_ports[0].resolved = true;
+    resolved_ports[0].account = output_account;
+    resolved_ports[0].account_index = 2;
+    resolved_ports[1].resolved = true;
+    resolved_ports[1].account = input_account;
+    resolved_ports[1].account_index = 2;
+    instr.resolved_ports = resolved_ports;
+    instr.resolved_port_count = 2;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "OUTPUT_ACCT") == 0);
+
+    cs_display_renderer_reset();
+    cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A port resolving to a different slot than a TOKEN_AMOUNT's mint reference does
+// not override the mint: the field keeps its own resolved mint.
+static void test_override_token_mint_no_match(void) {
+    printf("  test_override_token_mint_no_match\n");
+    mock_mem_reset();
+    mock_dynamic_token_info_reset();
+    cs_display_renderer_reset();
+
+    uint8_t field_mint[32];
+    memset(field_mint, 0xAA, 32);
+    mock_dynamic_token_info_set(field_mint, "AAA", 6);
+    uint8_t port_mint[32];
+    memset(port_mint, 0xBB, 32);
+    mock_dynamic_token_info_set(port_mint, "BBB", 6);
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Transfer";
+    template.display_fields[0].name = "Amount";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
+    template.display_fields[0].argument.format.token_amount.mint_source = CS_TOKEN_MINT_ACCOUNT_INDEX;
+    template.display_fields[0].argument.format.token_amount.ref.account_index = 3;
+    template.display_field_count = 1;
+
+    cs_value_flow_port_t ports[1];
+    memset(ports, 0, sizeof(ports));
+    template.ports = ports;
+    template.port_count = 1;
+
+    // 1_500_000 = 1.5 at 6 decimals
+    uint8_t value[] = {0x60, 0xE3, 0x16, 0x00, 0x00, 0x00, 0x00, 0x00};
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+    instr.field_mint[0] = field_mint;
+
+    cs_resolved_port_t resolved_ports[1];
+    memset(resolved_ports, 0, sizeof(resolved_ports));
+    resolved_ports[0].resolved = true;
+    resolved_ports[0].account_index = 7;  // different slot: no override
+    resolved_ports[0].mint = port_mint;
+    instr.resolved_ports = resolved_ports;
+    instr.resolved_port_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "1.5 AAA") == 0);
+
+    cs_display_renderer_reset();
+    mock_dynamic_token_info_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// The amount override also applies to a TOKEN_AMOUNT field, not only PARAM_AMOUNT.
+static void test_override_amount_on_token_amount_field(void) {
+    printf("  test_override_amount_on_token_amount_field\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    uint8_t path[] = {0x00};
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Transfer";
+    template.display_fields[0].name = "Amount";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
+    template.display_fields[0].argument.format.token_amount.mint_source = CS_TOKEN_MINT_NATIVE;
+    template.display_fields[0].argument.path = path;
+    template.display_fields[0].argument.path_size = sizeof(path);
+    template.display_field_count = 1;
+
+    cs_value_flow_port_t ports[1];
+    memset(ports, 0, sizeof(ports));
+    ports[0].amount.kind = CS_AMOUNT_KIND_NUMERIC;
+    ports[0].amount.has_value = true;
+    ports[0].amount.value.source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    ports[0].amount.value.payload = path;
+    ports[0].amount.value.payload_size = sizeof(path);
+    template.ports = ports;
+    template.port_count = 1;
+
+    uint8_t field_amount[] = {0x00, 0xCA, 0x9A, 0x3B, 0x00, 0x00, 0x00, 0x00};  // 1 SOL
+    uint8_t port_amount[] = {0x00, 0x94, 0x35, 0x77, 0x00, 0x00, 0x00, 0x00};   // 2 SOL
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U64;
+    instr.resolved[0].value = field_amount;
+    instr.resolved[0].value_size = sizeof(field_amount);
+    instr.resolved_count = 1;
+
+    cs_resolved_port_t resolved_ports[1];
+    memset(resolved_ports, 0, sizeof(resolved_ports));
+    resolved_ports[0].resolved = true;
+    resolved_ports[0].amount_kind = CS_AMOUNT_KIND_NUMERIC;
+    resolved_ports[0].amount_le = port_amount;
+    resolved_ports[0].amount_size = sizeof(port_amount);
+    resolved_ports[0].amount_leaf_kind = IDL_KIND_U64;
+    instr.resolved_ports = resolved_ports;
+    instr.resolved_port_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "2 SOL") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// Two fields each covered by a distinct port: each field takes its own port's
+// value with no cross-contamination between fields.
+static void test_override_multi_field_isolation(void) {
+    printf("  test_override_multi_field_isolation\n");
+    mock_mem_reset();
+    cs_trusted_name_cache_reset();
+    cs_display_renderer_reset();
+
+    uint8_t raw_one[32];
+    memset(raw_one, 0x11, 32);
+    uint8_t raw_two[32];
+    memset(raw_two, 0x22, 32);
+    uint8_t port_one[32];
+    memset(port_one, 0x33, 32);
+    uint8_t port_two[32];
+    memset(port_two, 0x44, 32);
+    assert(cs_trusted_name_cache_add(raw_one, "RAW_ONE", TN_TYPE_TOKEN) == 0);
+    assert(cs_trusted_name_cache_add(raw_two, "RAW_TWO", TN_TYPE_TOKEN) == 0);
+    assert(cs_trusted_name_cache_add(port_one, "PORT_ONE", TN_TYPE_TOKEN) == 0);
+    assert(cs_trusted_name_cache_add(port_two, "PORT_TWO", TN_TYPE_TOKEN) == 0);
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Transfer";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
+    template.display_fields[0].account.index = 1;
+    template.display_fields[0].name = "First";
+    template.display_fields[1].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
+    template.display_fields[1].account.index = 2;
+    template.display_fields[1].name = "Second";
+    template.display_field_count = 2;
+
+    cs_value_flow_port_t ports[2];
+    memset(ports, 0, sizeof(ports));
+    template.ports = ports;
+    template.port_count = 2;
+
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[0].value = raw_one;
+    instr.resolved[0].value_size = 32;
+    instr.resolved[1].kind = IDL_KIND_PUBKEY_32;
+    instr.resolved[1].value = raw_two;
+    instr.resolved[1].value_size = 32;
+    instr.resolved_count = 2;
+
+    cs_resolved_port_t resolved_ports[2];
+    memset(resolved_ports, 0, sizeof(resolved_ports));
+    resolved_ports[0].resolved = true;
+    resolved_ports[0].account = port_one;
+    resolved_ports[0].account_index = 1;
+    resolved_ports[1].resolved = true;
+    resolved_ports[1].account = port_two;
+    resolved_ports[1].account_index = 2;
+    instr.resolved_ports = resolved_ports;
+    instr.resolved_port_count = 2;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_element_count() == 3);
+    assert(strcmp(cs_display_renderer_element(1)->value, "PORT_ONE") == 0);
+    assert(strcmp(cs_display_renderer_element(2)->value, "PORT_TWO") == 0);
+
+    cs_display_renderer_reset();
+    cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 int main(void) {
     printf("cs_display_renderer_test\n");
     test_initial_state();
@@ -1867,6 +2426,16 @@ int main(void) {
     test_render_raw_bytes_long_now_renders();
     test_render_raw_f32();
     test_render_raw_f64();
+    test_override_account_address();
+    test_override_account_no_match();
+    test_override_amount_argument_path();
+    test_override_token_mint();
+    test_override_identity_when_value_matches();
+    test_override_output_port_wins();
+    test_override_output_port_wins_output_streamed_first();
+    test_override_token_mint_no_match();
+    test_override_amount_on_token_amount_field();
+    test_override_multi_field_isolation();
     printf("  All passed!\n");
     return 0;
 }

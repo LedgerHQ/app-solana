@@ -144,11 +144,13 @@ static int match_set_register(idl_match_path_t *paths,
 // Resolve the port's ACCOUNT_INDEX candidate list to one concrete account, per
 // spec "Account resolution": scan in order, skipping a non-final candidate that
 // is out of range or (PROGRAM_ID strategy) whose slot holds the program id; the
-// final candidate always resolves. Returns NULL when no candidate resolves.
+// final candidate always resolves. On success writes the winning slot to
+// `*out_index` and returns its pubkey; returns NULL when no candidate resolves.
 static const uint8_t *resolve_port_account(const cs_transaction_t *cs_tx,
                                            const MessageHeader *header,
                                            const Instruction *instruction,
-                                           const cs_value_flow_port_t *port) {
+                                           const cs_value_flow_port_t *port,
+                                           uint8_t *out_index) {
     for (size_t c = 0; c < port->candidate_count; c++) {
         bool is_final = (c + 1 == port->candidate_count);
         if (port->account_candidates[c] >= instruction->accounts_length) {
@@ -172,6 +174,7 @@ static const uint8_t *resolve_port_account(const cs_transaction_t *cs_tx,
             memcmp(pubkey, header->pubkeys[instruction->program_id_index].data, 32) == 0) {
             continue;
         }
+        *out_index = port->account_candidates[c];
         return pubkey;
     }
     PRINTF("finalize cs: port has no resolvable account candidate\n");
@@ -252,7 +255,8 @@ static int resolve_port_local(const cs_transaction_t *cs_tx,
         out->token_kind = CS_TOKEN_KIND_NULL;
     }
 
-    const uint8_t *account = resolve_port_account(cs_tx, header, instruction, port);
+    const uint8_t *account =
+        resolve_port_account(cs_tx, header, instruction, port, &out->account_index);
     if (account == NULL) {
         return -1;
     }
