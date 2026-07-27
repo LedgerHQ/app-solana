@@ -23,6 +23,7 @@
 typedef struct cs_resolved_port_s {
     bool resolved;             // account candidate resolved to a concrete pubkey
     const uint8_t *account;    // resolved port account, or NULL
+    uint8_t account_index;     // accounts-array slot `account` resolved to
     uint8_t value_kind;        // enum cs_port_value_kind
     uint8_t amount_kind;       // enum cs_amount_kind
     const uint8_t *amount_le;  // little-endian amount bytes (NUMERIC only), or NULL
