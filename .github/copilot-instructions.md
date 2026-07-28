@@ -118,8 +118,8 @@ Preview (INS 0x08) stores SHA-512 fingerprint of message with zeroed blockhash, 
 
 ## Generic Clear Signing
 
-Generic clear signing is an ADDITION to the app, never a replacement. InsSignMessage and its parser (libsol/message.c, process_message_body) are a current, fully-supported, first-class sign flow — as first-class as generic clear signing, and serves a completely different purpose.
-You are FORBIDDEN from describing InsSignMessage, message.c, or any existing sign flow as "legacy".
+Generic clear signing is an ADDITION, not a replacement. InsSignMessage and its parser and metadata (libsol/message.c, process_message_body, trusted_info, etc) are a current, fully-supported, first-class sign flow — as first-class as generic clear signing, and serves a completely different purpose.
+There is absolutely NO LEGACY MECHANISM in the application and you are FORBIDDEN from describing anything as such. Including but not limited to: InsSignMessage, message.c, signing flows, trusted_info, dynamic_token_info, saved_descriptors.
 
 ## Clean architecture and contract
 
@@ -145,7 +145,7 @@ Coding patterns described here are more important than uniformity cross applicat
 
 - Comments are concise: 1 or 2 lines, and straight to the point. One line per function or `if` branch is almost always enough.
 - Comment only the non-obvious "why"; never restate what the code does. Prefer no comment over a redundant or explanatory one.
-- Do NOT narrate design decisions, spec/SDK references, or alternatives in code comments. No multi-line block above every struct/function/#define; match the LEANEST surrounding style, not the most verbose.
+- Do NOT narrate your life in comments. Multi-line block above struct/function/#define is the exception, not the norm.
 - Reserve comment blocks for very tricky code that is not readable otherwise (memory juggling, API hacks, advanced cryptography, math optimizations, etc)
 - A fix does NOT warrant a comment on the fixed code. When modifying code, first PURGE old comment, THEN decide independantly if a adding a comment is needed.
 
@@ -154,6 +154,7 @@ Coding patterns described here are more important than uniformity cross applicat
 - bool return is used to indicate the result of a CHECK, NOT a success or failure.
 - int return is used to report a success or failure of a function by using -1 or 0.
 - Global or module variables are prefixed by `G_*`.
+- Do not use the word `app_`, use real word application.
 
 - Functions and variables should have clear explicit names without abbreviation. BAD: `idl_leaf_cb_t cb`, GOOD: `idl_leaf_cb_t leaf_callback`.
 - Functions called in a wrong context shall return an error, not ignore or skip
