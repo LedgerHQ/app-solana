@@ -1,6 +1,7 @@
 #include "common_byte_strings.h"
 #include "instruction.h"
 #include "spl_token2022_instruction.c"
+#include "spl_token2022_instruction.h"
 #include "test_utils.h"
 #include <stdio.h>
 #include <assert.h>
@@ -814,7 +815,7 @@ void test_parse_spl_token_sync_native() {
     uint8_t message[] = {1,
                          0,
                          1,
-                         4,
+                         3,
                          OWNER_ACCOUNT,
                          TOKEN_ACCOUNT,
                          PROGRAM_ID_SPL_TOKEN_2022,
@@ -846,6 +847,55 @@ void test_parse_spl_token_sync_native() {
     assert_pubkey_equal(sync_native->token_account, &token_account);
 }
 
+static void check_extension_warns_and_is_hidden(uint8_t extension_kind) {
+    uint8_t message[] = {1,
+                         0,
+                         2,
+                         4,
+                         OWNER_ACCOUNT,
+                         TOKEN_ACCOUNT,
+                         MINT_ACCOUNT,
+                         PROGRAM_ID_SPL_TOKEN_2022,
+                         BLOCKHASH,
+                         1,
+                         3,
+                         3,
+                         1,
+                         2,
+                         0,
+                         1,
+                         extension_kind};
+    Parser parser = {message, sizeof(message)};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 0);
+
+    Instruction instruction;
+    assert(parse_instruction(&parser, &instruction) == 0);
+    assert(instruction_validate(&instruction, &header) == 0);
+
+    SplTokenInfo info = {0};
+    bool ignore_instruction_info = false;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) ==
+           0);
+    assert(parser.buffer_length == 0);
+
+    assert(ignore_instruction_info == true);
+    assert(info.generate_extension_warning == true);
+}
+
+void test_parse_spl_token2022_undecoded_extensions_warn() {
+    check_extension_warns_and_is_hidden(SplTokenExtensionKind(DefaultAccountStateExtension));
+    check_extension_warns_and_is_hidden(SplTokenExtensionKind(InterestBearingMintExtension));
+    check_extension_warns_and_is_hidden(SplTokenExtensionKind(CpiGuardExtension));
+    check_extension_warns_and_is_hidden(SplTokenExtensionKind(MetadataPointerExtension));
+    check_extension_warns_and_is_hidden(SplTokenExtensionKind(GroupPointerExtension));
+    check_extension_warns_and_is_hidden(SplTokenExtensionKind(GroupMemberPointerExtension));
+    check_extension_warns_and_is_hidden(SplTokenExtensionKind(ConfidentialTransferExtension));
+    check_extension_warns_and_is_hidden(SplTokenExtensionKind(MemoTransferExtension));
+    check_extension_warns_and_is_hidden(SplTokenExtensionKind(TransferHookExtension));
+    check_extension_warns_and_is_hidden(SplTokenExtensionKind(ConfidentialTransferFeeExtension));
+}
+
 int main() {
     RUN_TEST(test_parse_spl_token_create_token);
     RUN_TEST(test_parse_spl_token_create_account);
@@ -860,6 +910,8 @@ int main() {
     RUN_TEST(test_parse_spl_token_close_account);
     RUN_TEST(test_parse_spl_token_freeze_account);
     RUN_TEST(test_parse_spl_token_thaw_account);
+    RUN_TEST(test_parse_spl_token_sync_native);
+    RUN_TEST(test_parse_spl_token2022_undecoded_extensions_warn);
 
     printf("passed\n");
     return 0;
