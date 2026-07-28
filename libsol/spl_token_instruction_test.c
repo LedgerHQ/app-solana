@@ -813,7 +813,7 @@ void test_parse_spl_token_sync_native() {
     uint8_t message[] = {1,
                          0,
                          1,
-                         4,
+                         3,
                          OWNER_ACCOUNT,
                          TOKEN_ACCOUNT,
                          PROGRAM_ID_SPL_TOKEN,
@@ -1052,6 +1052,7 @@ int main() {
     RUN_TEST(test_parse_spl_token_close_account);
     RUN_TEST(test_parse_spl_token_freeze_account);
     RUN_TEST(test_parse_spl_token_thaw_account);
+    RUN_TEST(test_parse_spl_token_sync_native);
 
     printf("passed\n");
     return 0;

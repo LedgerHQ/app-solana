@@ -550,21 +550,20 @@ int parse_spl_token_instructions(const Instruction *instruction,
             }
             __attribute__((fallthrough));
 
-        // Currently we do not need to parse these extensions in any way
+        // Currently we do not decode these extensions in any way
         case SplTokenExtensionKind(ConfidentialTransferExtension):
         case SplTokenExtensionKind(MemoTransferExtension):
         case SplTokenExtensionKind(TransferHookExtension):
         case SplTokenExtensionKind(ConfidentialTransferFeeExtension):
-            // Mark that we have encountered not fully supported extension
-            info->generate_extension_warning = true;
-            __attribute__((fallthrough));
         case SplTokenExtensionKind(DefaultAccountStateExtension):
         case SplTokenExtensionKind(InterestBearingMintExtension):
         case SplTokenExtensionKind(CpiGuardExtension):
         case SplTokenExtensionKind(MetadataPointerExtension):
         case SplTokenExtensionKind(GroupPointerExtension):
         case SplTokenExtensionKind(GroupMemberPointerExtension):
-            // Don't generate any screens for the user for any extension
+            // Mark that we have encountered a not fully supported extension
+            info->generate_extension_warning = true;
+            // Don't generate a dedicated screen for the extension itself
             *ignore_instruction_info = true;
             return 0;
 
