@@ -70,7 +70,9 @@ static size_t nth_directional_port_index(const cs_instruction_result_t *item,
     // lives on the template side; the resolved side is positionally identical.
     size_t seen = 0;
     for (size_t p = 0; p < item->resolved_port_count; p++) {
-        if (item->template->ports[p].direction == direction) {
+        // An ACTIVE_WHEN-excluded port is not a leg: the scan treats it as never declared.
+        if (item->template->ports[p].direction == direction &&
+            !item->resolved_ports[p].excluded) {
             if (seen == n) {
                 return p;
             }
@@ -98,7 +100,9 @@ static const cs_resolved_port_t *nth_directional_port(const cs_instruction_resul
 static size_t count_directional_ports(const cs_instruction_result_t *item, uint8_t direction) {
     size_t count = 0;
     for (size_t p = 0; p < item->resolved_port_count; p++) {
-        if (item->template->ports[p].direction == direction) {
+        // An ACTIVE_WHEN-excluded port is not counted: the scan treats it as never declared.
+        if (item->template->ports[p].direction == direction &&
+            !item->resolved_ports[p].excluded) {
             count++;
         }
     }
@@ -309,7 +313,7 @@ static bool all_ports_symbolic(const cs_instruction_result_t *item) {
     // Both directions count: such an instruction has no number to put on a screen, which
     // is what disqualifies it from surviving a collapse.
     for (size_t p = 0; p < item->resolved_port_count; p++) {
-        if (!item->resolved_ports[p].is_symbolic) {
+        if (!item->resolved_ports[p].excluded && !item->resolved_ports[p].is_symbolic) {
             PRINTF("all_ports_symbolic: port %d names an amount\n", (int) p);
             return false;
         }
@@ -387,7 +391,8 @@ static size_t symbolic_junction_port_count(const cs_instruction_result_t *item, 
     // propagate, not what it has to trust.
     size_t count = 0;
     for (size_t p = 0; p < item->resolved_port_count; p++) {
-        if (item->template->ports[p].direction == direction && item->resolved_ports[p].is_symbolic) {
+        if (item->template->ports[p].direction == direction &&
+            !item->resolved_ports[p].excluded && item->resolved_ports[p].is_symbolic) {
             count++;
         }
     }
@@ -581,6 +586,7 @@ static void resolve_balance_amounts(cs_instruction_result_t *walked_instructions
         // the port stops being symbolic and can be compared as a number.
         for (size_t p = 0; p < walked_instructions[i].resolved_port_count; p++) {
             if (walked_instructions[i].template->ports[p].direction != CS_PORT_DIRECTION_INPUT ||
+                walked_instructions[i].resolved_ports[p].excluded ||
                 walked_instructions[i].resolved_ports[p].amount_kind != CS_AMOUNT_KIND_BALANCE) {
                 continue;
             }
@@ -606,7 +612,8 @@ static void resolve_balance_amounts(cs_instruction_result_t *walked_instructions
         // the instruction, not by what the account held, so such a port stays symbolic.
         // Either way the write ends what the device knew about that account.
         for (size_t p = 0; p < walked_instructions[i].resolved_port_count; p++) {
-            if (walked_instructions[i].template->ports[p].direction != CS_PORT_DIRECTION_OUTPUT) {
+            if (walked_instructions[i].template->ports[p].direction != CS_PORT_DIRECTION_OUTPUT ||
+                walked_instructions[i].resolved_ports[p].excluded) {
                 continue;
             }
             if (walked_instructions[i].resolved_ports[p].amount_kind == CS_AMOUNT_KIND_BALANCE) {
@@ -816,7 +823,7 @@ static bool instruction_may_deposit(const cs_instruction_result_t *item,
     // a creation step with nothing in it pass.
     for (size_t p = 0; p < item->resolved_port_count; p++) {
         if (item->template->ports[p].direction != CS_PORT_DIRECTION_OUTPUT ||
-            item->resolved_ports[p].account == NULL) {
+            item->resolved_ports[p].excluded || item->resolved_ports[p].account == NULL) {
             continue;
         }
         if (memcmp(item->resolved_ports[p].account, account, PUBKEY_SIZE) == 0 &&
@@ -854,7 +861,7 @@ static size_t collect_symbolic_junction_accounts(const cs_instruction_result_t *
     size_t account_count = 0;
     for (size_t p = 0; p < survivor->resolved_port_count; p++) {
         if (survivor->template->ports[p].direction == survivor_direction &&
-            survivor->resolved_ports[p].is_symbolic) {
+            !survivor->resolved_ports[p].excluded && survivor->resolved_ports[p].is_symbolic) {
             accounts[account_count] = survivor->resolved_ports[p].account;
             account_count++;
         }
@@ -863,7 +870,7 @@ static size_t collect_symbolic_junction_accounts(const cs_instruction_result_t *
     // listed and adds nothing.
     for (size_t p = 0; p < consumed->resolved_port_count; p++) {
         if (consumed->template->ports[p].direction != consumed_direction ||
-            !consumed->resolved_ports[p].is_symbolic) {
+            consumed->resolved_ports[p].excluded || !consumed->resolved_ports[p].is_symbolic) {
             continue;
         }
         bool already_listed = false;
@@ -1091,11 +1098,12 @@ static bool touches_upstream_outputs(const cs_instruction_result_t *upstream,
     // Declared ports first, then the raw writable list, so an undeclared write counts too.
     for (size_t up = 0; up < upstream->resolved_port_count; up++) {
         if (upstream->template->ports[up].direction != CS_PORT_DIRECTION_OUTPUT ||
-            upstream->resolved_ports[up].account == NULL) {
+            upstream->resolved_ports[up].excluded || upstream->resolved_ports[up].account == NULL) {
             continue;
         }
         for (size_t down = 0; down < downstream->resolved_port_count; down++) {
-            if (downstream->resolved_ports[down].account != NULL &&
+            if (!downstream->resolved_ports[down].excluded &&
+                downstream->resolved_ports[down].account != NULL &&
                 memcmp(upstream->resolved_ports[up].account,
                        downstream->resolved_ports[down].account,
                        PUBKEY_SIZE) == 0) {
@@ -1275,6 +1283,367 @@ static void run_merge_scan(cs_instruction_result_t *walked_instructions,
 }
 
 // ============================================================================
+// Condition vocabulary (shared by the Annotate and Hide stages)
+// ============================================================================
+
+// Whether the target account is created in the transaction.
+static bool condition_created_in_transaction(const cs_instruction_result_t *walked_instructions,
+                                             size_t count,
+                                             const uint8_t *target) {
+    if (target == NULL) {
+        PRINTF("condition_created_in_transaction: no target\n");
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        for (size_t p = 0; p < walked_instructions[i].resolved_port_count; p++) {
+            if (walked_instructions[i].template->ports[p].direction != CS_PORT_DIRECTION_OUTPUT ||
+                walked_instructions[i].resolved_ports[p].excluded ||
+                walked_instructions[i].resolved_ports[p].account == NULL) {
+                continue;
+            }
+            // A zero-amount, no-token output is an account brought into existence rather
+            // than value moving through it.
+            if (memcmp(walked_instructions[i].resolved_ports[p].account, target, PUBKEY_SIZE) == 0 &&
+                port_moves_no_value(&walked_instructions[i].resolved_ports[p])) {
+                PRINTF("condition_created_in_transaction: instruction %d creates the target\n",
+                       (int) i);
+                return true;
+            }
+        }
+    }
+    PRINTF("condition_created_in_transaction: target never created\n");
+    return false;
+}
+
+// Whether the target is the device user's own signing key, directly or as a token account
+// the device signer owns. Never matches the fee payer or any other transaction signer.
+static bool condition_is_device_signer(const uint8_t *target, const cs_merge_context_t *context) {
+    if (target == NULL || context->device_signer == NULL) {
+        PRINTF("condition_is_device_signer: no target or no device signer\n");
+        return false;
+    }
+    if (memcmp(target, context->device_signer, PUBKEY_SIZE) == 0) {
+        PRINTF("condition_is_device_signer: target is the device signer\n");
+        return true;
+    }
+    for (size_t b = 0; b < context->owner_binding_count; b++) {
+        if (memcmp(context->owner_bindings[b].token_account, target, PUBKEY_SIZE) == 0 &&
+            memcmp(context->owner_bindings[b].owner, context->device_signer, PUBKEY_SIZE) == 0) {
+            PRINTF("condition_is_device_signer: target is an ATA the device signer owns\n");
+            return true;
+        }
+    }
+    PRINTF("condition_is_device_signer: target is not the device signer\n");
+    return false;
+}
+
+// Whether the target is a transaction signer that the header declares. The first
+// num_required_signatures accounts sign; anything past them is a non-signer.
+static bool pubkey_is_transaction_signer(const MessageHeader *header, const uint8_t *pubkey) {
+    if (header == NULL || pubkey == NULL) {
+        PRINTF("pubkey_is_transaction_signer: no header or no pubkey\n");
+        return false;
+    }
+    for (size_t s = 0; s < header->pubkeys_header.num_required_signatures; s++) {
+        if (memcmp(header->pubkeys[s].data, pubkey, PUBKEY_SIZE) == 0) {
+            PRINTF("pubkey_is_transaction_signer: signer at index %d\n", (int) s);
+            return true;
+        }
+    }
+    PRINTF("pubkey_is_transaction_signer: not a signer\n");
+    return false;
+}
+
+// Whether the target is a transaction signer other than the device user, so a co-signer or
+// fee payer but neither the device signer nor a token account it owns.
+static bool condition_is_another_signer(const uint8_t *target, const cs_merge_context_t *context) {
+    if (target == NULL) {
+        PRINTF("condition_is_another_signer: no target\n");
+        return false;
+    }
+    if (context->device_signer != NULL &&
+        memcmp(target, context->device_signer, PUBKEY_SIZE) == 0) {
+        PRINTF("condition_is_another_signer: target is the device signer\n");
+        return false;
+    }
+    for (size_t b = 0; b < context->owner_binding_count; b++) {
+        if (context->device_signer != NULL &&
+            memcmp(context->owner_bindings[b].token_account, target, PUBKEY_SIZE) == 0 &&
+            memcmp(context->owner_bindings[b].owner, context->device_signer, PUBKEY_SIZE) == 0) {
+            PRINTF("condition_is_another_signer: target is an ATA the device signer owns\n");
+            return false;
+        }
+    }
+    return pubkey_is_transaction_signer(context->header, target);
+}
+
+// Whether the target appears outside its own instruction: in any other instruction's active
+// ports or in its raw resolved account list, so a reference no port declares still counts.
+static bool condition_account_used_elsewhere(const cs_instruction_result_t *walked_instructions,
+                                             size_t count,
+                                             size_t current_index,
+                                             const uint8_t *target) {
+    if (target == NULL) {
+        PRINTF("condition_account_used_elsewhere: no target\n");
+        return false;
+    }
+    for (size_t i = 0; i < count; i++) {
+        if (i == current_index) {
+            continue;
+        }
+        for (size_t p = 0; p < walked_instructions[i].resolved_port_count; p++) {
+            if (!walked_instructions[i].resolved_ports[p].excluded &&
+                walked_instructions[i].resolved_ports[p].account != NULL &&
+                memcmp(walked_instructions[i].resolved_ports[p].account, target, PUBKEY_SIZE) == 0) {
+                PRINTF("condition_account_used_elsewhere: a port of instruction %d uses it\n",
+                       (int) i);
+                return true;
+            }
+        }
+        for (size_t a = 0; a < walked_instructions[i].account_count; a++) {
+            if (memcmp(walked_instructions[i].accounts[a], target, PUBKEY_SIZE) == 0) {
+                PRINTF("condition_account_used_elsewhere: instruction %d lists it raw\n", (int) i);
+                return true;
+            }
+        }
+    }
+    PRINTF("condition_account_used_elsewhere: target used nowhere else\n");
+    return false;
+}
+
+// Evaluate one HIDE_RULE condition against its resolved target. The deferred lifecycle
+// predicate never holds, so a rule that names it can only leave the instruction visible.
+static bool hide_condition_holds(uint8_t condition,
+                                 const uint8_t *target,
+                                 const cs_instruction_result_t *walked_instructions,
+                                 size_t count,
+                                 size_t instruction_index,
+                                 const cs_merge_context_t *context) {
+    PRINTF("hide_condition_holds: condition=%d\n", condition);
+    bool holds = false;
+    switch (condition) {
+        case CS_HIDE_CONDITION_CREATED_IN_TRANSACTION:
+            holds = condition_created_in_transaction(walked_instructions, count, target);
+            break;
+        case CS_HIDE_CONDITION_IS_SIGNER:
+            holds = condition_is_device_signer(target, context);
+            break;
+        case CS_HIDE_CONDITION_ACCOUNT_USED_ELSEWHERE:
+            holds =
+                condition_account_used_elsewhere(walked_instructions, count, instruction_index, target);
+            break;
+        case CS_HIDE_CONDITION_IS_ANOTHER_SIGNER:
+            holds = condition_is_another_signer(target, context);
+            break;
+        case CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE:
+            PRINTF("hide_condition_holds: accountEffectsDisplayedElsewhere not evaluated, stays false\n");
+            holds = false;
+            break;
+        default:
+            PRINTF("hide_condition_holds: unexpected condition %d, stays false\n", condition);
+            holds = false;
+            break;
+    }
+    return holds;
+}
+
+// ============================================================================
+// Annotate stage
+// ============================================================================
+
+// Evaluate one ACTIVE_WHEN predicate against the port it guards. `mint` is the 32-byte
+// operand of a MINT_PREDICATE, NULL for the port-account conditions.
+static bool active_when_predicate_holds(uint8_t opcode,
+                                        const uint8_t *mint,
+                                        const cs_resolved_port_t *resolved_port,
+                                        const cs_instruction_result_t *walked_instructions,
+                                        size_t count,
+                                        size_t instruction_index,
+                                        const cs_merge_context_t *context) {
+    PRINTF("active_when_predicate_holds: opcode=%d\n", opcode);
+    bool holds = false;
+    switch (opcode) {
+        case CS_ACTIVE_WHEN_CREATED_IN_TRANSACTION:
+            holds = condition_created_in_transaction(walked_instructions, count, resolved_port->account);
+            break;
+        case CS_ACTIVE_WHEN_IS_SIGNER:
+            holds = condition_is_device_signer(resolved_port->account, context);
+            break;
+        case CS_ACTIVE_WHEN_ACCOUNT_USED_ELSEWHERE:
+            holds = condition_account_used_elsewhere(walked_instructions,
+                                                     count,
+                                                     instruction_index,
+                                                     resolved_port->account);
+            break;
+        case CS_ACTIVE_WHEN_MINT_PREDICATE:
+            // The port must have resolved a mint, and it must be the one the predicate names.
+            holds = (resolved_port->mint != NULL &&
+                     memcmp(resolved_port->mint, mint, PUBKEY_SIZE) == 0);
+            break;
+        case CS_ACTIVE_WHEN_IS_ANOTHER_SIGNER:
+            holds = condition_is_another_signer(resolved_port->account, context);
+            break;
+        default:
+            PRINTF("active_when_predicate_holds: unexpected opcode %d\n", opcode);
+            holds = false;
+            break;
+    }
+    return holds;
+}
+
+// Decode and evaluate one port's ACTIVE_WHEN predicate stream, and exclude the port unless
+// every predicate holds. The stream is a sequence of one-byte opcodes; MINT_PREDICATE
+// carries a 32-byte operand, the rest none. Returns 0, -1 on a malformed stream.
+static int annotate_one_port(cs_resolved_port_t *resolved_port,
+                             const cs_value_flow_port_t *template_port,
+                             const cs_instruction_result_t *walked_instructions,
+                             size_t count,
+                             size_t instruction_index,
+                             const cs_merge_context_t *context) {
+    // A port with no ACTIVE_WHEN keeps the loop below unentered, so it stays included.
+    size_t offset = 0;
+    bool all_hold = true;
+    while (offset < template_port->active_when_size && all_hold) {
+        uint8_t opcode = template_port->active_when[offset];
+        offset++;
+        const uint8_t *mint = NULL;
+        if (opcode == CS_ACTIVE_WHEN_MINT_PREDICATE) {
+            // The operand is the mint the port's token must resolve to.
+            if (template_port->active_when_size - offset < PUBKEY_SIZE) {
+                PRINTF("annotate_one_port: truncated MINT_PREDICATE operand\n");
+                return -1;
+            }
+            mint = &template_port->active_when[offset];
+            offset += PUBKEY_SIZE;
+        } else if (opcode != CS_ACTIVE_WHEN_CREATED_IN_TRANSACTION &&
+                   opcode != CS_ACTIVE_WHEN_IS_SIGNER &&
+                   opcode != CS_ACTIVE_WHEN_ACCOUNT_USED_ELSEWHERE &&
+                   opcode != CS_ACTIVE_WHEN_IS_ANOTHER_SIGNER) {
+            PRINTF("annotate_one_port: unknown ACTIVE_WHEN opcode %d\n", opcode);
+            return -1;
+        }
+        if (!active_when_predicate_holds(opcode,
+                                         mint,
+                                         resolved_port,
+                                         walked_instructions,
+                                         count,
+                                         instruction_index,
+                                         context)) {
+            all_hold = false;
+        }
+    }
+    resolved_port->excluded = !all_hold;
+    PRINTF("annotate_one_port: instruction %d excluded=%d\n", (int) instruction_index, !all_hold);
+    return 0;
+}
+
+// Evaluate every port's ACTIVE_WHEN predicates so an excluded port is invisible to the merge
+// scan and the renderer, as if the descriptor had never declared it. Returns 0, -1 on a
+// malformed predicate stream.
+static int annotate_ports(cs_instruction_result_t *walked_instructions,
+                          size_t count,
+                          const cs_merge_context_t *context) {
+    // Every port starts included before any predicate runs, so a condition that reads another
+    // port's exclusion never depends on evaluation order having reached it yet.
+    for (size_t i = 0; i < count; i++) {
+        for (size_t p = 0; p < walked_instructions[i].resolved_port_count; p++) {
+            walked_instructions[i].resolved_ports[p].excluded = false;
+        }
+    }
+    for (size_t i = 0; i < count; i++) {
+        for (size_t p = 0; p < walked_instructions[i].resolved_port_count; p++) {
+            if (annotate_one_port(&walked_instructions[i].resolved_ports[p],
+                                  &walked_instructions[i].template->ports[p],
+                                  walked_instructions,
+                                  count,
+                                  i,
+                                  context) != 0) {
+                PRINTF("annotate_ports: instruction %d port %d predicate stream invalid\n",
+                       (int) i,
+                       (int) p);
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
+// ============================================================================
+// Hide stage
+// ============================================================================
+
+// Whether every HIDE_RULE sharing `set_index` holds, so the rule set passes. The rules of a
+// set are ANDed.
+static bool hide_rule_set_passes(const cs_instruction_result_t *walked_instructions,
+                                 size_t count,
+                                 size_t instruction_index,
+                                 uint8_t set_index,
+                                 const cs_merge_context_t *context) {
+    const cs_instruction_template_t *template = walked_instructions[instruction_index].template;
+    for (size_t r = 0; r < template->hide_rule_count; r++) {
+        if (template->hide_rules[r].rule_set_index != set_index) {
+            continue;
+        }
+        if (!hide_condition_holds(template->hide_rules[r].condition,
+                                  walked_instructions[instruction_index].resolved_hide_rules[r].target,
+                                  walked_instructions,
+                                  count,
+                                  instruction_index,
+                                  context)) {
+            PRINTF("hide_rule_set_passes: rule %d of set %d fails\n", (int) r, set_index);
+            return false;
+        }
+    }
+    PRINTF("hide_rule_set_passes: set %d passes\n", set_index);
+    return true;
+}
+
+// Whether an instruction's HIDE_RULEs hide it: the rule sets are ORed, so the first set that
+// passes hides it. Each set is evaluated once, at the first rule carrying its index.
+static bool instruction_is_hidden(const cs_instruction_result_t *walked_instructions,
+                                  size_t count,
+                                  size_t instruction_index,
+                                  const cs_merge_context_t *context) {
+    const cs_instruction_template_t *template = walked_instructions[instruction_index].template;
+    for (size_t h = 0; h < template->hide_rule_count; h++) {
+        uint8_t set_index = template->hide_rules[h].rule_set_index;
+        // Skip a set already reached through an earlier rule, so each set is judged once.
+        bool first_of_set = true;
+        for (size_t k = 0; k < h; k++) {
+            if (template->hide_rules[k].rule_set_index == set_index) {
+                first_of_set = false;
+            }
+        }
+        if (first_of_set &&
+            hide_rule_set_passes(walked_instructions, count, instruction_index, set_index, context)) {
+            PRINTF("instruction_is_hidden: instruction %d hidden by set %d\n",
+                   (int) instruction_index,
+                   set_index);
+            return true;
+        }
+    }
+    return false;
+}
+
+// Drop from the output every merge survivor whose HIDE_RULEs hide it, so its plumbing never
+// reaches the screen. Runs after the scan, over survivors, so a merged-away instruction is
+// never reconsidered.
+static void apply_hide_rules(const cs_instruction_result_t *walked_instructions,
+                             size_t count,
+                             const cs_merge_context_t *context,
+                             bool *survivors) {
+    for (size_t i = 0; i < count; i++) {
+        // A survivor with no template carries no HIDE_RULEs, so nothing can hide it.
+        if (survivors[i] && walked_instructions[i].template != NULL &&
+            walked_instructions[i].template->hide_rule_count > 0 &&
+            instruction_is_hidden(walked_instructions, count, i, context)) {
+            PRINTF("apply_hide_rules: instruction %d hidden\n", (int) i);
+            survivors[i] = false;
+        }
+    }
+}
+
+// ============================================================================
 // Entry point
 // ============================================================================
 
@@ -1361,10 +1730,17 @@ static int merge_engine_run_inner(cs_instruction_result_t *walked_instructions,
                                   size_t count,
                                   merge_scratch_t *scratch,
                                   const uint8_t **symbolic_accounts,
+                                  const cs_merge_context_t *context,
                                   bool *survivors) {
-    // The order is forced. Balances have to settle before the scan, because whether a leg
-    // reads as a number decides which rule its junction takes; the safe-account set has to
-    // exist before the first guard runs.
+    // Annotate first: excluding a port changes the balances the next pass reads and the
+    // junctions the scan meets, so it has to settle the port set before either runs.
+    if (annotate_ports(walked_instructions, count, context) != 0) {
+        PRINTF("merge_engine_run_inner: port annotation failed\n");
+        return -1;
+    }
+    // The order of the next two is forced. Balances have to settle before the scan, because
+    // whether a leg reads as a number decides which rule its junction takes; the safe-account
+    // set has to exist before the first guard runs.
     resolve_balance_amounts(walked_instructions, count, scratch);
     build_safe_accounts(walked_instructions, count, scratch);
     run_merge_scan(walked_instructions, count, scratch, symbolic_accounts);
@@ -1374,6 +1750,10 @@ static int merge_engine_run_inner(cs_instruction_result_t *walked_instructions,
         survivors[i] = !scratch->states[i].consumed;
         PRINTF("merge_engine_run_inner: instruction %d survives=%d\n", (int) i, survivors[i]);
     }
+
+    // Hide last, over survivors only: a HIDE_RULE reasons about the post-merge account set,
+    // and a merged-away instruction has no screen to remove.
+    apply_hide_rules(walked_instructions, count, context, survivors);
     return 0;
 }
 
@@ -1381,9 +1761,6 @@ int cs_merge_engine_run(cs_instruction_result_t *walked_instructions,
                         size_t walked_instructions_count,
                         const cs_merge_context_t *context,
                         bool *survivors) {
-    // The context carries the signer set and owner bindings, which only hide-rule
-    // evaluation needs.
-    UNUSED(context);
     PRINTF("cs_merge_engine_run: %d instructions\n", (int) walked_instructions_count);
     if (walked_instructions == NULL && walked_instructions_count > 0) {
         PRINTF("cs_merge_engine_run: NULL input with non-zero count\n");
@@ -1425,6 +1802,7 @@ int cs_merge_engine_run(cs_instruction_result_t *walked_instructions,
                                     walked_instructions_count,
                                     &scratch,
                                     symbolic_accounts,
+                                    context,
                                     survivors);
     }
 

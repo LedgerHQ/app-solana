@@ -2,28 +2,33 @@
 
 // Merge engine for clear signing.
 //
-// Receives the per-instruction resolved leaf values and collapses chains of
-// value-flow legs that describe one movement, so the review shows the intent
-// rather than the plumbing. Two rules apply at a junction, the account both a
-// downstream input port and an upstream output port name:
+// Receives the per-instruction resolved leaf values and reduces the transaction to the
+// intent the user reviews, over three stages run in order:
 //
-//   - exact relay: both legs carry the same concrete amount, so the upstream leg
-//     provably passes its value through untouched.
-//   - symbolic junction: at least one leg drains or fills a whole balance the
-//     device cannot read from the instruction data. Collapsing is only sound when
-//     an ACCOUNT_RESET establishes that balance and no unaccounted instruction
-//     deposited into the account first, which the symbolic-junction guard checks.
-//
-// The surviving instruction's junction ports are rewritten with the consumed
-// instruction's far-side ports, so the review shows the real endpoints and amount
-// instead of the intermediate account. That rewrite is why the walked instructions are
-// passed mutable: the display renderer reads the merged ports.
+//   - Annotate: each port's ACTIVE_WHEN predicates are evaluated; a port failing any
+//     predicate is excluded, so the rest of the engine and the renderer behave as if that
+//     port were never declared. Runs before the collapse scan, since it changes the port
+//     set the scan sees.
+//   - Merge (collapse): chains of value-flow legs that describe one movement are fused, so
+//     the review shows the intent rather than the plumbing. Two rules apply at a junction,
+//     the account both a downstream input port and an upstream output port name:
+//       - exact relay: both legs carry the same concrete amount, so the upstream leg
+//         provably passes its value through untouched.
+//       - symbolic junction: at least one leg drains or fills a whole balance the device
+//         cannot read from the instruction data. Collapsing is only sound when an
+//         ACCOUNT_RESET establishes that balance and no unaccounted instruction deposited
+//         into the account first, which the symbolic-junction guard checks.
+//     The surviving instruction's junction ports are rewritten with the consumed
+//     instruction's far-side ports, so the review shows the real endpoints and amount
+//     instead of the intermediate account. That rewrite is why the walked instructions are
+//     passed mutable: the display renderer reads the merged ports.
+//   - Hide: each merge survivor is tested against its HIDE_RULEs, grouped by rule set
+//     (AND within a set, OR across sets); a survivor whose rules pass is dropped from the
+//     output so its plumbing does not reach the screen.
 //
 // The pipeline this implements also drops described instructions that resolve to no
 // ports and carry no intent. That stage has no effect here: an operation type is a
 // required INSTRUCTION_INFO field, so every committed template carries an intent.
-//
-// Hide-rule and ACTIVE_WHEN evaluation will be added here later.
 //
 // Output is a caller-provided bool array: survivors[i] == true means
 // walked_instructions[i] should be rendered.
@@ -41,6 +46,10 @@
 // reference the buffered transaction / ALT cache / token-account cache / template.
 typedef struct cs_resolved_port_s {
     bool resolved;             // account candidate resolved to a concrete pubkey
+    // Set by the Annotate stage when an ACTIVE_WHEN predicate excludes the port, so every
+    // later stage and the renderer treat it as never declared. Zero-initialised, so a port
+    // with no ACTIVE_WHEN, and any port before annotation runs, is included.
+    bool excluded;
     const uint8_t *account;    // resolved port account, or NULL
     uint8_t account_index;     // accounts-array slot `account` resolved to
     uint8_t value_kind;        // enum cs_port_value_kind
@@ -90,6 +99,11 @@ typedef struct cs_instruction_result_s {
     // ALT-loaded account with no attested resolution. The list is then a subset of the
     // real one, so the instruction has to be treated as touching anything.
     bool writable_complete;
+    // Every account of the instruction's raw account list that resolved to a concrete
+    // pubkey, in slot order, writable or not. accountUsedElsewhere reads it to prove an
+    // address appears outside the current instruction even when no port declares it.
+    const uint8_t **accounts;  // heap, owned by the finalize walk
+    size_t account_count;
     idl_resolved_leaf_t *resolved;  // heap, sized to resolved_count; owned by the finalize walk
     size_t resolved_count;
     // Per display-field resolved mint pubkey, heap array sized to resolved_count,
@@ -113,9 +127,13 @@ typedef struct cs_owner_binding_s {
 } cs_owner_binding_t;
 
 // Facts about the transaction as a whole, which no single instruction result carries.
-// Read by hide-rule and ACTIVE_WHEN evaluation, so unused until those land.
+// Read by the Annotate and Hide stages to evaluate the shared condition vocabulary.
 typedef struct cs_merge_context_s {
     const MessageHeader *header;  // signer set and account keys
+    // The device user's own signing key, derived from the session derivation path. isSigner
+    // and isAnotherSigner match against it specifically, never the fee payer or another
+    // signer. NULL when the session carries no derivation path.
+    const uint8_t *device_signer;
     const cs_owner_binding_t *owner_bindings;
     size_t owner_binding_count;
 } cs_merge_context_t;

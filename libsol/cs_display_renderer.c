@@ -983,7 +983,9 @@ static const cs_resolved_port_t *find_port_by_account_index(const cs_instruction
     const cs_resolved_port_t *match = NULL;
     bool match_is_output = false;
     for (size_t p = 0; p < resolved_port_count; p++) {
-        if (!resolved_ports[p].resolved || resolved_ports[p].account_index != account_index) {
+        // An ACTIVE_WHEN-excluded port overrides nothing, as if never declared.
+        if (resolved_ports[p].excluded || !resolved_ports[p].resolved ||
+            resolved_ports[p].account_index != account_index) {
             continue;
         }
         // Output ports win over input ports; within a direction the later port wins.
@@ -1012,7 +1014,8 @@ static const cs_resolved_port_t *find_port_by_argument_path(const cs_instruction
                                                             uint8_t path_size) {
     const cs_resolved_port_t *match = NULL;
     for (size_t p = 0; p < resolved_port_count && match == NULL; p++) {
-        if (!resolved_ports[p].resolved ||
+        // An ACTIVE_WHEN-excluded port overrides nothing, as if never declared.
+        if (resolved_ports[p].excluded || !resolved_ports[p].resolved ||
             resolved_ports[p].amount_kind != CS_AMOUNT_KIND_NUMERIC ||
             resolved_ports[p].amount_le == NULL || !template->ports[p].amount.has_value ||
             template->ports[p].amount.value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
