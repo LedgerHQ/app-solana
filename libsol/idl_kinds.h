@@ -58,3 +58,18 @@ enum idl_encoding {
     IDL_ENCODING_UTF8 = 0x00,
     IDL_ENCODING_BASE16 = 0x01,
 };
+
+// --- Amount kinds ------------------------------------------------------------
+//
+// An amount is read as an unsigned little-endian integer of at most 64 bits. These two
+// lookups are the single place that decides which kinds qualify and how wide each one
+// is, so a decoder, a descriptor validator and a width inference cannot disagree.
+
+#include <stddef.h>
+
+// Byte width of an unsigned-integer IDL kind. Returns 0, -1 when the kind is not one.
+int idl_unsigned_kind_width(uint8_t kind, size_t *out_width);
+
+// The unsigned-integer IDL kind occupying a given byte width, for a number carried
+// without a kind of its own. Returns 0, -1 when no kind has that width.
+int idl_unsigned_kind_for_width(size_t width, uint8_t *out_kind);

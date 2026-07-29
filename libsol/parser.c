@@ -275,14 +275,106 @@ static int parse_alt_table(Parser *parser,
     return 0;
 }
 
+// Position a parser on a message's address-table-lookup section, and hand back the header
+// along the way. Returns 0, -1 when the message is malformed.
+static int seek_alt_section(const uint8_t *transaction,
+                            size_t transaction_size,
+                            MessageHeader *header,
+                            Parser *section) {
+    // The section is the last part of a v0 body, with no offset to it, so the only way
+    // there is to parse every instruction and stop where they end. A legacy message has no
+    // section at all, which the caller detects from the header rather than from here.
+    Parser parser = {transaction, transaction_size};
+    BAIL_IF(parse_message_header(&parser, header));
+    for (size_t i = 0; i < header->instructions_length; i++) {
+        Instruction instruction;
+        BAIL_IF(parse_instruction(&parser, &instruction));
+    }
+    section->buffer = parser.buffer;
+    section->buffer_length = parser.buffer_length;
+    PRINTF("seek_alt_section: reached ALT section, remaining_bytes=%d\n",
+           (int) parser.buffer_length);
+    return 0;
+}
+
+// Total the writable index lists of every ALT table. `section` must already be positioned
+// on the lookup section, and is consumed. Returns 0, -1 when the section is malformed.
+static int sum_alt_writable_indexes(Parser *section, size_t *out_count) {
+    // The total is what splits the loaded key range: every writable loaded account is
+    // ordered before every readonly one, so this sum is the boundary between them.
+    size_t table_count;
+    BAIL_IF(parse_length(section, &table_count));
+    PRINTF("sum_alt_writable_indexes: table_count=%d\n", (int) table_count);
+    *out_count = 0;
+    for (size_t i = 0; i < table_count; i++) {
+        const uint8_t *alt_address;
+        const uint8_t *writable_indexes;
+        size_t num_writable;
+        const uint8_t *readonly_indexes;
+        size_t num_readonly;
+        BAIL_IF(parse_alt_table(section,
+                                &alt_address,
+                                &writable_indexes,
+                                &num_writable,
+                                &readonly_indexes,
+                                &num_readonly));
+        *out_count += num_writable;
+    }
+    PRINTF("sum_alt_writable_indexes: total_writable=%d\n", (int) *out_count);
+    return 0;
+}
+
+int message_alt_writable_count(const uint8_t *transaction,
+                               size_t transaction_size,
+                               size_t *out_count) {
+    MessageHeader header;
+    Parser section;
+    if (seek_alt_section(transaction, transaction_size, &header, &section) != 0) {
+        PRINTF("message_alt_writable_count: malformed message\n");
+        return -1;
+    }
+    if (!header.versioned) {
+        // A legacy message carries no address-table-lookup section at all.
+        PRINTF("message_alt_writable_count: legacy message loads no ALT account\n");
+        *out_count = 0;
+        return 0;
+    }
+    return sum_alt_writable_indexes(&section, out_count);
+}
+
+bool pubkey_index_is_writable(const MessageHeader *header,
+                              size_t alt_writable_count,
+                              uint16_t global_index) {
+    // Nothing marks an account writable individually. The resolved key list is ordered in
+    // three blocks — signers, static non-signers, ALT-loaded — each holding its writable
+    // accounts before its readonly ones, so an index is judged by where it falls.
+    bool writable;
+    if (global_index < header->pubkeys_header.num_required_signatures) {
+        writable = (global_index < header->pubkeys_header.num_required_signatures -
+                                       header->pubkeys_header.num_readonly_signed_accounts);
+        PRINTF("pubkey_index_is_writable: index=%d signer, writable=%d\n", global_index, writable);
+    } else if (global_index < header->pubkeys_header.pubkeys_length) {
+        writable = (global_index < header->pubkeys_header.pubkeys_length -
+                                       header->pubkeys_header.num_readonly_unsigned_accounts);
+        PRINTF("pubkey_index_is_writable: index=%d static, writable=%d\n", global_index, writable);
+    } else {
+        // Past the static keys the count does the splitting, and an index past every loaded
+        // account falls out here as readonly too.
+        size_t loaded_index = global_index - header->pubkeys_header.pubkeys_length;
+        writable = (loaded_index < alt_writable_count);
+        PRINTF("pubkey_index_is_writable: index=%d loaded, writable=%d\n", global_index, writable);
+    }
+    return writable;
+}
+
 int resolve_alt_loaded_index(const uint8_t *transaction,
                              size_t transaction_size,
                              uint16_t global_index,
                              const uint8_t **out_alt_address,
                              uint8_t *out_entry_index) {
-    Parser parser = {transaction, transaction_size};
     MessageHeader header;
-    BAIL_IF(parse_message_header(&parser, &header));
+    Parser section;
+    BAIL_IF(seek_alt_section(transaction, transaction_size, &header, &section));
     PRINTF("resolve_alt_loaded_index: global_index=%d pubkeys_length=%d versioned=%d\n",
            global_index,
            header.pubkeys_header.pubkeys_length,
@@ -293,46 +385,19 @@ int resolve_alt_loaded_index(const uint8_t *transaction,
     BAIL_IF(!header.versioned);
     BAIL_IF(global_index < header.pubkeys_header.pubkeys_length);
 
-    // Walk past every instruction so the parser lands on the address-table-lookup
-    // section, which is the last part of a v0 message body.
-    for (size_t i = 0; i < header.instructions_length; i++) {
-        Instruction instruction;
-        BAIL_IF(parse_instruction(&parser, &instruction));
-    }
-    PRINTF("resolve_alt_loaded_index: reached ALT section, remaining_bytes=%d\n",
-           parser.buffer_length);
-
     // The resolved key ordering places every writable loaded account (across
     // tables in order, each table's writable indices in order) before every
     // readonly loaded account. A readonly position must therefore be offset
-    // past the total writable count, which the first scan computes.
+    // past the total writable count.
     size_t loaded_index = global_index - header.pubkeys_header.pubkeys_length;
-    // Capture the ALT section bounds so both scans below start from a fresh parser
-    // over the exact same bytes, without mutating the walk parser.
-    const uint8_t *section_start = parser.buffer;
-    size_t section_length = parser.buffer_length;
+    // Capture the ALT section bounds so each scan below starts from a fresh parser
+    // over the exact same bytes.
+    const uint8_t *section_start = section.buffer;
+    size_t section_length = section.buffer_length;
 
-    // First scan: sum the writable indices across all tables to learn the boundary
-    // between the writable block and the readonly block in the resolved ordering.
-    size_t total_writable = 0;
+    size_t total_writable;
     Parser count_scan = {section_start, section_length};
-    size_t table_count;
-    BAIL_IF(parse_length(&count_scan, &table_count));
-    PRINTF("resolve_alt_loaded_index: table_count=%d\n", table_count);
-    for (size_t i = 0; i < table_count; i++) {
-        const uint8_t *alt_address;
-        const uint8_t *writable_indexes;
-        size_t num_writable;
-        const uint8_t *readonly_indexes;
-        size_t num_readonly;
-        BAIL_IF(parse_alt_table(&count_scan,
-                                &alt_address,
-                                &writable_indexes,
-                                &num_writable,
-                                &readonly_indexes,
-                                &num_readonly));
-        total_writable += num_writable;
-    }
+    BAIL_IF(sum_alt_writable_indexes(&count_scan, &total_writable));
 
     bool want_writable = (loaded_index < total_writable);
     size_t target;
@@ -351,6 +416,7 @@ int resolve_alt_loaded_index(const uint8_t *transaction,
     // Second scan: replay the same tables and consume entries from the selected
     // list (writable or readonly) until the target position lands inside a table.
     Parser scan = {section_start, section_length};
+    size_t table_count;
     BAIL_IF(parse_length(&scan, &table_count));
     for (size_t i = 0; i < table_count; i++) {
         const uint8_t *alt_address;

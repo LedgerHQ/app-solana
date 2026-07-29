@@ -306,8 +306,9 @@ typedef struct walk_ctx_s {
     uint8_t *path;  // reusable scratch for the current leaf's packed path
     size_t path_cap;
 
-    // Collector I/O: paths to match, the slots filled on a match, and the
-    // running count of matched leaves.
+    // Collector I/O: paths to match, the slots filled on a match, and the running
+    // count of filled slots, which exceeds the number of matched leaves when several
+    // slots name one path.
     const idl_match_path_t *match_paths;
     size_t match_count;
     idl_resolved_leaf_t *resolved;
@@ -981,11 +982,10 @@ static int build_path(walk_ctx_t *walk, size_t *out_len) {
     return 0;
 }
 
-// Hand one decoded leaf to the collector. Matches the built path against the
-// collector's pre-loaded match_paths; on match, stores kind/value/size into the
-// corresponding resolved slot. Unmatched leaves are silently discarded.
-// Returns 0 on success, -1 on error.
+// Offer one decoded leaf to whoever asked for it. Returns 0, -1 on error.
 static int emit_leaf(walk_ctx_t *walk, uint8_t kind, const uint8_t *value, size_t value_size) {
+    // The walk visits every leaf and the collector wants only some, so the leaf's own path
+    // has to be built before anything can be compared. A leaf nobody asked for is dropped.
     size_t path_len;
     if (build_path(walk, &path_len) != 0) {
         PRINTF("idl_walker: build_path failed for leaf kind=0x%02x\n", kind);
@@ -997,6 +997,12 @@ static int emit_leaf(walk_ctx_t *walk, uint8_t kind, const uint8_t *value, size_
            value_size,
            path_len);
 
+    // Every slot naming this path is filled, not merely the first. One argument commonly
+    // feeds several requests: a transfer states the same amount on its input and its output
+    // port, and a field may be labelled twice. Stopping early left those slots empty, and
+    // an empty slot carries no kind, so whatever read it either refused the transaction or
+    // quietly treated the value as absent.
+    bool matched = false;
     for (size_t i = 0; i < walk->match_count; i++) {
         if (walk->match_paths[i].path_size != path_len) {
             continue;
@@ -1007,10 +1013,12 @@ static int emit_leaf(walk_ctx_t *walk, uint8_t kind, const uint8_t *value, size_
             walk->resolved[i].value = value;
             walk->resolved[i].value_size = value_size;
             (*walk->resolved_count)++;
-            return 0;
+            matched = true;
         }
     }
-    PRINTF("idl_walker: leaf did not match any slot, discarding\n");
+    if (!matched) {
+        PRINTF("idl_walker: leaf did not match any slot, discarding\n");
+    }
     return 0;
 }
 

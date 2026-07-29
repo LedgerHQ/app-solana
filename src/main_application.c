@@ -85,7 +85,14 @@ void reset_unrelated_sessions(uint8_t instruction) {
         // Token CAL info
         && instruction != InsTrustedInfoGetChallenge
         && instruction != InsTrustedInfoProvideInfo
-        && instruction != InsTrustedInfoProvideDynamicDescriptor) {
+        && instruction != InsTrustedInfoProvideDynamicDescriptor
+
+        // Stateless queries: they answer from the seed or from settings and touch no
+        // signing state, so a session parked mid-stream survives them untouched.
+        && instruction != InsGetPubkey
+        && instruction != InsDeprecatedGetPubkey
+        && instruction != InsGetAppConfiguration
+        && instruction != InsDeprecatedGetAppConfiguration) {
         cs_session_reset();
     }
 }

@@ -17,6 +17,7 @@
 #include "idl_pool.h"
 #include "idl_walker.h"
 #include "idl_kinds.h"
+#include "sol/pubkey.h"
 
 // One entry of the transaction-scoped mint-binding map: a token account pubkey
 // bound to the mint pubkey that identifies its token. Seeded from every
@@ -34,7 +35,7 @@ static const uint8_t *lookup_mint_binding(const mint_binding_t *bindings,
                                           size_t binding_count,
                                           const uint8_t *token_ref) {
     for (size_t b = 0; b < binding_count; b++) {
-        if (memcmp(bindings[b].token_account, token_ref, 32) == 0) {
+        if (memcmp(bindings[b].token_account, token_ref, PUBKEY_SIZE) == 0) {
             return bindings[b].mint;
         }
     }
@@ -68,11 +69,11 @@ static const uint8_t *resolve_field_mint(const mint_binding_t *bindings,
 static const uint8_t *pubkey_from_account_index(const cs_transaction_t *cs_tx,
                                                  const MessageHeader *header,
                                                  const Instruction *instruction,
-                                                 uint8_t account_index) {
+                                                 size_t account_index) {
     if (account_index >= instruction->accounts_length) {
         PRINTF("finalize cs: account_index %d out of range (%d)\n",
-               account_index,
-               instruction->accounts_length);
+               (int) account_index,
+               (int) instruction->accounts_length);
         return NULL;
     }
     uint8_t pubkey_index = instruction->accounts[account_index];
@@ -103,6 +104,49 @@ static const uint8_t *pubkey_from_account_index(const cs_transaction_t *cs_tx,
         }
     }
     return pubkey;
+}
+
+// Resolve which of an instruction's accounts it may write, for the merge guards to reason
+// over. Returns 0, -1 on allocation failure.
+static int collect_writable_accounts(const cs_transaction_t *cs_tx,
+                                     const MessageHeader *header,
+                                     const Instruction *instruction,
+                                     size_t alt_writable_count,
+                                     cs_instruction_result_t *result) {
+    result->writable_complete = true;
+    if (instruction->accounts_length == 0) {
+        PRINTF("finalize cs: instruction has no accounts, no writable list\n");
+        return 0;
+    }
+    // Sized to every slot, since how many are writable is only known while walking them.
+    if (!APP_MEM_CALLOC((void **) &result->writable_accounts,
+                        instruction->accounts_length * sizeof(*result->writable_accounts))) {
+        PRINTF("finalize cs: writable account list allocation failed\n");
+        return -1;
+    }
+
+    // The raw account list is walked, not the descriptor's ports: a write the descriptor
+    // never mentioned is exactly what the guards need to see.
+    for (size_t slot = 0; slot < instruction->accounts_length; slot++) {
+        if (!pubkey_index_is_writable(header, alt_writable_count, instruction->accounts[slot])) {
+            continue;
+        }
+        const uint8_t *pubkey = pubkey_from_account_index(cs_tx, header, instruction, slot);
+        // An ALT-loaded account with no attested resolution cannot be named, so the list
+        // is recorded as partial instead of quietly missing an entry.
+        if (pubkey == NULL) {
+            PRINTF("finalize cs: writable slot %d unresolved, list marked incomplete\n",
+                   (int) slot);
+            result->writable_complete = false;
+            continue;
+        }
+        result->writable_accounts[result->writable_account_count] = pubkey;
+        result->writable_account_count++;
+    }
+    PRINTF("finalize cs: %d writable accounts collected, complete=%d\n",
+           (int) result->writable_account_count,
+           result->writable_complete);
+    return 0;
 }
 
 // Where an ARGUMENT_PATH walker result must be scattered after the single walk.
@@ -171,7 +215,7 @@ static const uint8_t *resolve_port_account(const cs_transaction_t *cs_tx,
         }
         if (!is_final &&
             port->optional_account_strategy == CS_OPTIONAL_ACCOUNT_STRATEGY_PROGRAM_ID &&
-            memcmp(pubkey, header->pubkeys[instruction->program_id_index].data, 32) == 0) {
+            memcmp(pubkey, header->pubkeys[instruction->program_id_index].data, PUBKEY_SIZE) == 0) {
             continue;
         }
         *out_index = port->account_candidates[c];
@@ -206,38 +250,54 @@ static const uint8_t *resolve_pubkey_value_direct(const cs_transaction_t *cs_tx,
     return NULL;
 }
 
-// Resolve a non-ARGUMENT_PATH amount VALUE to its raw bytes. CONSTANT bytes are
-// little-endian; an ACCOUNT_PATH yields the 32-byte account address. Returns 0, -1.
-static int resolve_amount_value_direct(const cs_transaction_t *cs_tx,
-                                       const MessageHeader *header,
-                                       const Instruction *instruction,
-                                       const cs_stored_value_t *value,
+// Work out how wide a literal amount embedded in a descriptor is. Returns 0, -1.
+//
+// An ARGUMENT_PATH amount carries its width in the IDL type pool, but a CONSTANT one has
+// no kind of its own, leaving its byte count as the only thing that says. The bytes are
+// then read little-endian like every other number embedded in a descriptor; the format
+// does not state the byte order, so anything wider than one byte rests on that convention.
+static int constant_amount_leaf_kind(size_t payload_size, uint8_t *out_kind) {
+    // The substructure parser turns away any other length, so a stored template only ever
+    // holds a usable one and this guards data already checked.
+    if (idl_unsigned_kind_for_width(payload_size, out_kind) != 0) {
+        PRINTF("finalize cs: constant amount size %d is not an integer width\n",
+               (int) payload_size);
+        return -1;
+    }
+    return 0;
+}
+
+// Read out an amount the descriptor states outright, rather than one it points into the
+// instruction data for. Returns 0, -1.
+static int resolve_amount_value_direct(const cs_stored_value_t *value,
                                        const uint8_t **out_bytes,
                                        size_t *out_size,
                                        uint8_t *out_kind) {
-    if (value->source == CS_VALUE_SOURCE_CONSTANT) {
-        *out_bytes = value->payload;
-        *out_size = value->payload_size;
-        *out_kind = 0;
-        return 0;
-    } else if (value->source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
-        if (value->payload_size != 1) {
-            PRINTF("finalize cs: amount ACCOUNT_PATH payload size %d != 1\n",
-                   (int) value->payload_size);
-            return -1;
-        }
-        const uint8_t *pubkey =
-            pubkey_from_account_index(cs_tx, header, instruction, value->payload[0]);
-        if (pubkey == NULL) {
-            return -1;
-        }
-        *out_bytes = pubkey;
-        *out_size = 32;
-        *out_kind = IDL_KIND_PUBKEY_32;
-        return 0;
+    // Only a CONSTANT gets this far. An ACCOUNT_PATH would resolve to an address, which is
+    // not a number, and the substructure parser turns those away on arrival.
+    if (value->source != CS_VALUE_SOURCE_CONSTANT) {
+        PRINTF("finalize cs: unexpected amount VALUE source %d\n", value->source);
+        return -1;
     }
-    PRINTF("finalize cs: unexpected amount VALUE source %d\n", value->source);
-    return -1;
+    if (constant_amount_leaf_kind(value->payload_size, out_kind) != 0) {
+        return -1;
+    }
+    *out_bytes = value->payload;
+    *out_size = value->payload_size;
+    return 0;
+}
+
+// Whether a leaf reached through the instruction data can serve as an amount.
+static bool amount_leaf_kind_is_readable(uint8_t kind) {
+    // A path landing on a pubkey, a string, or a width past the decoders yields bytes no
+    // comparison can use. Refusing here beats carrying a port whose amount is beyond
+    // checking, and matches what the renderer already does with such a leaf.
+    size_t width = 0;
+    if (idl_unsigned_kind_width(kind, &width) != 0) {
+        PRINTF("finalize cs: amount leaf kind %d is not a readable integer\n", kind);
+        return false;
+    }
+    return true;
 }
 
 // Resolve everything local to one port except ARGUMENT_PATH values (filled by the
@@ -265,10 +325,7 @@ static int resolve_port_local(const cs_transaction_t *cs_tx,
 
     if (port->amount.kind == CS_AMOUNT_KIND_NUMERIC && port->amount.has_value &&
         port->amount.value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        if (resolve_amount_value_direct(cs_tx,
-                                        header,
-                                        instruction,
-                                        &port->amount.value,
+        if (resolve_amount_value_direct(&port->amount.value,
                                         &out->amount_le,
                                         &out->amount_size,
                                         &out->amount_leaf_kind) != 0) {
@@ -305,10 +362,7 @@ static int resolve_reset_local(const cs_transaction_t *cs_tx,
     out->account = account;
     if (reset->has_reset_value && reset->reset_value.has_value &&
         reset->reset_value.value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        if (resolve_amount_value_direct(cs_tx,
-                                        header,
-                                        instruction,
-                                        &reset->reset_value.value,
+        if (resolve_amount_value_direct(&reset->reset_value.value,
                                         &out->amount_le,
                                         &out->amount_size,
                                         &out->amount_leaf_kind) != 0) {
@@ -447,6 +501,11 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
                 result->resolved[index] = walker_results[w];
                 break;
             case WALK_SCATTER_PORT_AMOUNT:
+                if (!amount_leaf_kind_is_readable(walker_results[w].kind)) {
+                    PRINTF("finalize cs: port %d amount path reaches no readable integer\n",
+                           (int) index);
+                    return -1;
+                }
                 result->resolved_ports[index].amount_le = walker_results[w].value;
                 result->resolved_ports[index].amount_size = walker_results[w].value_size;
                 result->resolved_ports[index].amount_leaf_kind = walker_results[w].kind;
@@ -460,6 +519,11 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
                 result->resolved_ports[index].mint = walker_results[w].value;
                 break;
             case WALK_SCATTER_RESET_AMOUNT:
+                if (!amount_leaf_kind_is_readable(walker_results[w].kind)) {
+                    PRINTF("finalize cs: reset %d amount path reaches no readable integer\n",
+                           (int) index);
+                    return -1;
+                }
                 result->resolved_resets[index].amount_le = walker_results[w].value;
                 result->resolved_resets[index].amount_size = walker_results[w].value_size;
                 result->resolved_resets[index].amount_leaf_kind = walker_results[w].kind;
@@ -648,6 +712,7 @@ static int walk_instruction(const cs_transaction_t *cs_tx,
                             const MessageHeader *header,
                             const Instruction *instruction,
                             const uint8_t *program_id,
+                            size_t alt_writable_count,
                             cs_instruction_result_t *result,
                             mint_binding_t *bindings,
                             size_t *binding_count,
@@ -660,6 +725,8 @@ static int walk_instruction(const cs_transaction_t *cs_tx,
         return -1;
     }
     result->template = template;
+    result->instruction_data = instruction->data;
+    result->instruction_data_size = instruction->data_length;
     result->resolved_count = template->display_field_count;
     result->resolved_port_count = template->port_count;
     result->resolved_hide_rule_count = template->hide_rule_count;
@@ -687,6 +754,10 @@ static int walk_instruction(const cs_transaction_t *cs_tx,
     }
     if (!alloc_ok) {
         PRINTF("finalize cs: result array allocation failed\n");
+        return -1;
+    }
+
+    if (collect_writable_accounts(cs_tx, header, instruction, alt_writable_count, result) != 0) {
         return -1;
     }
 
@@ -831,6 +902,16 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
         return -1;
     }
 
+    // Writable-block boundary of the ALT-loaded key range. Computed once here because
+    // it depends on the whole message, then applied to every raw account index.
+    size_t alt_writable_count = 0;
+    if (message_alt_writable_count(cs_tx->transaction,
+                                   cs_tx->transaction_size,
+                                   &alt_writable_count) != 0) {
+        PRINTF("finalize cs: ALT writable count failed\n");
+        return -1;
+    }
+
     *walked_instructions_count = 0;
 
     // Transaction-scoped binding maps (caller-owned, sized to the instruction
@@ -851,8 +932,8 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
         const uint8_t *program_id = header.pubkeys[instruction.program_id_index].data;
 
         cs_instruction_result_t *result = &walked_instructions[*walked_instructions_count];
-        if (walk_instruction(cs_tx, &header, &instruction, program_id, result, bindings,
-                             &binding_count, owner_bindings, owner_binding_count) != 0) {
+        if (walk_instruction(cs_tx, &header, &instruction, program_id, alt_writable_count, result,
+                             bindings, &binding_count, owner_bindings, owner_binding_count) != 0) {
             PRINTF("finalize cs: instruction %d walk failed\n", (int) i);
             return -1;
         }
@@ -888,6 +969,9 @@ static void free_walked_instructions(cs_instruction_result_t *walked_instruction
         return;
     }
     for (size_t i = 0; i < count; i++) {
+        if (walked_instructions[i].writable_accounts != NULL) {
+            APP_MEM_FREE_AND_NULL((void **) &walked_instructions[i].writable_accounts);
+        }
         if (walked_instructions[i].resolved_resets != NULL) {
             APP_MEM_FREE_AND_NULL((void **) &walked_instructions[i].resolved_resets);
         }

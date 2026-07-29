@@ -348,23 +348,9 @@ static int format_leaf(const idl_resolved_leaf_t *leaf, char *value_out, size_t 
 // Returns 0 on success, -1 on unsupported kind.
 static int read_leaf_u64(const idl_resolved_leaf_t *leaf, uint64_t *out) {
     size_t width = 0;
-
-    switch (leaf->kind) {
-        case IDL_KIND_U8:
-            width = 1;
-            break;
-        case IDL_KIND_U16:
-            width = 2;
-            break;
-        case IDL_KIND_U32:
-            width = 4;
-            break;
-        case IDL_KIND_U64:
-            width = 8;
-            break;
-        default:
-            PRINTF("read_leaf_u64: unsupported kind=%d\n", leaf->kind);
-            return -1;
+    if (idl_unsigned_kind_width(leaf->kind, &width) != 0) {
+        PRINTF("read_leaf_u64: unsupported kind=%d\n", leaf->kind);
+        return -1;
     }
 
     if (leaf->value_size < width) {

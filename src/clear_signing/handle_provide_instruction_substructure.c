@@ -8,6 +8,7 @@
 #include "tlv_library.h"
 #include "tlv_parser_cs_value.h"
 #include "cs_instruction_template.h"
+#include "idl_kinds.h"
 #include "cs_substructure.h"
 #include "app_mem_utils.h"
 #include "reply.h"
@@ -1236,6 +1237,30 @@ static bool amount_value_handle_value(const tlv_data_t *data, amount_value_out_t
 
 DEFINE_TLV_PARSER(AMOUNT_VALUE_TAGS, NULL, parse_amount_value)
 
+// Whether a NUMERIC amount can actually yield a number, which not every VALUE can.
+static bool numeric_amount_source_is_valid(const cs_value_t *value) {
+    // A path into the instruction data takes its width from the IDL type pool, so nothing
+    // here can judge it; the walk checks the leaf it lands on instead.
+    if (value->source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        return true;
+    }
+    // That leaves a literal. An ACCOUNT_PATH would give an address, which is no amount, so
+    // a descriptor asking for one is malformed and refused now rather than stored.
+    if (value->source != CS_VALUE_SOURCE_CONSTANT) {
+        PRINTF("substructure: amount source %d resolves to no number\n", value->source);
+        return false;
+    }
+    // A literal carries no kind, so its byte count has to be a width a number can occupy.
+    // The kind itself is of no use here and is worked out again at finalize.
+    uint8_t leaf_kind = 0;
+    if (idl_unsigned_kind_for_width(value->payload.size, &leaf_kind) != 0) {
+        PRINTF("substructure: constant amount size %d is not an integer width\n",
+               (int) value->payload.size);
+        return false;
+    }
+    return true;
+}
+
 // Parse an AMOUNT_VALUE buffer into a borrowed cs_amount_value_t. Returns 0, -1.
 static int parse_amount_value_into(const buffer_t *buf, cs_amount_value_t *out) {
     amount_value_out_t parsed = {0};
@@ -1267,6 +1292,9 @@ static int parse_amount_value_into(const buffer_t *buf, cs_amount_value_t *out) 
     if (has_value) {
         cs_value_t value;
         if (extract_value(&parsed.value, &value) != 0) {
+            return -1;
+        }
+        if (!numeric_amount_source_is_valid(&value)) {
             return -1;
         }
         borrow_value(&out->value, &value);
