@@ -602,6 +602,86 @@ void test_resolve_alt_legacy_rejected() {
     assert(resolve_alt_loaded_index(buf, sizeof(buf), 3, &alt, &entry) != 0);
 }
 
+// message_alt_writable_count: the two-table fixture loads 3 writable accounts.
+void test_alt_writable_count_versioned() {
+    uint8_t buf[256];
+    size_t len = build_v0_tx_with_alt(buf, 3);
+    size_t count = SIZE_MAX;
+    assert(message_alt_writable_count(buf, len, &count) == 0);
+    assert(count == 3);
+}
+
+// message_alt_writable_count: a legacy transaction loads nothing through an ALT.
+void test_alt_writable_count_legacy() {
+    uint8_t buf[MSG_HEADER_BUF_SIZE(3)];
+    build_message_header_buf(buf, 1, 0, 0, 3);
+    size_t count = SIZE_MAX;
+    assert(message_alt_writable_count(buf, sizeof(buf), &count) == 0);
+    assert(count == 0);
+}
+
+// message_alt_writable_count: a truncated ALT section is an error, not a zero count.
+void test_alt_writable_count_truncated() {
+    uint8_t buf[256];
+    size_t len = build_v0_tx_with_alt(buf, 3);
+    size_t count = SIZE_MAX;
+    // Cut the buffer mid-way through the second table's index lists.
+    assert(message_alt_writable_count(buf, len - 4, &count) != 0);
+}
+
+// pubkey_index_is_writable: static signer / non-signer blocks each split into a
+// writable then a readonly run.
+void test_pubkey_index_is_writable_static() {
+    // 5 static keys: 2 signers (1 readonly) + 3 unsigned (1 readonly)
+    // index 0: writable signer, 1: readonly signer,
+    // index 2,3: writable unsigned, 4: readonly unsigned
+    uint8_t buf[MSG_HEADER_BUF_SIZE(5)];
+    build_message_header_buf(buf, 2, 1, 1, 5);
+    Parser parser = {buf, sizeof(buf)};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 0);
+
+    assert(pubkey_index_is_writable(&header, 0, 0) == true);
+    assert(pubkey_index_is_writable(&header, 0, 1) == false);
+    assert(pubkey_index_is_writable(&header, 0, 2) == true);
+    assert(pubkey_index_is_writable(&header, 0, 3) == true);
+    assert(pubkey_index_is_writable(&header, 0, 4) == false);
+}
+
+// pubkey_index_is_writable: every signer is writable when none is readonly.
+void test_pubkey_index_is_writable_all_signers_writable() {
+    uint8_t buf[MSG_HEADER_BUF_SIZE(3)];
+    build_message_header_buf(buf, 2, 0, 0, 3);
+    Parser parser = {buf, sizeof(buf)};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 0);
+
+    assert(pubkey_index_is_writable(&header, 0, 0) == true);
+    assert(pubkey_index_is_writable(&header, 0, 1) == true);
+    assert(pubkey_index_is_writable(&header, 0, 2) == true);
+}
+
+// pubkey_index_is_writable: loaded accounts split at the total writable count, and
+// an index past every loaded entry is not writable.
+void test_pubkey_index_is_writable_alt_loaded() {
+    uint8_t buf[256];
+    size_t len = build_v0_tx_with_alt(buf, 3);
+    Parser parser = {buf, len};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 0);
+
+    size_t alt_writable_count = 0;
+    assert(message_alt_writable_count(buf, len, &alt_writable_count) == 0);
+
+    // 3 static keys, then 3 writable-loaded (global 3..5), then readonly-loaded.
+    assert(pubkey_index_is_writable(&header, alt_writable_count, 3) == true);
+    assert(pubkey_index_is_writable(&header, alt_writable_count, 5) == true);
+    assert(pubkey_index_is_writable(&header, alt_writable_count, 6) == false);
+    assert(pubkey_index_is_writable(&header, alt_writable_count, 8) == false);
+    // Beyond every loaded entry: still reported as not writable.
+    assert(pubkey_index_is_writable(&header, alt_writable_count, 9) == false);
+}
+
 int main() {
     RUN_TEST(test_parse_u8);
     RUN_TEST(test_parse_u8_too_short);
@@ -640,6 +720,12 @@ int main() {
     RUN_TEST(test_resolve_alt_static_index_rejected);
     RUN_TEST(test_resolve_alt_out_of_range_rejected);
     RUN_TEST(test_resolve_alt_legacy_rejected);
+    RUN_TEST(test_alt_writable_count_versioned);
+    RUN_TEST(test_alt_writable_count_legacy);
+    RUN_TEST(test_alt_writable_count_truncated);
+    RUN_TEST(test_pubkey_index_is_writable_static);
+    RUN_TEST(test_pubkey_index_is_writable_all_signers_writable);
+    RUN_TEST(test_pubkey_index_is_writable_alt_loaded);
 
     printf("passed\n");
     return 0;

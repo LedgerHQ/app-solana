@@ -266,6 +266,34 @@ void test_bytes_remainder_leaf() {
     expect_resolved(&tw, 1, IDL_KIND_BYTES_REMAINDER, tail, sizeof(tail));
 }
 
+// One argument commonly feeds several requests at once: a transfer descriptor names
+// the same amount on its input and its output port. Every slot naming the path must
+// receive the leaf, not just the first one registered.
+void test_duplicate_paths_all_resolve() {
+    const uint8_t pool[] = {
+        IDL_KIND_U8,   // 0
+        IDL_KIND_U32,  // 1
+        IDL_KIND_STRUCT,
+        0x02,
+        0,
+        1,  // entry 2
+    };
+    uint8_t pool_buf[1 + sizeof(pool)];
+    pool_buf[0] = 3;
+    memcpy(pool_buf + 1, pool, sizeof(pool));
+
+    const uint8_t data[] = {0x07, 0x40, 0x42, 0x0F, 0x00};
+    const uint8_t path_u32[] = {0x01, 0x01};
+
+    test_walk_t tw = {0};
+    tw_add_path(&tw, 0, path_u32, sizeof(path_u32));
+    tw_add_path(&tw, 1, path_u32, sizeof(path_u32));
+    assert(run_walk(pool_buf, sizeof(pool_buf), 2, data, sizeof(data), &tw) == 0);
+    assert(tw.resolved_count == 2);
+    expect_resolved(&tw, 0, IDL_KIND_U32, data + 1, 4);
+    expect_resolved(&tw, 1, IDL_KIND_U32, data + 1, 4);
+}
+
 // =============================================================================
 // Aggregates
 // =============================================================================
@@ -1869,6 +1897,7 @@ int main() {
     RUN_TEST(test_enum_inline_payload_overruns_data);
 
     // Out-of-space injection
+    RUN_TEST(test_duplicate_paths_all_resolve);
     RUN_TEST(test_oom_at_each_alloc_site);
     RUN_TEST(test_oom_fixed_size_table);
 

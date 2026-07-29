@@ -1043,6 +1043,42 @@ def _build_value_flow_port(*, account_index: int, amount_path: bytes,
             + format_tlv(VFP_TAG_AMOUNT_VALUE, amount_value))
 
 
+def _build_balance_port(*, account_index: int, value_kind: int, direction: int,
+                        token_account_index: int = None) -> bytes:
+    """A VALUE_FLOW_PORT whose amount is the symbolic whole balance of the account,
+    optionally carrying a DIRECT token whose mint is read from the accounts array."""
+    amount_value = format_tlv(AMOUNT_VALUE_TAG_KIND, AMOUNT_KIND_BALANCE)
+    payload = (format_tlv(VFP_TAG_VERSION, 1)
+               + format_tlv(VFP_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT)
+               + format_tlv(VFP_TAG_DIRECTION, direction)
+               + format_tlv(VFP_TAG_ACCOUNT_INDEX, account_index)
+               + format_tlv(VFP_TAG_VALUE_KIND, value_kind)
+               + format_tlv(VFP_TAG_AMOUNT_VALUE, amount_value))
+    if token_account_index is not None:
+        token_value = (format_tlv(TOKEN_VALUE_TAG_KIND, TOKEN_KIND_DIRECT)
+                       + format_tlv(TOKEN_VALUE_TAG_VALUE,
+                                    format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ACCOUNT_PATH)
+                                    + format_tlv(ValueTag.PAYLOAD,
+                                                 bytes([token_account_index]))))
+        payload += format_tlv(VFP_TAG_TOKEN_VALUE, token_value)
+    return payload
+
+
+def _build_constant_amount_port(*, account_index: int, amount: int, direction: int) -> bytes:
+    """A VALUE_FLOW_PORT carrying a literal little-endian u64 amount and no token,
+    the shape a descriptor uses to declare an account coming into existence."""
+    amount_value = (format_tlv(AMOUNT_VALUE_TAG_KIND, AMOUNT_KIND_NUMERIC)
+                    + format_tlv(AMOUNT_VALUE_TAG_VALUE,
+                                 format_tlv(ValueTag.SOURCE, VALUE_SOURCE_CONSTANT)
+                                 + format_tlv(ValueTag.PAYLOAD, struct.pack("<Q", amount))))
+    return (format_tlv(VFP_TAG_VERSION, 1)
+            + format_tlv(VFP_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT)
+            + format_tlv(VFP_TAG_DIRECTION, direction)
+            + format_tlv(VFP_TAG_ACCOUNT_INDEX, account_index)
+            + format_tlv(VFP_TAG_VALUE_KIND, PORT_VALUE_KIND_NATIVE)
+            + format_tlv(VFP_TAG_AMOUNT_VALUE, amount_value))
+
+
 def _build_hide_rule(*, target_account_index: int, condition: int = HIDE_CONDITION_IS_SIGNER,
                      rule_set_index: int = 0) -> bytes:
     """A HIDE_RULE whose target is a pubkey-resolving ACCOUNT_PATH VALUE."""
@@ -1078,9 +1114,9 @@ def _build_account_reset(*, account_index: int, require_zero: bool = True,
 
 
 def test_cs_value_flow_port_forwarded(backend, sol):
-    """A DISPLAY_FIELD plus a VALUE_FLOW_PORT: the port is decoded, its account and
-    ARGUMENT_PATH amount resolve during the walk/render (merge MVP keeps every
-    instruction), and the session finalizes."""
+    """A DISPLAY_FIELD plus a VALUE_FLOW_PORT: the port is decoded and its account
+    and ARGUMENT_PATH amount resolve during the walk/render. A lone instruction has
+    no counterpart to form a junction with, so it is displayed as is."""
     message = _craft_single_instruction_message(sol,
                                                 BRIDGE_PROGRAM_ID,
                                                 _bridge_instruction_data(1000, 5_000_000))
@@ -1109,7 +1145,7 @@ def test_cs_value_flow_port_forwarded(backend, sol):
 
 def test_cs_hide_rule_forwarded(backend, sol):
     """A HIDE_RULE substructure is decoded and its ACCOUNT_PATH target resolves;
-    the session finalizes (merge MVP keeps every instruction)."""
+    the session finalizes. Hide-rule evaluation is not wired to the display yet."""
     message = _craft_single_instruction_message(sol,
                                                 BRIDGE_PROGRAM_ID,
                                                 _bridge_instruction_data(1000, 5_000_000))
@@ -1165,6 +1201,394 @@ def test_cs_account_reset_forwarded(backend, sol):
 
     rapdu = sol.finalize_generic_clear_signing()
     assert rapdu.status == 0x9000
+    _wipe_session(sol)
+
+
+# ── Merge engine end-to-end: a symbolic-junction chain ────────────────────────
+#
+# Three programs standing in for the wrap pattern that dominates real Solana
+# transactions:
+#
+#   create    declares the junction account coming into existence, empty
+#   transfer  moves a concrete amount from the signer into the junction
+#   wrap      drains the junction's whole balance and re-declares it as a token
+#
+# The wrap names no amount, so the device may only fold it into the transfer when
+# the create's ACCOUNT_RESET vouches for the junction having started empty. Each
+# test below removes one part of that proof and checks the review follows.
+
+CHAIN_CREATE_PROGRAM_ID = b'\x31' * 32
+CHAIN_CREATE_DISCRIMINATOR = b'\x31'
+CHAIN_TRANSFER_PROGRAM_ID = b'\x32' * 32
+CHAIN_TRANSFER_DISCRIMINATOR = b'\x32'
+CHAIN_WRAP_PROGRAM_ID = b'\x33' * 32
+CHAIN_WRAP_DISCRIMINATOR = b'\x33'
+
+# IDL type pool for an instruction whose data is only its discriminator:
+#   [0] STRUCT(0x20) field_count=1 refs=[1]
+#   [1] BYTES_FIXED(0x12) fixed_size=1
+CHAIN_DISCRIMINATOR_ONLY_POOL = bytes([2, 0x20, 1, 1, 0x12, 0x00, 0x01])
+
+# IDL type pool for discriminator || u64 amount.
+#   [0] STRUCT(0x20) field_count=2 refs=[1,2]
+#   [1] BYTES_FIXED(0x12) fixed_size=1
+#   [2] U64(0x04)
+CHAIN_TRANSFER_POOL = bytes([3, 0x20, 2, 1, 2, 0x12, 0x00, 0x01, 0x04])
+CHAIN_TRANSFER_PATH_AMOUNT = b'\x01\x01'
+
+CHAIN_TRANSFER_AMOUNT = 5_000_000
+CHAIN_JUNCTION = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+CHAIN_MINT = bytes(Pubkey.from_string("So11111111111111111111111111111111111111112"))
+# Owner attested alongside the junction's pre-balance. Only the pre-balance bears on
+# the merge, so this is any address; it must not be fetched from the device, since an
+# unrelated instruction mid-session abandons the clear-signing session.
+CHAIN_OWNER = bytes(Pubkey.from_string("4K2V1kpVycZ6qSFsNdz2FtpNxnJs17eBNzf9rdCMcKoe"))
+
+# Slot layout shared by the three instructions: the signer, then the junction, then
+# the mint. Every instruction lists the slots it references, in this order.
+CHAIN_SLOT_SIGNER = 0
+CHAIN_SLOT_JUNCTION = 1
+CHAIN_SLOT_MINT = 2
+
+
+def _craft_chain_message(sol: SolanaClient) -> bytes:
+    """The three-instruction message the merge-chain tests share."""
+    sender = Pubkey.from_bytes(sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH))
+    signer_meta = AccountMeta(pubkey=sender, is_signer=True, is_writable=True)
+    junction_meta = AccountMeta(pubkey=Pubkey.from_bytes(CHAIN_JUNCTION),
+                                is_signer=False, is_writable=True)
+    mint_meta = AccountMeta(pubkey=Pubkey.from_bytes(CHAIN_MINT),
+                            is_signer=False, is_writable=False)
+
+    create = Instruction(
+        program_id=Pubkey.from_bytes(CHAIN_CREATE_PROGRAM_ID),
+        accounts=[signer_meta, junction_meta],
+        data=CHAIN_CREATE_DISCRIMINATOR,
+    )
+    transfer = Instruction(
+        program_id=Pubkey.from_bytes(CHAIN_TRANSFER_PROGRAM_ID),
+        accounts=[signer_meta, junction_meta],
+        data=CHAIN_TRANSFER_DISCRIMINATOR + struct.pack("<Q", CHAIN_TRANSFER_AMOUNT),
+    )
+    wrap = Instruction(
+        program_id=Pubkey.from_bytes(CHAIN_WRAP_PROGRAM_ID),
+        accounts=[signer_meta, junction_meta, mint_meta],
+        data=CHAIN_WRAP_DISCRIMINATOR,
+    )
+    return sol.craft_tx([create, transfer, wrap], sender)
+
+
+def _provide_chain_create(sol: SolanaClient, *, reset: bytes = None) -> None:
+    """The create instruction: an output port declaring the junction empty, plus the
+    ACCOUNT_RESET that vouches for it. `reset` omitted means no reset is declared."""
+    port = _build_constant_amount_port(account_index=CHAIN_SLOT_JUNCTION, amount=0,
+                                       direction=PORT_DIRECTION_OUTPUT)
+    account_field = _build_account_display_field(CHAIN_SLOT_JUNCTION, "Account")
+    substructures = account_field + port
+    if reset is not None:
+        substructures += reset
+
+    sol.provide_instruction_info(
+        program_id=CHAIN_CREATE_PROGRAM_ID,
+        discriminator=CHAIN_CREATE_DISCRIMINATOR,
+        operation_type="Create account",
+        program_name="Chain",
+        substructures_hash=hashlib.sha256(substructures).digest(),
+        idl_type_pool=CHAIN_DISCRIMINATOR_ONLY_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, account_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT, port)
+    if reset is not None:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_ACCOUNT_RESET, reset)
+
+
+def _provide_chain_transfer(sol: SolanaClient) -> None:
+    """The transfer instruction: signer in, junction out, both at the amount its
+    instruction data carries. Its destination field is what the merge rewrites."""
+    amount_field = _build_amount_display_field(CHAIN_TRANSFER_PATH_AMOUNT, 9, "Amount")
+    destination_field = _build_account_display_field(CHAIN_SLOT_JUNCTION, "To")
+    input_port = _build_value_flow_port(account_index=CHAIN_SLOT_SIGNER,
+                                       amount_path=CHAIN_TRANSFER_PATH_AMOUNT,
+                                       direction=PORT_DIRECTION_INPUT)
+    output_port = _build_value_flow_port(account_index=CHAIN_SLOT_JUNCTION,
+                                        amount_path=CHAIN_TRANSFER_PATH_AMOUNT,
+                                        direction=PORT_DIRECTION_OUTPUT)
+    substructures = amount_field + destination_field + input_port + output_port
+
+    sol.provide_instruction_info(
+        program_id=CHAIN_TRANSFER_PROGRAM_ID,
+        discriminator=CHAIN_TRANSFER_DISCRIMINATOR,
+        operation_type="Send",
+        program_name="Chain",
+        substructures_hash=hashlib.sha256(substructures).digest(),
+        idl_type_pool=CHAIN_TRANSFER_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, amount_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, destination_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT, input_port)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT, output_port)
+
+
+def _provide_chain_wrap(sol: SolanaClient) -> None:
+    """The wrap instruction: it drains and refills the junction's whole balance,
+    changing the form of the value without naming an amount."""
+    account_field = _build_account_display_field(CHAIN_SLOT_JUNCTION, "Account")
+    input_port = _build_balance_port(account_index=CHAIN_SLOT_JUNCTION,
+                                     value_kind=PORT_VALUE_KIND_NATIVE,
+                                     direction=PORT_DIRECTION_INPUT)
+    output_port = _build_balance_port(account_index=CHAIN_SLOT_JUNCTION,
+                                      value_kind=PORT_VALUE_KIND_SPL_TOKEN,
+                                      direction=PORT_DIRECTION_OUTPUT,
+                                      token_account_index=CHAIN_SLOT_MINT)
+    substructures = account_field + input_port + output_port
+
+    sol.provide_instruction_info(
+        program_id=CHAIN_WRAP_PROGRAM_ID,
+        discriminator=CHAIN_WRAP_DISCRIMINATOR,
+        operation_type="Wrap",
+        program_name="Chain",
+        substructures_hash=hashlib.sha256(substructures).digest(),
+        idl_type_pool=CHAIN_DISCRIMINATOR_ONLY_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, account_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT, input_port)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT, output_port)
+
+
+def _provide_chain(sol: SolanaClient, *, reset: bytes = None) -> None:
+    _provide_chain_create(sol, reset=reset)
+    _provide_chain_transfer(sol)
+    _provide_chain_wrap(sol)
+
+
+def test_cs_symbolic_junction_collapses(backend, sol, scenario_navigator, root_pytest_dir):
+    """The create's ACCOUNT_RESET vouches for the junction starting empty, so the
+    whole balance the wrap moves is exactly what the transfer put there. The wrap is
+    folded into the transfer and the review shows two screens instead of three."""
+    _begin_session(sol, _craft_chain_message(sol))
+    _provide_chain(sol, reset=_build_account_reset(account_index=CHAIN_SLOT_JUNCTION,
+                                                  require_zero=False))
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_symbolic_junction_without_reset_shows_both(backend, sol, scenario_navigator,
+                                                       root_pytest_dir):
+    """Without an ACCOUNT_RESET nothing states what the junction held before the
+    transfer, so the amount the wrap moves is unknown and both instructions are
+    reviewed on their own screens."""
+    _begin_session(sol, _craft_chain_message(sol))
+    _provide_chain(sol)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_symbolic_junction_reset_scope_mismatch_shows_both(backend, sol, scenario_navigator,
+                                                              root_pytest_dir):
+    """A RESET_SCOPE naming another program does not vouch for the wrap, so the
+    collapse is refused and both instructions are reviewed."""
+    _begin_session(sol, _craft_chain_message(sol))
+    _provide_chain(sol, reset=_build_account_reset(account_index=CHAIN_SLOT_JUNCTION,
+                                                  require_zero=False,
+                                                  scope_program_id=CHAIN_TRANSFER_PROGRAM_ID))
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_symbolic_junction_reset_scope_match_collapses(backend, sol, scenario_navigator,
+                                                          root_pytest_dir):
+    """A RESET_SCOPE naming the wrap's program and discriminator prefix vouches for
+    it, so the collapse stands."""
+    _begin_session(sol, _craft_chain_message(sol))
+    _provide_chain(sol, reset=_build_account_reset(
+        account_index=CHAIN_SLOT_JUNCTION,
+        require_zero=False,
+        scope_program_id=CHAIN_WRAP_PROGRAM_ID,
+        scope_discriminators=[CHAIN_WRAP_DISCRIMINATOR]))
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_symbolic_junction_pre_balance_zero_needs_attestation(backend, sol,
+                                                                 scenario_navigator,
+                                                                 root_pytest_dir):
+    """A reset carrying REQUIRE_PRE_BALANCE_ZERO obliges the device to read the
+    account's attested pre-balance. With no TOKEN_ACCOUNT_STATE for the junction
+    there is nothing to read, so the reset vouches for nothing and both
+    instructions are reviewed."""
+    _begin_session(sol, _craft_chain_message(sol))
+    _provide_chain(sol, reset=_build_account_reset(account_index=CHAIN_SLOT_JUNCTION,
+                                                  require_zero=True))
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_symbolic_junction_pre_balance_zero_attested_collapses(backend, sol,
+                                                                  scenario_navigator,
+                                                                  root_pytest_dir):
+    """The same reset with an attested zero pre-balance for the junction: the
+    precondition holds, so the collapse stands."""
+    _begin_session(sol, _craft_chain_message(sol))
+    sol.provide_token_account_state(challenge=sol.get_challenge(),
+                                    account_address=CHAIN_JUNCTION,
+                                    mint=CHAIN_MINT,
+                                    owner=sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH),
+                                    pre_balance=0)
+    _provide_chain(sol, reset=_build_account_reset(account_index=CHAIN_SLOT_JUNCTION,
+                                                  require_zero=True))
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_symbolic_junction_pre_balance_non_zero_shows_both(backend, sol,
+                                                              scenario_navigator,
+                                                              root_pytest_dir):
+    """An attested non-zero pre-balance contradicts REQUIRE_PRE_BALANCE_ZERO: the
+    junction already held value the reset does not account for, so both
+    instructions are reviewed."""
+    _begin_session(sol, _craft_chain_message(sol))
+    sol.provide_token_account_state(challenge=sol.get_challenge(),
+                                    account_address=CHAIN_JUNCTION,
+                                    mint=CHAIN_MINT,
+                                    owner=sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH),
+                                    pre_balance=42)
+    _provide_chain(sol, reset=_build_account_reset(account_index=CHAIN_SLOT_JUNCTION,
+                                                  require_zero=True))
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_symbolic_junction_collapse_rejected(backend, sol, scenario_navigator,
+                                                root_pytest_dir):
+    """The collapsed review is rejected: the app refuses to sign."""
+    _begin_session(sol, _craft_chain_message(sol))
+    _provide_chain(sol, reset=_build_account_reset(account_index=CHAIN_SLOT_JUNCTION,
+                                                  require_zero=False))
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        with sol.send_prompt_ui_display():
+            scenario_navigator.review_reject(path=root_pytest_dir)
+    assert exc_info.value.status == ErrorType.USER_CANCEL
+    _wipe_session(sol)
+
+
+@pytest.mark.parametrize("constant_width", [3, 5, 16])
+def test_cs_amount_constant_odd_width_rejected(backend, sol, constant_width):
+    """An AMOUNT_VALUE CONSTANT carries no kind of its own, so its byte count is the
+    only thing that says how wide the number is. A count that is not an integer width
+    describes no number, which makes the descriptor malformed: the substructure is
+    refused on arrival rather than stored as an amount nothing can read."""
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    account_reset = _build_account_reset(account_index=0,
+                                         require_zero=False,
+                                         reset_constant=bytes(constant_width))
+    substructures_hash = hashlib.sha256(display_field + account_reset).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_ACCOUNT_RESET, account_reset)
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
+    _wipe_session(sol)
+
+
+def test_cs_amount_constant_integer_widths_accepted(backend, sol):
+    """The four integer widths a constant amount may carry are all accepted."""
+    for constant_width in (1, 2, 4, 8):
+        message = _craft_single_instruction_message(sol,
+                                                    BRIDGE_PROGRAM_ID,
+                                                    _bridge_instruction_data(1000, 5_000_000))
+        _begin_session(sol, message)
+
+        display_field = _build_display_field(BRIDGE_PATH_U32)
+        account_reset = _build_account_reset(account_index=0,
+                                             require_zero=False,
+                                             reset_constant=bytes(constant_width))
+        substructures_hash = hashlib.sha256(display_field + account_reset).digest()
+
+        sol.provide_instruction_info(
+            program_id=BRIDGE_PROGRAM_ID,
+            discriminator=BRIDGE_DISCRIMINATOR,
+            operation_type="Transfer",
+            program_name="Bridge",
+            substructures_hash=substructures_hash,
+            idl_type_pool=BRIDGE_POOL,
+            idl_root_type=0,
+        )
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_ACCOUNT_RESET, account_reset)
+
+        assert sol.finalize_generic_clear_signing().status == 0x9000
+        _wipe_session(sol)
+
+
+def test_cs_twenty_instructions_finalize(backend, sol):
+    """Twenty instructions sharing one template walk, merge and render. The dynamic
+    pool bounds how far this scales: measured on Flex, the display renderer runs out
+    of room building elements somewhere around the thirtieth instruction, well before
+    the merge engine's own scratch becomes the binding allocation. This pins a count
+    comfortably inside that range so a heavier per-instruction footprint shows up."""
+    message = _craft_multi_instruction_message(sol, ALT_PROGRAM_ID, ALT_DISCRIMINATOR, 20)
+    _begin_session(sol, message)
+
+    display_field = _build_account_display_field(0, "Account")
+    sol.provide_instruction_info(
+        program_id=ALT_PROGRAM_ID,
+        discriminator=ALT_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="AltProg",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=ALT_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
     _wipe_session(sol)
 
 
@@ -2383,24 +2807,7 @@ def test_cs_double_start_session_rejected(backend):
 # APDUs that require STREAMING sent from FINALIZED — not easily testable without
 # a full end-to-end session. Test that a non-CS APDU resets the session instead.
 
-# Non-CS APDU resets a STREAMING session.
-@pytest.mark.parametrize("reset_fn", [
-    lambda sol: sol.get_app_configuration(),
-    lambda sol: sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH),
-])
-def test_cs_non_cs_apdu_resets_streaming_session(backend, reset_fn):
-    sol = SolanaClient(backend)
-    message = _dummy_cs_message(sol)
-    _begin_session(sol, message)
-    # Send a non-CS APDU — should succeed and silently reset the session
-    reset_fn(sol)
-    # Now FINALIZE should fail with INVALID_STATE (back to IDLE)
-    with pytest.raises(ExceptionRAPDU) as exc_info:
-        sol.finalize_generic_clear_signing()
-    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
-
-
-# A rejected garbage APDU wipes a STREAMING session too (any error abandons the session).
+# A rejected garbage APDU wipes a STREAMING session (any error abandons the session).
 def test_cs_false_apdu_resets_streaming_session(backend):
     sol = SolanaClient(backend)
     _begin_session(sol, _dummy_cs_message(sol))
@@ -2411,9 +2818,13 @@ def test_cs_false_apdu_resets_streaming_session(backend):
     assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
 
 
-# Stateless APDUs do NOT reset a STREAMING session.
+# Stateless APDUs do NOT reset a STREAMING session. They answer from the seed or from
+# settings and touch no signing state, so a host is free to interleave them while it
+# streams descriptors.
 @pytest.mark.parametrize("stateless_fn", [
     lambda sol: sol.get_challenge(),
+    lambda sol: sol.get_app_configuration(),
+    lambda sol: sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH),
 ])
 def test_cs_stateless_apdu_preserves_streaming_session(backend, stateless_fn):
     sol = SolanaClient(backend)
@@ -3004,3 +3415,127 @@ def test_alt_loaded_account_without_resolution_refused(backend, sol):
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.finalize_generic_clear_signing()
     assert exc_info.value.status == ErrorType.INVALID_GENERIC_PREVIEW
+
+
+def test_alt_truncated_section_refused(backend, sol):
+    """A v0 transaction whose address-table-lookup section is cut short is refused,
+    even though its only instruction references a static key and would display fine.
+    That section fixes which loaded accounts are writable, and the merge guards read
+    writability over every raw account, so a section the device cannot parse leaves it
+    unable to reason about the transaction. Session start validates the header alone,
+    so such a message reaches finalize."""
+    sender = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+    message = _craft_v0_message_with_alt(
+        sender, ALT_PROGRAM_ID, ALT_DISCRIMINATOR,
+        instruction_account_indexes=bytes([0]),
+        alt_table_address=ALT_TABLE_ADDRESS,
+        alt_writable_entries=[ALT_ENTRY_INDEX],
+        alt_readonly_entries=[],
+    )
+    # Drop the tail of the lookup section: the table's index lists no longer parse.
+    _begin_session(sol, message[:-2])
+
+    display_field = _build_account_display_field(0, "Signer")
+    sol.provide_instruction_info(
+        program_id=ALT_PROGRAM_ID,
+        discriminator=ALT_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="AltProg",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=ALT_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.INVALID_GENERIC_PREVIEW
+
+
+def test_cs_amount_account_path_source_rejected(backend, sol):
+    """An AMOUNT_VALUE must resolve to a number. An ACCOUNT_PATH resolves to a 32-byte
+    address, which is no amount, so the substructure carrying it is refused on arrival
+    rather than stored as a port whose amount nothing can compare."""
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    amount_value = (format_tlv(AMOUNT_VALUE_TAG_KIND, AMOUNT_KIND_NUMERIC)
+                    + format_tlv(AMOUNT_VALUE_TAG_VALUE,
+                                 format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ACCOUNT_PATH)
+                                 + format_tlv(ValueTag.PAYLOAD, bytes([0]))))
+    port = (format_tlv(VFP_TAG_VERSION, 1)
+            + format_tlv(VFP_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT)
+            + format_tlv(VFP_TAG_DIRECTION, PORT_DIRECTION_OUTPUT)
+            + format_tlv(VFP_TAG_ACCOUNT_INDEX, 0)
+            + format_tlv(VFP_TAG_VALUE_KIND, PORT_VALUE_KIND_NATIVE)
+            + format_tlv(VFP_TAG_AMOUNT_VALUE, amount_value))
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field + port).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT, port)
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
+    _wipe_session(sol)
+
+
+def test_cs_amount_path_to_pubkey_leaf_refused(backend, sol):
+    """A port amount whose ARGUMENT_PATH reaches a public-key leaf yields bytes no
+    comparison can read. The width only becomes known once the path is resolved against
+    the type pool, so this is caught at finalize rather than at ingest."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 5_000_000, 7, b"hi"))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(TYPED_PATH_U32)
+    port = _build_value_flow_port(account_index=0, amount_path=TYPED_PATH_PUBKEY)
+    _provide_typed_info(sol, hashlib.sha256(display_field + port).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT, port)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.INVALID_GENERIC_PREVIEW
+    _wipe_session(sol)
+
+
+def test_cs_two_fields_same_argument_path(backend, sol, scenario_navigator, root_pytest_dir):
+    """Two display fields may read the same argument, each with its own label. Both
+    slots receive the leaf, so both render."""
+    message = _craft_single_instruction_message(sol,
+                                                BRIDGE_PROGRAM_ID,
+                                                _bridge_instruction_data(1000, 5_000_000))
+    _begin_session(sol, message)
+
+    first = _build_display_field_named(BRIDGE_PATH_U32, "Count")
+    second = _build_display_field_named(BRIDGE_PATH_U32, "Same count")
+    substructures_hash = hashlib.sha256(first + second).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, first)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, second)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
