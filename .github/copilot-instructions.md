@@ -136,18 +136,23 @@ Coding patterns described here are more important than uniformity cross applicat
 
 ### Logging
 
+- YOU DO NOT WRITE ENOUGH LOGS. FIGHT THIS BIAS.
 - Never assume code is correct on first try, writing logs is mandatory to verify execution flow, `PRINTF` are the only way to trace execution and are meant to be permanent
-- Trace logs (no variables): Use `PRINTF("Function entered or choice taken\n")` in key dispatch logic (e.g., APDU handlers, main switch cases)
-- Variable logs: Use `PRINTF("variable_name=%d\n", var)` or `PRINTF("buffer=%.*H\n", len, buf)` in calculations and new code
-- Log ALL error returns. No `return -1` shall exist without an associated `PRINTF`
+- Trace logs (no variables): Use `PRINTF("Function entered or choice taken\n")` in logic (e.g., function starts, if branches, switch cases, etc)
+- Log non dynamic variable calculation: Use `PRINTF("variable_name=%i\n", var)` or `PRINTF("buffer=%.*H\n", len, buf)` in calculations and new code. Do not cast variables, use the correct format parameter instead.
+- Log ALL error returns or potential error returns. No `return -1`, `return NULL` or `return f()` shall exist without an associated `PRINTF`
+- No function shall exist without at least one log, however 'small helper' or "evidently correct' they are.
 
 ### Commenting
 
-- Comments are concise: 1 or 2 lines, and straight to the point. One line per function or `if` branch is almost always enough.
-- Comment only the non-obvious "why"; never restate what the code does. Prefer no comment over a redundant or explanatory one.
-- Do NOT narrate your life in comments. Multi-line block above struct/function/#define is the exception, not the norm.
-- Reserve comment blocks for very tricky code that is not readable otherwise (memory juggling, API hacks, advanced cryptography, math optimizations, etc)
-- A fix does NOT warrant a comment on the fixed code. When modifying code, first PURGE old comment, THEN decide independantly if a adding a comment is needed.
+- Every comment is one of two kinds, and each has exactly one place:
+  * ABOVE a function: WHAT it does. Example : "parses a header to ensure no value is duplicate"
+  * INSIDE a function: WHY the code is as is and HOW it achieves the goal, placed at the call, line or branch it explains. Example : "loop over inputs and compare with stored descriptors to find the match"
+- Comments are concise and straight to the point using direct syntax. One line is almost always enough.
+- You are FORBIDDEN from putting HOW or WHY in a function header. A header that explains mechanism is misplaced content: move it down to the code it describes. Collecting the body's reasoning into one block above the function is FORBIDDEN.
+- Length follows content; never pick a length first. A helper whose name nearly says it needs one line. A real contract or a genuine subtlety needs two or three. If a comment reads as an essay, split it and move the parts to the code they belong to.
+- Say only what a reader cannot get from the names. "Whether X is valid" above `is_x_valid()` is noise; "Returns -1 when the host omitted the descriptor" is not.
+- Never narrate the work, refer to the conversation, or describe how the code used to be. Comments are permanent and must read true years later, so a fix warrants no comment about the fix: purge the old comment first, then decide independently whether one is needed.
 
 ### Coding conventions
 
