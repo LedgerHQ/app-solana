@@ -18,6 +18,7 @@
 #include "idl_walker.h"
 #include "idl_kinds.h"
 #include "sol/pubkey.h"
+#include "utils.h"
 
 // One entry of the transaction-scoped mint-binding map: a token account pubkey
 // bound to the mint pubkey that identifies its token. Seeded from every
@@ -146,6 +147,37 @@ static int collect_writable_accounts(const cs_transaction_t *cs_tx,
     PRINTF("finalize cs: %d writable accounts collected, complete=%d\n",
            (int) result->writable_account_count,
            result->writable_complete);
+    return 0;
+}
+
+// Resolve every account of an instruction's raw account list that can be named, so the
+// condition vocabulary can prove an address appears outside its own instruction even when
+// no port declares it. Returns 0, -1 on allocation failure.
+static int collect_all_accounts(const cs_transaction_t *cs_tx,
+                                const MessageHeader *header,
+                                const Instruction *instruction,
+                                cs_instruction_result_t *result) {
+    if (instruction->accounts_length == 0) {
+        PRINTF("finalize cs: instruction has no accounts, no raw list\n");
+        return 0;
+    }
+    if (!APP_MEM_CALLOC((void **) &result->accounts,
+                        instruction->accounts_length * sizeof(*result->accounts))) {
+        PRINTF("finalize cs: raw account list allocation failed\n");
+        return -1;
+    }
+    for (size_t slot = 0; slot < instruction->accounts_length; slot++) {
+        const uint8_t *pubkey = pubkey_from_account_index(cs_tx, header, instruction, slot);
+        // An ALT-loaded account with no attested resolution cannot be named; leaving it out
+        // only makes accountUsedElsewhere miss it, which errs toward showing more.
+        if (pubkey == NULL) {
+            PRINTF("finalize cs: raw account slot %d unresolved, skipped\n", (int) slot);
+            continue;
+        }
+        result->accounts[result->account_count] = pubkey;
+        result->account_count++;
+    }
+    PRINTF("finalize cs: %d raw accounts collected\n", (int) result->account_count);
     return 0;
 }
 
@@ -760,6 +792,9 @@ static int walk_instruction(const cs_transaction_t *cs_tx,
     if (collect_writable_accounts(cs_tx, header, instruction, alt_writable_count, result) != 0) {
         return -1;
     }
+    if (collect_all_accounts(cs_tx, header, instruction, result) != 0) {
+        return -1;
+    }
 
     // Scratch sized to the total possible ARGUMENT_PATH match count: display
     // fields, one per port amount and per port DIRECT mint, one per reset amount,
@@ -972,6 +1007,9 @@ static void free_walked_instructions(cs_instruction_result_t *walked_instruction
         if (walked_instructions[i].writable_accounts != NULL) {
             APP_MEM_FREE_AND_NULL((void **) &walked_instructions[i].writable_accounts);
         }
+        if (walked_instructions[i].accounts != NULL) {
+            APP_MEM_FREE_AND_NULL((void **) &walked_instructions[i].accounts);
+        }
         if (walked_instructions[i].resolved_resets != NULL) {
             APP_MEM_FREE_AND_NULL((void **) &walked_instructions[i].resolved_resets);
         }
@@ -1014,7 +1052,17 @@ static uint16_t finalize_cs_run(const cs_transaction_t *cs_tx,
         PRINTF("finalize cs: merge context header parse failed\n");
         return ApduReplySolanaInvalidGenericPreview;
     }
+    // Derive the device user's own signing key so isSigner and isAnotherSigner match against
+    // it, never the fee payer. Lives on this stack frame, which outlives the merge run below.
+    Pubkey device_signer;
+    if (get_public_key(device_signer.data,
+                       cs_tx->derivation_path,
+                       cs_tx->derivation_path_length) != CX_OK) {
+        PRINTF("finalize cs: device signer derivation failed\n");
+        return ApduReplySolanaInvalidGenericPreview;
+    }
     cs_merge_context_t context = {.header = &header,
+                                  .device_signer = device_signer.data,
                                   .owner_bindings = owner_bindings,
                                   .owner_binding_count = owner_binding_count};
     if (cs_merge_engine_run(walked_instructions, walked_instructions_count, &context, survivors) !=

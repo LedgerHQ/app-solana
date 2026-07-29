@@ -1143,9 +1143,11 @@ def test_cs_value_flow_port_forwarded(backend, sol):
     _wipe_session(sol)
 
 
-def test_cs_hide_rule_forwarded(backend, sol):
-    """A HIDE_RULE substructure is decoded and its ACCOUNT_PATH target resolves;
-    the session finalizes. Hide-rule evaluation is not wired to the display yet."""
+def test_cs_hide_rule_hides_instruction(backend, sol):
+    """A HIDE_RULE whose isSigner condition holds for its target hides the instruction
+    post-merge. Account 0 is the device signer, so the rule fires; with the sole
+    instruction hidden the review has nothing to show and PROMPT UI DISPLAY reports
+    CLEAR_SIGNING_INCOMPLETE."""
     message = _craft_single_instruction_message(sol,
                                                 BRIDGE_PROGRAM_ID,
                                                 _bridge_instruction_data(1000, 5_000_000))
@@ -1167,8 +1169,46 @@ def test_cs_hide_rule_forwarded(backend, sol):
     sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
     sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_HIDE_RULE, hide_rule)
 
-    rapdu = sol.finalize_generic_clear_signing()
-    assert rapdu.status == 0x9000
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.prompt_ui_display()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+    _wipe_session(sol)
+
+
+def test_cs_hide_rule_not_triggered_shows_instruction(backend, sol, scenario_navigator,
+                                                      root_pytest_dir):
+    """The same isSigner HIDE_RULE aimed at a non-signer account does not fire, so the
+    instruction survives and PROMPT UI DISPLAY produces its review instead of reporting
+    CLEAR_SIGNING_INCOMPLETE."""
+    other_account = bytes(Pubkey.from_string("4K2V1kpVycZ6qSFsNdz2FtpNxnJs17eBNzf9rdCMcKoe"))
+    message = _craft_instruction_with_accounts(sol,
+                                               BRIDGE_PROGRAM_ID,
+                                               _bridge_instruction_data(1000, 5_000_000),
+                                               [other_account])
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    # Account 1 is the extra non-signer, so isSigner fails and the instruction stays visible.
+    hide_rule = _build_hide_rule(target_account_index=1)
+    substructures_hash = hashlib.sha256(display_field + hide_rule).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_HIDE_RULE, hide_rule)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
 

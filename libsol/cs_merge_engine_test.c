@@ -14,6 +14,8 @@
 #define MAX_TEST_PORTS    4
 #define MAX_TEST_RESETS   2
 #define MAX_TEST_WRITABLE 4
+#define MAX_TEST_HIDE     4
+#define MAX_TEST_ACCOUNTS 6
 
 // An item plus its backing template and substructure storage. Production
 // heap-allocates these; tests back them with fixed local storage and wire the
@@ -26,20 +28,62 @@ typedef struct test_item_s {
     cs_account_reset_t resets[MAX_TEST_RESETS];
     cs_resolved_reset_t resolved_resets[MAX_TEST_RESETS];
     const uint8_t *writable_accounts[MAX_TEST_WRITABLE];
+    cs_hide_rule_t hide_rules[MAX_TEST_HIDE];
+    cs_resolved_hide_rule_t resolved_hide_rules[MAX_TEST_HIDE];
+    const uint8_t *accounts[MAX_TEST_ACCOUNTS];
 } test_item_t;
 
 static void item_init(test_item_t *item) {
     memset(item, 0, sizeof(*item));
     item->template.ports = item->ports;
     item->template.account_resets = item->resets;
+    item->template.hide_rules = item->hide_rules;
     item->result.template = &item->template;
     item->result.resolved_ports = item->resolved_ports;
     item->result.resolved_resets = item->resolved_resets;
     item->result.writable_accounts = item->writable_accounts;
+    item->result.resolved_hide_rules = item->resolved_hide_rules;
+    item->result.accounts = item->accounts;
     // What the finalize walk reports when every writable account resolved, which is
     // always the case for a legacy transaction and for a completely attested v0 one.
     // Tests that exercise an unresolved writable account clear it explicitly.
     item->result.writable_complete = true;
+}
+
+// Append a HIDE_RULE with a resolved target, in the same slot on both the template and the
+// result the way the finalize walk parallels them. A NULL target stands for one that failed
+// to resolve.
+static void item_add_hide_rule(test_item_t *item,
+                               uint8_t rule_set_index,
+                               uint8_t condition,
+                               const uint8_t *target) {
+    size_t h = item->template.hide_rule_count;
+    assert(h < MAX_TEST_HIDE);
+    item->hide_rules[h].rule_set_index = rule_set_index;
+    item->hide_rules[h].condition = condition;
+    item->resolved_hide_rules[h].target = target;
+    item->template.hide_rule_count++;
+    item->result.resolved_hide_rule_count = item->template.hide_rule_count;
+}
+
+// Attach a raw ACTIVE_WHEN predicate stream to a port, as the finalize walk deep-copies it
+// from the descriptor.
+static void item_set_port_active_when(test_item_t *item,
+                                      size_t port_index,
+                                      uint8_t *stream,
+                                      size_t size) {
+    assert(port_index < item->template.port_count);
+    item->ports[port_index].active_when = stream;
+    item->ports[port_index].active_when_size = size;
+}
+
+// Append a resolved account to the instruction's raw account list, which
+// accountUsedElsewhere reads.
+static void item_add_account(test_item_t *item, const uint8_t *account) {
+    size_t a = item->result.account_count;
+    assert(a < MAX_TEST_ACCOUNTS);
+    item->accounts[a] = account;
+    item->result.account_count++;
 }
 
 // Append a resolved port carrying a concrete little-endian u64 amount and no token
@@ -162,6 +206,49 @@ static const uint8_t AMT_101[8] = {101, 0, 0, 0, 0, 0, 0, 0};
 
 // Instruction data of the wrap instruction used by the symbolic-junction fixtures.
 static const uint8_t WRAP_DATA[4] = {0x11, 0x22, 0x33, 0x44};
+
+// Device signer and another transaction signer, for isSigner / isAnotherSigner.
+static const uint8_t SIGNER_DEVICE[32] = {0x71};
+static const uint8_t SIGNER_OTHER[32] = {0x72};
+
+#define MAX_TEST_SIGNERS 4
+
+// A merge context plus the header and owner-binding storage its pointers reference.
+typedef struct test_context_s {
+    cs_merge_context_t context;
+    MessageHeader header;
+    Pubkey signer_pubkeys[MAX_TEST_SIGNERS];
+    cs_owner_binding_t owner_bindings[MAX_TEST_SIGNERS];
+} test_context_t;
+
+// Start a context with the given device signer and no transaction signer declared yet.
+static void context_init(test_context_t *ctx, const uint8_t *device_signer) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->header.pubkeys = ctx->signer_pubkeys;
+    ctx->context.header = &ctx->header;
+    ctx->context.device_signer = device_signer;
+    ctx->context.owner_bindings = ctx->owner_bindings;
+}
+
+// Declare one transaction signer in the header's leading signer slots.
+static void context_add_signer(test_context_t *ctx, const uint8_t *signer) {
+    size_t s = ctx->header.pubkeys_header.num_required_signatures;
+    assert(s < MAX_TEST_SIGNERS);
+    memcpy(ctx->signer_pubkeys[s].data, signer, 32);
+    ctx->header.pubkeys_header.num_required_signatures++;
+    ctx->header.pubkeys_header.pubkeys_length++;
+}
+
+// Bind a token account to the wallet that owns it, as OWNER_ASSOC seeds the map.
+static void context_add_owner_binding(test_context_t *ctx,
+                                      const uint8_t *token_account,
+                                      const uint8_t *owner) {
+    size_t b = ctx->context.owner_binding_count;
+    assert(b < MAX_TEST_SIGNERS);
+    ctx->owner_bindings[b].token_account = token_account;
+    ctx->owner_bindings[b].owner = owner;
+    ctx->context.owner_binding_count++;
+}
 
 // ---- Fixtures shared by the symbolic-junction tests -------------------------
 
@@ -1179,6 +1266,411 @@ static void test_output_balance_port_stays_symbolic(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+// ---- Annotate stage / ACTIVE_WHEN -------------------------------------------
+
+// A MINT_PREDICATE leaves the port active when the port's resolved mint is the one named.
+static void test_active_when_mint_predicate_match(void) {
+    printf("  test_active_when_mint_predicate_match\n");
+    mock_mem_reset();
+    test_item_t item;
+    item_init(&item);
+    item_add_port(&item, CS_PORT_DIRECTION_OUTPUT, ACCT_DEST, AMT_100);
+    item_set_port_mint(&item, 0, MINT_X);
+    uint8_t stream[33] = {CS_ACTIVE_WHEN_MINT_PREDICATE};
+    memcpy(&stream[1], MINT_X, 32);
+    item_set_port_active_when(&item, 0, stream, sizeof(stream));
+
+    bool survivor = false;
+    assert(cs_merge_engine_run(&item.result, 1, NULL, &survivor) == 0);
+    assert(item.resolved_ports[0].excluded == false);
+    assert(survivor == true);
+}
+
+// A MINT_PREDICATE excludes the port when the resolved mint differs from the one named.
+static void test_active_when_mint_predicate_mismatch(void) {
+    printf("  test_active_when_mint_predicate_mismatch\n");
+    mock_mem_reset();
+    test_item_t item;
+    item_init(&item);
+    item_add_port(&item, CS_PORT_DIRECTION_OUTPUT, ACCT_DEST, AMT_100);
+    item_set_port_mint(&item, 0, MINT_Y);
+    uint8_t stream[33] = {CS_ACTIVE_WHEN_MINT_PREDICATE};
+    memcpy(&stream[1], MINT_X, 32);
+    item_set_port_active_when(&item, 0, stream, sizeof(stream));
+
+    bool survivor = false;
+    assert(cs_merge_engine_run(&item.result, 1, NULL, &survivor) == 0);
+    assert(item.resolved_ports[0].excluded == true);
+}
+
+// A MINT_PREDICATE excludes a port whose token never resolved to a mint.
+static void test_active_when_mint_predicate_no_mint(void) {
+    printf("  test_active_when_mint_predicate_no_mint\n");
+    mock_mem_reset();
+    test_item_t item;
+    item_init(&item);
+    item_add_port(&item, CS_PORT_DIRECTION_OUTPUT, ACCT_DEST, AMT_100);
+    uint8_t stream[33] = {CS_ACTIVE_WHEN_MINT_PREDICATE};
+    memcpy(&stream[1], MINT_X, 32);
+    item_set_port_active_when(&item, 0, stream, sizeof(stream));
+
+    bool survivor = false;
+    assert(cs_merge_engine_run(&item.result, 1, NULL, &survivor) == 0);
+    assert(item.resolved_ports[0].excluded == true);
+}
+
+// An excluded junction port is invisible to the scan, so a pair that would collapse over it
+// stays two separate instructions.
+static void test_active_when_excluded_port_breaks_merge(void) {
+    printf("  test_active_when_excluded_port_breaks_merge\n");
+    mock_mem_reset();
+    test_item_t upstream;
+    test_item_t downstream;
+    item_init(&upstream);
+    item_init(&downstream);
+    // Without exclusion this is an exact relay that collapses to one survivor.
+    item_add_port(&upstream, CS_PORT_DIRECTION_OUTPUT, ACCT_JUNCTION, AMT_100);
+    item_set_port_mint(&upstream, 0, MINT_Y);
+    item_add_port(&downstream, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_100);
+    item_add_port(&downstream, CS_PORT_DIRECTION_OUTPUT, ACCT_DEST, AMT_100);
+    // The upstream output is active only for MINT_X, but resolved to MINT_Y, so it drops out
+    // and no junction remains.
+    uint8_t stream[33] = {CS_ACTIVE_WHEN_MINT_PREDICATE};
+    memcpy(&stream[1], MINT_X, 32);
+    item_set_port_active_when(&upstream, 0, stream, sizeof(stream));
+
+    cs_instruction_result_t items[2] = {upstream.result, downstream.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[0] == true);
+    assert(survivors[1] == true);
+}
+
+// A truncated MINT_PREDICATE operand is a malformed stream, which the engine refuses.
+static void test_active_when_truncated_mint_predicate(void) {
+    printf("  test_active_when_truncated_mint_predicate\n");
+    mock_mem_reset();
+    test_item_t item;
+    item_init(&item);
+    item_add_port(&item, CS_PORT_DIRECTION_OUTPUT, ACCT_DEST, AMT_100);
+    item_set_port_mint(&item, 0, MINT_X);
+    uint8_t stream[10] = {CS_ACTIVE_WHEN_MINT_PREDICATE};
+    item_set_port_active_when(&item, 0, stream, sizeof(stream));
+
+    bool survivor = false;
+    assert(cs_merge_engine_run(&item.result, 1, NULL, &survivor) == -1);
+}
+
+// An opcode outside the vocabulary is a malformed stream, which the engine refuses.
+static void test_active_when_unknown_opcode(void) {
+    printf("  test_active_when_unknown_opcode\n");
+    mock_mem_reset();
+    test_item_t item;
+    item_init(&item);
+    item_add_port(&item, CS_PORT_DIRECTION_OUTPUT, ACCT_DEST, AMT_100);
+    uint8_t stream[1] = {0x7F};
+    item_set_port_active_when(&item, 0, stream, sizeof(stream));
+
+    bool survivor = false;
+    assert(cs_merge_engine_run(&item.result, 1, NULL, &survivor) == -1);
+}
+
+// IS_SIGNER keeps the port active when its account is the device signer, and excludes it for
+// any other account.
+static void test_active_when_is_signer(void) {
+    printf("  test_active_when_is_signer\n");
+    mock_mem_reset();
+    test_context_t ctx;
+    context_init(&ctx, SIGNER_DEVICE);
+    uint8_t stream[1] = {CS_ACTIVE_WHEN_IS_SIGNER};
+
+    test_item_t owned;
+    item_init(&owned);
+    item_add_port(&owned, CS_PORT_DIRECTION_OUTPUT, SIGNER_DEVICE, AMT_100);
+    item_set_port_active_when(&owned, 0, stream, sizeof(stream));
+    bool survivor = false;
+    assert(cs_merge_engine_run(&owned.result, 1, &ctx.context, &survivor) == 0);
+    assert(owned.resolved_ports[0].excluded == false);
+
+    test_item_t foreign;
+    item_init(&foreign);
+    item_add_port(&foreign, CS_PORT_DIRECTION_OUTPUT, ACCT_OTHER, AMT_100);
+    item_set_port_active_when(&foreign, 0, stream, sizeof(stream));
+    assert(cs_merge_engine_run(&foreign.result, 1, &ctx.context, &survivor) == 0);
+    assert(foreign.resolved_ports[0].excluded == true);
+}
+
+// ACCOUNT_USED_ELSEWHERE keeps the port active only when the account appears in another
+// instruction, here through its raw account list.
+static void test_active_when_account_used_elsewhere(void) {
+    printf("  test_active_when_account_used_elsewhere\n");
+    mock_mem_reset();
+    test_item_t guarded;
+    test_item_t other;
+    item_init(&guarded);
+    item_init(&other);
+    item_add_port(&guarded, CS_PORT_DIRECTION_OUTPUT, ACCT_JUNCTION, AMT_100);
+    uint8_t stream[1] = {CS_ACTIVE_WHEN_ACCOUNT_USED_ELSEWHERE};
+    item_set_port_active_when(&guarded, 0, stream, sizeof(stream));
+    item_add_account(&other, ACCT_JUNCTION);
+
+    cs_instruction_result_t used[2] = {guarded.result, other.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(used, 2, NULL, survivors) == 0);
+    assert(used[0].resolved_ports[0].excluded == false);
+
+    // With no other instruction referencing it, the same port is excluded.
+    item_init(&other);
+    cs_instruction_result_t alone[2] = {guarded.result, other.result};
+    assert(cs_merge_engine_run(alone, 2, NULL, survivors) == 0);
+    assert(alone[0].resolved_ports[0].excluded == true);
+}
+
+// ---- Hide stage -------------------------------------------------------------
+
+// createdInTransaction hides a survivor when another instruction creates the target account.
+static void test_hide_created_in_transaction_hides(void) {
+    printf("  test_hide_created_in_transaction_hides\n");
+    mock_mem_reset();
+    test_item_t creator;
+    test_item_t hidden;
+    item_init(&creator);
+    item_init(&hidden);
+    // A zero-amount, no-token output is the shape of an account brought into existence.
+    item_add_port(&creator, CS_PORT_DIRECTION_OUTPUT, ACCT_JUNCTION, AMT_0);
+    item_add_port(&hidden, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_50);
+    item_add_hide_rule(&hidden, 0, CS_HIDE_CONDITION_CREATED_IN_TRANSACTION, ACCT_JUNCTION);
+
+    cs_instruction_result_t items[2] = {creator.result, hidden.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[0] == true);
+    assert(survivors[1] == false);
+}
+
+// A rule whose condition fails leaves the instruction visible.
+static void test_hide_rule_fails_stays_visible(void) {
+    printf("  test_hide_rule_fails_stays_visible\n");
+    mock_mem_reset();
+    test_item_t creator;
+    test_item_t candidate;
+    item_init(&creator);
+    item_init(&candidate);
+    item_add_port(&creator, CS_PORT_DIRECTION_OUTPUT, ACCT_JUNCTION, AMT_0);
+    item_add_port(&candidate, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_50);
+    // Nothing creates ACCT_FAR, so the rule fails.
+    item_add_hide_rule(&candidate, 0, CS_HIDE_CONDITION_CREATED_IN_TRANSACTION, ACCT_FAR);
+
+    cs_instruction_result_t items[2] = {creator.result, candidate.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[1] == true);
+}
+
+// Rule sets are ORed: a survivor is hidden when any set passes even though an earlier one
+// fails.
+static void test_hide_or_across_rule_sets(void) {
+    printf("  test_hide_or_across_rule_sets\n");
+    mock_mem_reset();
+    test_item_t creator;
+    test_item_t hidden;
+    item_init(&creator);
+    item_init(&hidden);
+    item_add_port(&creator, CS_PORT_DIRECTION_OUTPUT, ACCT_JUNCTION, AMT_0);
+    item_add_port(&hidden, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_50);
+    // Set 0 fails (ACCT_FAR is never created); set 1 passes (ACCT_JUNCTION is created).
+    item_add_hide_rule(&hidden, 0, CS_HIDE_CONDITION_CREATED_IN_TRANSACTION, ACCT_FAR);
+    item_add_hide_rule(&hidden, 1, CS_HIDE_CONDITION_CREATED_IN_TRANSACTION, ACCT_JUNCTION);
+
+    cs_instruction_result_t items[2] = {creator.result, hidden.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[1] == false);
+}
+
+// Rules within a set are ANDed: one failing rule leaves the whole set, and the instruction,
+// unhidden.
+static void test_hide_and_within_rule_set(void) {
+    printf("  test_hide_and_within_rule_set\n");
+    mock_mem_reset();
+    test_item_t creator;
+    test_item_t candidate;
+    item_init(&creator);
+    item_init(&candidate);
+    item_add_port(&creator, CS_PORT_DIRECTION_OUTPUT, ACCT_JUNCTION, AMT_0);
+    item_add_port(&candidate, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_50);
+    // Same set: one rule passes, the other fails, so the set fails.
+    item_add_hide_rule(&candidate, 0, CS_HIDE_CONDITION_CREATED_IN_TRANSACTION, ACCT_JUNCTION);
+    item_add_hide_rule(&candidate, 0, CS_HIDE_CONDITION_CREATED_IN_TRANSACTION, ACCT_FAR);
+
+    cs_instruction_result_t items[2] = {creator.result, candidate.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[1] == true);
+}
+
+// A hide rule whose target failed to resolve evaluates false, leaving the instruction visible.
+static void test_hide_unresolved_target_stays_visible(void) {
+    printf("  test_hide_unresolved_target_stays_visible\n");
+    mock_mem_reset();
+    test_item_t creator;
+    test_item_t candidate;
+    item_init(&creator);
+    item_init(&candidate);
+    item_add_port(&creator, CS_PORT_DIRECTION_OUTPUT, ACCT_JUNCTION, AMT_0);
+    item_add_port(&candidate, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_50);
+    item_add_hide_rule(&candidate, 0, CS_HIDE_CONDITION_CREATED_IN_TRANSACTION, NULL);
+
+    cs_instruction_result_t items[2] = {creator.result, candidate.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[1] == true);
+}
+
+// accountEffectsDisplayedElsewhere is deferred: a rule naming it never hides the instruction.
+static void test_hide_account_effects_deferred(void) {
+    printf("  test_hide_account_effects_deferred\n");
+    mock_mem_reset();
+    test_item_t candidate;
+    item_init(&candidate);
+    item_add_port(&candidate, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_50);
+    item_add_hide_rule(&candidate,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_SOURCE);
+
+    bool survivor = false;
+    assert(cs_merge_engine_run(&candidate.result, 1, NULL, &survivor) == 0);
+    assert(survivor == true);
+}
+
+// isSigner hides a survivor whose target is a token account the device signer owns.
+static void test_hide_is_signer_via_owner_binding(void) {
+    printf("  test_hide_is_signer_via_owner_binding\n");
+    mock_mem_reset();
+    test_context_t ctx;
+    context_init(&ctx, SIGNER_DEVICE);
+    context_add_owner_binding(&ctx, ACCT_DEST, SIGNER_DEVICE);
+
+    test_item_t candidate;
+    item_init(&candidate);
+    item_add_port(&candidate, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_50);
+    item_add_hide_rule(&candidate, 0, CS_HIDE_CONDITION_IS_SIGNER, ACCT_DEST);
+
+    bool survivor = false;
+    assert(cs_merge_engine_run(&candidate.result, 1, &ctx.context, &survivor) == 0);
+    assert(survivor == false);
+}
+
+// isAnotherSigner hides a survivor whose target is a co-signer, but not the device signer.
+static void test_hide_is_another_signer(void) {
+    printf("  test_hide_is_another_signer\n");
+    mock_mem_reset();
+    test_context_t ctx;
+    context_init(&ctx, SIGNER_DEVICE);
+    context_add_signer(&ctx, SIGNER_DEVICE);
+    context_add_signer(&ctx, SIGNER_OTHER);
+
+    test_item_t other_signer;
+    item_init(&other_signer);
+    item_add_port(&other_signer, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_50);
+    item_add_hide_rule(&other_signer, 0, CS_HIDE_CONDITION_IS_ANOTHER_SIGNER, SIGNER_OTHER);
+    bool survivor = false;
+    assert(cs_merge_engine_run(&other_signer.result, 1, &ctx.context, &survivor) == 0);
+    assert(survivor == false);
+
+    // The device signer is a signer, but never "another" one, so the rule leaves it visible.
+    test_item_t device;
+    item_init(&device);
+    item_add_port(&device, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_50);
+    item_add_hide_rule(&device, 0, CS_HIDE_CONDITION_IS_ANOTHER_SIGNER, SIGNER_DEVICE);
+    assert(cs_merge_engine_run(&device.result, 1, &ctx.context, &survivor) == 0);
+    assert(survivor == true);
+}
+
+// Several ACTIVE_WHEN predicates on one port are ANDed: the port is excluded when any one
+// fails, even though another holds.
+static void test_active_when_multiple_predicates_anded(void) {
+    printf("  test_active_when_multiple_predicates_anded\n");
+    mock_mem_reset();
+    test_context_t ctx;
+    context_init(&ctx, SIGNER_DEVICE);
+    // Stream: IS_SIGNER then MINT_PREDICATE(MINT_X).
+    uint8_t stream[34] = {CS_ACTIVE_WHEN_IS_SIGNER, CS_ACTIVE_WHEN_MINT_PREDICATE};
+    memcpy(&stream[2], MINT_X, 32);
+
+    // IS_SIGNER holds (the account is the device signer) but the mint is MINT_Y, so the AND fails.
+    test_item_t mismatch;
+    item_init(&mismatch);
+    item_add_port(&mismatch, CS_PORT_DIRECTION_OUTPUT, SIGNER_DEVICE, AMT_100);
+    item_set_port_mint(&mismatch, 0, MINT_Y);
+    item_set_port_active_when(&mismatch, 0, stream, sizeof(stream));
+    bool survivor = false;
+    assert(cs_merge_engine_run(&mismatch.result, 1, &ctx.context, &survivor) == 0);
+    assert(mismatch.resolved_ports[0].excluded == true);
+
+    // With both predicates satisfied the port stays active.
+    test_item_t both;
+    item_init(&both);
+    item_add_port(&both, CS_PORT_DIRECTION_OUTPUT, SIGNER_DEVICE, AMT_100);
+    item_set_port_mint(&both, 0, MINT_X);
+    item_set_port_active_when(&both, 0, stream, sizeof(stream));
+    assert(cs_merge_engine_run(&both.result, 1, &ctx.context, &survivor) == 0);
+    assert(both.resolved_ports[0].excluded == false);
+}
+
+// Cross-stage: a creation port excluded by ACTIVE_WHEN is invisible to createdInTransaction,
+// so a hide rule keyed on that account does not fire.
+static void test_hide_created_ignores_excluded_port(void) {
+    printf("  test_hide_created_ignores_excluded_port\n");
+    mock_mem_reset();
+    test_item_t creator;
+    test_item_t candidate;
+    item_init(&creator);
+    item_init(&candidate);
+    // A creation output on the junction, but excluded: MINT_PREDICATE cannot hold on a port
+    // whose token resolved to no mint.
+    item_add_port(&creator, CS_PORT_DIRECTION_OUTPUT, ACCT_JUNCTION, AMT_0);
+    uint8_t stream[33] = {CS_ACTIVE_WHEN_MINT_PREDICATE};
+    memcpy(&stream[1], MINT_X, 32);
+    item_set_port_active_when(&creator, 0, stream, sizeof(stream));
+    item_add_port(&candidate, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_50);
+    item_add_hide_rule(&candidate, 0, CS_HIDE_CONDITION_CREATED_IN_TRANSACTION, ACCT_JUNCTION);
+
+    cs_instruction_result_t items[2] = {creator.result, candidate.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(items[0].resolved_ports[0].excluded == true);
+    // The creation was excluded, so createdInTransaction is false and the candidate stays visible.
+    assert(survivors[1] == true);
+}
+
+// Hide runs over merge survivors: an instruction that absorbed another is still hidden when
+// its rule fires post-merge.
+static void test_hide_applies_to_merge_survivor(void) {
+    printf("  test_hide_applies_to_merge_survivor\n");
+    mock_mem_reset();
+    test_context_t ctx;
+    context_init(&ctx, SIGNER_DEVICE);
+    test_item_t upstream;
+    test_item_t downstream;
+    item_init(&upstream);
+    item_init(&downstream);
+    // Exact relay: upstream is consumed into downstream, which survives the scan.
+    item_add_port(&upstream, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_100);
+    item_add_port(&upstream, CS_PORT_DIRECTION_OUTPUT, ACCT_JUNCTION, AMT_100);
+    item_add_port(&downstream, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_100);
+    item_add_port(&downstream, CS_PORT_DIRECTION_OUTPUT, ACCT_DEST, AMT_100);
+    // The survivor carries a hide rule that fires, so it drops out after the merge.
+    item_add_hide_rule(&downstream, 0, CS_HIDE_CONDITION_IS_SIGNER, SIGNER_DEVICE);
+
+    cs_instruction_result_t items[2] = {upstream.result, downstream.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, &ctx.context, survivors) == 0);
+    assert(survivors[0] == false);  // consumed by the merge
+    assert(survivors[1] == false);  // survived the merge, then hidden
+}
+
 int main(void) {
     printf("cs_merge_engine_test\n");
     test_no_ports_all_survive();
@@ -1226,6 +1718,28 @@ int main(void) {
     test_intervening_write_invalidates_a_known_balance();
     test_absent_reset_value_reads_as_zero();
     test_output_balance_port_stays_symbolic();
+
+    test_active_when_mint_predicate_match();
+    test_active_when_mint_predicate_mismatch();
+    test_active_when_mint_predicate_no_mint();
+    test_active_when_excluded_port_breaks_merge();
+    test_active_when_truncated_mint_predicate();
+    test_active_when_unknown_opcode();
+    test_active_when_is_signer();
+    test_active_when_account_used_elsewhere();
+
+    test_hide_created_in_transaction_hides();
+    test_hide_rule_fails_stays_visible();
+    test_hide_or_across_rule_sets();
+    test_hide_and_within_rule_set();
+    test_hide_unresolved_target_stays_visible();
+    test_hide_account_effects_deferred();
+    test_hide_is_signer_via_owner_binding();
+    test_hide_is_another_signer();
+
+    test_active_when_multiple_predicates_anded();
+    test_hide_created_ignores_excluded_port();
+    test_hide_applies_to_merge_survivor();
     printf("  All passed!\n");
     return 0;
 }
