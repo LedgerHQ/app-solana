@@ -15,12 +15,18 @@ from ragger.error import ExceptionRAPDU
 
 from application_client import solana_utils as SOL
 from application_client.solana import SolanaClient, ErrorType
-from application_client.solana_cmd_builder import verify_signature
+from application_client.solana_cmd_builder import verify_signature, PROGRAM_ID_SYSTEM
 
 
 TRANSFER_FEE_EXTENSION = 26
 TRANSFER_CHECKED_WITH_FEE = 1
 TRANSFER_CHECKED = 12
+
+DEFAULT_ACCOUNT_STATE_EXTENSION = 28
+DEFAULT_ACCOUNT_STATE_UPDATE = 1
+ACCOUNT_STATE_FROZEN = 2
+
+SYSTEM_TRANSFER = 2
 
 class TestSPL:
 
@@ -378,6 +384,32 @@ class TestToken2022:
 
         message_data = sol.craft_tx([create_instruction, transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.JUP_MINT_ADDRESS, self.str_destination_ata.encode('utf-8'), SOL.FOREIGN_ADDRESS_STR.encode('utf-8'))
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            scenario_navigator.review_approve(path=root_pytest_dir)
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+    def _craft_default_account_state_tx(self, sol):
+        system_transfer_instruction = Instruction(
+            program_id=Pubkey.from_string(PROGRAM_ID_SYSTEM),
+            accounts=[
+                AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=True),
+                AccountMeta(pubkey=self.receiver_pubkey, is_signer=False, is_writable=True),
+            ],
+            data=struct.pack("<IQ", SYSTEM_TRANSFER, 1),
+        )
+        update_default_state_instruction = Instruction(
+            program_id=TOKEN_2022_PROGRAM_ID,
+            accounts=[
+                AccountMeta(pubkey=self.mint_pubkey, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=False),
+            ],
+            data=struct.pack("<BBB", DEFAULT_ACCOUNT_STATE_EXTENSION, DEFAULT_ACCOUNT_STATE_UPDATE, ACCOUNT_STATE_FROZEN),
+        )
+        return sol.craft_tx([system_transfer_instruction, update_default_state_instruction], self.sender_public_key)
+
+    def test_token_2022_default_account_state_warns_and_accept(self, sol, scenario_navigator, root_pytest_dir):
+        message_data = self._craft_default_account_state_tx(sol)
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
         signature: bytes = sol.get_async_response().data
