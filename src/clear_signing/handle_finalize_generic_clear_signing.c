@@ -287,7 +287,7 @@ static const uint8_t *resolve_pubkey_value_direct(const cs_transaction_t *cs_tx,
         }
         return pubkey_from_account_index(cs_tx, header, instruction, value->payload[0]);
     } else if (value->source == CS_VALUE_SOURCE_CONSTANT) {
-        if (value->payload_size != 32) {
+        if (value->payload_size != PUBKEY_SIZE) {
             PRINTF("finalize cs: pubkey CONSTANT payload size %d != 32\n",
                    (int) value->payload_size);
             return NULL;
@@ -560,7 +560,7 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
                 break;
             case WALK_SCATTER_PORT_MINT:
                 if (walker_results[w].kind != IDL_KIND_PUBKEY_32 ||
-                    walker_results[w].value_size != 32) {
+                    walker_results[w].value_size != PUBKEY_SIZE) {
                     PRINTF("finalize cs: port %d DIRECT mint path is not a pubkey\n", (int) index);
                     return -1;
                 }
@@ -579,7 +579,7 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
                 break;
             case WALK_SCATTER_HIDE_TARGET:
                 if (walker_results[w].kind != IDL_KIND_PUBKEY_32 ||
-                    walker_results[w].value_size != 32) {
+                    walker_results[w].value_size != PUBKEY_SIZE) {
                     PRINTF("finalize cs: hide rule %d target path is not a pubkey\n", (int) index);
                     return -1;
                 }
@@ -587,7 +587,7 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
                 break;
             case WALK_SCATTER_OWNER:
                 if (walker_results[w].kind != IDL_KIND_PUBKEY_32 ||
-                    walker_results[w].value_size != 32) {
+                    walker_results[w].value_size != PUBKEY_SIZE) {
                     PRINTF("finalize cs: owner assoc path is not a pubkey\n");
                     return -1;
                 }
@@ -615,7 +615,7 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
         }
         result->resolved[f].kind = IDL_KIND_PUBKEY_32;
         result->resolved[f].value = pubkey;
-        result->resolved[f].value_size = 32;
+        result->resolved[f].value_size = PUBKEY_SIZE;
     }
 
     // Resolve CONSTANT fields directly from the template

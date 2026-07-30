@@ -15,6 +15,7 @@
 #include "cs_transaction.h"
 #include "cs_alt_cache.h"
 #include "reply.h"
+#include "sol/pubkey.h"
 
 #define TYPE_ALT_RESOLUTION 0x16
 
@@ -24,9 +25,9 @@ typedef struct tlv_out_s {
     uint8_t structure_type;
     uint8_t version;
     uint32_t challenge;
-    uint8_t alt_address[32];
+    uint8_t alt_address[PUBKEY_SIZE];
     uint8_t entry_index;
-    uint8_t resolved_address[32];
+    uint8_t resolved_address[PUBKEY_SIZE];
 
     cx_sha256_t hash_ctx;
     buffer_t signature;
@@ -46,10 +47,10 @@ static bool handle_challenge(const tlv_data_t *data, tlv_out_t *out) {
 
 static bool handle_alt_address(const tlv_data_t *data, tlv_out_t *out) {
     buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 32, 32)) {
+    if (!get_buffer_from_tlv_data(data, &temp, PUBKEY_SIZE, PUBKEY_SIZE)) {
         return false;
     }
-    memcpy(out->alt_address, temp.ptr, 32);
+    memcpy(out->alt_address, temp.ptr, PUBKEY_SIZE);
     return true;
 }
 
@@ -59,10 +60,10 @@ static bool handle_entry_index(const tlv_data_t *data, tlv_out_t *out) {
 
 static bool handle_resolved_address(const tlv_data_t *data, tlv_out_t *out) {
     buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 32, 32)) {
+    if (!get_buffer_from_tlv_data(data, &temp, PUBKEY_SIZE, PUBKEY_SIZE)) {
         return false;
     }
-    memcpy(out->resolved_address, temp.ptr, 32);
+    memcpy(out->resolved_address, temp.ptr, PUBKEY_SIZE);
     return true;
 }
 
@@ -163,9 +164,9 @@ int handle_provide_alt_resolution(void) {
 
     PRINTF("=== ALT RESOLUTION ===\n");
     PRINTF("version          = %d\n", tlv_extracted.version);
-    PRINTF("alt_address      = %.*H\n", 32, tlv_extracted.alt_address);
+    PRINTF("alt_address      = %.*H\n", PUBKEY_SIZE, tlv_extracted.alt_address);
     PRINTF("entry_index      = %d\n", tlv_extracted.entry_index);
-    PRINTF("resolved_address = %.*H\n", 32, tlv_extracted.resolved_address);
+    PRINTF("resolved_address = %.*H\n", PUBKEY_SIZE, tlv_extracted.resolved_address);
 
     if (cs_alt_cache_add(tlv_extracted.alt_address,
                          tlv_extracted.entry_index,

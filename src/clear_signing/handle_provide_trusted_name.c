@@ -11,10 +11,8 @@
 #include "tlv_use_case_trusted_name.h"
 
 #include "sol/printer.h"
+#include "sol/pubkey.h"
 #include "reply.h"
-
-// Address is 32 raw bytes, not base58.
-#define TRUSTED_NAME_ADDRESS_LEN 32
 
 // Chain id carried by a Solana mainnet trusted-name descriptor.
 #define SOLANA_CHAIN_ID 900
@@ -47,7 +45,8 @@ static int handle_provide_trusted_name_internal(void) {
         return -1;
     }
 
-    if (tlv_output.address.size != TRUSTED_NAME_ADDRESS_LEN) {
+    // The address is a raw Solana public key, not base58.
+    if (tlv_output.address.size != PUBKEY_SIZE) {
         PRINTF("Error: unexpected address size %u\n", (unsigned) tlv_output.address.size);
         return -1;
     }
@@ -82,7 +81,7 @@ static int handle_provide_trusted_name_internal(void) {
     PRINTF("name    = %s\n", name);
     PRINTF("type    = %d\n", tlv_output.trusted_name_type);
     PRINTF("source  = %d\n", tlv_output.trusted_name_source);
-    PRINTF("address = %.*H\n", TRUSTED_NAME_ADDRESS_LEN, tlv_output.address.ptr);
+    PRINTF("address = %.*H\n", PUBKEY_SIZE, tlv_output.address.ptr);
 
     return 0;
 }

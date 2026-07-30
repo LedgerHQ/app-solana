@@ -52,7 +52,7 @@ static size_t fixed_primitive_width(uint8_t kind) {
         case IDL_KIND_I128:
             return 16;
         case IDL_KIND_PUBKEY_32:
-            return 32;
+            return PUBKEY_SIZE;
         default:
             return 0;
     }
@@ -1561,7 +1561,7 @@ static int walk_top(walk_ctx_t *walk) {
 
 int idl_walker_run(const uint8_t *data,
                    size_t data_size,
-                   const uint8_t program_id[32],
+                   const uint8_t program_id[PUBKEY_SIZE],
                    const idl_match_path_t *match_paths,
                    size_t match_count,
                    idl_resolved_leaf_t *resolved,

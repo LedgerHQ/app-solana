@@ -16,26 +16,28 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "sol/pubkey.h"
+
 // One cached token account state, keyed by account_address. Every field is the
 // chain-attested value committed to by the HSM signature verified at ingest.
 typedef struct cs_token_account_s {
-    uint8_t account_address[32];
-    uint8_t mint[32];
-    uint8_t owner[32];
+    uint8_t account_address[PUBKEY_SIZE];
+    uint8_t mint[PUBKEY_SIZE];
+    uint8_t owner[PUBKEY_SIZE];
     uint64_t pre_balance;
 } cs_token_account_t;
 
 // Store one token account state keyed by account_address. Returns 0 on success,
 // -1 when the pool cannot allocate or the key already exists (duplicate
 // descriptor).
-int cs_token_account_cache_add(const uint8_t account_address[32],
-                               const uint8_t mint[32],
-                               const uint8_t owner[32],
+int cs_token_account_cache_add(const uint8_t account_address[PUBKEY_SIZE],
+                               const uint8_t mint[PUBKEY_SIZE],
+                               const uint8_t owner[PUBKEY_SIZE],
                                uint64_t pre_balance);
 
 // Find the cached token account state matching account_address. Returns NULL
 // when no descriptor was provided for that account.
-const cs_token_account_t *cs_token_account_cache_find(const uint8_t account_address[32]);
+const cs_token_account_t *cs_token_account_cache_find(const uint8_t account_address[PUBKEY_SIZE]);
 
 // Number of cached token account states.
 size_t cs_token_account_cache_count(void);

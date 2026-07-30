@@ -42,17 +42,17 @@ static void free_variant(cs_enum_variant_t **variant) {
 
 // True when `variant` carries the (program_id, enum_id, variant_index) key.
 static bool key_matches(const cs_enum_variant_t *variant,
-                        const uint8_t program_id[32],
+                        const uint8_t program_id[PUBKEY_SIZE],
                         const uint8_t *enum_id,
                         size_t enum_id_len,
                         uint16_t variant_index) {
-    return (memcmp(variant->program_id, program_id, 32) == 0) &&
+    return (memcmp(variant->program_id, program_id, PUBKEY_SIZE) == 0) &&
            (variant->enum_id_len == enum_id_len) &&
            (memcmp(variant->enum_id, enum_id, enum_id_len) == 0) &&
            (variant->variant_index == variant_index);
 }
 
-int cs_enum_cache_add(const uint8_t program_id[32],
+int cs_enum_cache_add(const uint8_t program_id[PUBKEY_SIZE],
                       const uint8_t *enum_id,
                       size_t enum_id_len,
                       uint16_t variant_index,
@@ -114,7 +114,7 @@ int cs_enum_cache_add(const uint8_t program_id[32],
         PRINTF("cs_enum_cache_add: variant allocation failed\n");
         return -1;
     }
-    memcpy(slot->program_id, program_id, 32);
+    memcpy(slot->program_id, program_id, PUBKEY_SIZE);
     slot->variant_index = variant_index;
     slot->payload_kind = (cs_variant_payload_kind_t) payload_kind;
 
@@ -166,7 +166,7 @@ int cs_enum_cache_add(const uint8_t program_id[32],
     return 0;
 }
 
-const cs_enum_variant_t *cs_enum_cache_find(const uint8_t program_id[32],
+const cs_enum_variant_t *cs_enum_cache_find(const uint8_t program_id[PUBKEY_SIZE],
                                             const uint8_t *enum_id,
                                             size_t enum_id_len,
                                             uint16_t variant_index) {

@@ -281,7 +281,7 @@ static bool ensure_table(void) {
     return true;
 }
 
-cs_instruction_template_t *cs_instruction_template_open(const uint8_t target_hash[32]) {
+cs_instruction_template_t *cs_instruction_template_open(const uint8_t target_hash[CX_SHA256_SIZE]) {
     if (!ensure_table()) {
         return NULL;
     }
@@ -770,7 +770,7 @@ int cs_instruction_template_add_account_reset(const cs_account_reset_t *reset) {
     if (reset->has_scope) {
         slot->scope.has_program_id = reset->scope.has_program_id;
         if (reset->scope.has_program_id) {
-            memcpy(slot->scope.scope_program_id, reset->scope.scope_program_id, 32);
+            memcpy(slot->scope.scope_program_id, reset->scope.scope_program_id, PUBKEY_SIZE);
         }
         if (reset->scope.discriminator_count > 0) {
             if (!APP_MEM_CALLOC(
@@ -859,7 +859,7 @@ bool cs_instruction_template_pending(void) {
     return G_template_table->builder != NULL;
 }
 
-const cs_instruction_template_t *cs_instruction_template_find(const uint8_t program_id[32],
+const cs_instruction_template_t *cs_instruction_template_find(const uint8_t program_id[PUBKEY_SIZE],
                                                               const uint8_t *data,
                                                               size_t data_size) {
     if (G_template_table == NULL) {
@@ -868,7 +868,7 @@ const cs_instruction_template_t *cs_instruction_template_find(const uint8_t prog
 
     for (size_t i = 0; i < G_template_table->committed_count; i++) {
         const cs_instruction_template_t *template = G_template_table->committed[i];
-        if (memcmp(template->program_id, program_id, 32) != 0) {
+        if (memcmp(template->program_id, program_id, PUBKEY_SIZE) != 0) {
             continue;
         }
         if (data_size < template->discriminator_size) {

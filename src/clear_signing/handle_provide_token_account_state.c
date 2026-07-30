@@ -15,6 +15,7 @@
 #include "cs_transaction.h"
 #include "cs_token_account_cache.h"
 #include "reply.h"
+#include "sol/pubkey.h"
 
 #define TYPE_TOKEN_ACCOUNT_STATE 0x15
 
@@ -24,9 +25,9 @@ typedef struct tlv_out_s {
     uint8_t structure_type;
     uint8_t version;
     uint32_t challenge;
-    uint8_t account_address[32];
-    uint8_t mint[32];
-    uint8_t owner[32];
+    uint8_t account_address[PUBKEY_SIZE];
+    uint8_t mint[PUBKEY_SIZE];
+    uint8_t owner[PUBKEY_SIZE];
     uint64_t pre_balance;
 
     cx_sha256_t hash_ctx;
@@ -47,28 +48,28 @@ static bool handle_challenge(const tlv_data_t *data, tlv_out_t *out) {
 
 static bool handle_account_address(const tlv_data_t *data, tlv_out_t *out) {
     buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 32, 32)) {
+    if (!get_buffer_from_tlv_data(data, &temp, PUBKEY_SIZE, PUBKEY_SIZE)) {
         return false;
     }
-    memcpy(out->account_address, temp.ptr, 32);
+    memcpy(out->account_address, temp.ptr, PUBKEY_SIZE);
     return true;
 }
 
 static bool handle_mint(const tlv_data_t *data, tlv_out_t *out) {
     buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 32, 32)) {
+    if (!get_buffer_from_tlv_data(data, &temp, PUBKEY_SIZE, PUBKEY_SIZE)) {
         return false;
     }
-    memcpy(out->mint, temp.ptr, 32);
+    memcpy(out->mint, temp.ptr, PUBKEY_SIZE);
     return true;
 }
 
 static bool handle_owner(const tlv_data_t *data, tlv_out_t *out) {
     buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 32, 32)) {
+    if (!get_buffer_from_tlv_data(data, &temp, PUBKEY_SIZE, PUBKEY_SIZE)) {
         return false;
     }
-    memcpy(out->owner, temp.ptr, 32);
+    memcpy(out->owner, temp.ptr, PUBKEY_SIZE);
     return true;
 }
 
@@ -175,9 +176,9 @@ int handle_provide_token_account_state(void) {
 
     PRINTF("=== TOKEN ACCOUNT STATE ===\n");
     PRINTF("version         = %d\n", tlv_extracted.version);
-    PRINTF("account_address = %.*H\n", 32, tlv_extracted.account_address);
-    PRINTF("mint            = %.*H\n", 32, tlv_extracted.mint);
-    PRINTF("owner           = %.*H\n", 32, tlv_extracted.owner);
+    PRINTF("account_address = %.*H\n", PUBKEY_SIZE, tlv_extracted.account_address);
+    PRINTF("mint            = %.*H\n", PUBKEY_SIZE, tlv_extracted.mint);
+    PRINTF("owner           = %.*H\n", PUBKEY_SIZE, tlv_extracted.owner);
     PRINTF("pre_balance     = %llu\n", tlv_extracted.pre_balance);
 
     if (cs_token_account_cache_add(tlv_extracted.account_address,

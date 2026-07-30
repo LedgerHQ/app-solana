@@ -15,7 +15,7 @@ typedef struct cs_trusted_name_cache_table_s {
 
 static cs_trusted_name_cache_table_t G_trusted_name_cache;
 
-int cs_trusted_name_cache_add(const uint8_t address[32], const char *name, uint8_t type) {
+int cs_trusted_name_cache_add(const uint8_t address[PUBKEY_SIZE], const char *name, uint8_t type) {
     if (name == NULL) {
         PRINTF("cs_trusted_name_cache_add: NULL name\n");
         return -1;
@@ -49,7 +49,7 @@ int cs_trusted_name_cache_add(const uint8_t address[32], const char *name, uint8
         APP_MEM_FREE_AND_NULL((void **) &slot);
         return -1;
     }
-    memcpy(slot->address, address, 32);
+    memcpy(slot->address, address, PUBKEY_SIZE);
     memcpy(slot->name, name, name_len);
     slot->name[name_len] = '\0';
     slot->type = type;
@@ -59,9 +59,9 @@ int cs_trusted_name_cache_add(const uint8_t address[32], const char *name, uint8
     return 0;
 }
 
-const cs_trusted_name_t *cs_trusted_name_cache_find(const uint8_t address[32]) {
+const cs_trusted_name_t *cs_trusted_name_cache_find(const uint8_t address[PUBKEY_SIZE]) {
     for (size_t i = 0; i < G_trusted_name_cache.count; i++) {
-        if (memcmp(G_trusted_name_cache.names[i]->address, address, 32) == 0) {
+        if (memcmp(G_trusted_name_cache.names[i]->address, address, PUBKEY_SIZE) == 0) {
             return G_trusted_name_cache.names[i];
         }
     }

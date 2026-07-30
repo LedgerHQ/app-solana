@@ -14,6 +14,7 @@
 #include "cs_transaction.h"
 #include "cs_enum_cache.h"
 #include "reply.h"
+#include "sol/pubkey.h"
 
 #define TYPE_ENUM_VARIANT 0x17
 
@@ -22,7 +23,7 @@ typedef struct tlv_out_s {
 
     uint8_t structure_type;
     uint8_t version;
-    uint8_t program_id[32];
+    uint8_t program_id[PUBKEY_SIZE];
     // enum_id, variant_name and payload point zero-copy into the APDU payload;
     // it stays alive through cs_enum_cache_add, which copies them into owned buffers.
     buffer_t enum_id;
@@ -45,10 +46,10 @@ static bool handle_version(const tlv_data_t *data, tlv_out_t *out) {
 
 static bool handle_program_id(const tlv_data_t *data, tlv_out_t *out) {
     buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 32, 32)) {
+    if (!get_buffer_from_tlv_data(data, &temp, PUBKEY_SIZE, PUBKEY_SIZE)) {
         return false;
     }
-    memcpy(out->program_id, temp.ptr, 32);
+    memcpy(out->program_id, temp.ptr, PUBKEY_SIZE);
     return true;
 }
 
@@ -214,7 +215,7 @@ int handle_provide_enum_variant(void) {
 
     PRINTF("=== ENUM VARIANT ===\n");
     PRINTF("version       = %d\n", tlv_extracted.version);
-    PRINTF("program_id    = %.*H\n", 32, tlv_extracted.program_id);
+    PRINTF("program_id    = %.*H\n", PUBKEY_SIZE, tlv_extracted.program_id);
     PRINTF("enum_id       = %.*s\n", tlv_extracted.enum_id.size, tlv_extracted.enum_id.ptr);
     PRINTF("variant_index = %d\n", tlv_extracted.variant_index);
     PRINTF("variant_name  = %.*s\n",

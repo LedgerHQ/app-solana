@@ -14,17 +14,18 @@
 #include "tlv_parser_cs_value.h"
 #include "cs_instruction_template.h"
 #include "reply.h"
+#include "sol/pubkey.h"
 
 typedef struct tlv_out_s {
     TLV_reception_t received_tags;
 
     uint8_t version;
-    uint8_t program_id[32];
+    uint8_t program_id[PUBKEY_SIZE];
     // Views into G_command.message, copied into the template's heap buffers at open time.
     buffer_t discriminator;
     buffer_t operation_type;
     buffer_t program_name;
-    uint8_t substructures_hash[32];
+    uint8_t substructures_hash[CX_SHA256_SIZE];
     buffer_t idl_type_pool;
     uint8_t idl_root_type;
     uint8_t mint_assoc_account;
@@ -44,10 +45,10 @@ static bool handle_version(const tlv_data_t *data, tlv_out_t *out) {
 
 static bool handle_program_id(const tlv_data_t *data, tlv_out_t *out) {
     buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 32, 32)) {
+    if (!get_buffer_from_tlv_data(data, &temp, PUBKEY_SIZE, PUBKEY_SIZE)) {
         return false;
     }
-    memcpy(out->program_id, temp.ptr, 32);
+    memcpy(out->program_id, temp.ptr, PUBKEY_SIZE);
     return true;
 }
 
@@ -65,10 +66,10 @@ static bool handle_program_name(const tlv_data_t *data, tlv_out_t *out) {
 
 static bool handle_substructures_hash(const tlv_data_t *data, tlv_out_t *out) {
     buffer_t temp;
-    if (!get_buffer_from_tlv_data(data, &temp, 32, 32)) {
+    if (!get_buffer_from_tlv_data(data, &temp, CX_SHA256_SIZE, CX_SHA256_SIZE)) {
         return false;
     }
-    memcpy(out->substructures_hash, temp.ptr, 32);
+    memcpy(out->substructures_hash, temp.ptr, CX_SHA256_SIZE);
     return true;
 }
 
@@ -212,7 +213,7 @@ int handle_provide_instruction_info(void) {
 
     PRINTF("=== INSTRUCTION INFO ===\n");
     PRINTF("version            = %d\n", tlv_extracted.version);
-    PRINTF("program_id         = %.*H\n", 32, tlv_extracted.program_id);
+    PRINTF("program_id         = %.*H\n", PUBKEY_SIZE, tlv_extracted.program_id);
     PRINTF("discriminator      = %.*H\n",
            tlv_extracted.discriminator.size,
            tlv_extracted.discriminator.ptr);
@@ -222,7 +223,7 @@ int handle_provide_instruction_info(void) {
     PRINTF("program_name       = %.*s\n",
            (int) tlv_extracted.program_name.size,
            tlv_extracted.program_name.ptr);
-    PRINTF("substructures_hash = %.*H\n", 32, tlv_extracted.substructures_hash);
+    PRINTF("substructures_hash = %.*H\n", CX_SHA256_SIZE, tlv_extracted.substructures_hash);
     PRINTF("idl_type_pool_size = %d\n", (int) tlv_extracted.idl_type_pool.size);
     PRINTF("idl_root_type      = %d\n", tlv_extracted.idl_root_type);
 

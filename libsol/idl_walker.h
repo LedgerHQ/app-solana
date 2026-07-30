@@ -26,6 +26,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "sol/pubkey.h"
+
 // One path to match during the walk (input, read-only). `path` is borrowed for
 // the duration of idl_walker_run() only; the caller owns the bytes.
 typedef struct {
@@ -62,7 +64,7 @@ typedef struct {
 // Returns 0 on success, -1 on error.
 int idl_walker_run(const uint8_t *data,
                    size_t data_size,
-                   const uint8_t program_id[32],
+                   const uint8_t program_id[PUBKEY_SIZE],
                    const idl_match_path_t *match_paths,
                    size_t match_count,
                    idl_resolved_leaf_t *resolved,

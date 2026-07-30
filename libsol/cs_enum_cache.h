@@ -16,6 +16,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "sol/pubkey.h"
+
 // VariantPayloadKind enum (spec/device/tlv_structs.md ENUM_VARIANT).
 // Selects how the walker advances past a variant's payload.
 typedef enum cs_variant_payload_kind_e {
@@ -31,7 +33,7 @@ typedef enum cs_variant_payload_kind_e {
 // heap-allocated buffer sized to its exact length and owned by this entry.
 typedef struct cs_enum_variant_s {
     // Enum key
-    uint8_t program_id[32];
+    uint8_t program_id[PUBKEY_SIZE];
     uint8_t *enum_id;
     size_t enum_id_len;
     uint16_t variant_index;
@@ -59,7 +61,7 @@ typedef struct cs_enum_variant_s {
 // count for RAW_SIZE. All input bytes are copied into owned heap buffers.
 // Returns 0 on success, -1 when an allocation fails, the payload does not match
 // the kind, or the key already exists (duplicate descriptor).
-int cs_enum_cache_add(const uint8_t program_id[32],
+int cs_enum_cache_add(const uint8_t program_id[PUBKEY_SIZE],
                       const uint8_t *enum_id,
                       size_t enum_id_len,
                       uint16_t variant_index,
@@ -71,7 +73,7 @@ int cs_enum_cache_add(const uint8_t program_id[32],
 
 // Find the cached variant matching the (program_id, enum_id, variant_index)
 // triple. Returns NULL when no descriptor was provided for that variant.
-const cs_enum_variant_t *cs_enum_cache_find(const uint8_t program_id[32],
+const cs_enum_variant_t *cs_enum_cache_find(const uint8_t program_id[PUBKEY_SIZE],
                                             const uint8_t *enum_id,
                                             size_t enum_id_len,
                                             uint16_t variant_index);

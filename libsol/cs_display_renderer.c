@@ -6,6 +6,7 @@
 #include "app_mem_utils.h"
 #include "idl_kinds.h"
 #include "sol/printer.h"
+#include "sol/pubkey.h"
 #include "sol/string_utils.h"
 #include "print_float.h"
 #include "util.h"
@@ -311,11 +312,11 @@ static int format_leaf(const idl_resolved_leaf_t *leaf, char *value_out, size_t 
             return 0;
 
         case IDL_KIND_PUBKEY_32:
-            if (leaf->value_size < 32) {
+            if (leaf->value_size < PUBKEY_SIZE) {
                 PRINTF("format_leaf: pubkey truncated\n");
                 return -1;
             }
-            if (encode_base58(leaf->value, 32, value_out, value_out_size) < 0) {
+            if (encode_base58(leaf->value, PUBKEY_SIZE, value_out, value_out_size) < 0) {
                 PRINTF("format_leaf: base58 encode failed\n");
                 return -1;
             }
@@ -504,7 +505,7 @@ static bool resolve_trusted_name(const idl_resolved_leaf_t *leaf,
                                  uint8_t allowed_types_mask,
                                  char *value_out,
                                  size_t value_out_size) {
-    if (leaf->value_size < 32) {
+    if (leaf->value_size < PUBKEY_SIZE) {
         return false;
     }
     const cs_trusted_name_t *entry = cs_trusted_name_cache_find(leaf->value);
@@ -524,11 +525,11 @@ static bool resolve_trusted_name(const idl_resolved_leaf_t *leaf,
 
 // ACCOUNT_PATH: full base58 address.
 static int format_account(const idl_resolved_leaf_t *leaf, char *value_out, size_t value_out_size) {
-    if (leaf->value_size < 32) {
+    if (leaf->value_size < PUBKEY_SIZE) {
         PRINTF("format_account: value too short (%u < 32)\n", (unsigned) leaf->value_size);
         return -1;
     }
-    if (encode_base58(leaf->value, 32, value_out, value_out_size) < 0) {
+    if (encode_base58(leaf->value, PUBKEY_SIZE, value_out, value_out_size) < 0) {
         PRINTF("format_account: base58 encode failed\n");
         return -1;
     }
@@ -542,12 +543,12 @@ static int format_account_short(const idl_resolved_leaf_t *leaf,
                                 size_t value_out_size) {
     char full[BASE58_PUBKEY_LENGTH];
 
-    if (leaf->value_size < 32) {
+    if (leaf->value_size < PUBKEY_SIZE) {
         PRINTF("format_account_short: value too short (%u < 32)\n", (unsigned) leaf->value_size);
         return -1;
     }
     // Encode the full address, then abbreviate it below.
-    if (encode_base58(leaf->value, 32, full, sizeof(full)) < 0) {
+    if (encode_base58(leaf->value, PUBKEY_SIZE, full, sizeof(full)) < 0) {
         PRINTF("format_account_short: base58 encode failed\n");
         return -1;
     }
@@ -573,7 +574,7 @@ static int format_trusted_name(const idl_resolved_leaf_t *leaf,
                                const cs_format_trusted_name_t *format,
                                char *value_out,
                                size_t value_out_size) {
-    if (leaf->value_size < 32) {
+    if (leaf->value_size < PUBKEY_SIZE) {
         PRINTF("format_trusted_name: value too short (%u < 32)\n", (unsigned) leaf->value_size);
         return -1;
     }
@@ -1067,7 +1068,7 @@ static void apply_port_overrides(const cs_instruction_result_t *instruction,
         if (port != NULL) {
             memcpy(override_leaf, *leaf, sizeof(*override_leaf));
             override_leaf->value = port->account;
-            override_leaf->value_size = 32;
+            override_leaf->value_size = PUBKEY_SIZE;
             *leaf = override_leaf;
             PRINTF("apply_port_overrides: account field overridden by port\n");
         }
@@ -1141,7 +1142,8 @@ static int render_instruction_header(const cs_instruction_result_t *instruction,
                  instruction->template->program_name);
     } else {
         char address[BASE58_PUBKEY_LENGTH];
-        if (encode_base58(instruction->template->program_id, 32, address, sizeof(address)) < 0) {
+        if (encode_base58(instruction->template->program_id, PUBKEY_SIZE, address, sizeof(address)) <
+            0) {
             PRINTF("render_instruction_header: base58 encode program_id failed\n");
             APP_MEM_FREE_AND_NULL((void **) &header->value);
             return -1;

@@ -26,9 +26,9 @@ typedef struct cs_token_account_cache_table_s {
 
 static cs_token_account_cache_table_t G_token_account_cache;
 
-int cs_token_account_cache_add(const uint8_t account_address[32],
-                               const uint8_t mint[32],
-                               const uint8_t owner[32],
+int cs_token_account_cache_add(const uint8_t account_address[PUBKEY_SIZE],
+                               const uint8_t mint[PUBKEY_SIZE],
+                               const uint8_t owner[PUBKEY_SIZE],
                                uint64_t pre_balance) {
     // The account_address key must be unique.
     if (cs_token_account_cache_find(account_address) != NULL) {
@@ -50,9 +50,9 @@ int cs_token_account_cache_add(const uint8_t account_address[32],
         PRINTF("cs_token_account_cache_add: entry allocation failed\n");
         return -1;
     }
-    memcpy(slot->account_address, account_address, 32);
-    memcpy(slot->mint, mint, 32);
-    memcpy(slot->owner, owner, 32);
+    memcpy(slot->account_address, account_address, PUBKEY_SIZE);
+    memcpy(slot->mint, mint, PUBKEY_SIZE);
+    memcpy(slot->owner, owner, PUBKEY_SIZE);
     slot->pre_balance = pre_balance;
 
     G_token_account_cache.accounts[G_token_account_cache.count] = slot;
@@ -60,9 +60,11 @@ int cs_token_account_cache_add(const uint8_t account_address[32],
     return 0;
 }
 
-const cs_token_account_t *cs_token_account_cache_find(const uint8_t account_address[32]) {
+const cs_token_account_t *cs_token_account_cache_find(const uint8_t account_address[PUBKEY_SIZE]) {
     for (size_t i = 0; i < G_token_account_cache.count; i++) {
-        if (memcmp(G_token_account_cache.accounts[i]->account_address, account_address, 32) == 0) {
+        if (memcmp(G_token_account_cache.accounts[i]->account_address,
+                   account_address,
+                   PUBKEY_SIZE) == 0) {
             return G_token_account_cache.accounts[i];
         }
     }

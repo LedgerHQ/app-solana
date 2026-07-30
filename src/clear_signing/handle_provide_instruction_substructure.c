@@ -12,6 +12,7 @@
 #include "cs_substructure.h"
 #include "app_mem_utils.h"
 #include "reply.h"
+#include "sol/pubkey.h"
 
 enum substructure_type {
     SUBSTRUCTURE_TYPE_DISPLAY_FIELD   = 0x00,
@@ -720,13 +721,13 @@ static int register_param_token_amount(const display_field_out_t *display_field,
                 format.mint_source = CS_TOKEN_MINT_ACCOUNT_INDEX;
                 format.ref.account_index = token.payload.ptr[0];
             } else if (token.source == CS_VALUE_SOURCE_CONSTANT) {
-                if (token.payload.size != 32) {
+                if (token.payload.size != PUBKEY_SIZE) {
                     PRINTF("substructure: TOKEN CONSTANT payload size %d != 32\n",
                            token.payload.size);
                     return -1;
                 }
                 format.mint_source = CS_TOKEN_MINT_CONSTANT;
-                memcpy(format.ref.mint, token.payload.ptr, 32);
+                memcpy(format.ref.mint, token.payload.ptr, PUBKEY_SIZE);
             } else {
                 PRINTF("substructure: TOKEN source %d unsupported\n", token.source);
                 return -1;
@@ -1469,7 +1470,7 @@ typedef struct reset_scope_out_s {
 } reset_scope_out_t;
 
 static bool reset_scope_handle_program_id(const tlv_data_t *data, reset_scope_out_t *out) {
-    return get_buffer_from_tlv_data(data, &out->program_id, 32, 32);
+    return get_buffer_from_tlv_data(data, &out->program_id, PUBKEY_SIZE, PUBKEY_SIZE);
 }
 
 static bool reset_scope_handle_discriminator(const tlv_data_t *data, reset_scope_out_t *out) {
@@ -1838,7 +1839,7 @@ static int account_reset_build_and_add(uint8_t apdu_type,
         }
         reset.has_scope = true;
         reset.scope.has_program_id = true;
-        memcpy(reset.scope.scope_program_id, scope_scratch->program_id.ptr, 32);
+        memcpy(reset.scope.scope_program_id, scope_scratch->program_id.ptr, PUBKEY_SIZE);
         reset.scope.discriminators = scope_scratch->discriminators;
         reset.scope.discriminator_count = scope_scratch->discriminator_count;
     }

@@ -21,7 +21,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cx.h"
 #include "sol/cs_value_source.h"
+#include "sol/pubkey.h"
 
 // Param types (spec/device/tlv_structs.md FieldParamType enum).
 // Determines how the renderer formats the resolved value.
@@ -122,7 +124,7 @@ typedef struct cs_format_token_amount_s {
     uint8_t mint_source;  // enum cs_token_mint_source
     union {
         uint8_t account_index;  // CS_TOKEN_MINT_ACCOUNT_INDEX
-        uint8_t mint[32];       // CS_TOKEN_MINT_CONSTANT
+        uint8_t mint[PUBKEY_SIZE];  // CS_TOKEN_MINT_CONSTANT
     } ref;
     bool has_decimals;
     uint8_t decimals;
@@ -288,7 +290,7 @@ typedef struct cs_reset_discriminator_s {
 // discriminator prefixes carry OR semantics.
 typedef struct cs_reset_scope_s {
     bool has_program_id;
-    uint8_t scope_program_id[32];
+    uint8_t scope_program_id[PUBKEY_SIZE];
     cs_reset_discriminator_t *discriminators;  // heap, sized to discriminator_count
     size_t discriminator_count;
 } cs_reset_scope_t;
@@ -306,7 +308,7 @@ typedef struct cs_account_reset_s {
 // One complete instruction template, keyed by (program_id, discriminator).
 // Only ever exposed once fully assembled, so every field is valid.
 typedef struct cs_instruction_template_s {
-    uint8_t program_id[32];
+    uint8_t program_id[PUBKEY_SIZE];
     uint8_t *discriminator;  // heap, sized to discriminator_size; owned by this template
     uint8_t discriminator_size;
     char *operation_type;    // heap, NUL-terminated; owned by this template
@@ -335,7 +337,7 @@ typedef struct cs_instruction_template_s {
 // the matching substructure hash accumulation. Returns the zeroed builder for
 // the caller to fill, or NULL when the table or builder cannot be allocated.
 // Discards any previous unfinished builder.
-cs_instruction_template_t *cs_instruction_template_open(const uint8_t target_hash[32]);
+cs_instruction_template_t *cs_instruction_template_open(const uint8_t target_hash[CX_SHA256_SIZE]);
 
 // The in-flight builder being assembled, or NULL when none is open.
 cs_instruction_template_t *cs_instruction_template_current(void);
@@ -451,7 +453,7 @@ bool cs_instruction_template_pending(void);
 
 // Find the committed template whose program_id matches and whose discriminator
 // is a prefix of `data`. Returns NULL when none matches.
-const cs_instruction_template_t *cs_instruction_template_find(const uint8_t program_id[32],
+const cs_instruction_template_t *cs_instruction_template_find(const uint8_t program_id[PUBKEY_SIZE],
                                                               const uint8_t *data,
                                                               size_t data_size);
 
