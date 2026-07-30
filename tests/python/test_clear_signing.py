@@ -122,6 +122,7 @@ HIDE_RULE_TAG_RULE_SET_INDEX = 0x02
 HIDE_RULE_TAG_TARGET = 0x03
 HIDE_RULE_TAG_CONDITION = 0x04
 HIDE_CONDITION_IS_SIGNER = 0x01
+HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE = 0x04
 ACCOUNT_RESET_TAG_VERSION = 0x00
 ACCOUNT_RESET_TAG_SUBSTRUCT_TYPE = 0x01
 ACCOUNT_RESET_TAG_ACCOUNT_INDEX = 0x02
@@ -3573,6 +3574,121 @@ def test_cs_two_fields_same_argument_path(backend, sol, scenario_navigator, root
     )
     sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, first)
     sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, second)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+# accountEffectsDisplayedElsewhere hides an instruction only when a non-hidden survivor
+# re-displays every effect it has on the target account. Two instructions each carry an input
+# port on the same target: they share no output, so no junction forms and neither merges. The
+# first names the hide condition on the target; the second re-displays the same amount, so the
+# first is hidden when the amounts match and shown when they diverge.
+COVER_HIDDEN_PROGRAM_ID = b'\x41' * 32
+COVER_HIDDEN_DISCRIMINATOR = b'\x41'
+COVER_SURVIVOR_PROGRAM_ID = b'\x42' * 32
+COVER_SURVIVOR_DISCRIMINATOR = b'\x42'
+COVER_TARGET = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+COVER_AMOUNT = 5_000_000
+COVER_SLOT_SIGNER = 0
+COVER_SLOT_TARGET = 1
+
+
+def _craft_cover_message(sol: SolanaClient, *, survivor_amount: int) -> bytes:
+    """Two instructions sharing the signer and the target slot; the survivor's data carries the
+    amount it re-displays for the target."""
+    sender = Pubkey.from_bytes(sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH))
+    signer_meta = AccountMeta(pubkey=sender, is_signer=True, is_writable=True)
+    target_meta = AccountMeta(pubkey=Pubkey.from_bytes(COVER_TARGET),
+                              is_signer=False, is_writable=True)
+    hidden = Instruction(
+        program_id=Pubkey.from_bytes(COVER_HIDDEN_PROGRAM_ID),
+        accounts=[signer_meta, target_meta],
+        data=COVER_HIDDEN_DISCRIMINATOR + struct.pack("<Q", COVER_AMOUNT),
+    )
+    survivor = Instruction(
+        program_id=Pubkey.from_bytes(COVER_SURVIVOR_PROGRAM_ID),
+        accounts=[signer_meta, target_meta],
+        data=COVER_SURVIVOR_DISCRIMINATOR + struct.pack("<Q", survivor_amount),
+    )
+    return sol.craft_tx([hidden, survivor], sender)
+
+
+def _provide_cover_hidden(sol: SolanaClient) -> None:
+    """The instruction to hide: an input port on the target and an accountEffectsDisplayedElse-
+    where rule aimed at it."""
+    account_field = _build_account_display_field(COVER_SLOT_TARGET, "Account")
+    port = _build_value_flow_port(account_index=COVER_SLOT_TARGET,
+                                  amount_path=CHAIN_TRANSFER_PATH_AMOUNT,
+                                  direction=PORT_DIRECTION_INPUT)
+    hide_rule = _build_hide_rule(
+        target_account_index=COVER_SLOT_TARGET,
+        condition=HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE)
+    substructures = account_field + port + hide_rule
+
+    sol.provide_instruction_info(
+        program_id=COVER_HIDDEN_PROGRAM_ID,
+        discriminator=COVER_HIDDEN_DISCRIMINATOR,
+        operation_type="Setup",
+        program_name="Cover",
+        substructures_hash=hashlib.sha256(substructures).digest(),
+        idl_type_pool=CHAIN_TRANSFER_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, account_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT, port)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_HIDE_RULE, hide_rule)
+
+
+def _provide_cover_survivor(sol: SolanaClient) -> None:
+    """The survivor: an input port on the target plus the amount and account fields that
+    re-display the target's effect."""
+    account_field = _build_account_display_field(COVER_SLOT_TARGET, "Account")
+    amount_field = _build_amount_display_field(CHAIN_TRANSFER_PATH_AMOUNT, 9, "Amount")
+    port = _build_value_flow_port(account_index=COVER_SLOT_TARGET,
+                                  amount_path=CHAIN_TRANSFER_PATH_AMOUNT,
+                                  direction=PORT_DIRECTION_INPUT)
+    substructures = account_field + amount_field + port
+
+    sol.provide_instruction_info(
+        program_id=COVER_SURVIVOR_PROGRAM_ID,
+        discriminator=COVER_SURVIVOR_DISCRIMINATOR,
+        operation_type="Send",
+        program_name="Cover",
+        substructures_hash=hashlib.sha256(substructures).digest(),
+        idl_type_pool=CHAIN_TRANSFER_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, account_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, amount_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT, port)
+
+
+def test_cs_account_effects_hides_covered_instruction(backend, sol, scenario_navigator,
+                                                      root_pytest_dir):
+    """The survivor re-displays the target's amount, so the first instruction's effects are
+    displayed elsewhere and it is hidden: only the survivor is reviewed."""
+    _begin_session(sol, _craft_cover_message(sol, survivor_amount=COVER_AMOUNT))
+    _provide_cover_hidden(sol)
+    _provide_cover_survivor(sol)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_account_effects_uncovered_shows_both(backend, sol, scenario_navigator,
+                                                 root_pytest_dir):
+    """The survivor shows a different amount, so the first instruction's value-flow effect is
+    not re-displayed and it stays visible: both instructions are reviewed."""
+    _begin_session(sol, _craft_cover_message(sol, survivor_amount=COVER_AMOUNT + 1_000_000))
+    _provide_cover_hidden(sol)
+    _provide_cover_survivor(sol)
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():

@@ -16,6 +16,7 @@
 #define MAX_TEST_WRITABLE 4
 #define MAX_TEST_HIDE     4
 #define MAX_TEST_ACCOUNTS 6
+#define MAX_TEST_FIELDS   4
 
 // An item plus its backing template and substructure storage. Production
 // heap-allocates these; tests back them with fixed local storage and wire the
@@ -31,6 +32,8 @@ typedef struct test_item_s {
     cs_hide_rule_t hide_rules[MAX_TEST_HIDE];
     cs_resolved_hide_rule_t resolved_hide_rules[MAX_TEST_HIDE];
     const uint8_t *accounts[MAX_TEST_ACCOUNTS];
+    cs_display_field_t display_fields[MAX_TEST_FIELDS];
+    idl_resolved_leaf_t resolved[MAX_TEST_FIELDS];
 } test_item_t;
 
 static void item_init(test_item_t *item) {
@@ -44,6 +47,8 @@ static void item_init(test_item_t *item) {
     item->result.writable_accounts = item->writable_accounts;
     item->result.resolved_hide_rules = item->resolved_hide_rules;
     item->result.accounts = item->accounts;
+    item->template.display_fields = item->display_fields;
+    item->result.resolved = item->resolved;
     // What the finalize walk reports when every writable account resolved, which is
     // always the case for a legacy transaction and for a completely attested v0 one.
     // Tests that exercise an unresolved writable account clear it explicitly.
@@ -84,6 +89,37 @@ static void item_add_account(test_item_t *item, const uint8_t *account) {
     assert(a < MAX_TEST_ACCOUNTS);
     item->accounts[a] = account;
     item->result.account_count++;
+}
+
+// Append an ACCOUNT_PATH display field resolving to a pubkey, so the instruction renders that
+// account on screen the way accountEffectsDisplayedElsewhere reads a survivor's witness.
+static void item_add_account_field(test_item_t *item, const uint8_t *account) {
+    size_t f = item->template.display_field_count;
+    assert(f < MAX_TEST_FIELDS);
+    item->display_fields[f].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
+    item->resolved[f].kind = IDL_KIND_PUBKEY_32;
+    item->resolved[f].value = account;
+    item->resolved[f].value_size = 32;
+    item->template.display_field_count++;
+    item->result.resolved_count = item->template.display_field_count;
+}
+
+// Bind a token account to a mint on the instruction, as the finalize walk resolves MINT_ASSOC.
+static void item_set_mint_assoc(test_item_t *item,
+                                const uint8_t *token_account,
+                                const uint8_t *mint) {
+    item->result.has_resolved_mint_assoc = true;
+    item->result.mint_assoc_token_account = token_account;
+    item->result.mint_assoc_mint = mint;
+}
+
+// Bind a token account to an owner on the instruction, as the finalize walk resolves OWNER_ASSOC.
+static void item_set_owner_assoc(test_item_t *item,
+                                 const uint8_t *token_account,
+                                 const uint8_t *owner) {
+    item->result.has_resolved_owner_assoc = true;
+    item->result.owner_assoc_token_account = token_account;
+    item->result.owner_assoc_owner = owner;
 }
 
 // Append a resolved port carrying a concrete little-endian u64 amount and no token
@@ -1527,9 +1563,10 @@ static void test_hide_unresolved_target_stays_visible(void) {
     assert(survivors[1] == true);
 }
 
-// accountEffectsDisplayedElsewhere is deferred: a rule naming it never hides the instruction.
-static void test_hide_account_effects_deferred(void) {
-    printf("  test_hide_account_effects_deferred\n");
+// accountEffectsDisplayedElsewhere needs another survivor to stand in: a lone instruction
+// naming it has nothing to be covered by, so it stays visible.
+static void test_hide_account_effects_no_survivor_stays_visible(void) {
+    printf("  test_hide_account_effects_no_survivor_stays_visible\n");
     mock_mem_reset();
     test_item_t candidate;
     item_init(&candidate);
@@ -1542,6 +1579,338 @@ static void test_hide_account_effects_deferred(void) {
     bool survivor = false;
     assert(cs_merge_engine_run(&candidate.result, 1, NULL, &survivor) == 0);
     assert(survivor == true);
+}
+
+// The predicate reads a port on the target regardless of its direction, so these tests place
+// the hidden and covering ports on the same side to keep them off a junction the scan would
+// merge, isolating the hide decision.
+
+// A survivor whose port re-displays the same concrete amount on the target covers the hidden
+// instruction's value-flow effect, so it is hidden.
+static void test_hide_account_effects_value_flow_covered(void) {
+    printf("  test_hide_account_effects_value_flow_covered\n");
+    mock_mem_reset();
+    test_item_t hidden;
+    test_item_t survivor;
+    item_init(&hidden);
+    item_init(&survivor);
+    item_add_port(&hidden, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+    item_add_hide_rule(&hidden,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_JUNCTION);
+    item_add_port(&survivor, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+
+    cs_instruction_result_t items[2] = {hidden.result, survivor.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[0] == false);
+    assert(survivors[1] == true);
+}
+
+// A survivor showing a different amount on the target does not re-display the hidden effect, so
+// the instruction stays visible.
+static void test_hide_account_effects_amount_mismatch_stays_visible(void) {
+    printf("  test_hide_account_effects_amount_mismatch_stays_visible\n");
+    mock_mem_reset();
+    test_item_t hidden;
+    test_item_t survivor;
+    item_init(&hidden);
+    item_init(&survivor);
+    item_add_port(&hidden, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+    item_add_hide_rule(&hidden,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_JUNCTION);
+    item_add_port(&survivor, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_100);
+
+    cs_instruction_result_t items[2] = {hidden.result, survivor.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[0] == true);
+    assert(survivors[1] == true);
+}
+
+// A whole-balance hidden leg carries no number, so nothing can be said to re-display it: the
+// instruction stays visible even though a survivor moves value on the same account.
+static void test_hide_account_effects_symbolic_hidden_stays_visible(void) {
+    printf("  test_hide_account_effects_symbolic_hidden_stays_visible\n");
+    mock_mem_reset();
+    test_item_t hidden;
+    test_item_t survivor;
+    item_init(&hidden);
+    item_init(&survivor);
+    item_add_balance_port(&hidden, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION);
+    item_add_hide_rule(&hidden,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_JUNCTION);
+    item_add_port(&survivor, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+
+    cs_instruction_result_t items[2] = {hidden.result, survivor.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[0] == true);
+    assert(survivors[1] == true);
+}
+
+// A survivor that only drains a whole balance shows no concrete amount, so it cannot cover a
+// hidden concrete amount: the instruction stays visible.
+static void test_hide_account_effects_symbolic_survivor_stays_visible(void) {
+    printf("  test_hide_account_effects_symbolic_survivor_stays_visible\n");
+    mock_mem_reset();
+    test_item_t hidden;
+    test_item_t survivor;
+    item_init(&hidden);
+    item_init(&survivor);
+    item_add_port(&hidden, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+    item_add_hide_rule(&hidden,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_JUNCTION);
+    item_add_balance_port(&survivor, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION);
+
+    cs_instruction_result_t items[2] = {hidden.result, survivor.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[0] == true);
+    assert(survivors[1] == true);
+}
+
+// A mint the hidden instruction binds the target to must be shown by a survivor's token: the
+// matching case hides, the mismatching one stays visible.
+static void test_hide_account_effects_mint_binding(void) {
+    printf("  test_hide_account_effects_mint_binding\n");
+    mock_mem_reset();
+
+    // The survivor's port carries the very mint the hidden instruction bound the target to.
+    test_item_t hidden;
+    test_item_t survivor;
+    item_init(&hidden);
+    item_init(&survivor);
+    item_add_port(&hidden, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+    item_set_mint_assoc(&hidden, ACCT_JUNCTION, MINT_X);
+    item_add_hide_rule(&hidden,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_JUNCTION);
+    item_add_port(&survivor, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+    item_set_port_mint(&survivor, 0, MINT_X);
+
+    cs_instruction_result_t items[2] = {hidden.result, survivor.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[0] == false);
+    assert(survivors[1] == true);
+
+    // The survivor shows a different mint, so the bound mint is not re-displayed.
+    mock_mem_reset();
+    item_init(&hidden);
+    item_init(&survivor);
+    item_add_port(&hidden, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+    item_set_mint_assoc(&hidden, ACCT_JUNCTION, MINT_X);
+    item_add_hide_rule(&hidden,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_JUNCTION);
+    item_add_port(&survivor, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+    item_set_port_mint(&survivor, 0, MINT_Y);
+
+    cs_instruction_result_t mismatch[2] = {hidden.result, survivor.result};
+    bool mismatch_survivors[2] = {false, false};
+    assert(cs_merge_engine_run(mismatch, 2, NULL, mismatch_survivors) == 0);
+    assert(mismatch_survivors[0] == true);
+    assert(mismatch_survivors[1] == true);
+}
+
+// An owner the hidden instruction binds the target to reduces on screen to a survivor rendering
+// the account: rendered hides, not rendered stays visible.
+static void test_hide_account_effects_owner_binding(void) {
+    printf("  test_hide_account_effects_owner_binding\n");
+    mock_mem_reset();
+
+    // The survivor covers the value-flow port and visibly renders the target account.
+    test_item_t hidden;
+    test_item_t survivor;
+    item_init(&hidden);
+    item_init(&survivor);
+    item_add_port(&hidden, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+    item_set_owner_assoc(&hidden, ACCT_JUNCTION, SIGNER_OTHER);
+    item_add_hide_rule(&hidden,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_JUNCTION);
+    item_add_port(&survivor, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+    item_add_account_field(&survivor, ACCT_JUNCTION);
+
+    cs_instruction_result_t items[2] = {hidden.result, survivor.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[0] == false);
+    assert(survivors[1] == true);
+
+    // The survivor covers the port but never renders the target, so the owner binding is not
+    // re-displayed.
+    mock_mem_reset();
+    item_init(&hidden);
+    item_init(&survivor);
+    item_add_port(&hidden, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+    item_set_owner_assoc(&hidden, ACCT_JUNCTION, SIGNER_OTHER);
+    item_add_hide_rule(&hidden,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_JUNCTION);
+    item_add_port(&survivor, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+
+    cs_instruction_result_t hidden_owner[2] = {hidden.result, survivor.result};
+    bool hidden_owner_survivors[2] = {false, false};
+    assert(cs_merge_engine_run(hidden_owner, 2, NULL, hidden_owner_survivors) == 0);
+    assert(hidden_owner_survivors[0] == true);
+    assert(hidden_owner_survivors[1] == true);
+}
+
+// A scoped reset is consumed when a survivor lists the target raw and folded in an instruction
+// the reset's scope authorises. A consumer of the wrong program leaves the reset uncovered.
+static void test_hide_account_effects_scoped_reset(void) {
+    printf("  test_hide_account_effects_scoped_reset\n");
+    static uint8_t DISC_CONSUMER[1] = {0x33};
+    cs_reset_discriminator_t discriminators[1] = {{.data = DISC_CONSUMER, .size = 1}};
+
+    // The ledger snapshot resets the target, scoped to one consumer program. A symmetric relay
+    // producer merges into the survivor, so the survivor folds in the producer's identity while
+    // listing the target in its raw account list.
+    mock_mem_reset();
+    test_item_t ledger;
+    test_item_t producer;
+    test_item_t survivor;
+    item_init(&ledger);
+    item_init(&producer);
+    item_init(&survivor);
+    item_add_reset(&ledger, ACCT_JUNCTION, NULL);
+    item_set_last_reset_scope(&ledger, PROGRAM_TOKEN, discriminators, 1);
+    item_add_hide_rule(&ledger,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_JUNCTION);
+    // producer is the scoped consumer: its identity satisfies the reset scope, and its symmetric
+    // relay is the leg the merge folds into the survivor.
+    item_set_identity(&producer, PROGRAM_TOKEN, DISC_CONSUMER, sizeof(DISC_CONSUMER));
+    item_add_port(&producer, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_100);
+    item_add_port(&producer, CS_PORT_DIRECTION_OUTPUT, ACCT_FAR, AMT_100);
+    item_add_port(&survivor, CS_PORT_DIRECTION_INPUT, ACCT_FAR, AMT_100);
+    item_add_port(&survivor, CS_PORT_DIRECTION_OUTPUT, ACCT_DEST, AMT_100);
+    item_add_account(&survivor, ACCT_JUNCTION);
+
+    cs_instruction_result_t items[3] = {ledger.result, producer.result, survivor.result};
+    bool survivors[3] = {false, false, false};
+    assert(cs_merge_engine_run(items, 3, NULL, survivors) == 0);
+    // producer folded into the survivor; ledger hidden because the survivor consumes its reset.
+    assert(survivors[0] == false);
+    assert(survivors[1] == false);
+    assert(survivors[2] == true);
+
+    // The folded leg belongs to a program the reset scope does not name, so the reset is not
+    // consumed and the ledger stays visible.
+    mock_mem_reset();
+    item_init(&ledger);
+    item_init(&producer);
+    item_init(&survivor);
+    item_add_reset(&ledger, ACCT_JUNCTION, NULL);
+    item_set_last_reset_scope(&ledger, PROGRAM_TOKEN, discriminators, 1);
+    item_add_hide_rule(&ledger,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_JUNCTION);
+    item_set_identity(&producer, PROGRAM_OTHER, DISC_CONSUMER, sizeof(DISC_CONSUMER));
+    item_add_port(&producer, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_100);
+    item_add_port(&producer, CS_PORT_DIRECTION_OUTPUT, ACCT_FAR, AMT_100);
+    item_add_port(&survivor, CS_PORT_DIRECTION_INPUT, ACCT_FAR, AMT_100);
+    item_add_port(&survivor, CS_PORT_DIRECTION_OUTPUT, ACCT_DEST, AMT_100);
+    item_add_account(&survivor, ACCT_JUNCTION);
+
+    cs_instruction_result_t out_of_scope[3] = {ledger.result, producer.result, survivor.result};
+    bool out_of_scope_survivors[3] = {false, false, false};
+    assert(cs_merge_engine_run(out_of_scope, 3, NULL, out_of_scope_survivors) == 0);
+    assert(out_of_scope_survivors[0] == true);
+    assert(out_of_scope_survivors[1] == false);
+    assert(out_of_scope_survivors[2] == true);
+}
+
+// A survivor that renders the target but never re-displays a hidden value-flow effect leaves the
+// instruction visible: representation alone is not coverage.
+static void test_hide_account_effects_represented_not_covered(void) {
+    printf("  test_hide_account_effects_represented_not_covered\n");
+    mock_mem_reset();
+    test_item_t hidden;
+    test_item_t survivor;
+    item_init(&hidden);
+    item_init(&survivor);
+    item_add_port(&hidden, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+    item_add_hide_rule(&hidden,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_JUNCTION);
+    // Renders the target but moves no value on it.
+    item_add_account_field(&survivor, ACCT_JUNCTION);
+
+    cs_instruction_result_t items[2] = {hidden.result, survivor.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[0] == true);
+    assert(survivors[1] == true);
+}
+
+// A hidden instruction with no effect of its own on the target is hidden as soon as a survivor
+// stands in for the account, since erasing it loses nothing.
+static void test_hide_account_effects_no_effect_represented_hides(void) {
+    printf("  test_hide_account_effects_no_effect_represented_hides\n");
+    mock_mem_reset();
+    test_item_t hidden;
+    test_item_t survivor;
+    item_init(&hidden);
+    item_init(&survivor);
+    // Names the condition on ACCT_JUNCTION but declares no port, reset or binding on it.
+    item_add_port(&hidden, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_50);
+    item_add_hide_rule(&hidden,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_JUNCTION);
+    item_add_port(&survivor, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+
+    cs_instruction_result_t items[2] = {hidden.result, survivor.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[0] == false);
+    assert(survivors[1] == true);
+}
+
+// A candidate coverer already hidden earlier in the pass no longer stands in for the account, so
+// an instruction relying on it stays visible.
+static void test_hide_account_effects_coverer_hidden_earlier(void) {
+    printf("  test_hide_account_effects_coverer_hidden_earlier\n");
+    mock_mem_reset();
+    test_context_t ctx;
+    context_init(&ctx, SIGNER_DEVICE);
+
+    // The only account carrying the target is itself hidden by an isSigner rule that fires
+    // first, since it sits at the lower index.
+    test_item_t coverer;
+    test_item_t candidate;
+    item_init(&coverer);
+    item_init(&candidate);
+    item_add_port(&coverer, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+    item_add_hide_rule(&coverer, 0, CS_HIDE_CONDITION_IS_SIGNER, SIGNER_DEVICE);
+    item_add_port(&candidate, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_50);
+    item_add_hide_rule(&candidate,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_JUNCTION);
+
+    cs_instruction_result_t items[2] = {coverer.result, candidate.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, &ctx.context, survivors) == 0);
+    assert(survivors[0] == false);
+    assert(survivors[1] == true);
 }
 
 // isSigner hides a survivor whose target is a token account the device signer owns.
@@ -1733,7 +2102,17 @@ int main(void) {
     test_hide_or_across_rule_sets();
     test_hide_and_within_rule_set();
     test_hide_unresolved_target_stays_visible();
-    test_hide_account_effects_deferred();
+    test_hide_account_effects_no_survivor_stays_visible();
+    test_hide_account_effects_value_flow_covered();
+    test_hide_account_effects_amount_mismatch_stays_visible();
+    test_hide_account_effects_symbolic_hidden_stays_visible();
+    test_hide_account_effects_symbolic_survivor_stays_visible();
+    test_hide_account_effects_mint_binding();
+    test_hide_account_effects_owner_binding();
+    test_hide_account_effects_scoped_reset();
+    test_hide_account_effects_represented_not_covered();
+    test_hide_account_effects_no_effect_represented_hides();
+    test_hide_account_effects_coverer_hidden_earlier();
     test_hide_is_signer_via_owner_binding();
     test_hide_is_another_signer();
 

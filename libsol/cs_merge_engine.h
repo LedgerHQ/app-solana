@@ -118,6 +118,16 @@ typedef struct cs_instruction_result_s {
     size_t resolved_hide_rule_count;
     cs_resolved_reset_t *resolved_resets;
     size_t resolved_reset_count;
+    // Resolved MINT_ASSOC pair, borrowed from the buffered transaction. The hide stage reads it
+    // to learn the mint this instruction binds its token account to.
+    bool has_resolved_mint_assoc;
+    const uint8_t *mint_assoc_token_account;
+    const uint8_t *mint_assoc_mint;
+    // Resolved OWNER_ASSOC pair, borrowed from the buffered transaction. The hide stage reads it
+    // to learn the owner this instruction binds its token account to.
+    bool has_resolved_owner_assoc;
+    const uint8_t *owner_assoc_token_account;
+    const uint8_t *owner_assoc_owner;
 } cs_instruction_result_t;
 
 // One transaction-scoped token-account -> owner binding, seeded from OWNER_ASSOC.

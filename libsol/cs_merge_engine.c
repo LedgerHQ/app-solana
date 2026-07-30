@@ -1411,14 +1411,395 @@ static bool condition_account_used_elsewhere(const cs_instruction_result_t *walk
     return false;
 }
 
-// Evaluate one HIDE_RULE condition against its resolved target. The deferred lifecycle
-// predicate never holds, so a rule that names it can only leave the instruction visible.
+// Whether an instruction is a candidate to stand in for a hidden one: not the hidden
+// instruction itself, still a survivor (not merged away, not already hidden earlier in the
+// pass), and carrying a template so it renders a descriptor.
+static bool is_covering_survivor(const bool *survivors,
+                                 const cs_instruction_result_t *walked_instructions,
+                                 size_t index,
+                                 size_t current_index) {
+    bool covering = index != current_index && survivors[index] &&
+                    walked_instructions[index].template != NULL;
+    PRINTF("is_covering_survivor: instruction %d covering=%d\n", (int) index, covering);
+    return covering;
+}
+
+// Whether the instruction moves value on the account through a live port.
+static bool instruction_has_active_port_on(const cs_instruction_result_t *item,
+                                           const uint8_t *account) {
+    for (size_t p = 0; p < item->resolved_port_count; p++) {
+        if (!item->resolved_ports[p].excluded && item->resolved_ports[p].account != NULL &&
+            memcmp(item->resolved_ports[p].account, account, PUBKEY_SIZE) == 0) {
+            PRINTF("instruction_has_active_port_on: port %d moves value on the account\n", (int) p);
+            return true;
+        }
+    }
+    PRINTF("instruction_has_active_port_on: no port moves value on the account\n");
+    return false;
+}
+
+// Whether the instruction shows the account on screen: a resolved ACCOUNT_PATH field carrying
+// its pubkey, which the renderer will not skip.
+static bool instruction_displays_account(const cs_instruction_result_t *item,
+                                         const uint8_t *account) {
+    for (size_t f = 0; f < item->resolved_count; f++) {
+        if (item->template->display_fields[f].source == CS_VALUE_SOURCE_ACCOUNT_PATH &&
+            item->resolved[f].value != NULL && item->resolved[f].value_size == PUBKEY_SIZE &&
+            memcmp(item->resolved[f].value, account, PUBKEY_SIZE) == 0) {
+            PRINTF("instruction_displays_account: field %d renders the account\n", (int) f);
+            return true;
+        }
+    }
+    PRINTF("instruction_displays_account: no field renders the account\n");
+    return false;
+}
+
+// Whether the instruction lists the account in its raw resolved account list.
+static bool instruction_lists_account_raw(const cs_instruction_result_t *item,
+                                          const uint8_t *account) {
+    for (size_t a = 0; a < item->account_count; a++) {
+        if (memcmp(item->accounts[a], account, PUBKEY_SIZE) == 0) {
+            PRINTF("instruction_lists_account_raw: raw slot %d lists the account\n", (int) a);
+            return true;
+        }
+    }
+    PRINTF("instruction_lists_account_raw: account not in the raw list\n");
+    return false;
+}
+
+// Whether a survivor consumes a hidden reset on the target: it lists the account raw and folded
+// in an instruction the reset's scope authorises to consume that reset.
+static bool survivor_consumes_scoped_reset(size_t current_index,
+                                           size_t reset_index,
+                                           const cs_instruction_result_t *walked_instructions,
+                                           size_t count,
+                                           const merge_scratch_t *scratch,
+                                           size_t survivor_index,
+                                           const uint8_t *target) {
+    if (!instruction_lists_account_raw(&walked_instructions[survivor_index], target)) {
+        PRINTF("survivor_consumes_scoped_reset: survivor %d does not list the account raw\n",
+               (int) survivor_index);
+        return false;
+    }
+    // A scope narrows to one program's own entry points; NULL means the reset changed the
+    // account itself, so reset_scope_admits then holds for anyone.
+    const cs_reset_scope_t *scope = NULL;
+    if (walked_instructions[current_index].template->account_resets[reset_index].has_scope) {
+        scope = &walked_instructions[current_index].template->account_resets[reset_index].scope;
+    }
+    for (size_t k = 0; k < count; k++) {
+        if (scratch->states[survivor_index].merged_from[k] &&
+            reset_scope_admits(scope, &walked_instructions[k])) {
+            PRINTF("survivor_consumes_scoped_reset: survivor %d folded in scoped consumer %d\n",
+                   (int) survivor_index,
+                   (int) k);
+            return true;
+        }
+    }
+    PRINTF("survivor_consumes_scoped_reset: survivor %d folded in no scoped consumer\n",
+           (int) survivor_index);
+    return false;
+}
+
+// Whether a survivor port faithfully re-displays a hidden port's effect on their shared
+// account: a concrete amount shown as the same number, under the same token and value kind.
+static bool port_effect_is_covered(const cs_resolved_port_t *hidden_port,
+                                   const cs_resolved_port_t *visible_port) {
+    // A whole-balance hidden leg carries no number, so nothing can be said to re-display it.
+    if (hidden_port->is_symbolic) {
+        PRINTF("port_effect_is_covered: hidden leg is symbolic, never covered\n");
+        return false;
+    }
+    // The survivor must itself show a concrete amount, or the quantity disappears with the leg.
+    if (visible_port->is_symbolic || visible_port->amount_le == NULL) {
+        PRINTF("port_effect_is_covered: survivor leg carries no concrete amount\n");
+        return false;
+    }
+    // A hidden leg naming a concrete amount is only covered when the survivor shows the very
+    // same number; a hidden leg with no amount bytes puts no quantity constraint on the cover.
+    if (hidden_port->amount_le != NULL) {
+        uint64_t hidden_amount = 0;
+        uint64_t visible_amount = 0;
+        if (decode_le_amount(hidden_port->amount_le,
+                             hidden_port->amount_size,
+                             hidden_port->amount_leaf_kind,
+                             &hidden_amount) != 0 ||
+            decode_le_amount(visible_port->amount_le,
+                             visible_port->amount_size,
+                             visible_port->amount_leaf_kind,
+                             &visible_amount) != 0) {
+            PRINTF("port_effect_is_covered: amount undecodable\n");
+            return false;
+        }
+        if (hidden_amount != visible_amount) {
+            PRINTF("port_effect_is_covered: amounts differ\n");
+            return false;
+        }
+    }
+    // A hidden mint must be the very mint the survivor shows; a hidden leg with no mint puts no
+    // token constraint on the cover.
+    if (hidden_port->mint != NULL &&
+        (visible_port->mint == NULL ||
+         memcmp(hidden_port->mint, visible_port->mint, PUBKEY_SIZE) != 0)) {
+        PRINTF("port_effect_is_covered: mints differ\n");
+        return false;
+    }
+    if (hidden_port->value_kind != visible_port->value_kind) {
+        PRINTF("port_effect_is_covered: value kinds differ\n");
+        return false;
+    }
+    PRINTF("port_effect_is_covered: survivor port re-displays the hidden effect\n");
+    return true;
+}
+
+// Whether any survivor re-displays one hidden port's effect on the target.
+static bool port_effect_covered_somewhere(const cs_resolved_port_t *hidden_port,
+                                          const uint8_t *target,
+                                          const bool *survivors,
+                                          const cs_instruction_result_t *walked_instructions,
+                                          size_t count,
+                                          size_t current_index) {
+    for (size_t j = 0; j < count; j++) {
+        if (!is_covering_survivor(survivors, walked_instructions, j, current_index)) {
+            continue;
+        }
+        for (size_t p = 0; p < walked_instructions[j].resolved_port_count; p++) {
+            if (!walked_instructions[j].resolved_ports[p].excluded &&
+                walked_instructions[j].resolved_ports[p].account != NULL &&
+                memcmp(walked_instructions[j].resolved_ports[p].account, target, PUBKEY_SIZE) ==
+                    0 &&
+                port_effect_is_covered(hidden_port, &walked_instructions[j].resolved_ports[p])) {
+                PRINTF("port_effect_covered_somewhere: survivor %d re-displays the port\n",
+                       (int) j);
+                return true;
+            }
+        }
+    }
+    PRINTF("port_effect_covered_somewhere: no survivor re-displays this port\n");
+    return false;
+}
+
+// Whether any survivor consumes one hidden reset on the target: it moves value on the account,
+// or lists it raw while folding a consumer the reset's scope authorises.
+static bool reset_effect_covered_somewhere(size_t current_index,
+                                           size_t reset_index,
+                                           const uint8_t *target,
+                                           const bool *survivors,
+                                           const cs_instruction_result_t *walked_instructions,
+                                           size_t count,
+                                           const merge_scratch_t *scratch) {
+    for (size_t j = 0; j < count; j++) {
+        if (!is_covering_survivor(survivors, walked_instructions, j, current_index)) {
+            continue;
+        }
+        if (instruction_has_active_port_on(&walked_instructions[j], target) ||
+            survivor_consumes_scoped_reset(current_index,
+                                           reset_index,
+                                           walked_instructions,
+                                           count,
+                                           scratch,
+                                           j,
+                                           target)) {
+            PRINTF("reset_effect_covered_somewhere: survivor %d consumes the reset\n", (int) j);
+            return true;
+        }
+    }
+    PRINTF("reset_effect_covered_somewhere: no survivor consumes this reset\n");
+    return false;
+}
+
+// Whether any survivor shows the target with the mint the hidden instruction bound it to.
+static bool mint_effect_covered_somewhere(const uint8_t *target,
+                                          const uint8_t *expected_mint,
+                                          const bool *survivors,
+                                          const cs_instruction_result_t *walked_instructions,
+                                          size_t count,
+                                          size_t current_index) {
+    for (size_t j = 0; j < count; j++) {
+        if (!is_covering_survivor(survivors, walked_instructions, j, current_index)) {
+            continue;
+        }
+        for (size_t p = 0; p < walked_instructions[j].resolved_port_count; p++) {
+            if (!walked_instructions[j].resolved_ports[p].excluded &&
+                walked_instructions[j].resolved_ports[p].account != NULL &&
+                memcmp(walked_instructions[j].resolved_ports[p].account, target, PUBKEY_SIZE) ==
+                    0 &&
+                walked_instructions[j].resolved_ports[p].mint != NULL &&
+                memcmp(walked_instructions[j].resolved_ports[p].mint, expected_mint, PUBKEY_SIZE) ==
+                    0) {
+                PRINTF("mint_effect_covered_somewhere: survivor %d shows the bound mint\n",
+                       (int) j);
+                return true;
+            }
+        }
+    }
+    PRINTF("mint_effect_covered_somewhere: no survivor shows the bound mint\n");
+    return false;
+}
+
+// Whether any survivor visibly renders the target, which is what a bound owner reduces to on
+// screen.
+static bool account_displayed_somewhere(const uint8_t *target,
+                                        const bool *survivors,
+                                        const cs_instruction_result_t *walked_instructions,
+                                        size_t count,
+                                        size_t current_index) {
+    for (size_t j = 0; j < count; j++) {
+        if (is_covering_survivor(survivors, walked_instructions, j, current_index) &&
+            instruction_displays_account(&walked_instructions[j], target)) {
+            PRINTF("account_displayed_somewhere: survivor %d renders the account\n", (int) j);
+            return true;
+        }
+    }
+    PRINTF("account_displayed_somewhere: no survivor renders the account\n");
+    return false;
+}
+
+// Whether some non-hidden survivor stands in for the account on screen: it moves value on it,
+// renders it as a field, or lists it raw while folding a consumer its reset scope authorises.
+static bool account_represented_by_survivor(const uint8_t *target,
+                                            const bool *survivors,
+                                            const cs_instruction_result_t *walked_instructions,
+                                            size_t count,
+                                            size_t current_index,
+                                            const merge_scratch_t *scratch) {
+    for (size_t j = 0; j < count; j++) {
+        if (!is_covering_survivor(survivors, walked_instructions, j, current_index)) {
+            continue;
+        }
+        if (instruction_has_active_port_on(&walked_instructions[j], target) ||
+            instruction_displays_account(&walked_instructions[j], target)) {
+            PRINTF("account_represented_by_survivor: survivor %d moves value on or renders it\n",
+                   (int) j);
+            return true;
+        }
+        for (size_t r = 0; r < walked_instructions[current_index].resolved_reset_count; r++) {
+            if (walked_instructions[current_index].resolved_resets[r].account != NULL &&
+                memcmp(walked_instructions[current_index].resolved_resets[r].account,
+                       target,
+                       PUBKEY_SIZE) == 0 &&
+                survivor_consumes_scoped_reset(current_index,
+                                               r,
+                                               walked_instructions,
+                                               count,
+                                               scratch,
+                                               j,
+                                               target)) {
+                PRINTF("account_represented_by_survivor: survivor %d stands in via a scoped reset\n",
+                       (int) j);
+                return true;
+            }
+        }
+    }
+    PRINTF("account_represented_by_survivor: no survivor stands in for the account\n");
+    return false;
+}
+
+// Whether hiding the instruction loses nothing: a non-hidden survivor stands in for the target
+// and re-displays every effect the hidden instruction produced for it. Any doubt leaves it
+// visible: no target, no survivor standing in, a symbolic amount, an uncovered mint or owner.
+static bool condition_account_effects_displayed_elsewhere(
+    const uint8_t *target,
+    const bool *survivors,
+    const cs_instruction_result_t *walked_instructions,
+    size_t count,
+    size_t current_index,
+    const merge_scratch_t *scratch) {
+    if (target == NULL) {
+        PRINTF("condition_account_effects_displayed_elsewhere: no target\n");
+        return false;
+    }
+
+    // Every value-flow port the hidden instruction moves on the target must reappear, faithfully
+    // re-displayed, on a survivor.
+    bool ports_covered = true;
+    for (size_t p = 0; p < walked_instructions[current_index].resolved_port_count; p++) {
+        if (walked_instructions[current_index].resolved_ports[p].excluded ||
+            walked_instructions[current_index].resolved_ports[p].account == NULL ||
+            memcmp(walked_instructions[current_index].resolved_ports[p].account,
+                   target,
+                   PUBKEY_SIZE) != 0) {
+            continue;
+        }
+        if (!port_effect_covered_somewhere(&walked_instructions[current_index].resolved_ports[p],
+                                           target,
+                                           survivors,
+                                           walked_instructions,
+                                           count,
+                                           current_index)) {
+            ports_covered = false;
+        }
+    }
+
+    // Every reset the hidden instruction declares on the target must be consumed by a survivor.
+    bool resets_covered = true;
+    for (size_t r = 0; r < walked_instructions[current_index].resolved_reset_count; r++) {
+        if (walked_instructions[current_index].resolved_resets[r].account == NULL ||
+            memcmp(walked_instructions[current_index].resolved_resets[r].account,
+                   target,
+                   PUBKEY_SIZE) != 0) {
+            continue;
+        }
+        if (!reset_effect_covered_somewhere(current_index,
+                                            r,
+                                            target,
+                                            survivors,
+                                            walked_instructions,
+                                            count,
+                                            scratch)) {
+            resets_covered = false;
+        }
+    }
+
+    // A mint the hidden instruction binds the target to must be shown by a survivor's token.
+    bool mint_covered = true;
+    if (walked_instructions[current_index].has_resolved_mint_assoc &&
+        memcmp(walked_instructions[current_index].mint_assoc_token_account, target, PUBKEY_SIZE) ==
+            0) {
+        mint_covered = mint_effect_covered_somewhere(target,
+                                                     walked_instructions[current_index].mint_assoc_mint,
+                                                     survivors,
+                                                     walked_instructions,
+                                                     count,
+                                                     current_index);
+    }
+
+    // An owner the hidden instruction binds the target to reduces on screen to the account being
+    // rendered by a survivor.
+    bool owner_covered = true;
+    if (walked_instructions[current_index].has_resolved_owner_assoc &&
+        memcmp(walked_instructions[current_index].owner_assoc_token_account, target, PUBKEY_SIZE) ==
+            0) {
+        owner_covered =
+            account_displayed_somewhere(target, survivors, walked_instructions, count, current_index);
+    }
+
+    bool represented = account_represented_by_survivor(target,
+                                                       survivors,
+                                                       walked_instructions,
+                                                       count,
+                                                       current_index,
+                                                       scratch);
+    PRINTF("condition_account_effects_displayed_elsewhere: instruction %d represented=%d ports=%d "
+           "resets=%d mint=%d owner=%d\n",
+           (int) current_index,
+           represented,
+           ports_covered,
+           resets_covered,
+           mint_covered,
+           owner_covered);
+    return represented && ports_covered && resets_covered && mint_covered && owner_covered;
+}
+
+// Evaluate one HIDE_RULE condition against its resolved target.
 static bool hide_condition_holds(uint8_t condition,
                                  const uint8_t *target,
                                  const cs_instruction_result_t *walked_instructions,
                                  size_t count,
                                  size_t instruction_index,
-                                 const cs_merge_context_t *context) {
+                                 const cs_merge_context_t *context,
+                                 const bool *survivors,
+                                 const merge_scratch_t *scratch) {
     PRINTF("hide_condition_holds: condition=%d\n", condition);
     bool holds = false;
     switch (condition) {
@@ -1436,8 +1817,12 @@ static bool hide_condition_holds(uint8_t condition,
             holds = condition_is_another_signer(target, context);
             break;
         case CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE:
-            PRINTF("hide_condition_holds: accountEffectsDisplayedElsewhere not evaluated, stays false\n");
-            holds = false;
+            holds = condition_account_effects_displayed_elsewhere(target,
+                                                                  survivors,
+                                                                  walked_instructions,
+                                                                  count,
+                                                                  instruction_index,
+                                                                  scratch);
             break;
         default:
             PRINTF("hide_condition_holds: unexpected condition %d, stays false\n", condition);
@@ -1578,7 +1963,9 @@ static bool hide_rule_set_passes(const cs_instruction_result_t *walked_instructi
                                  size_t count,
                                  size_t instruction_index,
                                  uint8_t set_index,
-                                 const cs_merge_context_t *context) {
+                                 const cs_merge_context_t *context,
+                                 const bool *survivors,
+                                 const merge_scratch_t *scratch) {
     const cs_instruction_template_t *template = walked_instructions[instruction_index].template;
     for (size_t r = 0; r < template->hide_rule_count; r++) {
         if (template->hide_rules[r].rule_set_index != set_index) {
@@ -1589,7 +1976,9 @@ static bool hide_rule_set_passes(const cs_instruction_result_t *walked_instructi
                                   walked_instructions,
                                   count,
                                   instruction_index,
-                                  context)) {
+                                  context,
+                                  survivors,
+                                  scratch)) {
             PRINTF("hide_rule_set_passes: rule %d of set %d fails\n", (int) r, set_index);
             return false;
         }
@@ -1603,7 +1992,9 @@ static bool hide_rule_set_passes(const cs_instruction_result_t *walked_instructi
 static bool instruction_is_hidden(const cs_instruction_result_t *walked_instructions,
                                   size_t count,
                                   size_t instruction_index,
-                                  const cs_merge_context_t *context) {
+                                  const cs_merge_context_t *context,
+                                  const bool *survivors,
+                                  const merge_scratch_t *scratch) {
     const cs_instruction_template_t *template = walked_instructions[instruction_index].template;
     for (size_t h = 0; h < template->hide_rule_count; h++) {
         uint8_t set_index = template->hide_rules[h].rule_set_index;
@@ -1614,8 +2005,13 @@ static bool instruction_is_hidden(const cs_instruction_result_t *walked_instruct
                 first_of_set = false;
             }
         }
-        if (first_of_set &&
-            hide_rule_set_passes(walked_instructions, count, instruction_index, set_index, context)) {
+        if (first_of_set && hide_rule_set_passes(walked_instructions,
+                                                 count,
+                                                 instruction_index,
+                                                 set_index,
+                                                 context,
+                                                 survivors,
+                                                 scratch)) {
             PRINTF("instruction_is_hidden: instruction %d hidden by set %d\n",
                    (int) instruction_index,
                    set_index);
@@ -1627,16 +2023,18 @@ static bool instruction_is_hidden(const cs_instruction_result_t *walked_instruct
 
 // Drop from the output every merge survivor whose HIDE_RULEs hide it, so its plumbing never
 // reaches the screen. Runs after the scan, over survivors, so a merged-away instruction is
-// never reconsidered.
+// never reconsidered. A rule set is judged against the survivors still standing, so an
+// accountEffectsDisplayedElsewhere rule reasons about who is left on screen.
 static void apply_hide_rules(const cs_instruction_result_t *walked_instructions,
                              size_t count,
                              const cs_merge_context_t *context,
+                             const merge_scratch_t *scratch,
                              bool *survivors) {
     for (size_t i = 0; i < count; i++) {
         // A survivor with no template carries no HIDE_RULEs, so nothing can hide it.
         if (survivors[i] && walked_instructions[i].template != NULL &&
             walked_instructions[i].template->hide_rule_count > 0 &&
-            instruction_is_hidden(walked_instructions, count, i, context)) {
+            instruction_is_hidden(walked_instructions, count, i, context, survivors, scratch)) {
             PRINTF("apply_hide_rules: instruction %d hidden\n", (int) i);
             survivors[i] = false;
         }
@@ -1753,7 +2151,7 @@ static int merge_engine_run_inner(cs_instruction_result_t *walked_instructions,
 
     // Hide last, over survivors only: a HIDE_RULE reasons about the post-merge account set,
     // and a merged-away instruction has no screen to remove.
-    apply_hide_rules(walked_instructions, count, context, survivors);
+    apply_hide_rules(walked_instructions, count, context, scratch, survivors);
     return 0;
 }
 

@@ -625,6 +625,11 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
         bindings[*binding_count].token_account = token_account;
         bindings[*binding_count].mint = mint;
         (*binding_count)++;
+        // The merge engine's accountEffectsDisplayedElsewhere reads the pair per instruction,
+        // and the raw accounts list is compacted so it cannot recover them by slot index.
+        result->has_resolved_mint_assoc = true;
+        result->mint_assoc_token_account = token_account;
+        result->mint_assoc_mint = mint;
     }
 
     // Resolve each port's local values (account, non-ARGUMENT_PATH amount and
@@ -694,6 +699,11 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
         owner_bindings[*owner_binding_count].token_account = owner_token_account;
         owner_bindings[*owner_binding_count].owner = owner;
         (*owner_binding_count)++;
+        // The merge engine's accountEffectsDisplayedElsewhere reads the pair per instruction,
+        // and the raw accounts list is compacted so it cannot recover them by slot index.
+        result->has_resolved_owner_assoc = true;
+        result->owner_assoc_token_account = owner_token_account;
+        result->owner_assoc_owner = owner;
     }
 
     // Resolve each TOKEN_AMOUNT field's mint reference to a token_ref pubkey.
