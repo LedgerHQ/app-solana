@@ -218,6 +218,9 @@ static int print_create_stake_account(const PrintConfig *print_config,
     const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
     const StakeInitializeInfo *si_info = &infos[1]->stake.initialize;
 
+    // Created and initialized account must be the same
+    BAIL_IF(!pubkeys_equal(ca_info->to, si_info->account));
+
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create stake acct", ca_info->to);
 
@@ -234,6 +237,9 @@ static int print_create_stake_account_with_seed(const PrintConfig *print_config,
 
     const SystemCreateAccountWithSeedInfo *cws_info = &infos[0]->system.create_account_with_seed;
     const StakeInitializeInfo *si_info = &infos[1]->stake.initialize;
+
+    // Created and initialized account must be the same
+    BAIL_IF(!pubkeys_equal(cws_info->to, si_info->account));
 
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create stake acct", cws_info->to);
@@ -252,6 +258,10 @@ static int print_create_stake_account_and_delegate(const PrintConfig *print_conf
     const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
     const StakeInitializeInfo *si_info = &infos[1]->stake.initialize;
     const StakeDelegateInfo *sd_info = &infos[2]->stake.delegate_stake;
+
+    // Created, initialized and delegated account must be the same
+    BAIL_IF(!pubkeys_equal(ca_info->to, si_info->account));
+    BAIL_IF(!pubkeys_equal(ca_info->to, sd_info->stake_pubkey));
 
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Delegated from", ca_info->to);
@@ -272,6 +282,10 @@ static int print_create_stake_account_with_seed_and_delegate(const PrintConfig *
     const SystemCreateAccountWithSeedInfo *cws_info = &infos[0]->system.create_account_with_seed;
     const StakeInitializeInfo *si_info = &infos[1]->stake.initialize;
     const StakeDelegateInfo *sd_info = &infos[2]->stake.delegate_stake;
+
+    // Created, initialized and delegated account must be the same
+    BAIL_IF(!pubkeys_equal(cws_info->to, si_info->account));
+    BAIL_IF(!pubkeys_equal(cws_info->to, sd_info->stake_pubkey));
 
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Delegated from", cws_info->to);
@@ -391,6 +405,9 @@ static int print_create_nonce_account(const PrintConfig *print_config,
     const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
     const SystemInitializeNonceInfo *ni_info = &infos[1]->system.initialize_nonce;
 
+    // Created and initialized account must be the same
+    BAIL_IF(!pubkeys_equal(ca_info->to, ni_info->account));
+
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create nonce acct", ca_info->to);
 
@@ -407,6 +424,9 @@ static int print_create_nonce_account_with_seed(const PrintConfig *print_config,
 
     const SystemCreateAccountWithSeedInfo *ca_info = &infos[0]->system.create_account_with_seed;
     const SystemInitializeNonceInfo *ni_info = &infos[1]->system.initialize_nonce;
+
+    // Created and initialized account must be the same
+    BAIL_IF(!pubkeys_equal(ca_info->to, ni_info->account));
 
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create nonce acct", ca_info->to);
@@ -425,6 +445,9 @@ static int print_create_vote_account(const PrintConfig *print_config,
     const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
     const VoteInitializeInfo *vi_info = &infos[1]->vote.initialize;
 
+    // Created and initialized account must be the same
+    BAIL_IF(!pubkeys_equal(ca_info->to, vi_info->account));
+
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create vote acct", ca_info->to);
 
@@ -441,6 +464,9 @@ static int print_create_vote_account_with_seed(const PrintConfig *print_config,
 
     const SystemCreateAccountWithSeedInfo *ca_info = &infos[0]->system.create_account_with_seed;
     const VoteInitializeInfo *vi_info = &infos[1]->vote.initialize;
+
+    // Created and initialized account must be the same
+    BAIL_IF(!pubkeys_equal(ca_info->to, vi_info->account));
 
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create vote acct", ca_info->to);
