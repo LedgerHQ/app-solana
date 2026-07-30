@@ -25,6 +25,11 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
                             size_t walked_instructions_count,
                             const bool *survivors);
 
+// Append an app-generated title/value pair after the rendered instruction
+// fields. Both strings are copied. Returns 0 on success, -1 on allocation
+// failure. Called after cs_display_renderer_run to add transaction-level fields.
+int cs_display_renderer_append(const char *title, const char *value);
+
 // Number of produced display elements. Zero means not yet rendered.
 size_t cs_display_renderer_element_count(void);
 

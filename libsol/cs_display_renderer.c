@@ -609,6 +609,12 @@ static int format_account_short_named(const idl_resolved_leaf_t *leaf,
     }
 }
 
+// True for the signed integer leaf kinds.
+static bool is_signed_int_kind(uint8_t kind) {
+    return kind == IDL_KIND_I8 || kind == IDL_KIND_I16 || kind == IDL_KIND_I32 ||
+           kind == IDL_KIND_I64;
+}
+
 // PARAM_DURATION: a numeric value of seconds rendered as "H:MM:SS".
 static int format_duration(const idl_resolved_leaf_t *leaf,
                            char *value_out,
@@ -620,9 +626,24 @@ static int format_duration(const idl_resolved_leaf_t *leaf,
     char hours_str[21];
     int written;
 
-    if (read_leaf_u64(leaf, &total_seconds) != 0) {
-        PRINTF("format_duration: unsupported leaf kind %d\n", leaf->kind);
-        return -1;
+    // A duration may be encoded as a signed integer (e.g. i64): read those
+    // sign-extended and refuse a negative count. Unsigned kinds read directly.
+    if (is_signed_int_kind(leaf->kind)) {
+        int64_t signed_seconds;
+        if (read_leaf_i64(leaf, &signed_seconds) != 0) {
+            PRINTF("format_duration: signed read failed\n");
+            return -1;
+        }
+        if (signed_seconds < 0) {
+            PRINTF("format_duration: negative duration %lld\n", signed_seconds);
+            return -1;
+        }
+        total_seconds = (uint64_t) signed_seconds;
+    } else {
+        if (read_leaf_u64(leaf, &total_seconds) != 0) {
+            PRINTF("format_duration: unsupported leaf kind %d\n", leaf->kind);
+            return -1;
+        }
     }
     // Split the total seconds into H:MM:SS components.
     hours = total_seconds / 3600;
@@ -641,12 +662,6 @@ static int format_duration(const idl_resolved_leaf_t *leaf,
     }
     PRINTF("format_duration: rendered value=%s\n", value_out);
     return 0;
-}
-
-// True for the signed integer leaf kinds.
-static bool is_signed_int_kind(uint8_t kind) {
-    return kind == IDL_KIND_I8 || kind == IDL_KIND_I16 || kind == IDL_KIND_I32 ||
-           kind == IDL_KIND_I64;
 }
 
 // PARAM_DATETIME: a numeric value of ticks rendered as "YYYY-MM-DD hh:mm:ss".
@@ -709,16 +724,18 @@ static int format_unit(const idl_resolved_leaf_t *leaf,
         PRINTF("format_unit: print_token_amount failed\n");
         return -1;
     }
-    // Affix the symbol before or after the scaled number, no separator. A field
-    // with no symbol renders the bare number.
+    // Affix the symbol before or after the scaled number, separated by a space.
+    // A field with no symbol renders the bare number with no dangling separator.
     const char *symbol = "";
+    const char *separator = "";
     if (unit->symbol != NULL) {
         symbol = unit->symbol;
+        separator = " ";
     }
     if (unit->prefix) {
-        written = snprintf(value_out, value_out_size, "%s%s", symbol, number);
+        written = snprintf(value_out, value_out_size, "%s%s%s", symbol, separator, number);
     } else {
-        written = snprintf(value_out, value_out_size, "%s%s", number, symbol);
+        written = snprintf(value_out, value_out_size, "%s%s%s", number, separator, symbol);
     }
     if (written < 0 || (size_t) written >= value_out_size) {
         PRINTF("format_unit: output does not fit\n");
@@ -1248,6 +1265,44 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
 
     PRINTF("cs_display_renderer_run: produced %u elements\n",
            (unsigned) G_cs_display_renderer.count);
+    return 0;
+}
+
+// Copy a NUL-terminated string into a freshly sized heap buffer. Returns the
+// buffer, or NULL on allocation failure.
+static char *duplicate_string(const char *source) {
+    size_t size = strlen(source) + 1;
+    char *copy = NULL;
+    if (!APP_MEM_CALLOC((void **) &copy, size)) {
+        PRINTF("duplicate_string: allocation of %u bytes failed\n", (unsigned) size);
+        return NULL;
+    }
+    memcpy(copy, source, size);
+    return copy;
+}
+
+int cs_display_renderer_append(const char *title, const char *value) {
+    if (title == NULL || value == NULL) {
+        PRINTF("cs_display_renderer_append: NULL title or value\n");
+        return -1;
+    }
+    // Grows the same flat list the run loop fills, so the pair becomes the next
+    // trailing review screen. A half-filled element left by a failure here is
+    // released by cs_display_renderer_reset, which tolerates NULL strings.
+    cs_display_element_t *element = append_element();
+    if (element == NULL) {
+        PRINTF("cs_display_renderer_append: element append failed\n");
+        return -1;
+    }
+    element->title = duplicate_string(title);
+    if (element->title == NULL) {
+        return -1;
+    }
+    element->value = duplicate_string(value);
+    if (element->value == NULL) {
+        return -1;
+    }
+    PRINTF("cs_display_renderer_append: %s = %s\n", title, value);
     return 0;
 }
 

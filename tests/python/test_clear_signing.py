@@ -2343,6 +2343,159 @@ def test_bridge_account_param_type(backend, sol, scenario_navigator, root_pytest
     _wipe_session(sol)
 
 
+def test_bridge_amount_param_with_account_path(backend, sol, scenario_navigator, root_pytest_dir):
+    """A typed param (here PARAM_AMOUNT) whose VALUE is an ACCOUNT_PATH renders the
+    account address; the amount format tags (decimals) are ignored."""
+    destination_pubkey = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+    message = _craft_instruction_with_accounts(
+        sol,
+        BRIDGE_PROGRAM_ID,
+        _bridge_instruction_data(42, 7_000_000),
+        extra_accounts=[destination_pubkey],
+    )
+    _begin_session(sol, message)
+
+    # PARAM_AMOUNT pointing at account index 1 with a decimals tag that must be ignored.
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ACCOUNT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, bytes([1])))
+    param = (format_tlv(PARAM_TAG_VERSION, 1)
+             + format_tlv(PARAM_TAG_VALUE, value_tlv)
+             + format_tlv(PARAM_TAG_DECIMALS, 6))
+    display_field = (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+                     + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+                     + format_tlv(DISPLAY_FIELD_TAG_NAME, "Destination")
+                     + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_AMOUNT)
+                     + format_tlv(DISPLAY_FIELD_TAG_PARAM, param))
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+# ── ComputeBudget fee: excluded from the walk, shown as a trailing "Max fees" ─
+
+COMPUTE_BUDGET_PROGRAM_ID = "ComputeBudget111111111111111111111111111111"
+COMPUTE_BUDGET_SET_UNIT_LIMIT = 0x02
+COMPUTE_BUDGET_SET_UNIT_PRICE = 0x03
+
+
+def _compute_budget_unit_limit(units: int) -> Instruction:
+    """A SetComputeUnitLimit ComputeBudget instruction (kind 2, u32 units)."""
+    return Instruction(
+        program_id=Pubkey.from_string(COMPUTE_BUDGET_PROGRAM_ID),
+        accounts=[],
+        data=bytes([COMPUTE_BUDGET_SET_UNIT_LIMIT]) + struct.pack("<I", units))
+
+
+def _compute_budget_unit_price(micro_lamports: int) -> Instruction:
+    """A SetComputeUnitPrice ComputeBudget instruction (kind 3, u64 microlamports/CU)."""
+    return Instruction(
+        program_id=Pubkey.from_string(COMPUTE_BUDGET_PROGRAM_ID),
+        accounts=[],
+        data=bytes([COMPUTE_BUDGET_SET_UNIT_PRICE]) + struct.pack("<Q", micro_lamports))
+
+
+def _craft_bridge_with_compute_budget(sol: SolanaClient, cb_instructions: list, *,
+                                      include_bridge: bool = True) -> bytes:
+    """Build a message optionally carrying one BRIDGE instruction followed by the
+    given ComputeBudget instructions."""
+    sender = Pubkey.from_bytes(sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH))
+    instructions = []
+    if include_bridge:
+        instructions.append(Instruction(
+            program_id=Pubkey.from_bytes(BRIDGE_PROGRAM_ID),
+            accounts=[AccountMeta(pubkey=sender, is_signer=True, is_writable=True)],
+            data=_bridge_instruction_data(1000, 5_000_000)))
+    instructions.extend(cb_instructions)
+    return sol.craft_tx(instructions, sender)
+
+
+def _provide_bridge_info(sol: SolanaClient, display_field: bytes) -> None:
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+
+def test_compute_budget_fee_displayed(backend, sol, scenario_navigator, root_pytest_dir):
+    """A ComputeBudget unit limit + price alongside a described instruction is
+    excluded from the walk (no template needed) and surfaces as a trailing
+    'Max fees' field rather than refusing the transaction."""
+    message = _craft_bridge_with_compute_budget(
+        sol,
+        [_compute_budget_unit_limit(1_000_000), _compute_budget_unit_price(1_000)])
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    _provide_bridge_info(sol, display_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve(path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_compute_budget_only_transaction_refused(backend):
+    """A transaction whose only instruction is a ComputeBudget instruction has no
+    signable intent: the fee field is not appended on its own, so the review is
+    empty and PROMPT UI DISPLAY refuses."""
+    sol = SolanaClient(backend)
+    message = _craft_bridge_with_compute_budget(
+        sol, [_compute_budget_unit_price(1_000)], include_bridge=False)
+    _begin_session(sol, message)
+
+    # A committed template exists but matches nothing in this ComputeBudget-only tx.
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    _provide_bridge_info(sol, display_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.prompt_ui_display()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+    _wipe_session(sol)
+
+
+def test_compute_budget_fee_overflow_refused(backend):
+    """A unit price that overflows the fee computation is refused at finalize; the
+    transaction is not signed with a bogus fee."""
+    sol = SolanaClient(backend)
+    message = _craft_bridge_with_compute_budget(
+        sol,
+        [_compute_budget_unit_limit(200_000), _compute_budget_unit_price(0xFFFFFFFFFFFFFFFF)])
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    _provide_bridge_info(sol, display_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.INVALID_GENERIC_PREVIEW
+    _wipe_session(sol)
+
+
 # ── ENUM end-to-end: variant name resolution and payload consumption ─────────
 
 # Synthetic program whose single instruction argument struct starts with a
@@ -3017,7 +3170,7 @@ def test_typed_duration(backend, sol, scenario_navigator, root_pytest_dir):
 
 
 def test_typed_unit_suffix(backend, sol, scenario_navigator, root_pytest_dir):
-    """PARAM_UNIT with a suffix symbol: 1250 scaled by 2 decimals -> '12.5%'."""
+    """PARAM_UNIT with a suffix symbol: 1250 scaled by 2 decimals -> '12.5 %'."""
     message = _craft_single_instruction_message(
         sol, TYPED_PROGRAM_ID,
         _typed_instruction_data(b'\x11' * 32, 0, 1250, b"x"))

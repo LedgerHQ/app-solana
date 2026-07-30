@@ -483,6 +483,25 @@ static int extract_value(const buffer_t *value_buf, cs_value_t *out) {
     return 0;
 }
 
+// Register an ACCOUNT_PATH value as an account display field, always rendered as
+// a short-form base58 address. Returns 0 on success, -1 on a malformed payload.
+static int register_account_path_value(const cs_value_t *value, const char *field_name) {
+    // The payload is the single-byte index into the instruction accounts. An
+    // account is shown as its address, so the calling param's declared type and
+    // format parameters do not apply and are not consulted here.
+    if (value->payload.size != 1) {
+        PRINTF("substructure: ACCOUNT_PATH payload size %d != 1\n", value->payload.size);
+        return -1;
+    }
+    if (cs_instruction_template_add_account_field(value->payload.ptr[0], field_name) != 0) {
+        return -1;
+    }
+    PRINTF("substructure: registered account field index=%d name=%s\n",
+           value->payload.ptr[0],
+           field_name ? field_name : "(none)");
+    return 0;
+}
+
 // Register a PARAM_RAW display field (also handles ACCOUNT_PATH and CONSTANT sources).
 static int register_param_raw(const display_field_out_t *display_field, const char *field_name) {
     param_raw_out_t param = {0};
@@ -512,16 +531,9 @@ static int register_param_raw(const display_field_out_t *display_field, const ch
                value.payload.ptr,
                field_name ? field_name : "(none)");
     } else if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
-        if (value.payload.size != 1) {
-            PRINTF("substructure: ACCOUNT_PATH payload size %d != 1\n", value.payload.size);
+        if (register_account_path_value(&value, field_name) != 0) {
             return -1;
         }
-        if (cs_instruction_template_add_account_field(value.payload.ptr[0], field_name) != 0) {
-            return -1;
-        }
-        PRINTF("substructure: registered account field index=%d name=%s\n",
-               value.payload.ptr[0],
-               field_name ? field_name : "(none)");
     } else if (value.source == CS_VALUE_SOURCE_CONSTANT) {
         uint8_t kind = 0;
         if (param.kind.ptr != NULL && param.kind.size == 1) {
@@ -544,8 +556,9 @@ static int register_param_raw(const display_field_out_t *display_field, const ch
     return 0;
 }
 
-// Register a PARAM_ENUM display field (ARGUMENT_PATH only).
-// The enum leaf is resolved by the walker to its selected variant's display name.
+// Register a PARAM_ENUM display field. An ARGUMENT_PATH enum leaf is resolved by
+// the walker to its selected variant's display name; an ACCOUNT_PATH value is
+// rendered as a base58 address.
 static int register_param_enum(const display_field_out_t *display_field, const char *field_name) {
     param_enum_out_t param = {0};
     if (!parse_param_enum(&display_field->param, &param, &param.received_tags)) {
@@ -571,25 +584,31 @@ static int register_param_enum(const display_field_out_t *display_field, const c
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: PARAM_ENUM requires ARGUMENT_PATH source, got %d\n", value.source);
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        if (register_account_path_value(&value, field_name) != 0) {
+            return -1;
+        }
+    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                     value.payload.size,
+                                                     CS_PARAM_TYPE_ENUM,
+                                                     field_name) != 0) {
+            return -1;
+        }
+        PRINTF("substructure: registered ENUM path %.*H name=%s\n",
+               value.payload.size,
+               value.payload.ptr,
+               field_name ? field_name : "(none)");
+    } else {
+        PRINTF("substructure: PARAM_ENUM requires ARGUMENT or ACCOUNT path, got %d\n",
+               value.source);
         return -1;
     }
-
-    if (cs_instruction_template_add_display_path(value.payload.ptr,
-                                                 value.payload.size,
-                                                 CS_PARAM_TYPE_ENUM,
-                                                 field_name) != 0) {
-        return -1;
-    }
-    PRINTF("substructure: registered ENUM path %.*H name=%s\n",
-           value.payload.size,
-           value.payload.ptr,
-           field_name ? field_name : "(none)");
     return 0;
 }
 
-// Register a PARAM_AMOUNT display field (ARGUMENT_PATH only).
+// Register a PARAM_AMOUNT display field. An ACCOUNT_PATH value is rendered as a
+// base58 address instead of a formatted amount.
 static int register_param_amount(const display_field_out_t *display_field,
                                  const char *field_name) {
     param_amount_out_t param = {0};
@@ -606,38 +625,43 @@ static int register_param_amount(const display_field_out_t *display_field,
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: PARAM_AMOUNT requires ARGUMENT_PATH source, got %d\n",
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        if (register_account_path_value(&value, field_name) != 0) {
+            return -1;
+        }
+    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                     value.payload.size,
+                                                     CS_PARAM_TYPE_AMOUNT,
+                                                     field_name) != 0) {
+            return -1;
+        }
+
+        uint8_t decimals = 0;
+        if (param.decimals.ptr != NULL && param.decimals.size == 1) {
+            decimals = param.decimals.ptr[0];
+        }
+        if (cs_instruction_template_set_format_amount(decimals,
+                                                      param.max_label.ptr,
+                                                      param.max_label.size) != 0) {
+            PRINTF("substructure: set_format_amount failed\n");
+            return -1;
+        }
+        PRINTF("substructure: registered AMOUNT path %.*H decimals=%d name=%s\n",
+               value.payload.size,
+               value.payload.ptr,
+               decimals,
+               field_name ? field_name : "(none)");
+    } else {
+        PRINTF("substructure: PARAM_AMOUNT requires ARGUMENT or ACCOUNT path, got %d\n",
                value.source);
         return -1;
     }
-
-    if (cs_instruction_template_add_display_path(value.payload.ptr,
-                                                 value.payload.size,
-                                                 CS_PARAM_TYPE_AMOUNT,
-                                                 field_name) != 0) {
-        return -1;
-    }
-
-    uint8_t decimals = 0;
-    if (param.decimals.ptr != NULL && param.decimals.size == 1) {
-        decimals = param.decimals.ptr[0];
-    }
-    if (cs_instruction_template_set_format_amount(decimals,
-                                                  param.max_label.ptr,
-                                                  param.max_label.size) != 0) {
-        PRINTF("substructure: set_format_amount failed\n");
-        return -1;
-    }
-    PRINTF("substructure: registered AMOUNT path %.*H decimals=%d name=%s\n",
-           value.payload.size,
-           value.payload.ptr,
-           decimals,
-           field_name ? field_name : "(none)");
     return 0;
 }
 
-// Register a PARAM_TOKEN_AMOUNT display field (ARGUMENT_PATH only).
+// Register a PARAM_TOKEN_AMOUNT display field. An ACCOUNT_PATH value is rendered
+// as a base58 address instead of a formatted token amount.
 static int register_param_token_amount(const display_field_out_t *display_field,
                                        const char *field_name) {
     param_token_amount_out_t param = {0};
@@ -654,92 +678,97 @@ static int register_param_token_amount(const display_field_out_t *display_field,
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: PARAM_TOKEN_AMOUNT requires ARGUMENT_PATH source, got %d\n",
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        if (register_account_path_value(&value, field_name) != 0) {
+            return -1;
+        }
+    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                     value.payload.size,
+                                                     CS_PARAM_TYPE_TOKEN_AMOUNT,
+                                                     field_name) != 0) {
+            return -1;
+        }
+
+        bool is_native = (param.is_native.ptr != NULL && param.is_native.size == 1 &&
+                          param.is_native.ptr[0] == 1);
+        bool has_token = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_TOKEN_AMOUNT_TAG_TOKEN);
+        bool has_decimals =
+            TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_TOKEN_AMOUNT_TAG_DECIMALS);
+
+        // Native SOL carries its own built-in metadata; a mint reference or decimals
+        // override alongside it is contradictory.
+        if (is_native && (has_token || has_decimals)) {
+            PRINTF("substructure: TOKEN_AMOUNT native cannot carry a TOKEN reference or DECIMALS\n");
+            return -1;
+        }
+
+        cs_format_token_amount_t format = {0};
+        if (is_native) {
+            format.mint_source = CS_TOKEN_MINT_NATIVE;
+        } else if (has_token) {
+            cs_value_t token;
+            if (extract_value(&param.token, &token) != 0) {
+                return -1;
+            }
+            if (token.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+                if (token.payload.size != 1) {
+                    PRINTF("substructure: TOKEN ACCOUNT_PATH payload size %d != 1\n",
+                           token.payload.size);
+                    return -1;
+                }
+                format.mint_source = CS_TOKEN_MINT_ACCOUNT_INDEX;
+                format.ref.account_index = token.payload.ptr[0];
+            } else if (token.source == CS_VALUE_SOURCE_CONSTANT) {
+                if (token.payload.size != 32) {
+                    PRINTF("substructure: TOKEN CONSTANT payload size %d != 32\n",
+                           token.payload.size);
+                    return -1;
+                }
+                format.mint_source = CS_TOKEN_MINT_CONSTANT;
+                memcpy(format.ref.mint, token.payload.ptr, 32);
+            } else {
+                PRINTF("substructure: TOKEN source %d unsupported\n", token.source);
+                return -1;
+            }
+        } else {
+            format.mint_source = CS_TOKEN_MINT_NONE;
+        }
+
+        // Optional DECIMALS override: replaces the mint's default magnitude. Only a
+        // CONSTANT single byte is a usable override; anything else is refused.
+        if (has_decimals) {
+            cs_value_t decimals;
+            if (extract_value(&param.decimals, &decimals) != 0) {
+                return -1;
+            }
+            if (decimals.source != CS_VALUE_SOURCE_CONSTANT || decimals.payload.size != 1) {
+                PRINTF("substructure: DECIMALS must be a 1-byte CONSTANT (source %d size %d)\n",
+                       decimals.source,
+                       decimals.payload.size);
+                return -1;
+            }
+            format.has_decimals = true;
+            format.decimals = decimals.payload.ptr[0];
+        }
+
+        if (cs_instruction_template_set_format_token_amount(&format,
+                                                             param.max_label.ptr,
+                                                             param.max_label.size) != 0) {
+            PRINTF("substructure: set_format_token_amount failed\n");
+            return -1;
+        }
+
+        PRINTF("substructure: registered TOKEN_AMOUNT path %.*H mint_source=%d name=%s\n",
+               value.payload.size,
+               value.payload.ptr,
+               format.mint_source,
+               field_name ? field_name : "(none)");
+    } else {
+        PRINTF("substructure: PARAM_TOKEN_AMOUNT requires ARGUMENT or ACCOUNT path, got %d\n",
                value.source);
         return -1;
     }
-
-    if (cs_instruction_template_add_display_path(value.payload.ptr,
-                                                 value.payload.size,
-                                                 CS_PARAM_TYPE_TOKEN_AMOUNT,
-                                                 field_name) != 0) {
-        return -1;
-    }
-
-    bool is_native = (param.is_native.ptr != NULL && param.is_native.size == 1 &&
-                      param.is_native.ptr[0] == 1);
-    bool has_token = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_TOKEN_AMOUNT_TAG_TOKEN);
-    bool has_decimals =
-        TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_TOKEN_AMOUNT_TAG_DECIMALS);
-
-    // Native SOL carries its own built-in metadata; a mint reference or decimals
-    // override alongside it is contradictory.
-    if (is_native && (has_token || has_decimals)) {
-        PRINTF("substructure: TOKEN_AMOUNT native cannot carry a TOKEN reference or DECIMALS\n");
-        return -1;
-    }
-
-    cs_format_token_amount_t format = {0};
-    if (is_native) {
-        format.mint_source = CS_TOKEN_MINT_NATIVE;
-    } else if (has_token) {
-        cs_value_t token;
-        if (extract_value(&param.token, &token) != 0) {
-            return -1;
-        }
-        if (token.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
-            if (token.payload.size != 1) {
-                PRINTF("substructure: TOKEN ACCOUNT_PATH payload size %d != 1\n",
-                       token.payload.size);
-                return -1;
-            }
-            format.mint_source = CS_TOKEN_MINT_ACCOUNT_INDEX;
-            format.ref.account_index = token.payload.ptr[0];
-        } else if (token.source == CS_VALUE_SOURCE_CONSTANT) {
-            if (token.payload.size != 32) {
-                PRINTF("substructure: TOKEN CONSTANT payload size %d != 32\n", token.payload.size);
-                return -1;
-            }
-            format.mint_source = CS_TOKEN_MINT_CONSTANT;
-            memcpy(format.ref.mint, token.payload.ptr, 32);
-        } else {
-            PRINTF("substructure: TOKEN source %d unsupported\n", token.source);
-            return -1;
-        }
-    } else {
-        format.mint_source = CS_TOKEN_MINT_NONE;
-    }
-
-    // Optional DECIMALS override: replaces the mint's default magnitude. Only a
-    // CONSTANT single byte is a usable override; anything else is refused.
-    if (has_decimals) {
-        cs_value_t decimals;
-        if (extract_value(&param.decimals, &decimals) != 0) {
-            return -1;
-        }
-        if (decimals.source != CS_VALUE_SOURCE_CONSTANT || decimals.payload.size != 1) {
-            PRINTF("substructure: DECIMALS must be a 1-byte CONSTANT (source %d size %d)\n",
-                   decimals.source,
-                   decimals.payload.size);
-            return -1;
-        }
-        format.has_decimals = true;
-        format.decimals = decimals.payload.ptr[0];
-    }
-
-    if (cs_instruction_template_set_format_token_amount(&format,
-                                                         param.max_label.ptr,
-                                                         param.max_label.size) != 0) {
-        PRINTF("substructure: set_format_token_amount failed\n");
-        return -1;
-    }
-
-    PRINTF("substructure: registered TOKEN_AMOUNT path %.*H mint_source=%d name=%s\n",
-           value.payload.size,
-           value.payload.ptr,
-           format.mint_source,
-           field_name ? field_name : "(none)");
     return 0;
 }
 
@@ -763,7 +792,8 @@ static bool read_be_uint(const buffer_t *buf, size_t max_bytes, uint32_t fallbac
     return true;
 }
 
-// Register a PARAM_DATETIME display field (ARGUMENT_PATH only).
+// Register a PARAM_DATETIME display field. An ACCOUNT_PATH value is rendered as a
+// base58 address instead of a formatted timestamp.
 static int register_param_datetime(const display_field_out_t *display_field,
                                    const char *field_name) {
     param_datetime_out_t param = {0};
@@ -780,41 +810,46 @@ static int register_param_datetime(const display_field_out_t *display_field,
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: PARAM_DATETIME requires ARGUMENT_PATH source, got %d\n",
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        if (register_account_path_value(&value, field_name) != 0) {
+            return -1;
+        }
+    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        uint32_t ticks_per_second = 1;
+        if (!read_be_uint(&param.ticks_per_second, 4, 1, &ticks_per_second)) {
+            PRINTF("substructure: PARAM_DATETIME bad TICKS_PER_SECOND\n");
+            return -1;
+        }
+        if (ticks_per_second == 0) {
+            PRINTF("substructure: PARAM_DATETIME TICKS_PER_SECOND must be non-zero\n");
+            return -1;
+        }
+
+        if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                     value.payload.size,
+                                                     CS_PARAM_TYPE_DATETIME,
+                                                     field_name) != 0) {
+            return -1;
+        }
+        if (cs_instruction_template_set_format_datetime(ticks_per_second) != 0) {
+            PRINTF("substructure: set_format_datetime failed\n");
+            return -1;
+        }
+        PRINTF("substructure: registered DATETIME path %.*H ticks=%d name=%s\n",
+               value.payload.size,
+               value.payload.ptr,
+               ticks_per_second,
+               field_name ? field_name : "(none)");
+    } else {
+        PRINTF("substructure: PARAM_DATETIME requires ARGUMENT or ACCOUNT path, got %d\n",
                value.source);
         return -1;
     }
-
-    uint32_t ticks_per_second = 1;
-    if (!read_be_uint(&param.ticks_per_second, 4, 1, &ticks_per_second)) {
-        PRINTF("substructure: PARAM_DATETIME bad TICKS_PER_SECOND\n");
-        return -1;
-    }
-    if (ticks_per_second == 0) {
-        PRINTF("substructure: PARAM_DATETIME TICKS_PER_SECOND must be non-zero\n");
-        return -1;
-    }
-
-    if (cs_instruction_template_add_display_path(value.payload.ptr,
-                                                 value.payload.size,
-                                                 CS_PARAM_TYPE_DATETIME,
-                                                 field_name) != 0) {
-        return -1;
-    }
-    if (cs_instruction_template_set_format_datetime(ticks_per_second) != 0) {
-        PRINTF("substructure: set_format_datetime failed\n");
-        return -1;
-    }
-    PRINTF("substructure: registered DATETIME path %.*H ticks=%d name=%s\n",
-           value.payload.size,
-           value.payload.ptr,
-           ticks_per_second,
-           field_name ? field_name : "(none)");
     return 0;
 }
 
-// Register a PARAM_UNIT display field (ARGUMENT_PATH only).
+// Register a PARAM_UNIT display field. An ACCOUNT_PATH value is rendered as a
+// base58 address instead of a formatted unit value.
 static int register_param_unit(const display_field_out_t *display_field, const char *field_name) {
     param_unit_out_t param = {0};
     if (!parse_param_unit(&display_field->param, &param, &param.received_tags)) {
@@ -830,54 +865,62 @@ static int register_param_unit(const display_field_out_t *display_field, const c
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: PARAM_UNIT requires ARGUMENT_PATH source, got %d\n", value.source);
-        return -1;
-    }
-
-    uint8_t decimals = 0;
-    bool prefix = false;
-    if (param.decimals.ptr != NULL) {
-        if (param.decimals.size != 1) {
-            PRINTF("substructure: PARAM_UNIT DECIMALS must be 1 byte (got %d)\n",
-                   param.decimals.size);
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        if (register_account_path_value(&value, field_name) != 0) {
             return -1;
         }
-        decimals = param.decimals.ptr[0];
-    }
-    if (param.prefix.ptr != NULL) {
-        if (param.prefix.size != 1) {
-            PRINTF("substructure: PARAM_UNIT PREFIX must be 1 byte (got %d)\n", param.prefix.size);
+    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        uint8_t decimals = 0;
+        bool prefix = false;
+        if (param.decimals.ptr != NULL) {
+            if (param.decimals.size != 1) {
+                PRINTF("substructure: PARAM_UNIT DECIMALS must be 1 byte (got %d)\n",
+                       param.decimals.size);
+                return -1;
+            }
+            decimals = param.decimals.ptr[0];
+        }
+        if (param.prefix.ptr != NULL) {
+            if (param.prefix.size != 1) {
+                PRINTF("substructure: PARAM_UNIT PREFIX must be 1 byte (got %d)\n",
+                       param.prefix.size);
+                return -1;
+            }
+            prefix = (param.prefix.ptr[0] == 1);
+        }
+
+        if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                     value.payload.size,
+                                                     CS_PARAM_TYPE_UNIT,
+                                                     field_name) != 0) {
             return -1;
         }
-        prefix = (param.prefix.ptr[0] == 1);
-    }
-
-    if (cs_instruction_template_add_display_path(value.payload.ptr,
-                                                 value.payload.size,
-                                                 CS_PARAM_TYPE_UNIT,
-                                                 field_name) != 0) {
+        if (cs_instruction_template_set_format_unit(param.symbol.ptr,
+                                                    param.symbol.size,
+                                                    decimals,
+                                                    prefix) != 0) {
+            PRINTF("substructure: set_format_unit failed\n");
+            return -1;
+        }
+        PRINTF(
+            "substructure: registered UNIT path %.*H symbol=%.*s decimals=%d prefix=%d name=%s\n",
+            value.payload.size,
+            value.payload.ptr,
+            (int) param.symbol.size,
+            param.symbol.ptr,
+            decimals,
+            prefix,
+            field_name ? field_name : "(none)");
+    } else {
+        PRINTF("substructure: PARAM_UNIT requires ARGUMENT or ACCOUNT path, got %d\n",
+               value.source);
         return -1;
     }
-    if (cs_instruction_template_set_format_unit(param.symbol.ptr,
-                                                param.symbol.size,
-                                                decimals,
-                                                prefix) != 0) {
-        PRINTF("substructure: set_format_unit failed\n");
-        return -1;
-    }
-    PRINTF("substructure: registered UNIT path %.*H symbol=%.*s decimals=%d prefix=%d name=%s\n",
-           value.payload.size,
-           value.payload.ptr,
-           (int) param.symbol.size,
-           param.symbol.ptr,
-           decimals,
-           prefix,
-           field_name ? field_name : "(none)");
     return 0;
 }
 
-// Register a PARAM_STRING display field (ARGUMENT_PATH only).
+// Register a PARAM_STRING display field. An ACCOUNT_PATH value is rendered as a
+// base58 address instead of a decoded string.
 static int register_param_string(const display_field_out_t *display_field,
                                  const char *field_name) {
     param_string_out_t param = {0};
@@ -894,134 +937,140 @@ static int register_param_string(const display_field_out_t *display_field,
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: PARAM_STRING requires ARGUMENT_PATH source, got %d\n", value.source);
-        return -1;
-    }
-
-    cs_format_string_t format = {0};
-    format.encoding = CS_STRING_ENCODING_UTF8;
-    if (param.encoding.ptr != NULL) {
-        if (param.encoding.size != 1) {
-            PRINTF("substructure: PARAM_STRING ENCODING must be 1 byte (got %d)\n",
-                   param.encoding.size);
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        if (register_account_path_value(&value, field_name) != 0) {
             return -1;
         }
-        format.encoding = param.encoding.ptr[0];
-    }
-    switch (format.encoding) {
-        case CS_STRING_ENCODING_ASCII:
-        case CS_STRING_ENCODING_UTF8:
-        case CS_STRING_ENCODING_BASE58:
-        case CS_STRING_ENCODING_BASE64:
-        case CS_STRING_ENCODING_HEX:
-            break;
-        default:
-            PRINTF("substructure: PARAM_STRING unknown encoding %d\n", format.encoding);
-            return -1;
-    }
-
-    // Presence of SLICE_KIND enables slicing; the other slice tags are only
-    // valid for the matching kind.
-    format.has_slice = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_KIND);
-    bool has_end = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_END);
-    bool has_size = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_SIZE);
-    bool has_reversed =
-        TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_REVERSED);
-    bool has_start = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_START);
-
-    if (!format.has_slice) {
-        if (has_end || has_size || has_reversed || has_start) {
-            PRINTF("substructure: PARAM_STRING slice tags present without SLICE_KIND\n");
-            return -1;
+    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        cs_format_string_t format = {0};
+        format.encoding = CS_STRING_ENCODING_UTF8;
+        if (param.encoding.ptr != NULL) {
+            if (param.encoding.size != 1) {
+                PRINTF("substructure: PARAM_STRING ENCODING must be 1 byte (got %d)\n",
+                       param.encoding.size);
+                return -1;
+            }
+            format.encoding = param.encoding.ptr[0];
         }
-    } else {
-        if (param.slice_kind.size != 1) {
-            PRINTF("substructure: PARAM_STRING SLICE_KIND must be 1 byte (got %d)\n",
-                   param.slice_kind.size);
-            return -1;
+        switch (format.encoding) {
+            case CS_STRING_ENCODING_ASCII:
+            case CS_STRING_ENCODING_UTF8:
+            case CS_STRING_ENCODING_BASE58:
+            case CS_STRING_ENCODING_BASE64:
+            case CS_STRING_ENCODING_HEX:
+                break;
+            default:
+                PRINTF("substructure: PARAM_STRING unknown encoding %d\n", format.encoding);
+                return -1;
         }
-        format.slice_kind = param.slice_kind.ptr[0];
 
-        uint32_t start = 0;
-        if (!read_be_uint(&param.slice_start, 2, 0, &start)) {
-            PRINTF("substructure: PARAM_STRING bad SLICE_START\n");
-            return -1;
-        }
-        format.slice_start = (uint16_t) start;
+        // Presence of SLICE_KIND enables slicing; the other slice tags are only
+        // valid for the matching kind.
+        format.has_slice =
+            TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_KIND);
+        bool has_end = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_END);
+        bool has_size = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_SIZE);
+        bool has_reversed =
+            TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_REVERSED);
+        bool has_start = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_START);
 
-        if (format.slice_kind == CS_SLICE_KIND_BOUNDED) {
-            if (has_size || has_reversed) {
-                PRINTF("substructure: PARAM_STRING BOUNDED cannot carry SLICE_SIZE/REVERSED\n");
+        if (!format.has_slice) {
+            if (has_end || has_size || has_reversed || has_start) {
+                PRINTF("substructure: PARAM_STRING slice tags present without SLICE_KIND\n");
                 return -1;
-            }
-            uint32_t end = 0xFFFF;
-            if (!read_be_uint(&param.slice_end, 2, 0xFFFF, &end)) {
-                PRINTF("substructure: PARAM_STRING bad SLICE_END\n");
-                return -1;
-            }
-            format.slice.bounded.end = (uint16_t) end;
-        } else if (format.slice_kind == CS_SLICE_KIND_SIZED) {
-            if (has_end) {
-                PRINTF("substructure: PARAM_STRING SIZED cannot carry SLICE_END\n");
-                return -1;
-            }
-            if (!has_size) {
-                PRINTF("substructure: PARAM_STRING SIZED requires SLICE_SIZE\n");
-                return -1;
-            }
-            uint32_t size = 0;
-            if (!read_be_uint(&param.slice_size, 2, 0, &size)) {
-                PRINTF("substructure: PARAM_STRING bad SLICE_SIZE\n");
-                return -1;
-            }
-            format.slice.sized.size = (uint16_t) size;
-            if (has_reversed) {
-                if (param.slice_reversed.size != 1) {
-                    PRINTF("substructure: PARAM_STRING SLICE_REVERSED must be 1 byte (got %d)\n",
-                           param.slice_reversed.size);
-                    return -1;
-                }
-                format.slice.sized.reversed = (param.slice_reversed.ptr[0] == 1);
             }
         } else {
-            PRINTF("substructure: PARAM_STRING unknown SLICE_KIND %d\n", format.slice_kind);
-            return -1;
-        }
-    }
+            if (param.slice_kind.size != 1) {
+                PRINTF("substructure: PARAM_STRING SLICE_KIND must be 1 byte (got %d)\n",
+                       param.slice_kind.size);
+                return -1;
+            }
+            format.slice_kind = param.slice_kind.ptr[0];
 
-    format.slice_applies_to = CS_SLICE_APPLIES_TO_FORMATTED;
-    if (TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_APPLIES_TO)) {
-        if (param.slice_applies_to.size != 1) {
-            PRINTF("substructure: PARAM_STRING SLICE_APPLIES_TO must be 1 byte (got %d)\n",
-                   param.slice_applies_to.size);
-            return -1;
-        }
-        format.slice_applies_to = param.slice_applies_to.ptr[0];
-        if (format.slice_applies_to != CS_SLICE_APPLIES_TO_FORMATTED &&
-            format.slice_applies_to != CS_SLICE_APPLIES_TO_SOURCE) {
-            PRINTF("substructure: PARAM_STRING unknown SLICE_APPLIES_TO %d\n",
-                   format.slice_applies_to);
-            return -1;
-        }
-    }
+            uint32_t start = 0;
+            if (!read_be_uint(&param.slice_start, 2, 0, &start)) {
+                PRINTF("substructure: PARAM_STRING bad SLICE_START\n");
+                return -1;
+            }
+            format.slice_start = (uint16_t) start;
 
-    if (cs_instruction_template_add_display_path(value.payload.ptr,
-                                                 value.payload.size,
-                                                 CS_PARAM_TYPE_STRING,
-                                                 field_name) != 0) {
+            if (format.slice_kind == CS_SLICE_KIND_BOUNDED) {
+                if (has_size || has_reversed) {
+                    PRINTF("substructure: PARAM_STRING BOUNDED cannot carry SLICE_SIZE/REVERSED\n");
+                    return -1;
+                }
+                uint32_t end = 0xFFFF;
+                if (!read_be_uint(&param.slice_end, 2, 0xFFFF, &end)) {
+                    PRINTF("substructure: PARAM_STRING bad SLICE_END\n");
+                    return -1;
+                }
+                format.slice.bounded.end = (uint16_t) end;
+            } else if (format.slice_kind == CS_SLICE_KIND_SIZED) {
+                if (has_end) {
+                    PRINTF("substructure: PARAM_STRING SIZED cannot carry SLICE_END\n");
+                    return -1;
+                }
+                if (!has_size) {
+                    PRINTF("substructure: PARAM_STRING SIZED requires SLICE_SIZE\n");
+                    return -1;
+                }
+                uint32_t size = 0;
+                if (!read_be_uint(&param.slice_size, 2, 0, &size)) {
+                    PRINTF("substructure: PARAM_STRING bad SLICE_SIZE\n");
+                    return -1;
+                }
+                format.slice.sized.size = (uint16_t) size;
+                if (has_reversed) {
+                    if (param.slice_reversed.size != 1) {
+                        PRINTF("substructure: PARAM_STRING SLICE_REVERSED must be 1 byte (got %d)\n",
+                               param.slice_reversed.size);
+                        return -1;
+                    }
+                    format.slice.sized.reversed = (param.slice_reversed.ptr[0] == 1);
+                }
+            } else {
+                PRINTF("substructure: PARAM_STRING unknown SLICE_KIND %d\n", format.slice_kind);
+                return -1;
+            }
+        }
+
+        format.slice_applies_to = CS_SLICE_APPLIES_TO_FORMATTED;
+        if (TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_APPLIES_TO)) {
+            if (param.slice_applies_to.size != 1) {
+                PRINTF("substructure: PARAM_STRING SLICE_APPLIES_TO must be 1 byte (got %d)\n",
+                       param.slice_applies_to.size);
+                return -1;
+            }
+            format.slice_applies_to = param.slice_applies_to.ptr[0];
+            if (format.slice_applies_to != CS_SLICE_APPLIES_TO_FORMATTED &&
+                format.slice_applies_to != CS_SLICE_APPLIES_TO_SOURCE) {
+                PRINTF("substructure: PARAM_STRING unknown SLICE_APPLIES_TO %d\n",
+                       format.slice_applies_to);
+                return -1;
+            }
+        }
+
+        if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                     value.payload.size,
+                                                     CS_PARAM_TYPE_STRING,
+                                                     field_name) != 0) {
+            return -1;
+        }
+        if (cs_instruction_template_set_format_string(&format) != 0) {
+            PRINTF("substructure: set_format_string failed\n");
+            return -1;
+        }
+        PRINTF("substructure: registered STRING path %.*H encoding=%d has_slice=%d name=%s\n",
+               value.payload.size,
+               value.payload.ptr,
+               format.encoding,
+               format.has_slice,
+               field_name ? field_name : "(none)");
+    } else {
+        PRINTF("substructure: PARAM_STRING requires ARGUMENT or ACCOUNT path, got %d\n",
+               value.source);
         return -1;
     }
-    if (cs_instruction_template_set_format_string(&format) != 0) {
-        PRINTF("substructure: set_format_string failed\n");
-        return -1;
-    }
-    PRINTF("substructure: registered STRING path %.*H encoding=%d has_slice=%d name=%s\n",
-           value.payload.size,
-           value.payload.ptr,
-           format.encoding,
-           format.has_slice,
-           field_name ? field_name : "(none)");
     return 0;
 }
 
@@ -1042,7 +1091,8 @@ static int trusted_name_build_mask(const buffer_t *list, uint8_t *mask_out) {
     return 0;
 }
 
-// Register a PARAM_TRUSTED_NAME display field (ARGUMENT_PATH only).
+// Register a PARAM_TRUSTED_NAME display field. An ACCOUNT_PATH value is rendered
+// as a base58 address instead of a resolved trusted name.
 static int register_param_trusted_name(const display_field_out_t *display_field,
                                        const char *field_name) {
     param_trusted_name_out_t param = {0};
@@ -1059,38 +1109,43 @@ static int register_param_trusted_name(const display_field_out_t *display_field,
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: PARAM_TRUSTED_NAME requires ARGUMENT_PATH source, got %d\n",
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        if (register_account_path_value(&value, field_name) != 0) {
+            return -1;
+        }
+    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        cs_format_trusted_name_t format = {0};
+        if (trusted_name_build_mask(&param.types, &format.allowed_types_mask) != 0) {
+            return -1;
+        }
+
+        if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                     value.payload.size,
+                                                     CS_PARAM_TYPE_TRUSTED_NAME,
+                                                     field_name) != 0) {
+            return -1;
+        }
+        if (cs_instruction_template_set_format_trusted_name(&format) != 0) {
+            PRINTF("substructure: set_format_trusted_name failed\n");
+            return -1;
+        }
+        PRINTF("substructure: registered TRUSTED_NAME path %.*H types=0x%02x name=%s\n",
+               value.payload.size,
+               value.payload.ptr,
+               format.allowed_types_mask,
+               field_name ? field_name : "(none)");
+    } else {
+        PRINTF("substructure: PARAM_TRUSTED_NAME requires ARGUMENT or ACCOUNT path, got %d\n",
                value.source);
         return -1;
     }
-
-    cs_format_trusted_name_t format = {0};
-    if (trusted_name_build_mask(&param.types, &format.allowed_types_mask) != 0) {
-        return -1;
-    }
-
-    if (cs_instruction_template_add_display_path(value.payload.ptr,
-                                                 value.payload.size,
-                                                 CS_PARAM_TYPE_TRUSTED_NAME,
-                                                 field_name) != 0) {
-        return -1;
-    }
-    if (cs_instruction_template_set_format_trusted_name(&format) != 0) {
-        PRINTF("substructure: set_format_trusted_name failed\n");
-        return -1;
-    }
-    PRINTF("substructure: registered TRUSTED_NAME path %.*H types=0x%02x name=%s\n",
-           value.payload.size,
-           value.payload.ptr,
-           format.allowed_types_mask,
-           field_name ? field_name : "(none)");
     return 0;
 }
 
 // Register a PARAM_ACCOUNT or PARAM_DURATION display field. Both reuse the
 // PARAM_RAW envelope (VERSION + VALUE) and carry no extra format parameters;
-// only the resulting param_type differs. ARGUMENT_PATH source only.
+// only the resulting param_type differs. An ACCOUNT_PATH value is rendered as a
+// base58 address.
 static int register_param_plain_argument(const display_field_out_t *display_field,
                                          const char *field_name,
                                          uint8_t param_type) {
@@ -1108,24 +1163,28 @@ static int register_param_plain_argument(const display_field_out_t *display_fiel
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        PRINTF("substructure: param_type %d requires ARGUMENT_PATH source, got %d\n",
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+        if (register_account_path_value(&value, field_name) != 0) {
+            return -1;
+        }
+    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+        if (cs_instruction_template_add_display_path(value.payload.ptr,
+                                                     value.payload.size,
+                                                     param_type,
+                                                     field_name) != 0) {
+            return -1;
+        }
+        PRINTF("substructure: registered param_type %d path %.*H name=%s\n",
+               param_type,
+               value.payload.size,
+               value.payload.ptr,
+               field_name ? field_name : "(none)");
+    } else {
+        PRINTF("substructure: param_type %d requires ARGUMENT or ACCOUNT path, got %d\n",
                param_type,
                value.source);
         return -1;
     }
-
-    if (cs_instruction_template_add_display_path(value.payload.ptr,
-                                                 value.payload.size,
-                                                 param_type,
-                                                 field_name) != 0) {
-        return -1;
-    }
-    PRINTF("substructure: registered param_type %d path %.*H name=%s\n",
-           param_type,
-           value.payload.size,
-           value.payload.ptr,
-           field_name ? field_name : "(none)");
     return 0;
 }
 

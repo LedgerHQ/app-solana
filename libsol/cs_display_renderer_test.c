@@ -1088,6 +1088,57 @@ static void test_render_duration_zero(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+// A duration held in a signed integer renders like the unsigned form.
+static void test_render_duration_signed(void) {
+    printf("  test_render_duration_signed\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Duration", CS_PARAM_TYPE_DURATION);
+
+    // 3661 seconds = 1:01:01, encoded as a little-endian i64.
+    uint8_t value[] = {0x4D, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_I64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "1:01:01") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A negative signed duration has no meaning and must be refused.
+static void test_render_duration_negative(void) {
+    printf("  test_render_duration_negative\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Duration", CS_PARAM_TYPE_DURATION);
+
+    // -1 as a little-endian i64.
+    uint8_t value[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_I64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 static void test_render_unit_suffix(void) {
     printf("  test_render_unit_suffix\n");
     mock_mem_reset();
@@ -1110,7 +1161,7 @@ static void test_render_unit_suffix(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "12.5%") == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "12.5 %") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1137,7 +1188,67 @@ static void test_render_unit_prefix(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "$42") == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "$ 42") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A symbol-less unit must render the bare number with no dangling separator.
+static void test_render_unit_no_symbol(void) {
+    printf("  test_render_unit_no_symbol\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Count", CS_PARAM_TYPE_UNIT);
+    template.display_fields[0].argument.format.unit.symbol = NULL;
+    template.display_fields[0].argument.format.unit.decimals = 0;
+    template.display_fields[0].argument.format.unit.prefix = false;
+
+    uint8_t value[] = {0x2A, 0x00, 0x00, 0x00};  // 42
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U32;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 4;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "42") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A transaction-level field appended after a normal run becomes the last element.
+static void test_display_renderer_append(void) {
+    printf("  test_display_renderer_append\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Count", CS_PARAM_TYPE_UNIT);
+    template.display_fields[0].argument.format.unit.symbol = NULL;
+
+    uint8_t value[] = {0x2A, 0x00, 0x00, 0x00};  // 42
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U32;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 4;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    size_t before = cs_display_renderer_element_count();
+    assert(before >= 1);
+
+    assert(cs_display_renderer_append("Max fees", "0.001 SOL") == 0);
+    assert(cs_display_renderer_element_count() == before + 1);
+    assert(strcmp(cs_display_renderer_element(before)->title, "Max fees") == 0);
+    assert(strcmp(cs_display_renderer_element(before)->value, "0.001 SOL") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -2399,8 +2510,12 @@ int main(void) {
     test_render_datetime_negative_i64();
     test_render_duration();
     test_render_duration_zero();
+    test_render_duration_signed();
+    test_render_duration_negative();
     test_render_unit_suffix();
     test_render_unit_prefix();
+    test_render_unit_no_symbol();
+    test_display_renderer_append();
     test_render_account_short_form();
     test_render_trusted_name_resolved();
     test_render_trusted_name_max_length();

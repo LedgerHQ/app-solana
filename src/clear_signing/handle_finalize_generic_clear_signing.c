@@ -14,11 +14,27 @@
 #include "reply.h"
 #include "app_mem_utils.h"
 #include "sol/parser.h"
+#include "sol/printer.h"
+#include "compute_budget_instruction.h"
 #include "idl_pool.h"
 #include "idl_walker.h"
 #include "idl_kinds.h"
 #include "sol/pubkey.h"
 #include "utils.h"
+
+// What the transaction fee needs from the ComputeBudget instructions, collected
+// by value so the pointer-based ComputeBudgetFeeInfo can be built at the append
+// site without dangling into a freed frame. ComputeBudget instructions carry no
+// clear-signing template and are excluded from the descriptor walk; this is how
+// their fee effect still reaches the user.
+typedef struct cs_compute_budget_summary_s {
+    bool present;
+    bool has_unit_limit;
+    ComputeBudgetChangeUnitLimitInfo unit_limit;
+    bool has_unit_price;
+    ComputeBudgetChangeUnitPriceInfo unit_price;
+    size_t signatures_count;
+} cs_compute_budget_summary_t;
 
 // One entry of the transaction-scoped mint-binding map: a token account pubkey
 // bound to the mint pubkey that identifies its token. Seeded from every
@@ -930,16 +946,45 @@ static int resolve_port_mints(const cs_transaction_t *cs_tx,
     return 0;
 }
 
+// Parse one ComputeBudget instruction and fold the fee-relevant kinds into the
+// running summary. Heap-frame and data-size kinds parse but contribute nothing
+// to the fee. Returns 0, -1 on a malformed instruction (refuse rather than
+// sign an unparseable ComputeBudget).
+static int accumulate_compute_budget(const Instruction *instruction,
+                                     const MessageHeader *header,
+                                     cs_compute_budget_summary_t *summary) {
+    ComputeBudgetInfo info;
+    if (parse_compute_budget_instructions(instruction, header, &info) != 0) {
+        PRINTF("finalize cs: malformed ComputeBudget instruction\n");
+        return -1;
+    }
+    summary->present = true;
+    summary->signatures_count = info.signatures_count;
+    // Last writer wins on duplicates; the chain rejects duplicates anyway.
+    if (info.kind == ComputeBudgetChangeUnitLimit) {
+        summary->has_unit_limit = true;
+        memcpy(&summary->unit_limit, &info.change_unit_limit, sizeof(summary->unit_limit));
+    } else if (info.kind == ComputeBudgetChangeUnitPrice) {
+        summary->has_unit_price = true;
+        memcpy(&summary->unit_price, &info.change_unit_price, sizeof(summary->unit_price));
+    }
+    PRINTF("finalize cs: ComputeBudget kind=%d accumulated\n", (int) info.kind);
+    return 0;
+}
+
 // Walk every transaction instruction against the IDL type pool of its matching
 // template, collecting the display-field leaf values and resolved merge-engine
 // substructures into per-instruction results. Seeds the caller-owned mint- and
-// owner-binding maps. Every instruction must resolve to a template.
+// owner-binding maps. Every instruction must resolve to a template, except
+// ComputeBudget instructions, which are excluded from the walk and folded into
+// cb_summary for a later fee field.
 static int walk_transaction(const cs_transaction_t *cs_tx,
                             cs_instruction_result_t *walked_instructions,
                             size_t *walked_instructions_count,
                             mint_binding_t *bindings,
                             cs_owner_binding_t *owner_bindings,
-                            size_t *owner_binding_count) {
+                            size_t *owner_binding_count,
+                            cs_compute_budget_summary_t *cb_summary) {
     Parser parser = {cs_tx->transaction, cs_tx->transaction_size};
     MessageHeader header;
     if (parse_message_header(&parser, &header) != 0) {
@@ -958,6 +1003,7 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
     }
 
     *walked_instructions_count = 0;
+    memset(cb_summary, 0, sizeof(*cb_summary));
 
     // Transaction-scoped binding maps (caller-owned, sized to the instruction
     // count), seeded from each instruction's MINT_ASSOC / OWNER_ASSOC pairs.
@@ -975,6 +1021,17 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
             return -1;
         }
         const uint8_t *program_id = header.pubkeys[instruction.program_id_index].data;
+
+        // ComputeBudget instructions carry no clear-signing template. Rather than
+        // refuse (no template) or silence them, collect their fee effect and skip
+        // them so the mint passes, merge engine and renderer keep their
+        // non-NULL-template, 1:1-index invariants over the walked slots.
+        if (memcmp(program_id, &compute_budget_program_id, PUBKEY_SIZE) == 0) {
+            if (accumulate_compute_budget(&instruction, &header, cb_summary) != 0) {
+                return -1;
+            }
+            continue;
+        }
 
         cs_instruction_result_t *result = &walked_instructions[*walked_instructions_count];
         if (walk_instruction(cs_tx, &header, &instruction, program_id, alt_writable_count, result,
@@ -1038,6 +1095,41 @@ static void free_walked_instructions(cs_instruction_result_t *walked_instruction
     }
 }
 
+// Append the aggregate "Max fees" field when a ComputeBudget unit price or limit
+// was seen. Builds the pointer-based fee info from the by-value summary, reuses
+// calculate_max_fee, and formats lamports as a SOL amount. Returns the APDU
+// status word: success, or a refusal on fee overflow / format / append failure.
+static uint16_t append_compute_budget_fee(cs_compute_budget_summary_t *summary,
+                                          size_t instruction_count) {
+    ComputeBudgetFeeInfo fee_info = {0};
+    fee_info.instructions_count = instruction_count;
+    fee_info.signatures_count = summary->signatures_count;
+    // The fee info borrows the summary's own storage, which outlives this call.
+    if (summary->has_unit_limit) {
+        fee_info.change_unit_limit = &summary->unit_limit;
+    }
+    if (summary->has_unit_price) {
+        fee_info.change_unit_price = &summary->unit_price;
+    }
+
+    uint64_t max_fee = 0;
+    if (calculate_max_fee(&fee_info, &max_fee) != 0) {
+        PRINTF("finalize cs: ComputeBudget fee calculation failed\n");
+        return ApduReplySolanaInvalidGenericPreview;
+    }
+    // Same amount-string buffer sizing the transaction summary uses for print_amount.
+    char fee_text[BASE58_PUBKEY_LENGTH];
+    if (print_amount(max_fee, fee_text, sizeof(fee_text)) != 0) {
+        PRINTF("finalize cs: ComputeBudget fee format failed\n");
+        return ApduReplySolanaInvalidGenericPreview;
+    }
+    if (cs_display_renderer_append("Max fees", fee_text) != 0) {
+        PRINTF("finalize cs: ComputeBudget fee field append failed\n");
+        return ApduReplySolanaInvalidGenericPreview;
+    }
+    return ApduReplySuccess;
+}
+
 // Walk, merge and render the transaction into the display buffer. The three walk
 // buffers are caller-owned (allocated and freed by the outer handler). Returns
 // the APDU status word to send.
@@ -1048,8 +1140,9 @@ static uint16_t finalize_cs_run(const cs_transaction_t *cs_tx,
                                 cs_owner_binding_t *owner_bindings) {
     size_t walked_instructions_count = 0;
     size_t owner_binding_count = 0;
+    cs_compute_budget_summary_t cb_summary;
     if (walk_transaction(cs_tx, walked_instructions, &walked_instructions_count, bindings,
-                         owner_bindings, &owner_binding_count) != 0) {
+                         owner_bindings, &owner_binding_count, &cb_summary) != 0) {
         PRINTF("finalize cs: walk engine failed\n");
         return ApduReplySolanaInvalidGenericPreview;
     }
@@ -1083,6 +1176,18 @@ static uint16_t finalize_cs_run(const cs_transaction_t *cs_tx,
     if (cs_display_renderer_run(walked_instructions, walked_instructions_count, survivors) != 0) {
         PRINTF("finalize cs: display renderer failed\n");
         return ApduReplySolanaInvalidGenericPreview;
+    }
+
+    // A ComputeBudget unit price/limit contributes a transaction-level fee shown
+    // as a last field, but only alongside at least one rendered instruction: a
+    // fee-only transaction has no signable intent and stays refused (zero
+    // elements -> PROMPT UI DISPLAY reports incomplete).
+    if ((cb_summary.has_unit_limit || cb_summary.has_unit_price) &&
+        cs_display_renderer_element_count() > 0) {
+        uint16_t fee_sw = append_compute_budget_fee(&cb_summary, header.instructions_length);
+        if (fee_sw != ApduReplySuccess) {
+            return fee_sw;
+        }
     }
     return ApduReplySuccess;
 }
