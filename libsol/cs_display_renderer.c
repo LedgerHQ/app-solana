@@ -655,8 +655,20 @@ static int format_duration(const idl_resolved_leaf_t *leaf,
         PRINTF("format_duration: print_u64 failed\n");
         return -1;
     }
+    // Left-pad a single-digit hour to two digits so the whole field reads as the
+    // zero-padded HH:MM:SS form; a multi-digit hour count is already wide enough.
+    const char *hours_pad = "";
+    if (strlen(hours_str) < 2) {
+        hours_pad = "0";
+    }
     // Refuse rather than truncate: snprintf returns the would-be length on overflow.
-    written = snprintf(value_out, value_out_size, "%s:%02u:%02u", hours_str, minutes, seconds);
+    written = snprintf(value_out,
+                       value_out_size,
+                       "%s%s:%02u:%02u",
+                       hours_pad,
+                       hours_str,
+                       minutes,
+                       seconds);
     if (written < 0 || (size_t) written >= value_out_size) {
         PRINTF("format_duration: output does not fit\n");
         return -1;
@@ -665,15 +677,19 @@ static int format_duration(const idl_resolved_leaf_t *leaf,
     return 0;
 }
 
-// PARAM_DATETIME: a numeric value of ticks rendered as "YYYY-MM-DD hh:mm:ss".
-// A Unix timestamp is signed (Solana's UnixTimestamp is i64), so signed leaves
-// are read sign-extended and unsigned leaves zero-extended, both into an i64.
+// PARAM_DATETIME: a numeric value of ticks rendered as the ISO 8601 UTC form
+// "YYYY-MM-DDThh:mm:ss+00:00". A Unix timestamp is signed (Solana's UnixTimestamp
+// is i64), so signed leaves are read sign-extended and unsigned leaves
+// zero-extended, both into an i64.
 static int format_datetime(const idl_resolved_leaf_t *leaf,
                            uint32_t ticks_per_second,
                            char *value_out,
                            size_t value_out_size) {
     int64_t ticks;
     int64_t unix_seconds;
+    char timestamp[CS_RENDER_BUFFER_SIZE];
+    char *separator;
+    int written;
 
     if (ticks_per_second == 0) {
         PRINTF("format_datetime: ticks_per_second is zero\n");
@@ -699,8 +715,21 @@ static int format_datetime(const idl_resolved_leaf_t *leaf,
     }
     // Scale ticks down to Unix epoch seconds.
     unix_seconds = ticks / (int64_t) ticks_per_second;
-    if (print_timestamp(unix_seconds, value_out, value_out_size) != 0) {
+    if (print_timestamp(unix_seconds, timestamp, sizeof(timestamp)) != 0) {
         PRINTF("format_datetime: print_timestamp failed\n");
+        return -1;
+    }
+    // print_timestamp renders "YYYY-MM-DD hh:mm:ss"; split at its single space to
+    // reassemble the ISO 8601 form with a 'T' separator and an explicit UTC offset.
+    separator = strchr(timestamp, ' ');
+    if (separator == NULL) {
+        PRINTF("format_datetime: missing date-time separator\n");
+        return -1;
+    }
+    *separator = '\0';
+    written = snprintf(value_out, value_out_size, "%sT%s+00:00", timestamp, separator + 1);
+    if (written < 0 || (size_t) written >= value_out_size) {
+        PRINTF("format_datetime: output does not fit\n");
         return -1;
     }
     PRINTF("format_datetime: rendered value=%s\n", value_out);

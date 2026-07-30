@@ -336,7 +336,7 @@ def _build_datetime_display_field(argument_path: bytes, name: str, *,
 
 
 def _build_duration_display_field(argument_path: bytes, name: str) -> bytes:
-    """A DISPLAY_FIELD with PARAM_DURATION: a numeric leaf of seconds rendered H:MM:SS."""
+    """A DISPLAY_FIELD with PARAM_DURATION: a numeric leaf of seconds rendered HH:MM:SS."""
     value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
                  + format_tlv(ValueTag.PAYLOAD, argument_path))
     param = (format_tlv(PARAM_TAG_VERSION, 1)
@@ -3152,7 +3152,7 @@ def test_typed_datetime_signed_i64(backend, sol, scenario_navigator, root_pytest
 
 
 def test_typed_duration(backend, sol, scenario_navigator, root_pytest_dir):
-    """PARAM_DURATION: a u32 of seconds renders as H:MM:SS (3661 -> 1:01:01)."""
+    """PARAM_DURATION: a u32 of seconds renders as HH:MM:SS (3661 -> 01:01:01)."""
     message = _craft_single_instruction_message(
         sol, TYPED_PROGRAM_ID,
         _typed_instruction_data(b'\x11' * 32, 0, 3661, b"x"))

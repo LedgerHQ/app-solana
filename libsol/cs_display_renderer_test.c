@@ -930,7 +930,7 @@ static void test_render_datetime(void) {
     init_argument_template(&template, "When", CS_PARAM_TYPE_DATETIME);
     template.display_fields[0].argument.format.datetime.ticks_per_second = 1;
 
-    // 1700000000 seconds since Unix epoch -> 2023-11-14 22:13:20
+    // 1700000000 seconds since Unix epoch -> 2023-11-14T22:13:20+00:00
     // 1700000000 == 0x6553F100
     uint8_t value[] = {0x00, 0xF1, 0x53, 0x65, 0x00, 0x00, 0x00, 0x00};
 
@@ -944,7 +944,7 @@ static void test_render_datetime(void) {
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
     assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->value, "2023-11-14 22:13:20") == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "2023-11-14T22:13:20+00:00") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -976,7 +976,7 @@ static void test_render_datetime_ticks_scaling(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "2023-11-14 22:13:20") == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "2023-11-14T22:13:20+00:00") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -993,7 +993,7 @@ static void test_render_datetime_signed_i64(void) {
     init_argument_template(&template, "When", CS_PARAM_TYPE_DATETIME);
     template.display_fields[0].argument.format.datetime.ticks_per_second = 1;
 
-    // 1700000000 seconds -> 2023-11-14 22:13:20, stored as i64.
+    // 1700000000 seconds -> 2023-11-14T22:13:20+00:00, stored as i64.
     uint8_t value[] = {0x00, 0xF1, 0x53, 0x65, 0x00, 0x00, 0x00, 0x00};
     RENDER_TEST_RESULT(instr);
     instr.template = &template;
@@ -1004,7 +1004,7 @@ static void test_render_datetime_signed_i64(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert_string_equal(cs_display_renderer_element(1)->value, "2023-11-14 22:13:20");
+    assert_string_equal(cs_display_renderer_element(1)->value, "2023-11-14T22:13:20+00:00");
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1020,7 +1020,7 @@ static void test_render_datetime_negative_i64(void) {
     init_argument_template(&template, "When", CS_PARAM_TYPE_DATETIME);
     template.display_fields[0].argument.format.datetime.ticks_per_second = 1;
 
-    // -1 second -> 1969-12-31 23:59:59.
+    // -1 second -> 1969-12-31T23:59:59+00:00.
     uint8_t value[8];
     memset(value, 0xFF, sizeof(value));
     RENDER_TEST_RESULT(instr);
@@ -1032,7 +1032,7 @@ static void test_render_datetime_negative_i64(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert_string_equal(cs_display_renderer_element(1)->value, "1969-12-31 23:59:59");
+    assert_string_equal(cs_display_renderer_element(1)->value, "1969-12-31T23:59:59+00:00");
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1046,7 +1046,7 @@ static void test_render_duration(void) {
     cs_instruction_template_t template;
     init_argument_template(&template, "Duration", CS_PARAM_TYPE_DURATION);
 
-    // 3661 seconds = 1:01:01
+    // 3661 seconds = 01:01:01
     uint8_t value[] = {0x4D, 0x0E, 0x00, 0x00};
     RENDER_TEST_RESULT(instr);
     instr.template = &template;
@@ -1057,7 +1057,7 @@ static void test_render_duration(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "1:01:01") == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "01:01:01") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1082,7 +1082,7 @@ static void test_render_duration_zero(void) {
     bool survivor = true;
     // A zero value is a valid duration of no elapsed time.
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "0:00:00") == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "00:00:00") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1097,7 +1097,7 @@ static void test_render_duration_signed(void) {
     cs_instruction_template_t template;
     init_argument_template(&template, "Duration", CS_PARAM_TYPE_DURATION);
 
-    // 3661 seconds = 1:01:01, encoded as a little-endian i64.
+    // 3661 seconds = 01:01:01, encoded as a little-endian i64.
     uint8_t value[] = {0x4D, 0x0E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     RENDER_TEST_RESULT(instr);
     instr.template = &template;
@@ -1108,7 +1108,7 @@ static void test_render_duration_signed(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "1:01:01") == 0);
+    assert(strcmp(cs_display_renderer_element(1)->value, "01:01:01") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
