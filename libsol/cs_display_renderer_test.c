@@ -1,6 +1,7 @@
 // Unit tests for cs_display_renderer.
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -37,6 +38,14 @@
     (res).resolved = res##_resolved;                             \
     (res).field_mint = res##_field_mint
 
+// Fetch a flat element by index, asserting that it exists.
+// Returns a pointer to a static: valid until the next call.
+static const cs_display_flat_element_t *get_flat(size_t index) {
+    static cs_display_flat_element_t flat;
+    assert(cs_display_renderer_flat_element(index, &flat) == 0);
+    return &flat;
+}
+
 // Dummy template used by tests that don't care about operation_type/names.
 static cs_instruction_template_t G_dummy_template;
 static cs_display_field_t G_dummy_fields[TEST_RENDER_MAX_FIELDS];
@@ -53,8 +62,8 @@ static void init_dummy_template(void) {
 static void test_initial_state(void) {
     printf("  test_initial_state\n");
     cs_display_renderer_reset();
-    assert(cs_display_renderer_element_count() == 0);
-    assert(cs_display_renderer_element(0) == NULL);
+    assert(cs_display_renderer_flat_count() == 0);
+    assert(cs_display_renderer_instruction_count() == 0);
 }
 
 static void test_render_u64_leaf(void) {
@@ -74,14 +83,15 @@ static void test_render_u64_leaf(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    // 1 header + 1 field = 2 elements
-    assert(cs_display_renderer_element_count() == 2);
+    // 1 intent field + 1 data field = 2 elements (no program field: system is native)
+    assert(cs_display_renderer_flat_count() == 2);
 
-    const cs_display_element_t *header = cs_display_renderer_element(0);
+    const cs_display_flat_element_t *header = get_flat(0);
     assert(header != NULL);
-    assert(strcmp(header->title, "[1/1] Transfer") == 0);
+    assert(strcmp(header->title, "Instruction intent") == 0);
+    assert(strcmp(header->value, "Transfer") == 0);
 
-    const cs_display_element_t *elem = cs_display_renderer_element(1);
+    const cs_display_flat_element_t *elem = get_flat(1);
     assert(elem != NULL);
     assert(strcmp(elem->title, "Amount") == 0);
     assert(strcmp(elem->value, "1000000") == 0);
@@ -111,13 +121,14 @@ static void test_render_bool_leaf(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    // 1 header + 2 fields = 3 elements
-    assert(cs_display_renderer_element_count() == 3);
-    assert(strcmp(cs_display_renderer_element(0)->title, "[1/1] Transfer") == 0);
-    assert(strcmp(cs_display_renderer_element(1)->title, "Amount") == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "True") == 0);
-    assert(strcmp(cs_display_renderer_element(2)->title, "Recipient") == 0);
-    assert(strcmp(cs_display_renderer_element(2)->value, "False") == 0);
+    // 1 intent + 2 fields = 3 elements (no program field: system is native)
+    assert(cs_display_renderer_flat_count() == 3);
+    assert(strcmp(get_flat(0)->title, "Instruction intent") == 0);
+    assert(strcmp(get_flat(0)->value, "Transfer") == 0);
+    assert(strcmp(get_flat(1)->title, "Amount") == 0);
+    assert(strcmp(get_flat(1)->value, "True") == 0);
+    assert(strcmp(get_flat(2)->title, "Recipient") == 0);
+    assert(strcmp(get_flat(2)->value, "False") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -138,9 +149,10 @@ static void test_render_skips_null_value(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    // Header emitted, but the NULL-valued field is skipped
-    assert(cs_display_renderer_element_count() == 1);
-    assert(strcmp(cs_display_renderer_element(0)->title, "[1/1] Transfer") == 0);
+    // Intent emitted, but the NULL-valued field is skipped (no program: native)
+    assert(cs_display_renderer_flat_count() == 1);
+    assert(strcmp(get_flat(0)->title, "Instruction intent") == 0);
+    assert(strcmp(get_flat(0)->value, "Transfer") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -152,7 +164,7 @@ static void test_render_empty_input(void) {
     cs_display_renderer_reset();
 
     assert(cs_display_renderer_run(NULL, 0, NULL) == 0);
-    assert(cs_display_renderer_element_count() == 0);
+    assert(cs_display_renderer_flat_count() == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -172,20 +184,20 @@ static void test_alloc_failure(void) {
     instr.resolved[0].value_size = 8;
     instr.resolved_count = 1;
 
-    // The very first allocation (the pointer table) fails before any element is
-    // appended, so the run returns -1 with the renderer still empty.
+    // The very first allocation (instruction array) fails before any instruction
+    // is appended, so the run returns -1 with the renderer still empty.
     mock_mem_fail_after(0);
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
-    assert(cs_display_renderer_element_count() == 0);
+    assert(cs_display_renderer_flat_count() == 0);
 
     mock_mem_reset();
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
 }
 
-// The header element allocates, then a field element allocation fails: the run
-// returns -1 keeping the partial table, which the session teardown then frees.
+// The intent builds fully, then the field array allocation fails: the run
+// returns -1 keeping the partial instruction, which the session teardown frees.
 static void test_partial_alloc_failure(void) {
     printf("  test_partial_alloc_failure\n");
     mock_mem_reset();
@@ -200,22 +212,21 @@ static void test_partial_alloc_failure(void) {
     instr.resolved[0].value_size = 8;
     instr.resolved_count = 1;
 
-    // The header is fully built first: table, header struct, then its title and
-    // value buffers each allocated and shrunk (6 allocations). The 7th allocation,
-    // the field element struct, fails.
-    mock_mem_fail_after(6);
+    // instruction array(1), intent dup(2) succeed; the 3rd allocation (field
+    // array) fails.
+    mock_mem_fail_after(2);
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
-    // The header element built before the failure is retained, not self-dropped.
-    assert(cs_display_renderer_element_count() == 1);
+    // The intent built before the failure is retained, not self-dropped.
+    assert(cs_display_renderer_flat_count() == 1);
 
     // The session teardown releases the partial table with no leak.
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
 }
 
-// A value buffer allocates but its shrink (realloc) fails: the working buffer
-// must be released and nothing retained.
+// An allocation failure during the intent string: the run fails, the partial
+// instruction is retained for the session teardown.
 static void test_shrink_failure(void) {
     printf("  test_shrink_failure\n");
     mock_mem_reset();
@@ -230,9 +241,8 @@ static void test_shrink_failure(void) {
     instr.resolved[0].value_size = 8;
     instr.resolved_count = 1;
 
-    // Table, header struct, header title buffer (3 allocs) succeed; the 4th
-    // operation, shrinking the header title, fails.
-    mock_mem_fail_after(3);
+    // instruction array(1) succeeds; the 2nd allocation (intent string) fails.
+    mock_mem_fail_after(1);
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
 
@@ -246,6 +256,8 @@ static void test_header_value_with_program_name(void) {
     cs_display_renderer_reset();
     init_dummy_template();
     G_dummy_template.program_name = "Jupiter";
+    // Non-native program_id so the "Program" field is shown
+    memset(G_dummy_template.program_id, 0xAA, PUBKEY_SIZE);
 
     RENDER_TEST_RESULT(instr);
     instr.template = &G_dummy_template;
@@ -253,11 +265,16 @@ static void test_header_value_with_program_name(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 1);
+    // intent + program = 2 elements
+    assert(cs_display_renderer_flat_count() == 2);
 
-    const cs_display_element_t *header = cs_display_renderer_element(0);
-    assert(strcmp(header->title, "[1/1] Transfer") == 0);
-    assert(strcmp(header->value, "Program: Jupiter") == 0);
+    const cs_display_flat_element_t *intent = get_flat(0);
+    assert(strcmp(intent->title, "Instruction intent") == 0);
+    assert(strcmp(intent->value, "Transfer") == 0);
+
+    const cs_display_flat_element_t *program = get_flat(1);
+    assert(strcmp(program->title, "Program") == 0);
+    assert(strcmp(program->value, "Jupiter") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -269,7 +286,7 @@ static void test_header_value_fallback_to_program_address(void) {
     cs_display_renderer_reset();
     init_dummy_template();
     // program_name left empty (zeroed by init_dummy_template)
-    // Set a known program_id: all-ones gives a deterministic base58
+    // Set a known program_id: all-ones gives a deterministic base58 (non-native)
     memset(G_dummy_template.program_id, 1, 32);
 
     RENDER_TEST_RESULT(instr);
@@ -278,14 +295,17 @@ static void test_header_value_fallback_to_program_address(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 1);
+    // intent + program = 2 elements
+    assert(cs_display_renderer_flat_count() == 2);
 
-    const cs_display_element_t *header = cs_display_renderer_element(0);
-    assert(strcmp(header->title, "[1/1] Transfer") == 0);
-    // Verify it starts with "Program: " and contains a base58 address
-    assert(strncmp(header->value, "Program: ", 9) == 0);
-    // The address part should be non-empty
-    assert(strlen(header->value) > 9);
+    const cs_display_flat_element_t *intent = get_flat(0);
+    assert(strcmp(intent->title, "Instruction intent") == 0);
+    assert(strcmp(intent->value, "Transfer") == 0);
+
+    const cs_display_flat_element_t *program = get_flat(1);
+    assert(strcmp(program->title, "Program") == 0);
+    // The value should be a base58 address (non-empty)
+    assert(strlen(program->value) > 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -299,6 +319,8 @@ static void test_render_mixed_argument_and_account_fields(void) {
     RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Swap";
     template.program_name = "Jupiter";
+    // Non-native program_id so the "Program" field is shown
+    memset(template.program_id, 0xAA, PUBKEY_SIZE);
 
     // Field 0: ACCOUNT_PATH (resolved to pubkey externally)
     template.display_fields[0].source = CS_VALUE_SOURCE_ACCOUNT_PATH;
@@ -328,19 +350,23 @@ static void test_render_mixed_argument_and_account_fields(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    // 1 header + 2 content fields = 3 elements
-    assert(cs_display_renderer_element_count() == 3);
+    // 1 intent + 1 program + 2 content fields = 4 elements
+    assert(cs_display_renderer_flat_count() == 4);
 
-    const cs_display_element_t *header = cs_display_renderer_element(0);
-    assert(strcmp(header->title, "[1/1] Swap") == 0);
-    assert(strcmp(header->value, "Program: Jupiter") == 0);
+    const cs_display_flat_element_t *intent = get_flat(0);
+    assert(strcmp(intent->title, "Instruction intent") == 0);
+    assert(strcmp(intent->value, "Swap") == 0);
 
-    const cs_display_element_t *dest = cs_display_renderer_element(1);
+    const cs_display_flat_element_t *program = get_flat(1);
+    assert(strcmp(program->title, "Program") == 0);
+    assert(strcmp(program->value, "Jupiter") == 0);
+
+    const cs_display_flat_element_t *dest = get_flat(2);
     assert(strcmp(dest->title, "Destination") == 0);
     // Value should be a base58-encoded pubkey (all 0x42 bytes)
     assert(strlen(dest->value) > 0);
 
-    const cs_display_element_t *amount = cs_display_renderer_element(2);
+    const cs_display_flat_element_t *amount = get_flat(3);
     assert(strcmp(amount->title, "Amount") == 0);
     assert(strcmp(amount->value, "1000") == 0);
 
@@ -372,9 +398,9 @@ static void test_render_amount_with_decimals(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->title, "Amount") == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "1") == 0);
+    assert(cs_display_renderer_flat_count() == 2);
+    assert(strcmp(get_flat(1)->title, "Amount") == 0);
+    assert(strcmp(get_flat(1)->value, "1") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -403,8 +429,8 @@ static void test_render_amount_zero_decimals(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->value, "1000") == 0);
+    assert(cs_display_renderer_flat_count() == 2);
+    assert(strcmp(get_flat(1)->value, "1000") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -436,8 +462,8 @@ static void test_render_amount_max_label(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->value, "Unlimited") == 0);
+    assert(cs_display_renderer_flat_count() == 2);
+    assert(strcmp(get_flat(1)->value, "Unlimited") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -468,8 +494,8 @@ static void test_render_amount_max_label_below_max(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->value, "18446744073709551614") == 0);
+    assert(cs_display_renderer_flat_count() == 2);
+    assert(strcmp(get_flat(1)->value, "18446744073709551614") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -501,8 +527,8 @@ static void test_render_amount_max_label_u8_width(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->value, "Max") == 0);
+    assert(cs_display_renderer_flat_count() == 2);
+    assert(strcmp(get_flat(1)->value, "Max") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -534,8 +560,8 @@ static void test_render_token_amount_max_label(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->value, "Unlimited") == 0);
+    assert(cs_display_renderer_flat_count() == 2);
+    assert(strcmp(get_flat(1)->value, "Unlimited") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -603,8 +629,8 @@ static void test_render_token_amount_below_max_with_label(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->value, "1 SOL") == 0);
+    assert(cs_display_renderer_flat_count() == 2);
+    assert(strcmp(get_flat(1)->value, "1 SOL") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -634,8 +660,8 @@ static void test_render_token_amount_native(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->value, "1 SOL") == 0);
+    assert(cs_display_renderer_flat_count() == 2);
+    assert(strcmp(get_flat(1)->value, "1 SOL") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -667,8 +693,8 @@ static void test_render_token_amount_none(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->value, "1000000") == 0);
+    assert(cs_display_renderer_flat_count() == 2);
+    assert(strcmp(get_flat(1)->value, "1000000") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -704,8 +730,8 @@ static void test_render_token_amount_unknown(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->value, "1000000 ???") == 0);
+    assert(cs_display_renderer_flat_count() == 2);
+    assert(strcmp(get_flat(1)->value, "1000000 ???") == 0);
 
     cs_display_renderer_reset();
     mock_dynamic_token_info_reset();
@@ -734,9 +760,9 @@ static void test_render_account_full_address(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
+    assert(cs_display_renderer_flat_count() == 2);
 
-    const char *val = cs_display_renderer_element(1)->value;
+    const char *val = get_flat(1)->value;
     // Full base58 address (32 bytes all-0x42 encodes to a ~44 char string)
     assert(strlen(val) > 30);
     // Must not be truncated short form
@@ -769,8 +795,8 @@ static void test_render_enum_variant_name(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->value, "Withdraw") == 0);
+    assert(cs_display_renderer_flat_count() == 2);
+    assert(strcmp(get_flat(1)->value, "Withdraw") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -831,8 +857,8 @@ static void test_render_string_long_now_renders(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strlen(cs_display_renderer_element(1)->value) == 100);
-    assert(strcmp(cs_display_renderer_element(1)->value, long_value) == 0);
+    assert(strlen(get_flat(1)->value) == 100);
+    assert(strcmp(get_flat(1)->value, long_value) == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -897,8 +923,8 @@ static void test_render_token_amount_resolved_mint(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->value, "1.5 USDC") == 0);
+    assert(cs_display_renderer_flat_count() == 2);
+    assert(strcmp(get_flat(1)->value, "1.5 USDC") == 0);
 
     cs_display_renderer_reset();
     mock_dynamic_token_info_reset();
@@ -943,8 +969,8 @@ static void test_render_datetime(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 2);
-    assert(strcmp(cs_display_renderer_element(1)->value, "2023-11-14T22:13:20+00:00") == 0);
+    assert(cs_display_renderer_flat_count() == 2);
+    assert(strcmp(get_flat(1)->value, "2023-11-14T22:13:20+00:00") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -976,7 +1002,7 @@ static void test_render_datetime_ticks_scaling(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "2023-11-14T22:13:20+00:00") == 0);
+    assert(strcmp(get_flat(1)->value, "2023-11-14T22:13:20+00:00") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1004,7 +1030,7 @@ static void test_render_datetime_signed_i64(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert_string_equal(cs_display_renderer_element(1)->value, "2023-11-14T22:13:20+00:00");
+    assert_string_equal(get_flat(1)->value, "2023-11-14T22:13:20+00:00");
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1032,7 +1058,7 @@ static void test_render_datetime_negative_i64(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert_string_equal(cs_display_renderer_element(1)->value, "1969-12-31T23:59:59+00:00");
+    assert_string_equal(get_flat(1)->value, "1969-12-31T23:59:59+00:00");
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1057,7 +1083,7 @@ static void test_render_duration(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "01:01:01") == 0);
+    assert(strcmp(get_flat(1)->value, "01:01:01") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1082,7 +1108,7 @@ static void test_render_duration_zero(void) {
     bool survivor = true;
     // A zero value is a valid duration of no elapsed time.
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "00:00:00") == 0);
+    assert(strcmp(get_flat(1)->value, "00:00:00") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1108,7 +1134,7 @@ static void test_render_duration_signed(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "01:01:01") == 0);
+    assert(strcmp(get_flat(1)->value, "01:01:01") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1161,7 +1187,7 @@ static void test_render_unit_suffix(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "12.5 %") == 0);
+    assert(strcmp(get_flat(1)->value, "12.5 %") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1188,7 +1214,7 @@ static void test_render_unit_prefix(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "$ 42") == 0);
+    assert(strcmp(get_flat(1)->value, "$ 42") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1216,7 +1242,7 @@ static void test_render_unit_no_symbol(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "42") == 0);
+    assert(strcmp(get_flat(1)->value, "42") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1229,9 +1255,9 @@ static void test_display_renderer_append(void) {
     cs_display_renderer_reset();
 
     // A NULL title or value is refused and appends nothing.
-    assert(cs_display_renderer_append(NULL, "value") == -1);
-    assert(cs_display_renderer_append("title", NULL) == -1);
-    assert(cs_display_renderer_element_count() == 0);
+    assert(cs_display_renderer_append_transaction_field(NULL, "value") == -1);
+    assert(cs_display_renderer_append_transaction_field("title", NULL) == -1);
+    assert(cs_display_renderer_flat_count() == 0);
 
     cs_instruction_template_t template;
     init_argument_template(&template, "Count", CS_PARAM_TYPE_UNIT);
@@ -1247,13 +1273,13 @@ static void test_display_renderer_append(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    size_t before = cs_display_renderer_element_count();
+    size_t before = cs_display_renderer_flat_count();
     assert(before >= 1);
 
-    assert(cs_display_renderer_append("Max fees", "0.001 SOL") == 0);
-    assert(cs_display_renderer_element_count() == before + 1);
-    assert(strcmp(cs_display_renderer_element(before)->title, "Max fees") == 0);
-    assert(strcmp(cs_display_renderer_element(before)->value, "0.001 SOL") == 0);
+    assert(cs_display_renderer_append_transaction_field("Max fees", "0.001 SOL") == 0);
+    assert(cs_display_renderer_flat_count() == before + 1);
+    assert(strcmp(get_flat(before)->title, "Max fees") == 0);
+    assert(strcmp(get_flat(before)->value, "0.001 SOL") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1278,7 +1304,7 @@ static void test_render_account_short_form(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    const char *val = cs_display_renderer_element(1)->value;
+    const char *val = get_flat(1)->value;
     // Short form: 7 chars + ".." + 7 chars.
     assert(strlen(val) == (size_t) (SUMMARY_LENGTH + 2 + SUMMARY_LENGTH));
     assert(val[SUMMARY_LENGTH] == '.');
@@ -1314,7 +1340,7 @@ static void test_render_trusted_name_resolved(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "CODE") == 0);
+    assert(strcmp(get_flat(1)->value, "CODE") == 0);
 
     cs_display_renderer_reset();
     cs_trusted_name_cache_reset();
@@ -1351,8 +1377,8 @@ static void test_render_trusted_name_max_length(void) {
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
     // The full name is rendered, not truncated.
-    assert(strlen(cs_display_renderer_element(1)->value) == CS_TRUSTED_NAME_MAX_LEN);
-    assert(strcmp(cs_display_renderer_element(1)->value, max_name) == 0);
+    assert(strlen(get_flat(1)->value) == CS_TRUSTED_NAME_MAX_LEN);
+    assert(strcmp(get_flat(1)->value, max_name) == 0);
 
     cs_display_renderer_reset();
     cs_trusted_name_cache_reset();
@@ -1380,7 +1406,7 @@ static void test_render_trusted_name_cache_miss(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    const char *val = cs_display_renderer_element(1)->value;
+    const char *val = get_flat(1)->value;
     // Short address form: 7 + ".." + 7.
     assert(strlen(val) == (size_t) (SUMMARY_LENGTH + 2 + SUMMARY_LENGTH));
     assert(val[SUMMARY_LENGTH] == '.' && val[SUMMARY_LENGTH + 1] == '.');
@@ -1417,7 +1443,7 @@ static void test_render_trusted_name_type_not_allowed(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    const char *val = cs_display_renderer_element(1)->value;
+    const char *val = get_flat(1)->value;
     assert(strcmp(val, "Jupiter") != 0);
     assert(strlen(val) == (size_t) (SUMMARY_LENGTH + 2 + SUMMARY_LENGTH));
 
@@ -1450,7 +1476,7 @@ static void test_render_trusted_name_unconstrained_mask(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "Jupiter") == 0);
+    assert(strcmp(get_flat(1)->value, "Jupiter") == 0);
 
     cs_display_renderer_reset();
     cs_trusted_name_cache_reset();
@@ -1481,7 +1507,7 @@ static void test_render_account_resolves_trusted_name(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "USDC") == 0);
+    assert(strcmp(get_flat(1)->value, "USDC") == 0);
 
     cs_display_renderer_reset();
     cs_trusted_name_cache_reset();
@@ -1508,7 +1534,7 @@ static void test_render_string_ascii(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "hello") == 0);
+    assert(strcmp(get_flat(1)->value, "hello") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1559,7 +1585,7 @@ static void test_render_string_hex(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "deadbeef") == 0);
+    assert(strcmp(get_flat(1)->value, "deadbeef") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1586,7 +1612,7 @@ static void test_render_string_base64(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "TWFu") == 0);
+    assert(strcmp(get_flat(1)->value, "TWFu") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1612,7 +1638,7 @@ static void test_render_string_base64_padding(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "TWE=") == 0);
+    assert(strcmp(get_flat(1)->value, "TWE=") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1643,7 +1669,7 @@ static void test_render_string_slice_source_bounded(void) {
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
     // Bytes [1,4) = "bcd"
-    assert(strcmp(cs_display_renderer_element(1)->value, "bcd") == 0);
+    assert(strcmp(get_flat(1)->value, "bcd") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1674,7 +1700,7 @@ static void test_render_string_slice_formatted_sized_reversed(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "beef") == 0);
+    assert(strcmp(get_flat(1)->value, "beef") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1719,7 +1745,7 @@ static void test_render_raw_i64_negative(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert_string_equal(cs_display_renderer_element(1)->value, "-1000000");
+    assert_string_equal(get_flat(1)->value, "-1000000");
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1738,7 +1764,7 @@ static void test_render_raw_i32_negative(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert_string_equal(cs_display_renderer_element(1)->value, "-42");
+    assert_string_equal(get_flat(1)->value, "-42");
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1758,7 +1784,7 @@ static void test_render_raw_u128(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert_string_equal(cs_display_renderer_element(1)->value, "18446744073709551616");
+    assert_string_equal(get_flat(1)->value, "18446744073709551616");
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1778,7 +1804,7 @@ static void test_render_raw_i128_negative(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert_string_equal(cs_display_renderer_element(1)->value, "-1");
+    assert_string_equal(get_flat(1)->value, "-1");
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1797,7 +1823,7 @@ static void test_render_raw_short_u16_multibyte(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert_string_equal(cs_display_renderer_element(1)->value, "300");
+    assert_string_equal(get_flat(1)->value, "300");
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1816,7 +1842,7 @@ static void test_render_raw_bool_u16_high_byte(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert_string_equal(cs_display_renderer_element(1)->value, "True");
+    assert_string_equal(get_flat(1)->value, "True");
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1834,7 +1860,7 @@ static void test_render_raw_bytes_fixed_hex(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert_string_equal(cs_display_renderer_element(1)->value, "0102ab");
+    assert_string_equal(get_flat(1)->value, "0102ab");
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1874,7 +1900,7 @@ static void test_render_raw_bytes_long_now_renders(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strlen(cs_display_renderer_element(1)->value) == 66);
+    assert(strlen(get_flat(1)->value) == 66);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1894,7 +1920,7 @@ static void test_render_raw_f32(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert_string_equal(cs_display_renderer_element(1)->value, "1.5");
+    assert_string_equal(get_flat(1)->value, "1.5");
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1914,7 +1940,7 @@ static void test_render_raw_f64(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert_string_equal(cs_display_renderer_element(1)->value, "-2.5");
+    assert_string_equal(get_flat(1)->value, "-2.5");
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1966,7 +1992,7 @@ static void test_override_account_address(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "PORT_ACCT") == 0);
+    assert(strcmp(get_flat(1)->value, "PORT_ACCT") == 0);
 
     cs_display_renderer_reset();
     cs_trusted_name_cache_reset();
@@ -2017,7 +2043,7 @@ static void test_override_account_no_match(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "FIELD_ACCT") == 0);
+    assert(strcmp(get_flat(1)->value, "FIELD_ACCT") == 0);
 
     cs_display_renderer_reset();
     cs_trusted_name_cache_reset();
@@ -2074,7 +2100,7 @@ static void test_override_amount_argument_path(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "250") == 0);
+    assert(strcmp(get_flat(1)->value, "250") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -2129,7 +2155,7 @@ static void test_override_token_mint(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "1.5 BBB") == 0);
+    assert(strcmp(get_flat(1)->value, "1.5 BBB") == 0);
 
     cs_display_renderer_reset();
     mock_dynamic_token_info_reset();
@@ -2177,7 +2203,7 @@ static void test_override_identity_when_value_matches(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "SAME_ACCT") == 0);
+    assert(strcmp(get_flat(1)->value, "SAME_ACCT") == 0);
 
     cs_display_renderer_reset();
     cs_trusted_name_cache_reset();
@@ -2237,7 +2263,7 @@ static void test_override_output_port_wins(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "OUTPUT_ACCT") == 0);
+    assert(strcmp(get_flat(1)->value, "OUTPUT_ACCT") == 0);
 
     cs_display_renderer_reset();
     cs_trusted_name_cache_reset();
@@ -2293,7 +2319,7 @@ static void test_override_output_port_wins_output_streamed_first(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "OUTPUT_ACCT") == 0);
+    assert(strcmp(get_flat(1)->value, "OUTPUT_ACCT") == 0);
 
     cs_display_renderer_reset();
     cs_trusted_name_cache_reset();
@@ -2349,7 +2375,7 @@ static void test_override_token_mint_no_match(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "1.5 AAA") == 0);
+    assert(strcmp(get_flat(1)->value, "1.5 AAA") == 0);
 
     cs_display_renderer_reset();
     mock_dynamic_token_info_reset();
@@ -2405,7 +2431,7 @@ static void test_override_amount_on_token_amount_field(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strcmp(cs_display_renderer_element(1)->value, "2 SOL") == 0);
+    assert(strcmp(get_flat(1)->value, "2 SOL") == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -2470,12 +2496,209 @@ static void test_override_multi_field_isolation(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(cs_display_renderer_element_count() == 3);
-    assert(strcmp(cs_display_renderer_element(1)->value, "PORT_ONE") == 0);
-    assert(strcmp(cs_display_renderer_element(2)->value, "PORT_TWO") == 0);
+    assert(cs_display_renderer_flat_count() == 3);
+    assert(strcmp(get_flat(1)->value, "PORT_ONE") == 0);
+    assert(strcmp(get_flat(2)->value, "PORT_TWO") == 0);
 
     cs_display_renderer_reset();
     cs_trusted_name_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// Two instructions (one native, one non-native) with no transaction fields:
+// the flat layout inserts separator screens before each instruction group.
+static void test_multi_instruction_flat_layout(void) {
+    printf("  test_multi_instruction_flat_layout\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    // Instruction A: native program (system), one field.
+    RENDER_TEST_TEMPLATE(template_a);
+    template_a.operation_type = "Transfer";
+    template_a.display_fields[0].name = "Amount";
+    template_a.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template_a.display_field_count = 1;
+
+    uint8_t value_a[] = {0x64, 0x00, 0x00, 0x00};
+    RENDER_TEST_RESULT(instr_a);
+    instr_a.template = &template_a;
+    instr_a.resolved[0].kind = IDL_KIND_U32;
+    instr_a.resolved[0].value = value_a;
+    instr_a.resolved[0].value_size = 4;
+    instr_a.resolved_count = 1;
+
+    // Instruction B: non-native program with a program name, one field.
+    RENDER_TEST_TEMPLATE(template_b);
+    template_b.operation_type = "Swap";
+    template_b.program_name = "Jupiter";
+    memset(template_b.program_id, 0xAA, PUBKEY_SIZE);
+    template_b.display_fields[0].name = "Min out";
+    template_b.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template_b.display_field_count = 1;
+
+    uint8_t value_b[] = {0xE8, 0x03, 0x00, 0x00};
+    RENDER_TEST_RESULT(instr_b);
+    instr_b.template = &template_b;
+    instr_b.resolved[0].kind = IDL_KIND_U32;
+    instr_b.resolved[0].value = value_b;
+    instr_b.resolved[0].value_size = 4;
+    instr_b.resolved_count = 1;
+
+    cs_instruction_result_t instructions[2] = {instr_a, instr_b};
+    bool survivors[2] = {true, true};
+    assert(cs_display_renderer_run(instructions, 2, survivors) == 0);
+    assert(cs_display_renderer_instruction_count() == 2);
+
+    // Multi-instruction layout:
+    //  0: separator "Review instruction" / "1 of 2"  (centered, no force_page_start)
+    //  1: intent "Transfer"
+    //  2: field "Amount" = "100"
+    //  3: separator "Review instruction" / "2 of 2"  (centered, force_page_start)
+    //  4: intent "Swap"
+    //  5: program "Jupiter"
+    //  6: field "Min out" = "1000"
+    assert(cs_display_renderer_flat_count() == 7);
+
+    const cs_display_flat_element_t *sep0 = get_flat(0);
+    assert(strcmp(sep0->title, "Review instruction") == 0);
+    assert(strcmp(sep0->value, "1 of 2") == 0);
+    assert(sep0->centered_info == true);
+    assert(sep0->force_page_start == false);
+
+    assert(strcmp(get_flat(1)->title, "Instruction intent") == 0);
+    assert(strcmp(get_flat(1)->value, "Transfer") == 0);
+    assert(get_flat(1)->centered_info == false);
+
+    assert(strcmp(get_flat(2)->title, "Amount") == 0);
+    assert(strcmp(get_flat(2)->value, "100") == 0);
+
+    const cs_display_flat_element_t *sep1 = get_flat(3);
+    assert(strcmp(sep1->title, "Review instruction") == 0);
+    assert(strcmp(sep1->value, "2 of 2") == 0);
+    assert(sep1->centered_info == true);
+    assert(sep1->force_page_start == true);
+
+    assert(strcmp(get_flat(4)->title, "Instruction intent") == 0);
+    assert(strcmp(get_flat(4)->value, "Swap") == 0);
+
+    assert(strcmp(get_flat(5)->title, "Program") == 0);
+    assert(strcmp(get_flat(5)->value, "Jupiter") == 0);
+
+    assert(strcmp(get_flat(6)->title, "Min out") == 0);
+    assert(strcmp(get_flat(6)->value, "1000") == 0);
+
+    // Out of range returns -1.
+    cs_display_flat_element_t out_of_range;
+    assert(cs_display_renderer_flat_element(7, &out_of_range) == -1);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// Two instructions with a transaction-level fee field: the flat layout includes
+// a "Review fees" separator screen before the fee section.
+static void test_multi_instruction_flat_layout_with_fees(void) {
+    printf("  test_multi_instruction_flat_layout_with_fees\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    RENDER_TEST_TEMPLATE(template_a);
+    template_a.operation_type = "Transfer";
+    template_a.display_fields[0].name = "Amount";
+    template_a.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template_a.display_field_count = 1;
+
+    uint8_t value_a[] = {0x01, 0x00, 0x00, 0x00};
+    RENDER_TEST_RESULT(instr_a);
+    instr_a.template = &template_a;
+    instr_a.resolved[0].kind = IDL_KIND_U32;
+    instr_a.resolved[0].value = value_a;
+    instr_a.resolved[0].value_size = 4;
+    instr_a.resolved_count = 1;
+
+    RENDER_TEST_TEMPLATE(template_b);
+    template_b.operation_type = "Stake";
+    template_b.display_fields[0].name = "Validator";
+    template_b.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template_b.display_field_count = 1;
+
+    uint8_t value_b[] = {0x02, 0x00, 0x00, 0x00};
+    RENDER_TEST_RESULT(instr_b);
+    instr_b.template = &template_b;
+    instr_b.resolved[0].kind = IDL_KIND_U32;
+    instr_b.resolved[0].value = value_b;
+    instr_b.resolved[0].value_size = 4;
+    instr_b.resolved_count = 1;
+
+    cs_instruction_result_t instructions[2] = {instr_a, instr_b};
+    bool survivors[2] = {true, true};
+    assert(cs_display_renderer_run(instructions, 2, survivors) == 0);
+    assert(cs_display_renderer_append_transaction_field("Max fees", "0.001 SOL") == 0);
+
+    // Multi-instruction with fees:
+    //  0: separator "1 of 2"
+    //  1: intent "Transfer"
+    //  2: field "Amount"
+    //  3: separator "2 of 2"
+    //  4: intent "Stake"
+    //  5: field "Validator"
+    //  6: separator "Review fees" (centered, force_page_start)
+    //  7: field "Max fees"
+    assert(cs_display_renderer_flat_count() == 8);
+
+    // Verify the fee separator
+    const cs_display_flat_element_t *fee_sep = get_flat(6);
+    assert(strcmp(fee_sep->title, "Review fees") == 0);
+    assert(strcmp(fee_sep->value, "") == 0);
+    assert(fee_sep->centered_info == true);
+    assert(fee_sep->force_page_start == true);
+
+    // Verify the fee field
+    assert(strcmp(get_flat(7)->title, "Max fees") == 0);
+    assert(strcmp(get_flat(7)->value, "0.001 SOL") == 0);
+    assert(get_flat(7)->centered_info == false);
+    assert(get_flat(7)->force_page_start == false);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A single instruction with a transaction-level field: no separators at all.
+static void test_single_instruction_with_fees_no_separators(void) {
+    printf("  test_single_instruction_with_fees_no_separators\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    RENDER_TEST_TEMPLATE(template);
+    template.operation_type = "Transfer";
+    template.display_fields[0].name = "Amount";
+    template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
+    template.display_field_count = 1;
+
+    uint8_t value[] = {0x01, 0x00, 0x00, 0x00};
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_U32;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 4;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(cs_display_renderer_append_transaction_field("Max fees", "0.001 SOL") == 0);
+
+    // Single instruction: intent + field + fee field, no separators.
+    assert(cs_display_renderer_flat_count() == 3);
+
+    assert(strcmp(get_flat(0)->title, "Instruction intent") == 0);
+    assert(get_flat(0)->centered_info == false);
+    assert(get_flat(0)->force_page_start == false);
+
+    assert(strcmp(get_flat(1)->title, "Amount") == 0);
+    assert(strcmp(get_flat(2)->title, "Max fees") == 0);
+    assert(strcmp(get_flat(2)->value, "0.001 SOL") == 0);
+
+    cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
 }
 
@@ -2556,6 +2779,9 @@ int main(void) {
     test_override_token_mint_no_match();
     test_override_amount_on_token_amount_field();
     test_override_multi_field_isolation();
+    test_multi_instruction_flat_layout();
+    test_multi_instruction_flat_layout_with_fees();
+    test_single_instruction_with_fees_no_separators();
     printf("  All passed!\n");
     return 0;
 }

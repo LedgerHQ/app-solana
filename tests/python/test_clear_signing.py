@@ -966,7 +966,7 @@ def test_bridge_walks_instruction(backend, sol, scenario_navigator, root_pytest_
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -1208,7 +1208,7 @@ def test_cs_hide_rule_not_triggered_shows_instruction(backend, sol, scenario_nav
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -1415,7 +1415,7 @@ def test_cs_symbolic_junction_collapses(backend, sol, scenario_navigator, root_p
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -1430,7 +1430,7 @@ def test_cs_symbolic_junction_without_reset_shows_both(backend, sol, scenario_na
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -1446,7 +1446,7 @@ def test_cs_symbolic_junction_reset_scope_mismatch_shows_both(backend, sol, scen
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -1464,7 +1464,7 @@ def test_cs_symbolic_junction_reset_scope_match_collapses(backend, sol, scenario
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -1482,7 +1482,7 @@ def test_cs_symbolic_junction_pre_balance_zero_needs_attestation(backend, sol,
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -1503,7 +1503,7 @@ def test_cs_symbolic_junction_pre_balance_zero_attested_collapses(backend, sol,
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -1525,7 +1525,7 @@ def test_cs_symbolic_junction_pre_balance_non_zero_shows_both(backend, sol,
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -1790,7 +1790,7 @@ def test_bridge_with_account_path_field(backend, sol, scenario_navigator, root_p
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -1829,7 +1829,7 @@ def test_bridge_with_constant_field(backend, sol, scenario_navigator, root_pytes
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -1875,7 +1875,7 @@ def test_bridge_raw_scalar_kinds(backend, sol, scenario_navigator, root_pytest_d
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -2017,7 +2017,7 @@ def test_bridge_amount_with_decimals(backend, sol, scenario_navigator, root_pyte
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -2049,7 +2049,7 @@ def test_bridge_token_amount_native(backend, sol, scenario_navigator, root_pytes
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -2082,7 +2082,7 @@ def test_bridge_token_amount_unknown(backend, sol, scenario_navigator, root_pyte
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -2138,7 +2138,7 @@ def test_token_amount_resolved_via_token_account_state(backend, sol, scenario_na
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -2177,7 +2177,7 @@ def test_token_amount_constant_mint(backend, sol, scenario_navigator, root_pytes
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -2216,7 +2216,7 @@ def test_token_amount_decimals_override(backend, sol, scenario_navigator, root_p
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -2272,7 +2272,7 @@ def test_token_amount_mint_assoc_priority_over_tas(backend, sol, scenario_naviga
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -2337,7 +2337,7 @@ def test_bridge_account_param_type(backend, sol, scenario_navigator, root_pytest
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -2381,7 +2381,7 @@ def test_bridge_amount_param_with_account_path(backend, sol, scenario_navigator,
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -2451,7 +2451,7 @@ def test_compute_budget_fee_displayed(backend, sol, scenario_navigator, root_pyt
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -2556,7 +2556,7 @@ def test_enum_empty_variant_displays_name(backend, sol, scenario_navigator, root
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -2640,7 +2640,7 @@ def test_enum_raw_size_variant_skips_payload(backend, sol, scenario_navigator, r
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -2689,7 +2689,7 @@ def test_enum_inline_variant_inner_field(backend, sol, scenario_navigator, root_
     assert rapdu.status == 0x9000
 
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
 
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
@@ -2859,7 +2859,7 @@ def test_clear_signing_delayed_sign_valid(backend, sol, navigator,
 
     # Prompt UI (INS 0x0B) — user approves, fingerprint armed
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
 
     # Delayed sign (INS 0x09) — same message but with REAL blockhash
@@ -3096,7 +3096,7 @@ def test_typed_datetime(backend, sol, scenario_navigator, root_pytest_dir):
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3114,7 +3114,7 @@ def test_typed_datetime_millisecond_ticks(backend, sol, scenario_navigator, root
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3146,7 +3146,7 @@ def test_typed_datetime_signed_i64(backend, sol, scenario_navigator, root_pytest
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3164,7 +3164,7 @@ def test_typed_duration(backend, sol, scenario_navigator, root_pytest_dir):
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3182,7 +3182,7 @@ def test_typed_unit_suffix(backend, sol, scenario_navigator, root_pytest_dir):
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3201,7 +3201,7 @@ def test_typed_account_short_form(backend, sol, scenario_navigator, root_pytest_
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3225,7 +3225,7 @@ def test_typed_string_ascii(backend, sol, scenario_navigator, root_pytest_dir):
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3244,7 +3244,7 @@ def test_typed_string_hex(backend, sol, scenario_navigator, root_pytest_dir):
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3266,7 +3266,7 @@ def test_typed_string_slice_source_bounded(backend, sol, scenario_navigator, roo
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3335,7 +3335,7 @@ def test_typed_string_base64(backend, sol, scenario_navigator, root_pytest_dir):
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3359,7 +3359,7 @@ def test_typed_string_slice_formatted_sized_reversed(backend, sol, scenario_navi
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3386,7 +3386,7 @@ def test_trusted_name_resolves_and_displays(backend, sol, scenario_navigator, ro
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3412,7 +3412,7 @@ def test_trusted_name_type_not_allowed_shows_address(backend, sol, scenario_navi
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3576,7 +3576,7 @@ def test_alt_loaded_account_resolved_and_displayed(backend, sol, scenario_naviga
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3730,7 +3730,7 @@ def test_cs_two_fields_same_argument_path(backend, sol, scenario_navigator, root
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3830,7 +3830,7 @@ def test_cs_account_effects_hides_covered_instruction(backend, sol, scenario_nav
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)
 
@@ -3845,6 +3845,6 @@ def test_cs_account_effects_uncovered_shows_both(backend, sol, scenario_navigato
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve(path=root_pytest_dir)
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
     _wipe_session(sol)

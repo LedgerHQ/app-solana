@@ -25,13 +25,16 @@ int handle_prompt_ui_display(void) {
         return reply_sw(ApduReplySdkInvalidParameter);
     }
 
-    if (cs_display_renderer_element_count() == 0) {
-        PRINTF("prompt ui: no display elements produced\n");
+    if (cs_display_renderer_instruction_count() == 0) {
+        PRINTF("prompt ui: no instructions produced\n");
         return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
 
     // Signing is deferred to InsSignMessageDelayed
     G_command.is_preview_mode = true;
-    ui_clear_signing_review();
+    if (ui_clear_signing_review() != 0) {
+        PRINTF("handle_prompt_ui_display: review UI construction failed\n");
+        return reply_sw(ApduReplySolanaClearSigningIncomplete);
+    }
     return 0;
 }

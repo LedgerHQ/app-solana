@@ -1118,7 +1118,7 @@ static uint16_t append_compute_budget_fee(cs_compute_budget_summary_t *summary,
         PRINTF("finalize cs: ComputeBudget fee format failed\n");
         return ApduReplySolanaInvalidGenericPreview;
     }
-    if (cs_display_renderer_append("Max fees", fee_text) != 0) {
+    if (cs_display_renderer_append_transaction_field("Max fees", fee_text) != 0) {
         PRINTF("finalize cs: ComputeBudget fee field append failed\n");
         return ApduReplySolanaInvalidGenericPreview;
     }
@@ -1176,9 +1176,9 @@ static uint16_t finalize_cs_run(const cs_transaction_t *cs_tx,
     // A ComputeBudget unit price/limit contributes a transaction-level fee shown
     // as a last field, but only alongside at least one rendered instruction: a
     // fee-only transaction has no signable intent and stays refused (zero
-    // elements -> PROMPT UI DISPLAY reports incomplete).
+    // instructions -> PROMPT UI DISPLAY reports incomplete).
     if ((cb_summary.has_unit_limit || cb_summary.has_unit_price) &&
-        cs_display_renderer_element_count() > 0) {
+        cs_display_renderer_instruction_count() > 0) {
         uint16_t fee_sw = append_compute_budget_fee(&cb_summary, header.instructions_length);
         if (fee_sw != ApduReplySuccess) {
             return fee_sw;

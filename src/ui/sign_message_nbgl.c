@@ -382,34 +382,65 @@ void ui_transaction_modal(bool is_success) {
 }
 
 // Function called by NBGL to get the pair indexed by "index" for the generic
-// clear signing review. The renderer stores every element in persistent
-// storage, so G_current_pair points directly at them.
+// clear signing review. The flat index is translated into the proper
+// instruction/field from the hierarchical renderer data.
 static nbgl_contentTagValue_t* cs_get_review_pair(uint8_t index) {
     PRINTF("cs_get_review_pair index=%d\n", index);
-    const cs_display_element_t* element = cs_display_renderer_element(index);
-    if (element == NULL) {
-        PRINTF("cs_get_review_pair: NULL element at index %d\n", index);
+    cs_display_flat_element_t flat;
+    if (cs_display_renderer_flat_element(index, &flat) != 0) {
+        PRINTF("cs_get_review_pair: flat element failed at index %d\n", index);
         app_exit();
     }
-    G_current_pair.item = element->title;
-    G_current_pair.value = element->value;
+    explicit_bzero(&G_current_pair, sizeof(G_current_pair));
+    G_current_pair.item = flat.title;
+    G_current_pair.value = flat.value;
+    G_current_pair.centeredInfo = flat.centered_info;
+    G_current_pair.forcePageStart = flat.force_page_start;
     return &G_current_pair;
 }
 
-void ui_clear_signing_review(void) {
-    size_t element_count = cs_display_renderer_element_count();
-    PRINTF("ui_clear_signing_review: %d elements\n", (int) element_count);
+int ui_clear_signing_review(void) {
+    size_t flat_count = cs_display_renderer_flat_count();
+    PRINTF("ui_clear_signing_review: %d flat elements\n", (int) flat_count);
 
     explicit_bzero(&G_warning, sizeof(nbgl_warning_t));
-    init_review_content(TYPE_TRANSACTION, element_count, false);
+    init_review_content(TYPE_TRANSACTION, flat_count, false);
     G_content.callback = cs_get_review_pair;
 
-    nbgl_useCaseReview(TYPE_TRANSACTION, &G_content, &ICON_SIGN_MENU,
-                       "Review transaction", NULL,
+    size_t instruction_count = cs_display_renderer_instruction_count();
+
+    if (instruction_count == 1) {
+        const cs_display_instruction_t *instruction = cs_display_renderer_instruction(0);
+        static char review_title[96];
+        static char finish_title[96];
+        int written;
+        written = snprintf(review_title, sizeof(review_title), "Review transaction to %s", instruction->intent);
+        if (written < 0 || (size_t) written >= sizeof(review_title)) {
+            PRINTF("review_title truncated: intent '%s' too long\n", instruction->intent);
+            return -1;
+        }
+        written = snprintf(finish_title, sizeof(finish_title), "Sign transaction to %s?", instruction->intent);
+        if (written < 0 || (size_t) written >= sizeof(finish_title)) {
+            PRINTF("finish_title truncated: intent '%s' too long\n", instruction->intent);
+            return -1;
+        }
+        nbgl_useCaseReview(TYPE_TRANSACTION, &G_content, &ICON_SIGN_MENU,
+                           review_title, NULL,
 #ifdef SCREEN_SIZE_WALLET
-                       "Sign transaction on the Solana network?",
+                           finish_title,
 #else
-                       NULL,
+                           NULL,
 #endif
-                       ui_signing_review_choice);
+                           ui_signing_review_choice);
+    } else {
+        nbgl_useCaseReview(TYPE_TRANSACTION, &G_content, &ICON_SIGN_MENU,
+                           "Review transaction", NULL,
+#ifdef SCREEN_SIZE_WALLET
+                           "Sign transaction on the Solana network?",
+#else
+                           NULL,
+#endif
+                           ui_signing_review_choice);
+    }
+    return 0;
 }

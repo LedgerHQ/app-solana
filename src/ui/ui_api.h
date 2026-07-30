@@ -33,7 +33,7 @@ void start_blind_sign_tx_ui(size_t num_summary_steps);
 
 void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps);
 
-void ui_clear_signing_review(void);
+int ui_clear_signing_review(void);
 
 void ui_signing_review_choice(bool confirm);
 
