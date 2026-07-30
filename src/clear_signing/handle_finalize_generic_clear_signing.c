@@ -1112,14 +1112,9 @@ static uint16_t append_compute_budget_fee(cs_compute_budget_summary_t *summary,
         fee_info.change_unit_price = &summary->unit_price;
     }
 
-    uint64_t max_fee = 0;
-    if (calculate_max_fee(&fee_info, &max_fee) != 0) {
-        PRINTF("finalize cs: ComputeBudget fee calculation failed\n");
-        return ApduReplySolanaInvalidGenericPreview;
-    }
     // Same amount-string buffer sizing the transaction summary uses for print_amount.
     char fee_text[BASE58_PUBKEY_LENGTH];
-    if (print_amount(max_fee, fee_text, sizeof(fee_text)) != 0) {
+    if (format_compute_budget_max_fee(&fee_info, fee_text, sizeof(fee_text)) != 0) {
         PRINTF("finalize cs: ComputeBudget fee format failed\n");
         return ApduReplySolanaInvalidGenericPreview;
     }

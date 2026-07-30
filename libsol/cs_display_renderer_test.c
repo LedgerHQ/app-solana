@@ -1228,6 +1228,11 @@ static void test_display_renderer_append(void) {
     mock_mem_reset();
     cs_display_renderer_reset();
 
+    // A NULL title or value is refused and appends nothing.
+    assert(cs_display_renderer_append(NULL, "value") == -1);
+    assert(cs_display_renderer_append("title", NULL) == -1);
+    assert(cs_display_renderer_element_count() == 0);
+
     cs_instruction_template_t template;
     init_argument_template(&template, "Count", CS_PARAM_TYPE_UNIT);
     template.display_fields[0].argument.format.unit.symbol = NULL;

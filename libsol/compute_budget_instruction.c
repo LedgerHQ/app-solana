@@ -1,5 +1,6 @@
 #include "compute_budget_instruction.h"
 #include "sol/transaction_summary.h"
+#include "sol/printer.h"
 #include <limits.h>
 
 const Pubkey compute_budget_program_id = {{PROGRAM_ID_COMPUTE_BUDGET}};
@@ -91,6 +92,20 @@ int print_compute_budget_max_fee(uint64_t max_fee, const PrintConfig *print_conf
     item = transaction_summary_general_item();
     summary_item_set_amount(item, "Max fees", max_fee);
 
+    return 0;
+}
+
+int format_compute_budget_max_fee(const ComputeBudgetFeeInfo *info, char *out, size_t out_size) {
+    uint64_t max_fee = 0;
+    if (calculate_max_fee(info, &max_fee) != 0) {
+        PRINTF("format_compute_budget_max_fee: fee calculation failed\n");
+        return -1;
+    }
+    if (print_amount(max_fee, out, out_size) != 0) {
+        PRINTF("format_compute_budget_max_fee: amount does not fit\n");
+        return -1;
+    }
+    PRINTF("format_compute_budget_max_fee: %s\n", out);
     return 0;
 }
 
