@@ -49,8 +49,10 @@ int dynamic_token_info_add(dynamic_token_info_t *entry) {
     return 0;
 }
 
-// Linear scan over all received entries matching mint + token kind.
+// Linear scan over all received entries for a mint. `constrain_kind` additionally demands
+// the entry's token program kind, for callers that saw which program the instruction called.
 static const dynamic_token_info_t *find_entry(const uint8_t *mint_address,
+                                              bool constrain_kind,
                                               bool is_token_2022_kind) {
     if (g_dynamic_token_info == NULL || mint_address == NULL) {
         return NULL;
@@ -62,7 +64,8 @@ static const dynamic_token_info_t *find_entry(const uint8_t *mint_address,
         if (memcmp(g_dynamic_token_info->entries[i].mint_address, mint_address, PUBKEY_SIZE) != 0) {
             continue;
         }
-        if (is_token_2022_kind != g_dynamic_token_info->entries[i].is_token_2022_kind) {
+        if (constrain_kind &&
+            is_token_2022_kind != g_dynamic_token_info->entries[i].is_token_2022_kind) {
             continue;
         }
         return &g_dynamic_token_info->entries[i];
@@ -72,7 +75,7 @@ static const dynamic_token_info_t *find_entry(const uint8_t *mint_address,
 }
 
 const char *get_dynamic_token_symbol(const uint8_t *mint_address, bool is_token_2022_kind) {
-    const dynamic_token_info_t *found = find_entry(mint_address, is_token_2022_kind);
+    const dynamic_token_info_t *found = find_entry(mint_address, true, is_token_2022_kind);
     if (found == NULL) {
         PRINTF("get_dynamic_token_symbol: no match for mint '%.*H'\n", PUBKEY_SIZE, mint_address);
         return NULL;
@@ -95,9 +98,33 @@ const char *get_token_symbol(const uint8_t *mint_address, bool is_token_2022_kin
 
 // Returns the magnitude (decimal places) for a given mint, or -1 if not found.
 int get_token_magnitude(const uint8_t *mint_address, bool is_token_2022_kind) {
-    const dynamic_token_info_t *found = find_entry(mint_address, is_token_2022_kind);
+    const dynamic_token_info_t *found = find_entry(mint_address, true, is_token_2022_kind);
     if (found == NULL) {
         PRINTF("get_token_magnitude: no match for mint '%.*H'\n", PUBKEY_SIZE, mint_address);
+        return -1;
+    }
+    return (int) found->magnitude;
+}
+
+const char *get_token_symbol_by_mint(const uint8_t *mint_address) {
+    const dynamic_token_info_t *found = find_entry(mint_address, false, false);
+    if (found == NULL) {
+        PRINTF("get_token_symbol_by_mint: no dynamic match, fallback on hardcoded list\n");
+        return get_hardcoded_token_symbol(mint_address);
+    }
+    PRINTF("get_token_symbol_by_mint: mint '%.*H' == ticker '%s'\n",
+           PUBKEY_SIZE,
+           found->mint_address,
+           found->ticker);
+    return found->ticker;
+}
+
+int get_token_magnitude_by_mint(const uint8_t *mint_address) {
+    const dynamic_token_info_t *found = find_entry(mint_address, false, false);
+    if (found == NULL) {
+        PRINTF("get_token_magnitude_by_mint: no match for mint '%.*H'\n",
+               PUBKEY_SIZE,
+               mint_address);
         return -1;
     }
     return (int) found->magnitude;

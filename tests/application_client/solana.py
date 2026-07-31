@@ -401,16 +401,16 @@ class SolanaClient:
                                 name_type: int = 0x04,   # TOKEN
                                 source: int = 0x01,       # CRYPTO_ASSET_LIST
                                 chain_id: int = 900,      # Solana mainnet
-                                signer_key_id: int = 0):  # test key
+                                signer_key_id: int = 0,   # test key
+                                version: int = 2):
         """Provide a generic clear-signing TRUSTED_NAME descriptor (INS 0x29).
 
-        Unlike the legacy 0x21 flow, ADDRESS is raw 32 bytes, no challenge is
-        used, and the accepted (type, source) are TOKEN/SMART_CONTRACT and
-        CRYPTO_ASSET_LIST.
+        ADDRESS is raw 32 bytes, no challenge is used, the accepted (type, source) are
+        TOKEN/SMART_CONTRACT and CRYPTO_ASSET_LIST, and STRUCT_VERSION must be 2.
         """
         name_bytes = name.encode("ascii") if isinstance(name, str) else name
         payload = format_tlv(TrustedNameTag.STRUCTURE_TYPE, STRUCTURE_TYPE.TRUSTED_NAME)
-        payload += format_tlv(TrustedNameTag.VERSION, 2)
+        payload += format_tlv(TrustedNameTag.VERSION, version)
         payload += format_tlv(TrustedNameTag.TRUSTED_NAME_TYPE, name_type)
         payload += format_tlv(TrustedNameTag.TRUSTED_NAME_SOURCE, source)
         payload += format_tlv(TrustedNameTag.TRUSTED_NAME, name_bytes)

@@ -3,7 +3,7 @@
 // Instruction template table for clear signing.
 //
 // Owns the signed INSTRUCTION_INFO templates streamed by PROVIDE INSTRUCTION
-// INFO (0x06) / SUBSTRUCTURE (0x10) and consumed at PROMPT UI DISPLAY (0x0B).
+// INFO (0x24) / SUBSTRUCTURE (0x25) and consumed at PROMPT UI DISPLAY (0x0B).
 //
 // A template is assembled in two phases. PROVIDE INSTRUCTION INFO opens a single
 // in-flight builder and fills its committed fields (program_id, discriminator,
@@ -304,6 +304,9 @@ typedef struct cs_account_reset_s {
     bool has_scope;
     cs_reset_scope_t scope;
 } cs_account_reset_t;
+
+// Longest instruction discriminator prefix the spec defines (0-8 bytes).
+#define CS_DISCRIMINATOR_MAX_SIZE 8
 
 // One complete instruction template, keyed by (program_id, discriminator).
 // Only ever exposed once fully assembled, so every field is valid.

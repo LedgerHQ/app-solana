@@ -465,6 +465,21 @@ static int parse_display_field_envelope(uint8_t apdu_type,
         PRINTF("substructure: DISPLAY_FIELD missing PARAM\n");
         return -1;
     }
+    // NAME and PARAM_TYPE are both mandatory. Absent, the field would take the tag's zero
+    // value: an unlabelled field and the RAW formatter, neither of which the descriptor
+    // asked for.
+    if (!TLV_CHECK_RECEIVED_TAGS(out->received_tags, DISPLAY_FIELD_TAG_NAME)) {
+        PRINTF("substructure: DISPLAY_FIELD missing NAME\n");
+        return -1;
+    }
+    if (out->name.size == 0) {
+        PRINTF("substructure: DISPLAY_FIELD NAME is empty\n");
+        return -1;
+    }
+    if (!TLV_CHECK_RECEIVED_TAGS(out->received_tags, DISPLAY_FIELD_TAG_PARAM_TYPE)) {
+        PRINTF("substructure: DISPLAY_FIELD missing PARAM_TYPE\n");
+        return -1;
+    }
     return 0;
 }
 
@@ -479,6 +494,9 @@ static int extract_value(const buffer_t *value_buf, cs_value_t *out) {
 
 // Register an ACCOUNT_PATH value as an account display field, always rendered as
 // a short-form base58 address. Returns 0 on success, -1 on a malformed payload.
+// Only the formatters that describe an address accept one: a numeric or text formatter
+// over an account would render something its own label does not describe, so those refuse
+// rather than fall back to this.
 static int register_account_path_value(const cs_value_t *value, const char *field_name) {
     // The payload is the single-byte index into the instruction accounts. An
     // account is shown as its address, so the calling param's declared type and
@@ -579,11 +597,7 @@ static int register_param_enum(const display_field_out_t *display_field, const c
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
-        if (register_account_path_value(&value, field_name) != 0) {
-            return -1;
-        }
-    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+    if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
         if (cs_instruction_template_add_display_path(value.payload.ptr,
                                                      value.payload.size,
                                                      CS_PARAM_TYPE_ENUM,
@@ -595,15 +609,13 @@ static int register_param_enum(const display_field_out_t *display_field, const c
                value.payload.ptr,
                field_name ? field_name : "(none)");
     } else {
-        PRINTF("substructure: PARAM_ENUM requires ARGUMENT or ACCOUNT path, got %d\n",
-               value.source);
+        PRINTF("substructure: PARAM_ENUM requires an ARGUMENT path, got %d\n", value.source);
         return -1;
     }
     return 0;
 }
 
-// Register a PARAM_AMOUNT display field. An ACCOUNT_PATH value is rendered as a
-// base58 address instead of a formatted amount.
+// Register a PARAM_AMOUNT display field.
 static int register_param_amount(const display_field_out_t *display_field, const char *field_name) {
     param_amount_out_t param = {0};
     if (!parse_param_amount(&display_field->param, &param, &param.received_tags)) {
@@ -619,11 +631,7 @@ static int register_param_amount(const display_field_out_t *display_field, const
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
-        if (register_account_path_value(&value, field_name) != 0) {
-            return -1;
-        }
-    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+    if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
         if (cs_instruction_template_add_display_path(value.payload.ptr,
                                                      value.payload.size,
                                                      CS_PARAM_TYPE_AMOUNT,
@@ -647,8 +655,7 @@ static int register_param_amount(const display_field_out_t *display_field, const
                decimals,
                field_name ? field_name : "(none)");
     } else {
-        PRINTF("substructure: PARAM_AMOUNT requires ARGUMENT or ACCOUNT path, got %d\n",
-               value.source);
+        PRINTF("substructure: PARAM_AMOUNT requires an ARGUMENT path, got %d\n", value.source);
         return -1;
     }
     return 0;
@@ -672,11 +679,7 @@ static int register_param_token_amount(const display_field_out_t *display_field,
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
-        if (register_account_path_value(&value, field_name) != 0) {
-            return -1;
-        }
-    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+    if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
         if (cs_instruction_template_add_display_path(value.payload.ptr,
                                                      value.payload.size,
                                                      CS_PARAM_TYPE_TOKEN_AMOUNT,
@@ -760,7 +763,7 @@ static int register_param_token_amount(const display_field_out_t *display_field,
                format.mint_source,
                field_name ? field_name : "(none)");
     } else {
-        PRINTF("substructure: PARAM_TOKEN_AMOUNT requires ARGUMENT or ACCOUNT path, got %d\n",
+        PRINTF("substructure: PARAM_TOKEN_AMOUNT requires an ARGUMENT path, got %d\n",
                value.source);
         return -1;
     }
@@ -805,11 +808,7 @@ static int register_param_datetime(const display_field_out_t *display_field,
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
-        if (register_account_path_value(&value, field_name) != 0) {
-            return -1;
-        }
-    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+    if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
         uint32_t ticks_per_second = 1;
         if (!read_be_uint(&param.ticks_per_second, 4, 1, &ticks_per_second)) {
             PRINTF("substructure: PARAM_DATETIME bad TICKS_PER_SECOND\n");
@@ -836,8 +835,7 @@ static int register_param_datetime(const display_field_out_t *display_field,
                ticks_per_second,
                field_name ? field_name : "(none)");
     } else {
-        PRINTF("substructure: PARAM_DATETIME requires ARGUMENT or ACCOUNT path, got %d\n",
-               value.source);
+        PRINTF("substructure: PARAM_DATETIME requires an ARGUMENT path, got %d\n", value.source);
         return -1;
     }
     return 0;
@@ -860,11 +858,7 @@ static int register_param_unit(const display_field_out_t *display_field, const c
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
-        if (register_account_path_value(&value, field_name) != 0) {
-            return -1;
-        }
-    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+    if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
         uint8_t decimals = 0;
         bool prefix = false;
         if (param.decimals.ptr != NULL) {
@@ -907,8 +901,7 @@ static int register_param_unit(const display_field_out_t *display_field, const c
             prefix,
             field_name ? field_name : "(none)");
     } else {
-        PRINTF("substructure: PARAM_UNIT requires ARGUMENT or ACCOUNT path, got %d\n",
-               value.source);
+        PRINTF("substructure: PARAM_UNIT requires an ARGUMENT path, got %d\n", value.source);
         return -1;
     }
     return 0;
@@ -931,11 +924,7 @@ static int register_param_string(const display_field_out_t *display_field, const
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
-        if (register_account_path_value(&value, field_name) != 0) {
-            return -1;
-        }
-    } else if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+    if (value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
         cs_format_string_t format = {0};
         format.encoding = CS_STRING_ENCODING_UTF8;
         if (param.encoding.ptr != NULL) {
@@ -1062,8 +1051,7 @@ static int register_param_string(const display_field_out_t *display_field, const
                format.has_slice,
                field_name ? field_name : "(none)");
     } else {
-        PRINTF("substructure: PARAM_STRING requires ARGUMENT or ACCOUNT path, got %d\n",
-               value.source);
+        PRINTF("substructure: PARAM_STRING requires an ARGUMENT path, got %d\n", value.source);
         return -1;
     }
     return 0;
@@ -1137,13 +1125,14 @@ static int register_param_trusted_name(const display_field_out_t *display_field,
     return 0;
 }
 
-// Register a PARAM_ACCOUNT or PARAM_DURATION display field. Both reuse the
-// PARAM_RAW envelope (VERSION + VALUE) and carry no extra format parameters;
-// only the resulting param_type differs. An ACCOUNT_PATH value is rendered as a
-// base58 address.
+// Register a PARAM_ACCOUNT or PARAM_DURATION display field. Both reuse the PARAM_RAW
+// envelope (VERSION + VALUE) and carry no extra format parameters; only the resulting
+// param_type differs. `accepts_account` says whether this formatter describes an address,
+// which PARAM_ACCOUNT does and PARAM_DURATION does not.
 static int register_param_plain_argument(const display_field_out_t *display_field,
                                          const char *field_name,
-                                         uint8_t param_type) {
+                                         uint8_t param_type,
+                                         bool accepts_account) {
     param_raw_out_t param = {0};
     if (!parse_param_raw(&display_field->param, &param, &param.received_tags)) {
         PRINTF("substructure: plain PARAM (type %d) parsing failed\n", param_type);
@@ -1158,7 +1147,7 @@ static int register_param_plain_argument(const display_field_out_t *display_fiel
     if (extract_value(&param.value, &value) != 0) {
         return -1;
     }
-    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
+    if (value.source == CS_VALUE_SOURCE_ACCOUNT_PATH && accepts_account) {
         if (register_account_path_value(&value, field_name) != 0) {
             return -1;
         }
@@ -1175,9 +1164,7 @@ static int register_param_plain_argument(const display_field_out_t *display_fiel
                value.payload.ptr,
                field_name ? field_name : "(none)");
     } else {
-        PRINTF("substructure: param_type %d requires ARGUMENT or ACCOUNT path, got %d\n",
-               param_type,
-               value.source);
+        PRINTF("substructure: param_type %d rejects value source %d\n", param_type, value.source);
         return -1;
     }
     return 0;
@@ -1204,13 +1191,19 @@ static int dispatch_display_field(const display_field_out_t *display_field,
             return register_param_datetime(display_field, field_name);
 
         case CS_PARAM_TYPE_DURATION:
-            return register_param_plain_argument(display_field, field_name, CS_PARAM_TYPE_DURATION);
+            return register_param_plain_argument(display_field,
+                                                 field_name,
+                                                 CS_PARAM_TYPE_DURATION,
+                                                 false);
 
         case CS_PARAM_TYPE_UNIT:
             return register_param_unit(display_field, field_name);
 
         case CS_PARAM_TYPE_ACCOUNT:
-            return register_param_plain_argument(display_field, field_name, CS_PARAM_TYPE_ACCOUNT);
+            return register_param_plain_argument(display_field,
+                                                 field_name,
+                                                 CS_PARAM_TYPE_ACCOUNT,
+                                                 true);
 
         case CS_PARAM_TYPE_STRING:
             return register_param_string(display_field, field_name);

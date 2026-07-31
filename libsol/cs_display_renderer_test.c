@@ -13,6 +13,15 @@
 #include "cs_trusted_name_cache.h"
 #include "sol/printer.h"
 
+// Test helper: the cache takes an explicit length, while every case here passes a C string.
+static int add_trusted_name(const uint8_t *address, const char *name, uint8_t type) {
+    size_t name_len = 0;
+    if (name != NULL) {
+        name_len = strlen(name);
+    }
+    return cs_trusted_name_cache_add(address, name, name_len, type);
+}
+
 #define TN_TYPE_TOKEN          0x04
 #define TN_TYPE_SMART_CONTRACT 0x02
 
@@ -162,8 +171,11 @@ static void test_render_bool_leaf(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-static void test_render_skips_null_value(void) {
-    printf("  test_render_skips_null_value\n");
+// A display field whose path descends through an absent OPTION reaches no leaf. Curated IDLs
+// declare such fields routinely, so the instance simply does not carry them: the field is
+// left out and the rest of the instruction still renders.
+static void test_render_absent_field_is_omitted(void) {
+    printf("  test_render_absent_field_is_omitted\n");
     mock_mem_reset();
     cs_display_renderer_reset();
     init_dummy_template();
@@ -177,7 +189,8 @@ static void test_render_skips_null_value(void) {
 
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    // Intent emitted, but the NULL-valued field is skipped (no program: native)
+    // Intent still emitted, the absent field contributes nothing (native program: no
+    // program line).
     assert(cs_display_renderer_flat_count() == 1);
     assert(strcmp(get_flat(0)->title, "Instruction intent") == 0);
     assert(strcmp(get_flat(0)->value, "Transfer") == 0);
@@ -595,10 +608,10 @@ static void test_render_token_amount_max_label(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-// A MAX_LABEL that does not fit the render working buffer is refused, not
-// truncated: a shortened label would misrepresent the amount.
-static void test_render_amount_max_label_too_long_refused(void) {
-    printf("  test_render_amount_max_label_too_long_refused\n");
+// The spec bounds MAX_LABEL nowhere, so a long one renders whole. A shortened label would
+// misrepresent the amount, and the value buffer is sized to the label the field carries.
+static void test_render_amount_long_max_label(void) {
+    printf("  test_render_amount_long_max_label\n");
     mock_mem_reset();
     cs_display_renderer_reset();
 
@@ -624,7 +637,8 @@ static void test_render_amount_max_label_too_long_refused(void) {
     instr.resolved_count = 1;
 
     bool survivor = true;
-    assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(get_flat(1)->value, long_label) == 0);
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -830,8 +844,10 @@ static void test_render_enum_variant_name(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-static void test_render_string_too_long_refused(void) {
-    printf("  test_render_string_too_long_refused\n");
+// A long variant name renders whole: the value buffer follows the leaf's own size, so no
+// shared ceiling turns a legitimate descriptor into a refusal.
+static void test_render_long_enum_variant_name(void) {
+    printf("  test_render_long_enum_variant_name\n");
     mock_mem_reset();
     cs_display_renderer_reset();
 
@@ -842,18 +858,18 @@ static void test_render_string_too_long_refused(void) {
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_ENUM;
     template.display_field_count = 1;
 
-    // A value larger than the render working buffer must be refused, not truncated.
-    uint8_t oversized[256];
-    memset(oversized, 'x', sizeof(oversized));
+    uint8_t long_name[256];
+    memset(long_name, 'x', sizeof(long_name));
     RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_ENUM;
-    instr.resolved[0].value = oversized;
-    instr.resolved[0].value_size = sizeof(oversized);
+    instr.resolved[0].value = long_name;
+    instr.resolved[0].value_size = sizeof(long_name);
     instr.resolved_count = 1;
 
     bool survivor = true;
-    assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strlen(get_flat(1)->value) == sizeof(long_name));
 
     cs_display_renderer_reset();
     assert(mock_mem_outstanding() == 0);
@@ -1352,7 +1368,7 @@ static void test_render_trusted_name_resolved(void) {
 
     uint8_t pubkey[32];
     memset(pubkey, 0x42, 32);
-    assert(cs_trusted_name_cache_add(pubkey, "CODE", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(pubkey, "CODE", TN_TYPE_TOKEN) == 0);
 
     cs_instruction_template_t template;
     init_argument_template(&template, "Token", CS_PARAM_TYPE_TRUSTED_NAME);
@@ -1375,22 +1391,23 @@ static void test_render_trusted_name_resolved(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-// A maximum-length trusted name (CS_TRUSTED_NAME_MAX_LEN chars) is displayed in
-// full: the display value buffer must accommodate the spec-max name without
-// truncation.
-static void test_render_trusted_name_max_length(void) {
-    printf("  test_render_trusted_name_max_length\n");
+// The spec bounds NAME nowhere, so a long trusted name is rendered in full. This length
+// overruns any single shared render buffer, which is what makes it worth pinning.
+#define LONG_TRUSTED_NAME_LEN 200
+
+static void test_render_trusted_name_long(void) {
+    printf("  test_render_trusted_name_long\n");
     mock_mem_reset();
     cs_trusted_name_cache_reset();
     cs_display_renderer_reset();
 
-    char max_name[CS_TRUSTED_NAME_MAX_LEN + 1];
-    memset(max_name, 'A', CS_TRUSTED_NAME_MAX_LEN);
-    max_name[CS_TRUSTED_NAME_MAX_LEN] = '\0';
+    char long_name[LONG_TRUSTED_NAME_LEN + 1];
+    memset(long_name, 'A', LONG_TRUSTED_NAME_LEN);
+    long_name[LONG_TRUSTED_NAME_LEN] = '\0';
 
     uint8_t pubkey[32];
     memset(pubkey, 0x42, 32);
-    assert(cs_trusted_name_cache_add(pubkey, max_name, TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(pubkey, long_name, TN_TYPE_TOKEN) == 0);
 
     cs_instruction_template_t template;
     init_argument_template(&template, "Token", CS_PARAM_TYPE_TRUSTED_NAME);
@@ -1405,8 +1422,8 @@ static void test_render_trusted_name_max_length(void) {
     bool survivor = true;
     assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
     // The full name is rendered, not truncated.
-    assert(strlen(get_flat(1)->value) == CS_TRUSTED_NAME_MAX_LEN);
-    assert(strcmp(get_flat(1)->value, max_name) == 0);
+    assert(strlen(get_flat(1)->value) == LONG_TRUSTED_NAME_LEN);
+    assert(strcmp(get_flat(1)->value, long_name) == 0);
 
     cs_display_renderer_reset();
     cs_trusted_name_cache_reset();
@@ -1455,7 +1472,7 @@ static void test_render_trusted_name_type_not_allowed(void) {
     uint8_t pubkey[32];
     memset(pubkey, 0x42, 32);
     // Cached as SMART_CONTRACT, but the field only permits TOKEN.
-    assert(cs_trusted_name_cache_add(pubkey, "Jupiter", TN_TYPE_SMART_CONTRACT) == 0);
+    assert(add_trusted_name(pubkey, "Jupiter", TN_TYPE_SMART_CONTRACT) == 0);
 
     cs_instruction_template_t template;
     init_argument_template(&template, "Token", CS_PARAM_TYPE_TRUSTED_NAME);
@@ -1489,7 +1506,7 @@ static void test_render_trusted_name_unconstrained_mask(void) {
 
     uint8_t pubkey[32];
     memset(pubkey, 0x42, 32);
-    assert(cs_trusted_name_cache_add(pubkey, "Jupiter", TN_TYPE_SMART_CONTRACT) == 0);
+    assert(add_trusted_name(pubkey, "Jupiter", TN_TYPE_SMART_CONTRACT) == 0);
 
     cs_instruction_template_t template;
     init_argument_template(&template, "Program", CS_PARAM_TYPE_TRUSTED_NAME);
@@ -1521,7 +1538,7 @@ static void test_render_account_resolves_trusted_name(void) {
 
     uint8_t mint[32];
     memset(mint, 0x55, 32);
-    assert(cs_trusted_name_cache_add(mint, "USDC", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(mint, "USDC", TN_TYPE_TOKEN) == 0);
 
     cs_instruction_template_t template;
     init_argument_template(&template, "Mint", CS_PARAM_TYPE_ACCOUNT);
@@ -1894,44 +1911,29 @@ static void test_render_raw_bytes_fixed_hex(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-static void test_render_raw_bytes_too_long_refused(void) {
-    printf("  test_render_raw_bytes_too_long_refused\n");
-    mock_mem_reset();
-    cs_display_renderer_reset();
+// Raw bytes hex-encode to twice their length, and the value buffer is sized from the leaf,
+// so a long byte string renders whole however wide it is.
+static void test_render_raw_bytes_long(void) {
+    printf("  test_render_raw_bytes_long\n");
+    const size_t byte_counts[] = {33, 64, 256};
 
-    // 64 bytes -> 128 hex chars + NUL (129) overruns the 128-byte working buffer.
-    uint8_t value[64];
-    memset(value, 0xAB, sizeof(value));
-    cs_instruction_result_t instr;
-    cs_instruction_template_t template;
-    run_raw_leaf(IDL_KIND_BYTES_REMAINDER, value, sizeof(value), &instr, &template);
+    for (size_t i = 0; i < sizeof(byte_counts) / sizeof(byte_counts[0]); i++) {
+        mock_mem_reset();
+        cs_display_renderer_reset();
 
-    bool survivor = true;
-    assert(cs_display_renderer_run(&instr, 1, &survivor) == -1);
+        uint8_t value[256];
+        memset(value, 0xAB, byte_counts[i]);
+        cs_instruction_result_t instr;
+        cs_instruction_template_t template;
+        run_raw_leaf(IDL_KIND_BYTES_REMAINDER, value, byte_counts[i], &instr, &template);
 
-    cs_display_renderer_reset();
-    assert(mock_mem_outstanding() == 0);
-}
+        bool survivor = true;
+        assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+        assert(strlen(get_flat(1)->value) == byte_counts[i] * 2);
 
-static void test_render_raw_bytes_long_now_renders(void) {
-    printf("  test_render_raw_bytes_long_now_renders\n");
-    mock_mem_reset();
-    cs_display_renderer_reset();
-
-    // 33 bytes -> 66 hex chars, past the old 65-char cap but within the working
-    // buffer: it must now render in full rather than be refused.
-    uint8_t value[33];
-    memset(value, 0xAB, sizeof(value));
-    cs_instruction_result_t instr;
-    cs_instruction_template_t template;
-    run_raw_leaf(IDL_KIND_BYTES_REMAINDER, value, sizeof(value), &instr, &template);
-
-    bool survivor = true;
-    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
-    assert(strlen(get_flat(1)->value) == 66);
-
-    cs_display_renderer_reset();
-    assert(mock_mem_outstanding() == 0);
+        cs_display_renderer_reset();
+        assert(mock_mem_outstanding() == 0);
+    }
 }
 
 static void test_render_raw_f32(void) {
@@ -1987,8 +1989,8 @@ static void test_override_account_address(void) {
     memset(field_account, 0x11, 32);
     uint8_t port_account[32];
     memset(port_account, 0x22, 32);
-    assert(cs_trusted_name_cache_add(field_account, "FIELD_ACCT", TN_TYPE_TOKEN) == 0);
-    assert(cs_trusted_name_cache_add(port_account, "PORT_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(field_account, "FIELD_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(port_account, "PORT_ACCT", TN_TYPE_TOKEN) == 0);
 
     RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Transfer";
@@ -2039,8 +2041,8 @@ static void test_override_account_no_match(void) {
     memset(field_account, 0x11, 32);
     uint8_t port_account[32];
     memset(port_account, 0x22, 32);
-    assert(cs_trusted_name_cache_add(field_account, "FIELD_ACCT", TN_TYPE_TOKEN) == 0);
-    assert(cs_trusted_name_cache_add(port_account, "PORT_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(field_account, "FIELD_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(port_account, "PORT_ACCT", TN_TYPE_TOKEN) == 0);
 
     RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Transfer";
@@ -2201,7 +2203,7 @@ static void test_override_identity_when_value_matches(void) {
 
     uint8_t account[32];
     memset(account, 0x33, 32);
-    assert(cs_trusted_name_cache_add(account, "SAME_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(account, "SAME_ACCT", TN_TYPE_TOKEN) == 0);
 
     RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Transfer";
@@ -2254,9 +2256,9 @@ static void test_override_output_port_wins(void) {
     memset(input_account, 0x22, 32);
     uint8_t output_account[32];
     memset(output_account, 0x33, 32);
-    assert(cs_trusted_name_cache_add(field_account, "FIELD_ACCT", TN_TYPE_TOKEN) == 0);
-    assert(cs_trusted_name_cache_add(input_account, "INPUT_ACCT", TN_TYPE_TOKEN) == 0);
-    assert(cs_trusted_name_cache_add(output_account, "OUTPUT_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(field_account, "FIELD_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(input_account, "INPUT_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(output_account, "OUTPUT_ACCT", TN_TYPE_TOKEN) == 0);
 
     RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Wrap";
@@ -2311,8 +2313,8 @@ static void test_override_output_port_wins_output_streamed_first(void) {
     memset(input_account, 0x22, 32);
     uint8_t output_account[32];
     memset(output_account, 0x33, 32);
-    assert(cs_trusted_name_cache_add(input_account, "INPUT_ACCT", TN_TYPE_TOKEN) == 0);
-    assert(cs_trusted_name_cache_add(output_account, "OUTPUT_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(input_account, "INPUT_ACCT", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(output_account, "OUTPUT_ACCT", TN_TYPE_TOKEN) == 0);
 
     RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Wrap";
@@ -2483,10 +2485,10 @@ static void test_override_multi_field_isolation(void) {
     memset(port_one, 0x33, 32);
     uint8_t port_two[32];
     memset(port_two, 0x44, 32);
-    assert(cs_trusted_name_cache_add(raw_one, "RAW_ONE", TN_TYPE_TOKEN) == 0);
-    assert(cs_trusted_name_cache_add(raw_two, "RAW_TWO", TN_TYPE_TOKEN) == 0);
-    assert(cs_trusted_name_cache_add(port_one, "PORT_ONE", TN_TYPE_TOKEN) == 0);
-    assert(cs_trusted_name_cache_add(port_two, "PORT_TWO", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(raw_one, "RAW_ONE", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(raw_two, "RAW_TWO", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(port_one, "PORT_ONE", TN_TYPE_TOKEN) == 0);
+    assert(add_trusted_name(port_two, "PORT_TWO", TN_TYPE_TOKEN) == 0);
 
     RENDER_TEST_TEMPLATE(template);
     template.operation_type = "Transfer";
@@ -2738,7 +2740,7 @@ int main(void) {
     test_render_u64_leaf();
     test_render_u32_high_bit_leaf();
     test_render_bool_leaf();
-    test_render_skips_null_value();
+    test_render_absent_field_is_omitted();
     test_render_empty_input();
     test_alloc_failure();
     test_partial_alloc_failure();
@@ -2751,7 +2753,7 @@ int main(void) {
     test_render_amount_max_label();
     test_render_amount_max_label_below_max();
     test_render_amount_max_label_u8_width();
-    test_render_amount_max_label_too_long_refused();
+    test_render_amount_long_max_label();
     test_render_token_amount_max_label();
     test_render_token_amount_below_max_with_label();
     test_render_token_amount_native();
@@ -2760,7 +2762,7 @@ int main(void) {
     test_render_token_amount_resolved_mint();
     test_render_account_full_address();
     test_render_enum_variant_name();
-    test_render_string_too_long_refused();
+    test_render_long_enum_variant_name();
     test_render_string_long_now_renders();
     test_render_unsupported_param_type();
     test_render_datetime();
@@ -2777,7 +2779,7 @@ int main(void) {
     test_display_renderer_append();
     test_render_account_short_form();
     test_render_trusted_name_resolved();
-    test_render_trusted_name_max_length();
+    test_render_trusted_name_long();
     test_render_trusted_name_cache_miss();
     test_render_trusted_name_type_not_allowed();
     test_render_trusted_name_unconstrained_mask();
@@ -2796,8 +2798,7 @@ int main(void) {
     test_render_raw_short_u16_multibyte();
     test_render_raw_bool_u16_high_byte();
     test_render_raw_bytes_fixed_hex();
-    test_render_raw_bytes_too_long_refused();
-    test_render_raw_bytes_long_now_renders();
+    test_render_raw_bytes_long();
     test_render_raw_f32();
     test_render_raw_f64();
     test_override_account_address();

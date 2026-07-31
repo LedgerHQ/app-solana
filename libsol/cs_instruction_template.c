@@ -646,9 +646,10 @@ int cs_instruction_template_set_discriminator(const uint8_t *data, size_t size) 
         PRINTF("cs_instruction_template_set_discriminator: no builder open\n");
         return -1;
     }
-    if (size > UINT8_MAX) {
-        PRINTF("cs_instruction_template_set_discriminator: discriminator too long (%d)\n",
-               (int) size);
+    if (size > CS_DISCRIMINATOR_MAX_SIZE) {
+        PRINTF("cs_instruction_template_set_discriminator: discriminator too long (%d > %d)\n",
+               (int) size,
+               CS_DISCRIMINATOR_MAX_SIZE);
         return -1;
     }
     if (builder->discriminator != NULL) {

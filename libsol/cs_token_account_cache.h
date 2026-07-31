@@ -42,5 +42,9 @@ const cs_token_account_t *cs_token_account_cache_find(const uint8_t account_addr
 // Number of cached token account states.
 size_t cs_token_account_cache_count(void);
 
+// Cached token account state at `index`, for callers enumerating the whole cache.
+// Returns NULL when the index is past the end.
+const cs_token_account_t *cs_token_account_cache_at(size_t index);
+
 // Release the cache, returning to the empty state. Safe when none allocated.
 void cs_token_account_cache_reset(void);

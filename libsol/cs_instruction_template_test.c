@@ -376,8 +376,8 @@ static void test_commit_grows_past_old_cap(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-static void test_commit_pool_exhaustion_fail_closed(void) {
-    printf("  test_commit_pool_exhaustion_fail_closed\n");
+static void test_commit_pool_exhaustion_refused(void) {
+    printf("  test_commit_pool_exhaustion_refused\n");
     mock_mem_reset();
     cs_instruction_template_table_reset();
 
@@ -811,7 +811,7 @@ int main(void) {
     test_add_display_field_growth_alloc_fail();
     test_commit_no_builder();
     test_commit_grows_past_old_cap();
-    test_commit_pool_exhaustion_fail_closed();
+    test_commit_pool_exhaustion_refused();
     test_open_discards_previous_builder();
     test_reset_cleans_everything();
     test_alloc_failure_on_open();

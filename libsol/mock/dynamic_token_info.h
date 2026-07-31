@@ -7,6 +7,8 @@
 
 const char *get_token_symbol(const uint8_t *mint_address, bool is_token_2022_kind);
 int get_token_magnitude(const uint8_t *mint_address, bool is_token_2022_kind);
+const char *get_token_symbol_by_mint(const uint8_t *mint_address);
+int get_token_magnitude_by_mint(const uint8_t *mint_address);
 const uint8_t *get_token_mint_address(const char *symbol, bool *is_token_2022_kind);
 
 // Test control: set a mock entry so get_token_symbol / get_token_magnitude

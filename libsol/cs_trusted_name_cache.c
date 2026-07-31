@@ -15,14 +15,16 @@ typedef struct cs_trusted_name_cache_table_s {
 
 static cs_trusted_name_cache_table_t G_trusted_name_cache;
 
-int cs_trusted_name_cache_add(const uint8_t address[PUBKEY_SIZE], const char *name, uint8_t type) {
+int cs_trusted_name_cache_add(const uint8_t address[PUBKEY_SIZE],
+                              const char *name,
+                              size_t name_len,
+                              uint8_t type) {
     if (name == NULL) {
         PRINTF("cs_trusted_name_cache_add: NULL name\n");
         return -1;
     }
-    size_t name_len = strlen(name);
-    if (name_len == 0 || name_len > CS_TRUSTED_NAME_MAX_LEN) {
-        PRINTF("cs_trusted_name_cache_add: invalid name length %u\n", (unsigned) name_len);
+    if (name_len == 0) {
+        PRINTF("cs_trusted_name_cache_add: empty name\n");
         return -1;
     }
     if (cs_trusted_name_cache_find(address) != NULL) {

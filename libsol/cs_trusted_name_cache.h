@@ -10,10 +10,6 @@
 
 #include "sol/pubkey.h"
 
-// Maximum accepted name length, excluding the NUL terminator. This is a
-// validation bound only: storage is sized to the actual name (see `name`).
-#define CS_TRUSTED_NAME_MAX_LEN 64
-
 // `type` is kept so a PARAM_TRUSTED_NAME field can enforce its type allow-list.
 // The source is not stored: ingest only accepts CRYPTO_ASSET_LIST.
 // `name` is heap-allocated to strlen(name) + 1, owned by this entry, so a short
@@ -24,9 +20,13 @@ typedef struct cs_trusted_name_s {
     char *name;
 } cs_trusted_name_t;
 
-// Store one trusted name (`name` NUL-terminated, at most CS_TRUSTED_NAME_MAX_LEN
-// long). Returns -1 when out of memory, name invalid, or key duplicated.
-int cs_trusted_name_cache_add(const uint8_t address[PUBKEY_SIZE], const char *name, uint8_t type);
+// Store one trusted name, given as `name_len` bytes that need not be NUL-terminated: the
+// entry owns the terminated copy, so callers hand over the descriptor's bytes directly.
+// Returns -1 when out of memory, the name is empty, or the key is duplicated.
+int cs_trusted_name_cache_add(const uint8_t address[PUBKEY_SIZE],
+                              const char *name,
+                              size_t name_len,
+                              uint8_t type);
 
 // Returns the entry matching address, or NULL when none was provided.
 const cs_trusted_name_t *cs_trusted_name_cache_find(const uint8_t address[PUBKEY_SIZE]);

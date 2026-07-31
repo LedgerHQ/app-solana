@@ -14,13 +14,24 @@
 // walks ignore it; enum tests store variants under this same id.
 static const uint8_t TEST_PROGRAM_ID[32] = {0xC0, 0xFF, 0xEE};
 
-// Test context: separate input paths and output resolved leaves.
+// Test context: separate input paths and output resolved leaves. `resolved_count` is
+// derived here rather than reported by the walker, which only owes the caller the slots.
 typedef struct {
     idl_match_path_t paths[MAX_TEST_PATHS];
     uint8_t path_count;
     idl_resolved_leaf_t resolved[MAX_TEST_PATHS];
     size_t resolved_count;
 } test_walk_t;
+
+// Count the slots the walk actually filled.
+static void tw_count_resolved(test_walk_t *tw) {
+    tw->resolved_count = 0;
+    for (uint8_t i = 0; i < tw->path_count; i++) {
+        if (tw->resolved[i].value != NULL) {
+            tw->resolved_count++;
+        }
+    }
+}
 
 // Run a complete walk against an in-memory pool + data.
 // Returns the idl_walker_run() result code, or -1 if the pool fails to parse.
@@ -42,8 +53,8 @@ static int run_walk(const uint8_t *pool,
                             TEST_PROGRAM_ID,
                             tw->paths,
                             tw->path_count,
-                            tw->resolved,
-                            &tw->resolved_count);
+                            tw->resolved);
+    tw_count_resolved(tw);
     idl_pool_reset();
     assert(mock_mem_outstanding() == 0);
     return rc;
@@ -93,8 +104,8 @@ static int run_walk_enum(const uint8_t *pool,
                             TEST_PROGRAM_ID,
                             tw->paths,
                             tw->path_count,
-                            tw->resolved,
-                            &tw->resolved_count);
+                            tw->resolved);
+    tw_count_resolved(tw);
     idl_pool_reset();
     return rc;
 }
@@ -683,8 +694,7 @@ void test_structural_validation() {
                               TEST_PROGRAM_ID,
                               tw.paths,
                               tw.path_count,
-                              tw.resolved,
-                              &tw.resolved_count) == 0);
+                              tw.resolved) == 0);
         idl_pool_reset();
         assert(mock_mem_outstanding() == 0);
     }
@@ -700,8 +710,7 @@ void test_structural_validation() {
                               TEST_PROGRAM_ID,
                               tw.paths,
                               tw.path_count,
-                              tw.resolved,
-                              &tw.resolved_count) == -1);
+                              tw.resolved) == -1);
         idl_pool_reset();
         assert(mock_mem_outstanding() == 0);
     }
@@ -829,7 +838,7 @@ void test_enum_raw_size_payload() {
     assert(mock_mem_outstanding() == 0);
 }
 
-// A discriminator with no matching cached variant fails the walk closed.
+// A discriminator with no matching cached variant makes the walk return -1.
 void test_enum_missing_variant_fails() {
     mock_mem_reset();
     cs_enum_cache_reset();
@@ -1231,7 +1240,7 @@ void test_enum_inline_option_fixed_empty_struct_inner() {
 }
 
 // An absent inline OPTION_FIXED wrapping a variable-size inner is malformed
-// (that is OPTION_DYNAMIC's role) and must fail closed.
+// (that is OPTION_DYNAMIC's role) and must return -1.
 void test_enum_inline_option_fixed_variable_inner_rejected() {
     // STRUCT{ OPTION_FIXED(flag U8, STRING_PREFIXED(len U8, utf8)) }
     const uint8_t inline_desc[] = {
@@ -1263,7 +1272,7 @@ void test_enum_inline_option_fixed_variable_inner_rejected() {
 }
 
 // An absent inline OPTION_FIXED whose inner skip would run past the data end
-// fails closed rather than advancing the cursor out of bounds.
+// returns -1 rather than advancing the cursor out of bounds.
 void test_enum_inline_option_fixed_skip_past_end() {
     // STRUCT{ OPTION_FIXED(flag U8, U32) }
     const uint8_t inline_desc[] = {
@@ -1293,7 +1302,7 @@ void test_enum_inline_option_fixed_skip_past_end() {
     assert(mock_mem_outstanding() == 0);
 }
 
-// An INLINE payload whose fields overrun the instruction data fails closed.
+// An INLINE payload whose fields overrun the instruction data returns -1.
 void test_enum_inline_payload_overruns_data() {
     mock_mem_reset();
     cs_enum_cache_reset();
@@ -1350,8 +1359,7 @@ void test_oom_at_each_alloc_site() {
                                 TEST_PROGRAM_ID,
                                 tw.paths,
                                 tw.path_count,
-                                tw.resolved,
-                                &tw.resolved_count);
+                                tw.resolved);
         }
         assert(rc == -1);
 
@@ -1392,8 +1400,7 @@ void test_oom_fixed_size_table() {
                                 TEST_PROGRAM_ID,
                                 tw.paths,
                                 tw.path_count,
-                                tw.resolved,
-                                &tw.resolved_count);
+                                tw.resolved);
         }
         assert(rc == -1);
 

@@ -345,7 +345,7 @@ void test_get_account_from_ins_resolves_static_account() {
     assert(memcmp(resolved1, &expected1, PUBKEY_SIZE) == 0);
 }
 
-void test_get_account_from_ins_alt_index_fails_closed() {
+void test_get_account_from_ins_alt_index_refused() {
     // accounts[1] == 4 points into the ALT range (pubkeys_length == 4)
     uint8_t accounts[] = {1, 4};
     Instruction instruction = {0, accounts, ARRAY_LEN(accounts), NULL, 0};
@@ -366,7 +366,7 @@ void test_get_account_from_ins_alt_index_fails_closed() {
     assert(get_account_from_ins(&instruction, &header, 1) == NULL);
 }
 
-void test_get_account_from_ins_account_index_out_of_range_fails_closed() {
+void test_get_account_from_ins_account_index_out_of_range_refused() {
     uint8_t accounts[] = {1, 3};
     Instruction instruction = {0, accounts, ARRAY_LEN(accounts), NULL, 0};
     Pubkey header_pubkeys[] = {
@@ -396,8 +396,8 @@ int main() {
     test_instruction_validate_allow_ALT_tolerates_alt_account_indices();
     test_instruction_validate_allow_ALT_bad_program_id_index_fail();
     test_get_account_from_ins_resolves_static_account();
-    test_get_account_from_ins_alt_index_fails_closed();
-    test_get_account_from_ins_account_index_out_of_range_fails_closed();
+    test_get_account_from_ins_alt_index_refused();
+    test_get_account_from_ins_account_index_out_of_range_refused();
     test_instruction_program_id_unknown();
     test_instruction_program_id_stake();
     test_instruction_program_id_system();

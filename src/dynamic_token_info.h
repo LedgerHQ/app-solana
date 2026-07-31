@@ -32,5 +32,13 @@ const char *get_token_symbol(const uint8_t *mint_address, bool is_token_2022_kin
 // Returns the magnitude (decimals) for a given mint, or -1 if not found.
 int get_token_magnitude(const uint8_t *mint_address, bool is_token_2022_kind);
 
+// Metadata for a mint whose token program the caller does not know, so an SPL-legacy and a
+// Token-2022 descriptor both answer. A mint address names one token on chain, so the mint
+// alone identifies it.
+const char *get_token_symbol_by_mint(const uint8_t *mint_address);
+
+// Returns the magnitude (decimals) for a given mint, or -1 if not found.
+int get_token_magnitude_by_mint(const uint8_t *mint_address);
+
 const uint8_t *get_dynamic_token_mint_address(const char *symbol, bool *is_token_2022_kind);
 const uint8_t *get_token_mint_address(const char *symbol, bool *is_token_2022_kind);

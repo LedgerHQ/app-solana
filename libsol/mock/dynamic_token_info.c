@@ -51,6 +51,14 @@ int get_token_magnitude(const uint8_t *mint_address, bool is_token_2022_kind) {
     return -1;
 }
 
+const char *get_token_symbol_by_mint(const uint8_t *mint_address) {
+    return get_token_symbol(mint_address, false);
+}
+
+int get_token_magnitude_by_mint(const uint8_t *mint_address) {
+    return get_token_magnitude(mint_address, false);
+}
+
 const uint8_t *get_token_mint_address(const char *symbol, bool *is_token_2022_kind) {
     return get_hardcoded_token_mint_address(symbol, is_token_2022_kind);
 }

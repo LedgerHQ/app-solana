@@ -534,14 +534,12 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
         return -1;
     }
 
-    size_t walker_resolved_count = 0;
     int walk_status = idl_walker_run(instruction->data,
                                      instruction->data_length,
                                      program_id,
                                      argument_paths,
                                      match_count,
-                                     walker_results,
-                                     &walker_resolved_count);
+                                     walker_results);
     idl_pool_reset();
     if (walk_status != 0) {
         PRINTF("finalize cs: walk failed\n");
@@ -1010,6 +1008,39 @@ static int accumulate_compute_budget(const Instruction *instruction,
     return 0;
 }
 
+// Extend the owner-binding map with the chain-attested TOKEN_ACCOUNT_STATE bindings, which
+// cover token accounts that already existed and that the transaction therefore never binds
+// itself. Appending after the walk gives the transaction-derived bindings precedence: the
+// Solana runtime enforces those, so an account both sources name keeps the enforced answer
+// and the attested one is dropped rather than left to match alongside it.
+static void append_attested_owner_bindings(cs_owner_binding_t *owner_bindings,
+                                           size_t *owner_binding_count) {
+    for (size_t i = 0; i < cs_token_account_cache_count(); i++) {
+        const cs_token_account_t *entry = cs_token_account_cache_at(i);
+        if (entry == NULL) {
+            continue;
+        }
+        bool already_bound = false;
+        for (size_t b = 0; b < *owner_binding_count && !already_bound; b++) {
+            already_bound = (memcmp(owner_bindings[b].token_account,
+                                    entry->account_address,
+                                    PUBKEY_SIZE) == 0);
+        }
+        if (already_bound) {
+            PRINTF("finalize cs: attested owner binding %d superseded by the transaction\n",
+                   (int) i);
+            continue;
+        }
+        // The cache outlives the merge run, so its storage backs the borrowed pointers.
+        owner_bindings[*owner_binding_count].token_account = entry->account_address;
+        owner_bindings[*owner_binding_count].owner = entry->owner;
+        (*owner_binding_count)++;
+        PRINTF("finalize cs: attested owner binding added for account %.*H\n",
+               PUBKEY_SIZE,
+               entry->account_address);
+    }
+}
+
 // Walk every transaction instruction against the IDL type pool of its matching
 // template, collecting the display-field leaf values and resolved merge-engine
 // substructures into per-instruction results. Seeds the caller-owned mint- and
@@ -1110,6 +1141,8 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
                            binding_count) != 0) {
         return -1;
     }
+
+    append_attested_owner_bindings(owner_bindings, owner_binding_count);
     return 0;
 }
 
@@ -1276,6 +1309,9 @@ int handle_finalize_generic_clear_signing(void) {
         return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
     size_t instruction_count = header.instructions_length;
+    // Owner bindings come from two sources: at most one OWNER_ASSOC per instruction, plus
+    // one per chain-attested token account state the host preloaded.
+    size_t owner_binding_capacity = instruction_count + cs_token_account_cache_count();
 
     cs_instruction_result_t *walked_instructions = NULL;
     bool *survivors = NULL;
@@ -1286,7 +1322,7 @@ int handle_finalize_generic_clear_signing(void) {
                     APP_MEM_CALLOC((void **) &survivors, instruction_count * sizeof(*survivors)) &&
                     APP_MEM_CALLOC((void **) &bindings, instruction_count * sizeof(*bindings)) &&
                     APP_MEM_CALLOC((void **) &owner_bindings,
-                                   instruction_count * sizeof(*owner_bindings));
+                                   owner_binding_capacity * sizeof(*owner_bindings));
 
     uint16_t sw;
     if (!alloc_ok) {

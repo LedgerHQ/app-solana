@@ -212,6 +212,10 @@ static bool junction_pair_matches(const cs_resolved_port_t *output_port,
         PRINTF("junction_pair_matches: value kinds do not line up\n");
         return false;
     }
+    // The rule table scopes the token guard to Rule 2, but applying it before the rule is
+    // classified holds it over Rule 1 too. Deliberately stricter: two legs naming different
+    // mints describe different tokens whatever their amounts say, so the merges this turns
+    // away are ones no display would gain from.
     return tokens_compatible(output_port, input_port);
 }
 
@@ -823,8 +827,10 @@ static bool declares_admitting_reset(const merge_scratch_t *scratch,
 // Whether an instruction could have put value into an account. Answers conservatively:
 // only a definite no lets a collapse through.
 static bool instruction_may_deposit(const cs_instruction_result_t *item, const uint8_t *account) {
-    // What the descriptor declares comes first, since it says how much moved and so lets
-    // a creation step with nothing in it pass.
+    // Two independent signals answer this: what the descriptor declares, and the raw
+    // writable list. A port's account is normally writable too, so the zero-amount
+    // exemption below only decides the outcome for a caller whose writable list does not
+    // name the account.
     for (size_t p = 0; p < item->resolved_port_count; p++) {
         if (item->template->ports[p].direction != CS_PORT_DIRECTION_OUTPUT ||
             item->resolved_ports[p].excluded || item->resolved_ports[p].account == NULL) {

@@ -436,21 +436,6 @@ static int handle_sign_message_ui(void) {
     }
 }
 
-static int scan_header_for_signer(const uint32_t *derivation_path,
-                                  uint32_t derivation_path_length,
-                                  size_t *signer_index,
-                                  const MessageHeader *header) {
-    Pubkey signer_pubkey;
-    cx_err_t cx_err = get_public_key(signer_pubkey.data, derivation_path, derivation_path_length);
-    if (cx_err != CX_OK) {
-        return -1;
-    }
-    return get_pubkey_index(&signer_pubkey,
-                            header->pubkeys,
-                            header->pubkeys_header.num_required_signatures,
-                            signer_index);
-}
-
 int handle_sign_message_parse_message(void) {
     if ((G_command.instruction != InsDeprecatedSignMessage &&
          G_command.instruction != InsSignMessage &&

@@ -53,6 +53,29 @@ int get_pubkey_index(const Pubkey *needle,
     return -1;
 }
 
+int scan_header_for_signer(const uint32_t *derivation_path,
+                           uint32_t derivation_path_length,
+                           size_t *signer_index,
+                           const MessageHeader *header) {
+    Pubkey signer_pubkey;
+    cx_err_t cx_err = get_public_key(signer_pubkey.data, derivation_path, derivation_path_length);
+    if (cx_err != CX_OK) {
+        PRINTF("scan_header_for_signer: key derivation failed: %x\n", cx_err);
+        return -1;
+    }
+    // Only the first num_required_signatures accounts sign, so a key found past them is
+    // present in the message without being a party to it.
+    if (get_pubkey_index(&signer_pubkey,
+                         header->pubkeys,
+                         header->pubkeys_header.num_required_signatures,
+                         signer_index) != 0) {
+        PRINTF("scan_header_for_signer: device key is not a required signer\n");
+        return -1;
+    }
+    PRINTF("scan_header_for_signer: device key signs at index %d\n", (int) *signer_index);
+    return 0;
+}
+
 int read_derivation_path(const uint8_t *data_buffer,
                          size_t data_size,
                          uint32_t *derivation_path,

@@ -17,6 +17,10 @@
 // Chain id carried by a Solana mainnet trusted-name descriptor.
 #define SOLANA_CHAIN_ID 900
 
+// Serialization version the clear-signing spec mandates for TRUSTED_NAME. The SDK use case
+// accepts every version it knows, so the one this app reads is pinned here.
+#define TRUSTED_NAME_STRUCT_VERSION 2
+
 static int handle_provide_trusted_name_internal(void) {
     tlv_trusted_name_out_t tlv_output = {0};
 
@@ -25,6 +29,13 @@ static int handle_provide_trusted_name_internal(void) {
     // Parses the TLV and verifies the descriptor signature against the PKI.
     if (tlv_use_case_trusted_name(&payload, &tlv_output) != TLV_TRUSTED_NAME_SUCCESS) {
         PRINTF("tlv_use_case_trusted_name failed\n");
+        return -1;
+    }
+
+    if (tlv_output.version != TRUSTED_NAME_STRUCT_VERSION) {
+        PRINTF("Error: trusted name struct version %d, expected %d\n",
+               tlv_output.version,
+               TRUSTED_NAME_STRUCT_VERSION);
         return -1;
     }
 
@@ -51,9 +62,8 @@ static int handle_provide_trusted_name_internal(void) {
         return -1;
     }
 
-    if (tlv_output.trusted_name.size == 0 ||
-        tlv_output.trusted_name.size > CS_TRUSTED_NAME_MAX_LEN) {
-        PRINTF("Error: invalid name size %u\n", (unsigned) tlv_output.trusted_name.size);
+    if (tlv_output.trusted_name.size == 0) {
+        PRINTF("Error: empty trusted name\n");
         return -1;
     }
 
@@ -66,23 +76,20 @@ static int handle_provide_trusted_name_internal(void) {
         }
     }
 
-    // The cache needs a NUL-terminated string.
-    char name[CS_TRUSTED_NAME_MAX_LEN + 1] = {0};
-    memcpy(name, tlv_output.trusted_name.ptr, tlv_output.trusted_name.size);
-    name[tlv_output.trusted_name.size] = '\0';
-
-    if (cs_trusted_name_cache_add(tlv_output.address.ptr, name, tlv_output.trusted_name_type) !=
-        0) {
+    // The cache terminates its own copy, so the descriptor's bytes go straight in.
+    if (cs_trusted_name_cache_add((const uint8_t *) tlv_output.address.ptr,
+                                  (const char *) tlv_output.trusted_name.ptr,
+                                  tlv_output.trusted_name.size,
+                                  tlv_output.trusted_name_type) != 0) {
         PRINTF("cs_trusted_name_cache_add failed\n");
         return -1;
     }
 
     PRINTF("=== TRUSTED NAME ===\n");
-    PRINTF("name    = %s\n", name);
+    PRINTF("name    = %.*s\n", tlv_output.trusted_name.size, tlv_output.trusted_name.ptr);
     PRINTF("type    = %d\n", tlv_output.trusted_name_type);
     PRINTF("source  = %d\n", tlv_output.trusted_name_source);
     PRINTF("address = %.*H\n", PUBKEY_SIZE, tlv_output.address.ptr);
-
     return 0;
 }
 

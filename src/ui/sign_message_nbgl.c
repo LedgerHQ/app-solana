@@ -409,6 +409,16 @@ int ui_clear_signing_review(void) {
     size_t flat_count = cs_display_renderer_flat_count();
     PRINTF("ui_clear_signing_review: %d flat elements\n", (int) flat_count);
 
+    // NBGL counts pairs in a uint8_t and indexes its callback with one, so anything past
+    // 255 could not be reached and the review would stop short of the whole transaction
+    // while still offering the Sign button. Refuse instead of showing a partial review.
+    if (flat_count > UINT8_MAX) {
+        PRINTF("ui_clear_signing_review: %d elements exceed the %d NBGL can display\n",
+               (int) flat_count,
+               UINT8_MAX);
+        return -1;
+    }
+
     explicit_bzero(&G_warning, sizeof(nbgl_warning_t));
     init_review_content(TYPE_TRANSACTION, flat_count, false);
     G_content.callback = cs_get_review_pair;

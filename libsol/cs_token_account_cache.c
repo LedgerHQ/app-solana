@@ -75,6 +75,16 @@ size_t cs_token_account_cache_count(void) {
     return G_token_account_cache.count;
 }
 
+const cs_token_account_t *cs_token_account_cache_at(size_t index) {
+    if (index >= G_token_account_cache.count) {
+        PRINTF("cs_token_account_cache_at: index %u out of range (%u)\n",
+               (unsigned) index,
+               (unsigned) G_token_account_cache.count);
+        return NULL;
+    }
+    return G_token_account_cache.accounts[index];
+}
+
 void cs_token_account_cache_reset(void) {
     for (size_t i = 0; i < G_token_account_cache.count; i++) {
         APP_MEM_FREE_AND_NULL((void **) &G_token_account_cache.accounts[i]);

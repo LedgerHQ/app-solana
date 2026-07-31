@@ -55,7 +55,6 @@ typedef struct {
 //   resolved     — caller-allocated array of at least match_count entries;
 //                  on success, resolved[i] holds the leaf that matched
 //                  match_paths[i] (or kind=0 / value=NULL if not reached)
-//   resolved_count — number of slots that were actually filled
 //
 // A pool must have been provided via idl_pool_provide(). `data` may be NULL
 // only when `data_size` is 0. The data buffer is borrowed for the duration of
@@ -67,5 +66,4 @@ int idl_walker_run(const uint8_t *data,
                    const uint8_t program_id[PUBKEY_SIZE],
                    const idl_match_path_t *match_paths,
                    size_t match_count,
-                   idl_resolved_leaf_t *resolved,
-                   size_t *resolved_count);
+                   idl_resolved_leaf_t *resolved);

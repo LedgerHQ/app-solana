@@ -58,7 +58,7 @@ void test_process_message_body_too_few_ix_fail() {
 
 // No instruction-count cap remains. A batch of transfers larger than any
 // supported display combination is refused by the display layer, not by an
-// arbitrary count guard (fail closed).
+// arbitrary count guard, returning -1 and parsing no instruction.
 void test_process_message_body_too_many_ix_fail() {
     Pubkey accounts[] = {
         {{171, 88, 202, 32, 185, 160, 182, 116, 130, 185, 73, 48, 13, 216, 170, 71, 172, 195, 165, 123, 87, 70, 130, 219, 5, 157, 240, 187, 26, 191, 158, 218}},

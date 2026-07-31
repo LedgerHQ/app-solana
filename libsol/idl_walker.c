@@ -8,8 +8,8 @@
 // idl_walker_run() returns.
 //
 // Descent is iterative over an explicit heap frame stack (no C recursion), so
-// deeply nested descriptors cannot overflow the device stack. The walk fails
-// closed (returns -1) on any descriptor/data inconsistency.
+// deeply nested descriptors cannot overflow the device stack. Any inconsistency
+// between the descriptor and the data returns -1, resolving no leaf.
 
 #include <string.h>
 
@@ -56,6 +56,17 @@ static size_t fixed_primitive_width(uint8_t kind) {
         default:
             return 0;
     }
+}
+
+// Byte width of the path step an ENUM contributes, which the spec ties to the
+// discriminator's numeric type rather than to its wire encoding. SHORT_U16 encodes a u16
+// in a variable number of data bytes, so it has no fixed data width but still steps as one.
+// Returns 0 for a kind that cannot discriminate an enum.
+static size_t enum_path_step_width(uint8_t kind) {
+    if (kind == IDL_KIND_SHORT_U16) {
+        return 2;
+    }
+    return fixed_primitive_width(kind);
 }
 
 // Try to determine the static serialized size of pool entry `idx` from the
@@ -317,7 +328,6 @@ typedef struct walk_ctx_s {
     const idl_match_path_t *match_paths;
     size_t match_count;
     idl_resolved_leaf_t *resolved;
-    size_t *resolved_count;
 } walk_ctx_t;
 
 // Byte width of one argument-path step under a parent of `parent_kind`, or 0
@@ -1029,7 +1039,6 @@ static int emit_leaf(walk_ctx_t *walk, uint8_t kind, const uint8_t *value, size_
             walk->resolved[i].kind = kind;
             walk->resolved[i].value = value;
             walk->resolved[i].value_size = value_size;
-            (*walk->resolved_count)++;
             matched = true;
         }
     }
@@ -1337,6 +1346,10 @@ static int walk_top(walk_ctx_t *walk) {
                 frame->child_count = entry->fixed_size;
                 frame->child_i = 0;
                 frame->entered = true;
+            } else if (array_element_made_no_progress(walk, frame)) {
+                // A zero-width element makes the declared count pure iteration: nesting two
+                // such arrays squares it, so the walk stops as soon as one consumes nothing.
+                return -1;
             }
             return step_children(walk, frame, entry, children_base);
 
@@ -1553,9 +1566,9 @@ static int walk_top(walk_ctx_t *walk) {
                 // INLINE payload: descend into its self-contained descriptor
                 // root exactly once. The path step under an enum is the variant
                 // index at the discriminator's byte width (big-endian per spec).
-                size_t disc_width = fixed_primitive_width(entry->disc_kind);
+                size_t disc_width = enum_path_step_width(entry->disc_kind);
                 if (disc_width == 0) {
-                    PRINTF("idl_walker: ENUM disc_kind 0x%02x has no fixed step width\n",
+                    PRINTF("idl_walker: ENUM disc_kind 0x%02x has no step width\n",
                            entry->disc_kind);
                     return -1;
                 }
@@ -1589,8 +1602,7 @@ int idl_walker_run(const uint8_t *data,
                    const uint8_t program_id[PUBKEY_SIZE],
                    const idl_match_path_t *match_paths,
                    size_t match_count,
-                   idl_resolved_leaf_t *resolved,
-                   size_t *resolved_count) {
+                   idl_resolved_leaf_t *resolved) {
     if (!idl_pool_ready()) {
         PRINTF("idl_walker_run: no pool provided\n");
         return -1;
@@ -1622,7 +1634,6 @@ int idl_walker_run(const uint8_t *data,
         }
     }
 
-    *resolved_count = 0;
     if (match_count > 0) {
         memset(resolved, 0, match_count * sizeof(idl_resolved_leaf_t));
     }
@@ -1636,7 +1647,6 @@ int idl_walker_run(const uint8_t *data,
     walk.match_paths = match_paths;
     walk.match_count = match_count;
     walk.resolved = resolved;
-    walk.resolved_count = resolved_count;
     walk.stack_cap = 8;
     walk.stack = APP_MEM_ALLOC(walk.stack_cap * sizeof(frame_t));
 

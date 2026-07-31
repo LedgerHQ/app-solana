@@ -63,7 +63,7 @@ int instruction_validate_allow_ALT(const Instruction *instruction, const Message
     // (index >= pubkeys_length). These are not present in the wire format and cannot be resolved
     // on the device. Their integrity is guaranteed by the swap tx_hash check (see ALT Option 2),
     // not by structural validation here. Any descriptor that needs to inspect a concrete account
-    // is gated separately by get_account_from_ins(), which fails closed on ALT indices.
+    // is gated separately by get_account_from_ins(), which returns -1 for an ALT index.
     return 0;
 }
 
@@ -152,7 +152,7 @@ const uint8_t *get_account_from_ins(const Instruction *instruction,
         return NULL;
     }
     // The resolved pubkey index must fall within the statically listed keys. An index pointing
-    // into the Address Lookup Table range cannot be resolved on the device, so we fail closed:
+    // into the Address Lookup Table range cannot be resolved on the device, so we refuse:
     // a descriptor may only validate accounts the device can actually read.
     uint8_t pubkey_index = instruction->accounts[account_index];
     if (pubkey_index >= header->pubkeys_header.pubkeys_length) {

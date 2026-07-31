@@ -5,6 +5,7 @@
 #include "apdu.h"
 #include "buffer.h"
 #include "sol/printer.h"
+#include "sol/parser.h"
 
 #ifndef _UTILS_H_
 #define _UTILS_H_
@@ -31,6 +32,13 @@ int get_pubkey_index(const Pubkey *needle,
                      const Pubkey *haystack,
                      size_t haystack_len,
                      size_t *index);
+
+// Locate the key the derivation path yields among the message's required signers, writing
+// its header index. Returns -1 when it cannot be derived or does not sign the message.
+int scan_header_for_signer(const uint32_t *derivation_path,
+                           uint32_t derivation_path_length,
+                           size_t *signer_index,
+                           const MessageHeader *header);
 
 /**
  * Deserialize derivation path from raw bytes.

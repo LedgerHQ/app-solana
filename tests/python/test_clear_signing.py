@@ -437,7 +437,7 @@ def _build_trusted_name_display_field(argument_path: bytes, name: str, *,
             + format_tlv(DISPLAY_FIELD_TAG_PARAM, param))
 
 
-# Sending a substructure without an open clear-signing session must fail closed.
+# Sending a substructure without an open clear-signing session must be refused.
 def test_substructure_without_session_rejected(backend):
     sol = SolanaClient(backend)
     with pytest.raises(ExceptionRAPDU) as exc_info:
@@ -450,7 +450,7 @@ def test_substructure_without_session_rejected(backend):
 # ── TOKEN_ACCOUNT_STATE ──────────────────────────────────────────────────────
 
 def test_token_account_state_without_session_rejected(backend):
-    """Providing a token account state outside an open streaming session must fail closed."""
+    """Providing a token account state outside an open streaming session must be refused."""
     sol = SolanaClient(backend)
     challenge = sol.get_challenge()
     with pytest.raises(ExceptionRAPDU) as exc_info:
@@ -649,7 +649,7 @@ def test_alt_resolution_duplicate_rejected(backend):
 # ── ENUM_VARIANT ─────────────────────────────────────────────────────────────
 
 def test_enum_variant_without_session_rejected(backend):
-    """Sending an enum variant outside an open streaming session must fail closed."""
+    """Sending an enum variant outside an open streaming session must be refused."""
     sol = SolanaClient(backend)
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.provide_enum_variant(
@@ -1928,7 +1928,7 @@ def test_bridge_raw_scalar_kinds(backend, sol, scenario_navigator, root_pytest_d
 
 def test_bridge_prompt_without_complete_substructures_rejected(backend):
     """FINALIZE before the substructure stream matches SUBSTRUCTURES_HASH
-    must fail closed."""
+    must be refused."""
     sol = SolanaClient(backend)
 
     message = _craft_single_instruction_message(sol,
@@ -1955,7 +1955,7 @@ def test_bridge_prompt_without_complete_substructures_rejected(backend):
 
 
 def test_bridge_prompt_without_session_rejected(backend):
-    """PROMPT UI DISPLAY with no open session must fail closed."""
+    """PROMPT UI DISPLAY with no open session must be refused."""
     sol = SolanaClient(backend)
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.prompt_ui_display()
@@ -1963,7 +1963,7 @@ def test_bridge_prompt_without_session_rejected(backend):
 
 
 def test_finalize_without_session_rejected(backend):
-    """FINALIZE GENERIC CLEAR SIGNING with no open session must fail closed."""
+    """FINALIZE GENERIC CLEAR SIGNING with no open session must be refused."""
     sol = SolanaClient(backend)
     with pytest.raises(ExceptionRAPDU) as exc_info:
         sol.finalize_generic_clear_signing()
@@ -1971,7 +1971,7 @@ def test_finalize_without_session_rejected(backend):
 
 
 def test_prompt_without_finalize_rejected(backend):
-    """PROMPT UI DISPLAY without prior FINALIZE must fail closed."""
+    """PROMPT UI DISPLAY without prior FINALIZE must be refused."""
     sol = SolanaClient(backend)
 
     message = _craft_single_instruction_message(sol,
@@ -2325,7 +2325,7 @@ def test_token_amount_mint_assoc_priority_over_tas(backend, sol, scenario_naviga
 
 def test_token_amount_argument_path_token_rejected(backend):
     """A TOKEN reference sourced from ARGUMENT_PATH is not supported and must be
-    refused at ingest, when the substructure is provided (fail closed)."""
+    refused at ingest, when the substructure is provided."""
     sol = SolanaClient(backend)
     message = _craft_single_instruction_message(sol,
                                                 BRIDGE_PROGRAM_ID,
@@ -2388,9 +2388,9 @@ def test_bridge_account_param_type(backend, sol, scenario_navigator, root_pytest
     _wipe_session(sol)
 
 
-def test_bridge_amount_param_with_account_path(backend, sol, scenario_navigator, root_pytest_dir):
-    """A typed param (here PARAM_AMOUNT) whose VALUE is an ACCOUNT_PATH renders the
-    account address; the amount format tags (decimals) are ignored."""
+def test_bridge_amount_param_with_account_path(backend, sol):
+    """PARAM_AMOUNT cannot format an account address, so an ACCOUNT_PATH VALUE under it is
+    refused at ingest rather than quietly re-rendered as an address under an amount label."""
     destination_pubkey = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
     message = _craft_instruction_with_accounts(
         sol,
@@ -2422,13 +2422,9 @@ def test_bridge_amount_param_with_account_path(backend, sol, scenario_navigator,
         idl_root_type=0,
     )
 
-    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
-
-    assert sol.finalize_generic_clear_signing().status == 0x9000
-    with sol.send_prompt_ui_display():
-        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
-    assert sol.get_async_response().status == 0x9000
-    _wipe_session(sol)
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
 
 
 # ── ComputeBudget fee: excluded from the walk, shown as a trailing "Max fees" ─
@@ -2647,7 +2643,7 @@ def test_enum_empty_variant_displays_name(backend, sol, scenario_navigator, root
 
 def test_enum_missing_variant_refused(backend, sol):
     """No matching variant registered: the walker cannot resolve the enum leaf,
-    so FINALIZE must fail closed."""
+    so FINALIZE must return an error and store nothing."""
     data = ENUM_DISCRIMINATOR + bytes([1])
     message = _craft_single_instruction_message(sol, ENUM_PROGRAM_ID, data)
     _begin_session(sol, message)
@@ -3066,14 +3062,30 @@ def test_cs_prompt_rejected_from_streaming(backend):
     assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
 
 
-# START SESSION sent twice — second one should fail (state is STREAMING, not IDLE).
-def test_cs_double_start_session_rejected(backend):
-    sol = SolanaClient(backend)
+# START SESSION drops whatever a live session had buffered and opens a fresh one, so a host
+# abandoning a stream mid-way restarts with a single APDU rather than needing two.
+def test_cs_start_session_restarts_a_live_session(backend, sol):
     message = _dummy_cs_message(sol)
     _begin_session(sol, message)
+
+    # Stream a template so the session holds state the restart has to discard.
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+
+    # The restart succeeds, and the session that follows behaves like a brand new one:
+    # the template streamed above is gone, so FINALIZE has nothing to work from.
+    _begin_session(sol, message)
     with pytest.raises(ExceptionRAPDU) as exc_info:
-        _begin_session(sol, message)
-    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INVALID_STATE
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
 
 
 # FINALIZE sent from FINALIZED (double finalize after a session was finalized).
@@ -3775,7 +3787,7 @@ def test_alt_loaded_account_resolved_and_displayed(backend, sol, scenario_naviga
 
 def test_alt_loaded_account_without_resolution_refused(backend, sol):
     """Without a matching ALT_RESOLUTION descriptor, an ALT-loaded account cannot
-    be resolved to a concrete key and finalize refuses to sign (fail closed)."""
+    be resolved to a concrete key and finalize refuses to sign."""
     sender = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
     message = _craft_v0_message_with_alt(
         sender, ALT_PROGRAM_ID, ALT_DISCRIMINATOR,
@@ -4039,4 +4051,279 @@ def test_cs_account_effects_uncovered_shows_both(backend, sol, scenario_navigato
     with sol.send_prompt_ui_display():
         scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
     assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+# ── Descriptor and session validation added by the security review ────────────
+
+
+def test_cs_start_session_refuses_a_message_the_device_does_not_sign(backend, sol):
+    """The device only reviews transactions it is a party to. A message whose required
+    signers do not include the derived key is refused at 0x0A, exactly as InsSignMessage
+    refuses it, so the descriptor stream never starts."""
+    other_signer = Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz")
+    instruction = Instruction(
+        program_id=Pubkey.from_bytes(BRIDGE_PROGRAM_ID),
+        accounts=[AccountMeta(pubkey=other_signer, is_signer=True, is_writable=True)],
+        data=_bridge_instruction_data(1000, 5_000_000),
+    )
+    message = sol.craft_tx([instruction], other_signer)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        _begin_session(sol, message)
+    assert exc_info.value.status == ErrorType.SOLANA_INVALID_MESSAGE_HEADER
+
+
+def test_cs_token_2022_metadata_resolves(backend, sol, scenario_navigator, root_pytest_dir):
+    """A TOKEN_INFO carrying TOKEN_TYPE_FLAG=1 (Token-2022) answers a TOKEN_AMOUNT keyed on
+    its mint. A descriptor names the mint, never the token program, so the lookup must not
+    demand the SPL-legacy kind: the amount renders as '1.5 GORK', not '1500000 ???'."""
+    message = _craft_single_instruction_message(
+        sol, BRIDGE_PROGRAM_ID, _bridge_instruction_data(1000, 1_500_000))
+    _begin_session(sol, message)
+
+    sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=True,
+                              mint_address=SOL.GORK_MINT_ADDRESS)
+
+    display_field = _build_token_amount_field_with_token(
+        BRIDGE_PATH_U64, "Amount",
+        token_source=VALUE_SOURCE_CONSTANT, token_payload=SOL.GORK_MINT_PUBLIC_KEY)
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+@pytest.mark.parametrize("param_type, param_tags", [
+    ("AMOUNT", (PARAM_TYPE_AMOUNT, format_tlv(PARAM_TAG_DECIMALS, 6))),
+    ("TOKEN_AMOUNT", (PARAM_TYPE_TOKEN_AMOUNT, b"")),
+    ("DATETIME", (PARAM_TYPE_DATETIME, format_tlv(PARAM_DATETIME_TAG_TICKS, 1))),
+    ("DURATION", (PARAM_TYPE_DURATION, b"")),
+    ("UNIT", (PARAM_TYPE_UNIT, format_tlv(PARAM_UNIT_TAG_SYMBOL, "%"))),
+    ("STRING", (PARAM_TYPE_STRING, b"")),
+    ("ENUM", (PARAM_TYPE_ENUM, b"")),
+])
+def test_cs_account_path_refused_by_non_address_formatters(backend, sol, param_type, param_tags):
+    """A numeric or text formatter cannot describe an account address. Accepting an
+    ACCOUNT_PATH under one would show an address beneath a label that promises an amount, a
+    date or a string, so the substructure is refused at ingest."""
+    del param_type  # names the parametrized case
+    account_pubkey = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+    message = _craft_instruction_with_accounts(
+        sol, BRIDGE_PROGRAM_ID, _bridge_instruction_data(42, 7_000_000),
+        extra_accounts=[account_pubkey])
+    _begin_session(sol, message)
+
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ACCOUNT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, bytes([1])))
+    param = (format_tlv(PARAM_TAG_VERSION, 1)
+             + format_tlv(PARAM_TAG_VALUE, value_tlv)
+             + param_tags[1])
+    display_field = (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+                     + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD)
+                     + format_tlv(DISPLAY_FIELD_TAG_NAME, "Field")
+                     + format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, param_tags[0])
+                     + format_tlv(DISPLAY_FIELD_TAG_PARAM, param))
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
+
+
+def test_cs_account_path_accepted_by_param_account(backend, sol, scenario_navigator,
+                                                   root_pytest_dir):
+    """PARAM_ACCOUNT does describe an address, so an ACCOUNT_PATH under it still renders."""
+    account_pubkey = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+    message = _craft_instruction_with_accounts(
+        sol, BRIDGE_PROGRAM_ID, _bridge_instruction_data(42, 7_000_000),
+        extra_accounts=[account_pubkey])
+    _begin_session(sol, message)
+
+    display_field = _build_account_display_field(1, "Destination")
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+@pytest.mark.parametrize("missing_tag", ["NAME", "PARAM_TYPE"])
+def test_cs_display_field_mandatory_tags_enforced(backend, sol, missing_tag):
+    """NAME and PARAM_TYPE are both non-optional. Absent, the field would silently take the
+    tag's zero value: an unlabelled field, or the RAW formatter the descriptor never asked
+    for. Either omission is refused."""
+    message = _craft_single_instruction_message(
+        sol, BRIDGE_PROGRAM_ID, _bridge_instruction_data(42, 7_000_000))
+    _begin_session(sol, message)
+
+    value_tlv = (format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                 + format_tlv(ValueTag.PAYLOAD, BRIDGE_PATH_U32))
+    param = format_tlv(PARAM_TAG_VERSION, 1) + format_tlv(PARAM_TAG_VALUE, value_tlv)
+
+    display_field = (format_tlv(DISPLAY_FIELD_TAG_VERSION, 1)
+                     + format_tlv(DISPLAY_FIELD_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_DISPLAY_FIELD))
+    if missing_tag != "NAME":
+        display_field += format_tlv(DISPLAY_FIELD_TAG_NAME, "Amount")
+    if missing_tag != "PARAM_TYPE":
+        display_field += format_tlv(DISPLAY_FIELD_TAG_PARAM_TYPE, PARAM_TYPE_RAW)
+    display_field += format_tlv(DISPLAY_FIELD_TAG_PARAM, param)
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
+
+
+def test_cs_discriminator_longer_than_spec_refused(backend, sol):
+    """The spec bounds DISCRIMINATOR at 8 bytes. A longer one is refused at ingest rather
+    than stored and prefix-matched."""
+    message = _craft_single_instruction_message(
+        sol, BRIDGE_PROGRAM_ID, _bridge_instruction_data(42, 7_000_000))
+    _begin_session(sol, message)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_info(
+            program_id=BRIDGE_PROGRAM_ID,
+            discriminator=b'\x07' * 9,
+            operation_type="Transfer",
+            program_name="Bridge",
+            substructures_hash=b'\x00' * 32,
+            idl_type_pool=BRIDGE_POOL,
+            idl_root_type=0,
+        )
+    assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_INFO
+
+
+def test_cs_discriminator_at_spec_maximum_accepted(backend, sol):
+    """Eight bytes is the spec maximum and is accepted."""
+    eight_byte_discriminator = bytes(range(8))
+    data = eight_byte_discriminator + struct.pack("<I", 42) + struct.pack("<Q", 7_000_000)
+    message = _craft_single_instruction_message(sol, BRIDGE_PROGRAM_ID, data)
+    _begin_session(sol, message)
+
+    # Same shape as BRIDGE_POOL with the leading BYTES_FIXED widened to the 8-byte prefix.
+    pool = bytes([4, 0x20, 3, 1, 2, 3, 0x12, 0x00, 0x08, 0x03, 0x04])
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=eight_byte_discriminator,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=pool,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_trusted_name_version_pinned_to_two(backend, sol):
+    """STRUCT_VERSION must be 2. The SDK use case accepts every version it knows, so the
+    application pins the one the clear-signing spec defines."""
+    message = _craft_single_instruction_message(
+        sol, BRIDGE_PROGRAM_ID, _bridge_instruction_data(42, 7_000_000))
+    _begin_session(sol, message)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_cs_trusted_name(address=b'\x44' * 32, name="Wrong version", version=1)
+    assert exc_info.value.status == ErrorType.INVALID_TRUSTED_NAME
+
+
+def test_cs_trusted_name_at_sdk_maximum_renders(backend, sol, scenario_navigator,
+                                                root_pytest_dir):
+    """A 64-character name, the longest the SDK TLV parser accepts, is cached and displayed
+    in full. The application adds no length bound of its own: the cache and the render
+    buffer are both sized to the name the descriptor carries."""
+    long_name = "A" * 64
+    account_pubkey = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+    message = _craft_instruction_with_accounts(
+        sol, BRIDGE_PROGRAM_ID, _bridge_instruction_data(42, 7_000_000),
+        extra_accounts=[account_pubkey])
+    _begin_session(sol, message)
+
+    sol.provide_cs_trusted_name(address=account_pubkey, name=long_name)
+
+    display_field = _build_account_display_field(1, "Destination")
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_unresolved_display_field_omitted(backend, sol):
+    """A declared field whose ARGUMENT_PATH reaches no leaf is left out of the review while
+    the rest of the instruction still renders. Curated IDLs routinely declare fields behind
+    an OPTION, so an instance that omits the option must still be signable."""
+    message = _craft_single_instruction_message(
+        sol, BRIDGE_PROGRAM_ID, _bridge_instruction_data(42, 7_000_000))
+    _begin_session(sol, message)
+
+    # Step 9 names a struct field the three-field root does not have.
+    display_field = _build_display_field(b'\x01\x09')
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
     _wipe_session(sol)

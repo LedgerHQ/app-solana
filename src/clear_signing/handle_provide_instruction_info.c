@@ -176,6 +176,13 @@ int handle_provide_instruction_info(void) {
         return reply_sw(ApduReplySolanaInvalidInstructionInfo);
     }
 
+    if (tlv_extracted.discriminator.size > CS_DISCRIMINATOR_MAX_SIZE) {
+        PRINTF("Error: discriminator is %d bytes, spec allows %d\n",
+               tlv_extracted.discriminator.size,
+               CS_DISCRIMINATOR_MAX_SIZE);
+        return reply_sw(ApduReplySolanaInvalidInstructionInfo);
+    }
+
     // MINT_ASSOC_ACCOUNT and MINT_ASSOC_MINT must both be present or both absent
     bool has_mint_account = TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags,
                                                     II_TAG_MINT_ASSOC_ACCOUNT);

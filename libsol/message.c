@@ -88,7 +88,7 @@ static int process_message_body_inner(const uint8_t *message_body,
     for (size_t ins_idx = 0; ins_idx < header->instructions_length; ins_idx++) {
         Instruction instruction;
         // Every account is displayed to the user and therefore must be resolvable in the statically
-        // listed keys. ALT-loaded indices are rejected (fail closed).
+        // listed keys. An ALT-loaded index is rejected and no account is returned.
         if (parse_validate_and_debug_instruction_accounts(&parser, &instruction, header, false) !=
             0) {
             PRINTF("Error in parse_validate_and_debug_instruction_accounts for ins %d\n",
@@ -277,7 +277,7 @@ int process_message_body_with_descriptor(const uint8_t *message_body,
         Instruction instruction;
         // Swap + descriptor path: ALT-loaded account indices are tolerated here, their integrity is
         // sealed by the swap tx_hash check. Concrete account inspection is gated by
-        // get_account_from_ins() which fails closed on ALT indices.
+        // get_account_from_ins() which returns -1 for an ALT index.
         if (parse_validate_and_debug_instruction_accounts(&parser, &instruction, header, true) !=
             0) {
             PRINTF("Error in parse_validate_and_debug_instruction_accounts for ins %d\n",

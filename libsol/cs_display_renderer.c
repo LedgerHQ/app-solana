@@ -33,8 +33,135 @@ typedef struct cs_display_renderer_table_s {
 
 static cs_display_renderer_table_t G_cs_display_renderer;
 
-// Max size for formatting a single title or value before it is shrunk to its string length
-#define CS_RENDER_BUFFER_SIZE 128
+// Widths of the fixed-shape renderings, each derived from the type being printed rather
+// than chosen: a u64 in decimal, the widest number any leaf prints (a signed 128-bit
+// integer, which also bounds every narrower integer and both float forms), the
+// "True"/"False" and "<empty>" literals, and the "YYYY-MM-DDThh:mm:ss+00:00" datetime form.
+#define CS_UINT64_TEXT_SIZE   (20 + 1)
+#define CS_NUMBER_TEXT_SIZE   (1 + 39 + 1)
+#define CS_BOOL_TEXT_SIZE     (sizeof("False"))
+#define CS_EMPTY_TEXT_SIZE    (sizeof("<empty>"))
+#define CS_DATETIME_TEXT_SIZE (sizeof("YYYY-MM-DDThh:mm:ss+00:00"))
+// H:MM:SS where the hour count is a u64 of seconds divided by 3600.
+#define CS_DURATION_TEXT_SIZE (CS_UINT64_TEXT_SIZE + sizeof(":MM:SS"))
+
+// Bytes print_token_amount can write for `decimals` scaling, before any symbol: the widest
+// u64, a decimal point, and the zero padding a large scale forces.
+#define CS_SCALED_AMOUNT_TEXT_SIZE(decimals) (CS_UINT64_TEXT_SIZE + 1 + (size_t) (decimals) + 1)
+
+// Larger of two capacities, so a formatter that can take either of two shapes gets a buffer
+// fitting both.
+static size_t larger_capacity(size_t left, size_t right) {
+    if (left > right) {
+        return left;
+    }
+    return right;
+}
+
+// Bytes base58 needs for `byte_count` raw bytes: log(256)/log(58) is under 1.38, so 138/100
+// bounds the digit count, plus the NUL.
+static size_t base58_capacity(size_t byte_count) {
+    return (byte_count * 138) / 100 + 2;
+}
+
+// Bytes the trusted name cached for a 32-byte address needs, or 0 when the address has no
+// cached name or the leaf is not an address.
+static size_t trusted_name_capacity(const idl_resolved_leaf_t *leaf) {
+    if (leaf->value == NULL || leaf->value_size < PUBKEY_SIZE) {
+        return 0;
+    }
+    const cs_trusted_name_t *entry = cs_trusted_name_cache_find(leaf->value);
+    if (entry == NULL) {
+        return 0;
+    }
+    return strlen(entry->name) + 1;
+}
+
+// Bytes `encoding` needs to render `in_len` raw bytes.
+static size_t encoded_capacity(uint8_t encoding, size_t in_len) {
+    switch (encoding) {
+        case CS_STRING_ENCODING_ASCII:
+        case CS_STRING_ENCODING_UTF8:
+            return in_len + 1;
+
+        case CS_STRING_ENCODING_BASE58:
+            return base58_capacity(in_len);
+
+        case CS_STRING_ENCODING_BASE64:
+            return 4 * ((in_len + 2) / 3) + 1;
+
+        case CS_STRING_ENCODING_HEX:
+            return 2 * in_len + 1;
+
+        default:
+            PRINTF("encoded_capacity: unsupported encoding %d\n", encoding);
+            return 0;
+    }
+}
+
+// Bytes format_leaf needs for this leaf, judged from its kind and byte count.
+static size_t leaf_render_capacity(const idl_resolved_leaf_t *leaf) {
+    if (leaf->value == NULL || leaf->value_size == 0) {
+        return CS_EMPTY_TEXT_SIZE;
+    }
+    switch (leaf->kind) {
+        case IDL_KIND_U8:
+        case IDL_KIND_U16:
+        case IDL_KIND_U32:
+        case IDL_KIND_U64:
+        case IDL_KIND_SHORT_U16:
+        case IDL_KIND_I8:
+        case IDL_KIND_I16:
+        case IDL_KIND_I32:
+        case IDL_KIND_I64:
+        case IDL_KIND_F32:
+        case IDL_KIND_F64:
+        case IDL_KIND_U128:
+        case IDL_KIND_I128:
+            return CS_NUMBER_TEXT_SIZE;
+
+        case IDL_KIND_BOOL_U8:
+        case IDL_KIND_BOOL_U16:
+        case IDL_KIND_BOOL_U32:
+            return CS_BOOL_TEXT_SIZE;
+
+        case IDL_KIND_BYTES_FIXED:
+        case IDL_KIND_BYTES_REMAINDER:
+            return 2 * leaf->value_size + 1;
+
+        case IDL_KIND_PUBKEY_32:
+            return base58_capacity(PUBKEY_SIZE);
+
+        case IDL_KIND_STRING_FIXED:
+        case IDL_KIND_STRING_PREFIXED:
+        case IDL_KIND_ENUM:
+            return leaf->value_size + 1;
+
+        default:
+            PRINTF("leaf_render_capacity: unsupported kind %d\n", leaf->kind);
+            return 0;
+    }
+}
+
+// Bytes a scaled amount plus its optional symbol and MAX_LABEL sentinel need.
+static size_t amount_render_capacity(uint8_t decimals, const char *symbol, const char *max_label) {
+    size_t needed = CS_SCALED_AMOUNT_TEXT_SIZE(decimals);
+    if (symbol != NULL) {
+        // print_token_amount separates the number and the symbol with one space.
+        needed += 1 + strlen(symbol);
+    }
+    if (max_label != NULL) {
+        needed = larger_capacity(needed, strlen(max_label) + 1);
+    }
+    return needed;
+}
+
+// Bytes a PARAM_STRING needs. Without a slice the whole encoding is shown; a slice can only
+// select part of it, so the unsliced size bounds both.
+static size_t string_render_capacity(const cs_format_string_t *string,
+                                     const idl_resolved_leaf_t *leaf) {
+    return encoded_capacity(string->encoding, leaf->value_size);
+}
 
 // Grow a rendered field array by one step.
 static int ensure_field_capacity(cs_rendered_field_t **fields, size_t count, size_t *capacity) {
@@ -515,6 +642,68 @@ static int format_amount(const idl_resolved_leaf_t *leaf,
     return status;
 }
 
+// Resolve the ticker and decimal scaling a PARAM_TOKEN_AMOUNT displays with, per spec
+// "Token amount metadata resolution": the mint's TOKEN_INFO supplies both, an explicit
+// DECIMALS overrides the magnitude, and an unresolved mint degrades to a bare amount.
+// Sizing and formatting both call this, so the buffer always matches what is written.
+// Returns 0 on success, -1 when the descriptor names a mint the walk never resolved.
+static int resolve_token_display(const cs_format_token_amount_t *fmt,
+                                 const uint8_t *mint_pubkey,
+                                 const char **symbol_out,
+                                 uint8_t *magnitude_out) {
+    switch (fmt->mint_source) {
+        case CS_TOKEN_MINT_NATIVE:
+            PRINTF("resolve_token_display: native SOL\n");
+            *symbol_out = "SOL";
+            *magnitude_out = SOL_DECIMALS;
+            return 0;
+
+        case CS_TOKEN_MINT_NONE:
+            *symbol_out = NULL;
+            *magnitude_out = 0;
+            if (fmt->has_decimals) {
+                *magnitude_out = fmt->decimals;
+            }
+            PRINTF("resolve_token_display: no mint, bare render decimals=%d\n", *magnitude_out);
+            return 0;
+
+        case CS_TOKEN_MINT_ACCOUNT_INDEX:
+        case CS_TOKEN_MINT_CONSTANT: {
+            // finalize resolves referenced mints; a NULL here is an upstream bug.
+            if (mint_pubkey == NULL) {
+                PRINTF("resolve_token_display: mint_source %d has no resolved mint\n",
+                       fmt->mint_source);
+                return -1;
+            }
+            // A descriptor names the mint, never the token program that will move it, so the
+            // lookup keys on the mint alone and Token-2022 metadata resolves.
+            const char *symbol = get_token_symbol_by_mint(mint_pubkey);
+            int magnitude = get_token_magnitude_by_mint(mint_pubkey);
+            PRINTF("resolve_token_display: registry symbol=%s magnitude=%d\n",
+                   symbol == NULL ? "(none)" : symbol,
+                   magnitude);
+            if (fmt->has_decimals) {
+                magnitude = fmt->decimals;
+                PRINTF("resolve_token_display: decimals overridden to %d\n", magnitude);
+            }
+            if (magnitude < 0) {
+                // No metadata for this mint: the spec degrades the display rather than the
+                // amount, so the raw integer is shown against an unnamed ticker.
+                PRINTF("resolve_token_display: mint unknown, ticker=???\n");
+                symbol = "???";
+                magnitude = 0;
+            }
+            *symbol_out = symbol;
+            *magnitude_out = (uint8_t) magnitude;
+            return 0;
+        }
+
+        default:
+            PRINTF("resolve_token_display: unknown mint_source %d\n", fmt->mint_source);
+            return -1;
+    }
+}
+
 // PARAM_TOKEN_AMOUNT: renders a raw amount with the ticker and decimal scaling
 // implied by the descriptor's mint_source.
 static int format_token_amount(const idl_resolved_leaf_t *leaf,
@@ -533,67 +722,11 @@ static int format_token_amount(const idl_resolved_leaf_t *leaf,
         status = render_max_label(fmt->max_label, value_out, value_out_size);
     } else {
         const char *symbol;
-        int magnitude;
-
-        switch (fmt->mint_source) {
-            case CS_TOKEN_MINT_NATIVE:
-                PRINTF("format_token_amount: native SOL\n");
-                symbol = "SOL";
-                magnitude = SOL_DECIMALS;
-                break;
-
-            case CS_TOKEN_MINT_NONE:
-                symbol = NULL;
-                magnitude = 0;
-                if (fmt->has_decimals) {
-                    magnitude = fmt->decimals;
-                }
-                PRINTF(
-                    "format_token_amount: no mint, bare render "
-                    "decimals=%d\n",
-                    magnitude);
-                break;
-
-            case CS_TOKEN_MINT_ACCOUNT_INDEX:
-            case CS_TOKEN_MINT_CONSTANT:
-                // finalize resolves referenced mints; a NULL here is an
-                // upstream bug.
-                if (mint_pubkey == NULL) {
-                    PRINTF(
-                        "format_token_amount: mint_source %d has no "
-                        "resolved mint\n",
-                        fmt->mint_source);
-                    return -1;
-                }
-                symbol = get_token_symbol(mint_pubkey, false);
-                magnitude = get_token_magnitude(mint_pubkey, false);
-                PRINTF(
-                    "format_token_amount: registry symbol=%s "
-                    "magnitude=%d\n",
-                    symbol == NULL ? "(none)" : symbol,
-                    magnitude);
-                if (fmt->has_decimals) {
-                    magnitude = fmt->decimals;
-                    PRINTF(
-                        "format_token_amount: decimals overridden to "
-                        "%d\n",
-                        magnitude);
-                }
-                if (magnitude < 0) {
-                    PRINTF(
-                        "format_token_amount: mint unknown, "
-                        "ticker=???\n");
-                    symbol = "???";
-                    magnitude = 0;
-                }
-                break;
-
-            default:
-                PRINTF("format_token_amount: unknown mint_source %d\n", fmt->mint_source);
-                return -1;
+        uint8_t magnitude;
+        if (resolve_token_display(fmt, mint_pubkey, &symbol, &magnitude) != 0) {
+            return -1;
         }
-
-        status = print_token_amount(amount, symbol, (uint8_t) magnitude, value_out, value_out_size);
+        status = print_token_amount(amount, symbol, magnitude, value_out, value_out_size);
         if (status != 0) {
             PRINTF("format_token_amount: print_token_amount failed\n");
             status = -1;
@@ -619,6 +752,13 @@ static bool resolve_trusted_name(const idl_resolved_leaf_t *leaf,
                         (entry->type < 8 &&
                          (allowed_types_mask & (uint8_t) (1 << entry->type)) != 0);
     if (type_allowed) {
+        // A shortened name would name a different thing than the address resolves to, so a
+        // name that does not fit is left unrendered and the address is shown instead.
+        if (strlen(entry->name) >= value_out_size) {
+            PRINTF("resolve_trusted_name: name does not fit buffer (%u)\n",
+                   (unsigned) value_out_size);
+            return false;
+        }
         strlcpy(value_out, entry->name, value_out_size);
         PRINTF("resolve_trusted_name: resolved name=%s\n", value_out);
         return true;
@@ -778,7 +918,7 @@ static int format_datetime(const idl_resolved_leaf_t *leaf,
                            size_t value_out_size) {
     int64_t ticks;
     int64_t unix_seconds;
-    char timestamp[CS_RENDER_BUFFER_SIZE];
+    char timestamp[CS_DATETIME_TEXT_SIZE];
     char *separator;
     int written;
 
@@ -826,37 +966,43 @@ static int format_datetime(const idl_resolved_leaf_t *leaf,
     return 0;
 }
 
-// PARAM_UNIT: a numeric value scaled by decimals with a symbol affixed.
+// PARAM_UNIT: a numeric value scaled by decimals with a symbol affixed. The caller sized
+// value_out for the number plus the symbol, so the number is rendered in place and the
+// symbol appended or shifted in, keeping the render step free of its own allocation.
 static int format_unit(const idl_resolved_leaf_t *leaf,
                        const cs_format_unit_t *unit,
                        char *value_out,
                        size_t value_out_size) {
     uint64_t amount;
-    char number[CS_RENDER_BUFFER_SIZE];
-    int written;
-
     if (read_leaf_u64(leaf, &amount) != 0) {
         PRINTF("format_unit: unsupported leaf kind %d\n", leaf->kind);
         return -1;
     }
-    if (print_token_amount(amount, NULL, unit->decimals, number, sizeof(number)) != 0) {
+    if (print_token_amount(amount, NULL, unit->decimals, value_out, value_out_size) != 0) {
         PRINTF("format_unit: print_token_amount failed\n");
         return -1;
     }
-    const char *symbol = "";
-    const char *sep = "";
-    if (unit->symbol != NULL) {
-        symbol = unit->symbol;
-        sep = " ";
+    if (unit->symbol == NULL) {
+        PRINTF("format_unit: rendered value=%s\n", value_out);
+        return 0;
+    }
+
+    size_t number_len = strlen(value_out);
+    size_t symbol_len = strlen(unit->symbol);
+    // One separating space, and the NUL.
+    if (number_len + 1 + symbol_len + 1 > value_out_size) {
+        PRINTF("format_unit: output does not fit (%u)\n", (unsigned) value_out_size);
+        return -1;
     }
     if (unit->prefix) {
-        written = snprintf(value_out, value_out_size, "%s%s%s", symbol, sep, number);
+        // Open a gap at the front for "symbol " without a second rendering of the number.
+        memmove(value_out + symbol_len + 1, value_out, number_len + 1);
+        memcpy(value_out, unit->symbol, symbol_len);
+        value_out[symbol_len] = ' ';
     } else {
-        written = snprintf(value_out, value_out_size, "%s%s%s", number, sep, symbol);
-    }
-    if (written < 0 || (size_t) written >= value_out_size) {
-        PRINTF("format_unit: output does not fit\n");
-        return -1;
+        value_out[number_len] = ' ';
+        memcpy(value_out + number_len + 1, unit->symbol, symbol_len);
+        value_out[number_len + 1 + symbol_len] = '\0';
     }
     PRINTF("format_unit: rendered value=%s\n", value_out);
     return 0;
@@ -950,74 +1096,88 @@ static int compute_string_slice(const cs_format_string_t *string,
     return 0;
 }
 
+// Encode the whole leaf, then keep only the slice window. The caller sized value_out for the
+// unsliced encoding, which is what makes the encode-then-shift possible in place: a window
+// is never longer than the text it is cut from.
+static int format_formatted_slice(const idl_resolved_leaf_t *leaf,
+                                  const cs_format_string_t *string,
+                                  char *value_out,
+                                  size_t value_out_size) {
+    int encoded_len = encode_string_bytes(string->encoding,
+                                          leaf->value,
+                                          leaf->value_size,
+                                          value_out,
+                                          value_out_size);
+    if (encoded_len < 0) {
+        PRINTF("format_formatted_slice: encode failed\n");
+        return -1;
+    }
+    size_t start;
+    size_t len;
+    if (compute_string_slice(string, (size_t) encoded_len, &start, &len) != 0) {
+        PRINTF("format_formatted_slice: slice computation failed\n");
+        return -1;
+    }
+    PRINTF("format_formatted_slice: start=%u len=%u of encoded=%d\n",
+           (unsigned) start,
+           (unsigned) len,
+           encoded_len);
+    memmove(value_out, value_out + start, len);
+    value_out[len] = '\0';
+    return 0;
+}
+
+// Take the slice window over the raw bytes, then encode only that window.
+static int format_source_slice(const idl_resolved_leaf_t *leaf,
+                               const cs_format_string_t *string,
+                               char *value_out,
+                               size_t value_out_size) {
+    size_t start;
+    size_t len;
+    if (compute_string_slice(string, leaf->value_size, &start, &len) != 0) {
+        PRINTF("format_source_slice: slice computation failed\n");
+        return -1;
+    }
+    PRINTF("format_source_slice: start=%u len=%u encoding=%d\n",
+           (unsigned) start,
+           (unsigned) len,
+           string->encoding);
+    if (encode_string_bytes(string->encoding, leaf->value + start, len, value_out, value_out_size) <
+        0) {
+        PRINTF("format_source_slice: encode failed\n");
+        return -1;
+    }
+    return 0;
+}
+
 // PARAM_STRING: render leaf bytes through an encoding, optionally sliced.
 static int format_string(const idl_resolved_leaf_t *leaf,
                          const cs_format_string_t *string,
                          char *value_out,
                          size_t value_out_size) {
+    int status;
     if (!string->has_slice) {
         PRINTF("format_string: no slice, encoding %u bytes encoding=%d\n",
                (unsigned) leaf->value_size,
                string->encoding);
+        status = 0;
         if (encode_string_bytes(string->encoding,
                                 leaf->value,
                                 leaf->value_size,
                                 value_out,
                                 value_out_size) < 0) {
             PRINTF("format_string: whole-value encode failed\n");
-            return -1;
+            status = -1;
         }
     } else if (string->slice_applies_to == CS_SLICE_APPLIES_TO_SOURCE) {
-        size_t start;
-        size_t len;
-        if (compute_string_slice(string, leaf->value_size, &start, &len) != 0) {
-            PRINTF("format_string: source slice computation failed\n");
-            return -1;
-        }
-        PRINTF("format_string: source slice start=%u len=%u encoding=%d\n",
-               (unsigned) start,
-               (unsigned) len,
-               string->encoding);
-        if (encode_string_bytes(string->encoding,
-                                leaf->value + start,
-                                len,
-                                value_out,
-                                value_out_size) < 0) {
-            PRINTF("format_string: source-slice encode failed\n");
-            return -1;
-        }
+        status = format_source_slice(leaf, string, value_out, value_out_size);
     } else {
-        char encoded[CS_RENDER_BUFFER_SIZE];
-        int encoded_len = encode_string_bytes(string->encoding,
-                                              leaf->value,
-                                              leaf->value_size,
-                                              encoded,
-                                              sizeof(encoded));
-        if (encoded_len < 0) {
-            PRINTF("format_string: formatted-slice encode failed\n");
-            return -1;
-        }
-        size_t start;
-        size_t len;
-        if (compute_string_slice(string, (size_t) encoded_len, &start, &len) != 0) {
-            PRINTF("format_string: formatted slice computation failed\n");
-            return -1;
-        }
-        PRINTF(
-            "format_string: formatted slice start=%u len=%u of "
-            "encoded=%d\n",
-            (unsigned) start,
-            (unsigned) len,
-            encoded_len);
-        if (len + 1 > value_out_size) {
-            PRINTF("format_string: sliced value does not fit (%u)\n", (unsigned) len);
-            return -1;
-        }
-        memcpy(value_out, encoded + start, len);
-        value_out[len] = '\0';
+        status = format_formatted_slice(leaf, string, value_out, value_out_size);
     }
-    PRINTF("format_string: rendered value=%s\n", value_out);
-    return 0;
+    if (status == 0) {
+        PRINTF("format_string: rendered value=%s\n", value_out);
+    }
+    return status;
 }
 
 // Format an ARGUMENT_PATH field based on its param_type.
@@ -1249,15 +1409,9 @@ static int render_instruction_header(cs_display_instruction_t *display_instructi
 
     // Program field: skip for native programs
     if (!is_native_program(instruction->template->program_id)) {
-        if (!APP_MEM_CALLOC((void **) &display_instruction->program, CS_RENDER_BUFFER_SIZE)) {
-            PRINTF("render_instruction_header: program allocation failed\n");
-            return -1;
-        }
         if (instruction->template->program_name != NULL &&
             instruction->template->program_name[0] != '\0') {
-            strlcpy(display_instruction->program,
-                    instruction->template->program_name,
-                    CS_RENDER_BUFFER_SIZE);
+            display_instruction->program = duplicate_string(instruction->template->program_name);
         } else {
             char address[BASE58_PUBKEY_LENGTH];
             if (encode_base58(instruction->template->program_id,
@@ -1267,13 +1421,12 @@ static int render_instruction_header(cs_display_instruction_t *display_instructi
                 PRINTF(
                     "render_instruction_header: base58 encode "
                     "program_id failed\n");
-                APP_MEM_FREE_AND_NULL((void **) &display_instruction->program);
                 return -1;
             }
-            strlcpy(display_instruction->program, address, CS_RENDER_BUFFER_SIZE);
+            display_instruction->program = duplicate_string(address);
         }
-        display_instruction->program = shrink_render_buffer(display_instruction->program);
         if (display_instruction->program == NULL) {
+            PRINTF("render_instruction_header: program allocation failed\n");
             return -1;
         }
     }
@@ -1281,6 +1434,108 @@ static int render_instruction_header(cs_display_instruction_t *display_instructi
     PRINTF("render_instruction_header: intent=%s program=%s\n",
            display_instruction->intent,
            display_instruction->program != NULL ? display_instruction->program : "(native)");
+    return 0;
+}
+
+// Bytes an ARGUMENT_PATH field's rendering can need, judged from its formatter and the
+// value it will format. Returns 0 for a formatter that cannot render this field at all.
+static size_t argument_render_capacity(const cs_display_field_t *field,
+                                       const idl_resolved_leaf_t *leaf,
+                                       const uint8_t *mint_pubkey) {
+    switch (field->argument.param_type) {
+        case CS_PARAM_TYPE_RAW:
+        case CS_PARAM_TYPE_ENUM:
+            return leaf_render_capacity(leaf);
+
+        case CS_PARAM_TYPE_AMOUNT:
+            return amount_render_capacity(field->argument.format.amount.decimals,
+                                          NULL,
+                                          field->argument.format.amount.max_label);
+
+        case CS_PARAM_TYPE_TOKEN_AMOUNT: {
+            // Resolved through the same helper format_token_amount uses, so the buffer and
+            // the rendering cannot disagree about the ticker or the scale.
+            const char *symbol;
+            uint8_t magnitude;
+            if (resolve_token_display(&field->argument.format.token_amount,
+                                      mint_pubkey,
+                                      &symbol,
+                                      &magnitude) != 0) {
+                return 0;
+            }
+            return amount_render_capacity(magnitude,
+                                          symbol,
+                                          field->argument.format.token_amount.max_label);
+        }
+
+        case CS_PARAM_TYPE_DATETIME:
+            return CS_DATETIME_TEXT_SIZE;
+
+        case CS_PARAM_TYPE_DURATION:
+            return CS_DURATION_TEXT_SIZE;
+
+        case CS_PARAM_TYPE_UNIT:
+            return amount_render_capacity(field->argument.format.unit.decimals,
+                                          field->argument.format.unit.symbol,
+                                          NULL);
+
+        case CS_PARAM_TYPE_ACCOUNT:
+        case CS_PARAM_TYPE_TRUSTED_NAME:
+            // Either the cached trusted name or the short base58 form.
+            return larger_capacity(trusted_name_capacity(leaf), BASE58_PUBKEY_SHORT);
+
+        case CS_PARAM_TYPE_STRING:
+            return string_render_capacity(&field->argument.format.string, leaf);
+
+        default:
+            PRINTF("argument_render_capacity: unsupported param_type %d\n",
+                   field->argument.param_type);
+            return 0;
+    }
+}
+
+// Bytes this field's rendering can need, so the value buffer is sized to the field rather
+// than to a ceiling every field shares. Returns 0 when the field cannot be rendered.
+static size_t field_render_capacity(const cs_display_field_t *field,
+                                    const idl_resolved_leaf_t *leaf,
+                                    const uint8_t *mint_pubkey) {
+    // format_field answers "<empty>" for a valueless leaf whatever the source says.
+    if (leaf->value == NULL || leaf->value_size == 0) {
+        return CS_EMPTY_TEXT_SIZE;
+    }
+    switch (field->source) {
+        case CS_VALUE_SOURCE_ARGUMENT_PATH:
+            return argument_render_capacity(field, leaf, mint_pubkey);
+
+        case CS_VALUE_SOURCE_ACCOUNT_PATH:
+            // Either the cached trusted name or the full base58 address.
+            return larger_capacity(trusted_name_capacity(leaf), base58_capacity(PUBKEY_SIZE));
+
+        case CS_VALUE_SOURCE_CONSTANT:
+            return leaf_render_capacity(leaf);
+
+        default:
+            PRINTF("field_render_capacity: unsupported source %d\n", field->source);
+            return 0;
+    }
+}
+
+// Write the field's label: the descriptor's NAME, or a positional fallback when it carries
+// none. Returns 0 on success, -1 when the label cannot be allocated.
+static int render_field_title(cs_rendered_field_t *rendered,
+                              const cs_display_field_t *field,
+                              size_t field_index) {
+    if (field->name != NULL && field->name[0] != '\0') {
+        rendered->title = duplicate_string(field->name);
+    } else {
+        char fallback[sizeof("Field ") + CS_UINT64_TEXT_SIZE];
+        snprintf(fallback, sizeof(fallback), "Field %u", (unsigned) (field_index + 1));
+        rendered->title = duplicate_string(fallback);
+    }
+    if (rendered->title == NULL) {
+        PRINTF("render_field_title: title allocation failed field=%u\n", (unsigned) field_index);
+        return -1;
+    }
     return 0;
 }
 
@@ -1294,27 +1549,12 @@ static int render_field(cs_display_instruction_t *display_instruction,
         return -1;
     }
 
-    if (!APP_MEM_CALLOC((void **) &rendered->title, CS_RENDER_BUFFER_SIZE)) {
-        PRINTF("render_field: title buffer allocation failed field=%u\n", (unsigned) field_index);
-        return -1;
-    }
-    if (instruction->template->display_fields[field_index].name != NULL &&
-        instruction->template->display_fields[field_index].name[0] != '\0') {
-        strlcpy(rendered->title,
-                instruction->template->display_fields[field_index].name,
-                CS_RENDER_BUFFER_SIZE);
-    } else {
-        snprintf(rendered->title, CS_RENDER_BUFFER_SIZE, "Field %u", (unsigned) (field_index + 1));
-    }
-    rendered->title = shrink_render_buffer(rendered->title);
-    if (rendered->title == NULL) {
+    if (render_field_title(rendered,
+                           &instruction->template->display_fields[field_index],
+                           field_index) != 0) {
         return -1;
     }
 
-    if (!APP_MEM_CALLOC((void **) &rendered->value, CS_RENDER_BUFFER_SIZE)) {
-        PRINTF("render_field: value buffer allocation failed field=%u\n", (unsigned) field_index);
-        return -1;
-    }
     const idl_resolved_leaf_t *leaf = &instruction->resolved[field_index];
     const uint8_t *mint = instruction->field_mint[field_index];
     idl_resolved_leaf_t override_leaf;
@@ -1324,11 +1564,28 @@ static int render_field(cs_display_instruction_t *display_instruction,
                          &leaf,
                          &mint);
 
+    // Sizing from the field's own formatter and value is what lets a long string, a wide
+    // scale or a long trusted name render instead of being refused for overflowing a
+    // shared buffer.
+    size_t capacity = field_render_capacity(&instruction->template->display_fields[field_index],
+                                            leaf,
+                                            mint);
+    if (capacity == 0) {
+        PRINTF("render_field: field=%u cannot be rendered\n", (unsigned) field_index);
+        return -1;
+    }
+    if (!APP_MEM_CALLOC((void **) &rendered->value, capacity)) {
+        PRINTF("render_field: value buffer allocation failed field=%u size=%u\n",
+               (unsigned) field_index,
+               (unsigned) capacity);
+        return -1;
+    }
+
     if (format_field(&instruction->template->display_fields[field_index],
                      leaf,
                      mint,
                      rendered->value,
-                     CS_RENDER_BUFFER_SIZE) != 0) {
+                     capacity) != 0) {
         PRINTF("render_field: format failed field=%u\n", (unsigned) field_index);
         APP_MEM_FREE_AND_NULL((void **) &rendered->value);
         return -1;
@@ -1381,11 +1638,14 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
         }
 
         for (size_t field = 0; field < walked_instructions[ix].resolved_count; field++) {
+            // A path that descends through an absent OPTION reaches no leaf, which is the
+            // option being absent from this instance rather than anything wrong: the field
+            // does not exist here and is left out. A path that no instance could reach is a
+            // descriptor inconsistent with its own type pool, and belongs to ingest.
             if (walked_instructions[ix].resolved[field].value == NULL) {
-                PRINTF(
-                    "cs_display_renderer_run: field=%u has no value, "
-                    "skipped\n",
-                    (unsigned) field);
+                PRINTF("cs_display_renderer_run: field=%u of ix=%u absent, not displayed\n",
+                       (unsigned) field,
+                       (unsigned) ix);
                 continue;
             }
             if (render_field(display_instruction, &walked_instructions[ix], field) != 0) {
