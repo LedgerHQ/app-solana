@@ -328,6 +328,7 @@ static bool all_ports_symbolic(const cs_instruction_result_t *item) {
 static bool legs_change_form(const cs_resolved_port_t *input_port,
                              const cs_resolved_port_t *output_port,
                              size_t leg) {
+    UNUSED(leg);  // read only by the trace logs below
     // Lamports in, SPL balance out is the wrap case.
     if (input_port->value_kind != output_port->value_kind) {
         PRINTF("legs_change_form: leg %d changes value kind\n", (int) leg);
@@ -922,6 +923,13 @@ static bool symbolic_junction_guard(const cs_instruction_result_t *walked_instru
     if (account_count == 0) {
         PRINTF("symbolic_junction_guard: nothing symbolic to vouch for\n");
         return true;
+    }
+
+    // Scratch is absent only when the run allocated none for want of any port; a
+    // non-zero count then has nowhere to live, so refuse rather than index a null base.
+    if (symbolic_accounts == NULL) {
+        PRINTF("symbolic_junction_guard: symbolic account scratch missing\n");
+        return false;
     }
 
     // The chain begins at whichever of the pair runs first, and a reset has to be in place

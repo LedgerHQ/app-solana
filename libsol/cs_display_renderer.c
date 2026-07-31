@@ -94,6 +94,11 @@ static cs_display_instruction_t *append_instruction(void) {
     if (ensure_instruction_capacity() != 0) {
         return NULL;
     }
+    // A reserved capacity implies a live table; refuse rather than index a null base.
+    if (G_cs_display_renderer.instructions == NULL) {
+        PRINTF("append_instruction: instruction table missing after reservation\n");
+        return NULL;
+    }
     cs_display_instruction_t
         *instruction = &G_cs_display_renderer.instructions[G_cs_display_renderer.instruction_count];
     explicit_bzero(instruction, sizeof(*instruction));

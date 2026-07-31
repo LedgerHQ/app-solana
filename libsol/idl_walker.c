@@ -410,8 +410,8 @@ static int inline_header_len(const uint8_t *ptr,
                              size_t *out_header_len,
                              uint8_t *out_child_count,
                              bool *out_is_zeroable) {
-    if (ptr >= end) {
-        PRINTF("idl_walker: inline header read past end\n");
+    if (ptr == NULL || ptr >= end) {
+        PRINTF("idl_walker: inline header read from null or past end\n");
         return -1;
     }
     uint8_t kind = ptr[0];
@@ -515,6 +515,10 @@ static int inline_header_len(const uint8_t *ptr,
 // backed by the reusable per-walk span stack. Returns 0 on success and writes
 // *out_span, or -1 on a truncated/unknown descriptor or allocator failure.
 static int inline_span(walk_ctx_t *walk, const uint8_t *ptr, const uint8_t *end, size_t *out_span) {
+    if (ptr == NULL) {
+        PRINTF("idl_walker: inline span over null descriptor\n");
+        return -1;
+    }
     const uint8_t *cur = ptr;
     size_t depth = 0;
 
@@ -591,6 +595,10 @@ static int parse_inline_header(walk_ctx_t *walk,
                                const uint8_t *end,
                                idl_pool_entry_t *out,
                                size_t *header_len) {
+    if (ptr == NULL) {
+        PRINTF("idl_walker: inline header parse over null descriptor\n");
+        return -1;
+    }
     uint8_t kind;
     uint8_t child_count;
     bool is_zeroable;
@@ -694,6 +702,10 @@ static int inline_static_data_size(walk_ctx_t *walk,
                                    const uint8_t *ptr,
                                    const uint8_t *end,
                                    size_t *out) {
+    if (ptr == NULL) {
+        PRINTF("idl_walker: inline size over null descriptor\n");
+        return -1;
+    }
     if (walk->size_cap == 0) {
         walk->size_stack = APP_MEM_ALLOC(8 * sizeof(size_frame_t));
         if (walk->size_stack == NULL) {
