@@ -71,6 +71,7 @@ TRUSTED_NAME_TYPE_TOKEN = 0x04
 VALUE_SOURCE_ARGUMENT_PATH = 0x00
 VALUE_SOURCE_ACCOUNT_PATH = 0x01
 VALUE_SOURCE_CONSTANT = 0x02
+IDL_KIND_U8 = 0x01
 IDL_KIND_U32 = 0x03
 IDL_KIND_U64 = 0x04
 IDL_KIND_U128 = 0x05
@@ -83,6 +84,8 @@ IDL_KIND_BOOL_U16 = 0x0F
 IDL_KIND_PUBKEY_32 = 0x11
 IDL_KIND_BYTES_FIXED = 0x12
 IDL_KIND_STRING_PREFIXED = 0x14
+IDL_KIND_STRUCT = 0x20
+IDL_KIND_ARRAY_PREFIXED = 0x26
 SUBSTRUCTURE_TYPE_DISPLAY_FIELD = 0x00
 SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT = 0x01
 SUBSTRUCTURE_TYPE_HIDE_RULE = 0x02
@@ -938,6 +941,28 @@ def _bridge_instruction_data(u32_value: int, u64_value: int) -> bytes:
     return BRIDGE_DISCRIMINATOR + struct.pack("<I", u32_value) + struct.pack("<Q", u64_value)
 
 
+# Same shape as BRIDGE_POOL, with the trailing u64 replaced by a u64-prefixed array of
+# u8 so the element count comes from the instruction data.
+#   [0] STRUCT(0x20) field_count=3 refs=[1,2,3]
+#   [1] BYTES_FIXED(0x12) fixed_size=1   (consumes the discriminator)
+#   [2] U32(0x03)
+#   [3] ARRAY_PREFIXED(0x26) len_kind=U64 ref=4
+#   [4] U8(0x01)
+BRIDGE_ARRAY_POOL = bytes([
+    5,
+    IDL_KIND_STRUCT, 3, 1, 2, 3,
+    IDL_KIND_BYTES_FIXED, 0x00, 0x01,
+    IDL_KIND_U32,
+    IDL_KIND_ARRAY_PREFIXED, IDL_KIND_U64, 4,
+    IDL_KIND_U8,
+])
+
+
+def _bridge_array_instruction_data(u32_value: int, element_count: int) -> bytes:
+    return (BRIDGE_DISCRIMINATOR + struct.pack("<I", u32_value) +
+            struct.pack("<Q", element_count))
+
+
 def test_bridge_walks_instruction(backend, sol, scenario_navigator, root_pytest_dir):
     """End-to-end MVP bridge: the walker decodes the synthetic instruction,
     the display renderer formats the u32 leaf, and NBGL review is navigated."""
@@ -1078,6 +1103,26 @@ def _build_constant_amount_port(*, account_index: int, amount: int, direction: i
             + format_tlv(VFP_TAG_ACCOUNT_INDEX, account_index)
             + format_tlv(VFP_TAG_VALUE_KIND, PORT_VALUE_KIND_NATIVE)
             + format_tlv(VFP_TAG_AMOUNT_VALUE, amount_value))
+
+
+def _build_resolve_token_port(*, account_index: int, amount_path: bytes,
+                              token_account_index: int,
+                              direction: int = PORT_DIRECTION_OUTPUT) -> bytes:
+    """A VALUE_FLOW_PORT whose SPL-token mint is RESOLVE-kind: read from an account
+    index and mapped through the transaction's binding map at finalize."""
+    amount_value = (format_tlv(AMOUNT_VALUE_TAG_KIND, AMOUNT_KIND_NUMERIC)
+                    + format_tlv(AMOUNT_VALUE_TAG_VALUE,
+                                 format_tlv(ValueTag.SOURCE, VALUE_SOURCE_ARGUMENT_PATH)
+                                 + format_tlv(ValueTag.PAYLOAD, amount_path)))
+    token_value = (format_tlv(TOKEN_VALUE_TAG_KIND, TOKEN_KIND_RESOLVE)
+                   + format_tlv(TOKEN_VALUE_TAG_ACCOUNT, token_account_index))
+    return (format_tlv(VFP_TAG_VERSION, 1)
+            + format_tlv(VFP_TAG_SUBSTRUCT_TYPE, SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT)
+            + format_tlv(VFP_TAG_DIRECTION, direction)
+            + format_tlv(VFP_TAG_ACCOUNT_INDEX, account_index)
+            + format_tlv(VFP_TAG_VALUE_KIND, PORT_VALUE_KIND_SPL_TOKEN)
+            + format_tlv(VFP_TAG_AMOUNT_VALUE, amount_value)
+            + format_tlv(VFP_TAG_TOKEN_VALUE, token_value))
 
 
 def _build_hide_rule(*, target_account_index: int, condition: int = HIDE_CONDITION_IS_SIGNER,
@@ -2496,6 +2541,44 @@ def test_compute_budget_fee_overflow_refused(backend):
     _wipe_session(sol)
 
 
+@pytest.mark.parametrize("cb_first", [True, False], ids=["cb_first", "cb_last"])
+def test_compute_budget_position_with_resolve_port(backend, sol, cb_first):
+    """A described instruction declaring a RESOLVE-kind token port, alongside a ComputeBudget
+    instruction placed either first (Solana's conventional layout) or last. The port mint pass
+    re-walks the raw stream and must skip ComputeBudget so the RESOLVE port resolves against the
+    bridge instruction's accounts and finalize succeeds regardless of ComputeBudget position."""
+    sender = Pubkey.from_bytes(sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH))
+    bridge = Instruction(
+        program_id=Pubkey.from_bytes(BRIDGE_PROGRAM_ID),
+        accounts=[AccountMeta(pubkey=sender, is_signer=True, is_writable=True)],
+        data=_bridge_instruction_data(1000, 5_000_000))
+    compute_budget = _compute_budget_unit_limit(1_000_000)
+    ordered = [compute_budget, bridge] if cb_first else [bridge, compute_budget]
+    message = sol.craft_tx(ordered, sender)
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    # RESOLVE token read from the bridge instruction's account 0 (the signer); with no
+    # MINT_ASSOC binding, the mint resolves to that account itself.
+    port = _build_resolve_token_port(account_index=0, amount_path=BRIDGE_PATH_U64,
+                                     token_account_index=0)
+    substructures = display_field + port
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(substructures).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT, port)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    _wipe_session(sol)
+
+
 # ── ENUM end-to-end: variant name resolution and payload consumption ─────────
 
 # Synthetic program whose single instruction argument struct starts with a
@@ -3271,6 +3354,66 @@ def test_typed_string_slice_source_bounded(backend, sol, scenario_navigator, roo
     _wipe_session(sol)
 
 
+def test_typed_string_utf8_valid(backend, sol):
+    """PARAM_STRING with UTF-8 encoding renders a well-formed multibyte string. The
+    renderer runs at finalize, so a successful finalize proves the value was accepted."""
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 0, 0, "żółć".encode("utf-8")))
+    _begin_session(sol, message)
+
+    display_field = _build_string_display_field(TYPED_PATH_STRING, "Memo",
+                                                encoding=STRING_ENCODING_UTF8)
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    _wipe_session(sol)
+
+
+@pytest.mark.parametrize("bad_bytes", [b"\x00", b"\x80"], ids=["embedded_nul", "malformed_utf8"])
+def test_typed_string_utf8_invalid_rejected(backend, sol, bad_bytes):
+    """A UTF-8 PARAM_STRING must be well-formed UTF-8 with no embedded NUL: an embedded NUL
+    would truncate the displayed C-string, and a bare continuation byte is not valid UTF-8.
+    Both make the value un-renderable, so finalize refuses."""
+    text = b"ab" + bad_bytes + b"cd"
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 0, 0, text))
+    _begin_session(sol, message)
+
+    display_field = _build_string_display_field(TYPED_PATH_STRING, "Memo",
+                                                encoding=STRING_ENCODING_UTF8)
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.INVALID_GENERIC_PREVIEW
+    _wipe_session(sol)
+
+
+@pytest.mark.parametrize("control_bytes", [b"\x0a", b"\x7f", b"\xc2\x85"],
+                         ids=["newline", "del", "c1_nel"])
+def test_typed_string_utf8_control_char_accepted(backend, sol, control_bytes):
+    """The StringEncoding spec filters non-printable bytes for ASCII only. A UTF-8 field need
+    only be well-formed UTF-8, so control code points (C0 newline, DEL, C1) are accepted and
+    finalize renders them."""
+    text = b"ab" + control_bytes + b"cd"
+    message = _craft_single_instruction_message(
+        sol, TYPED_PROGRAM_ID,
+        _typed_instruction_data(b'\x11' * 32, 0, 0, text))
+    _begin_session(sol, message)
+
+    display_field = _build_string_display_field(TYPED_PATH_STRING, "Memo",
+                                                encoding=STRING_ENCODING_UTF8)
+    _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    _wipe_session(sol)
+
+
 # ── TYPED PARAM ingest error paths (rejected before any UI) ──────────────────
 
 def test_typed_datetime_zero_ticks_rejected(backend, sol):
@@ -3459,6 +3602,55 @@ def test_finalize_descriptor_program_mismatch_rejected(backend, sol):
         program_name="Wrong",
         substructures_hash=hashlib.sha256(display_field).digest(),
         idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.INVALID_GENERIC_PREVIEW
+
+
+def test_finalize_array_count_wider_than_addressable_rejected(backend, sol):
+    """An element count of 2**32 exceeds what a 32-bit device can index. Narrowing it
+    would walk an array of a different length than the data states, so finalize refuses.
+    The count is the whole array body, so a narrowed count would otherwise leave the
+    cursor exactly at the end of the data and the walk would report success."""
+    message = _craft_single_instruction_message(
+        sol, BRIDGE_PROGRAM_ID, _bridge_array_instruction_data(1000, 1 << 32))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_ARRAY_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.finalize_generic_clear_signing()
+    assert exc_info.value.status == ErrorType.INVALID_GENERIC_PREVIEW
+
+
+def test_finalize_array_count_beyond_data_rejected(backend, sol):
+    """A count the data cannot back is refused: the first element reads past the end."""
+    message = _craft_single_instruction_message(
+        sol, BRIDGE_PROGRAM_ID, _bridge_array_instruction_data(1000, 4))
+    _begin_session(sol, message)
+
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_ARRAY_POOL,
         idl_root_type=0,
     )
     sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)

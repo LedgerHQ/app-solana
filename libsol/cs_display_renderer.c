@@ -270,8 +270,10 @@ static int format_leaf(const idl_resolved_leaf_t *leaf, char *value_out, size_t 
                 PRINTF("format_leaf: u32 truncated\n");
                 return -1;
             }
-            print_u64((uint64_t) (leaf->value[0] | (leaf->value[1] << 8) | (leaf->value[2] << 16) |
-                                  (leaf->value[3] << 24)),
+            // Each byte is cast to u64 before shifting: without it value[3]<<24 sets bit 31 of an
+            // int, and the u64 cast then sign-extends into bits 32-63 for values >= 0x80000000.
+            print_u64((uint64_t) leaf->value[0] | ((uint64_t) leaf->value[1] << 8) |
+                          ((uint64_t) leaf->value[2] << 16) | ((uint64_t) leaf->value[3] << 24),
                       value_out,
                       value_out_size);
             return 0;

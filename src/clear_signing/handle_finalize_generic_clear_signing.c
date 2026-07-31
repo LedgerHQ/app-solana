@@ -945,21 +945,41 @@ static int resolve_port_mints(const cs_transaction_t *cs_tx,
         PRINTF("finalize cs: port mint pass header parse failed\n");
         return -1;
     }
-    for (size_t i = 0; i < count; i++) {
+    // walked_instructions[] is compacted: walk_transaction skips ComputeBudget
+    // instructions. Re-parse the raw stream the same way, skipping ComputeBudget
+    // and advancing walked_index only for kept instructions, so raw and walked
+    // stay paired regardless of where ComputeBudget sits in the transaction.
+    size_t walked_index = 0;
+    for (size_t i = 0; i < header.instructions_length; i++) {
         Instruction instruction;
         if (parse_instruction(&parser, &instruction) != 0) {
             PRINTF("finalize cs: port mint pass instruction %d parse failed\n", (int) i);
             return -1;
         }
+        if (instruction.program_id_index >= header.pubkeys_header.pubkeys_length) {
+            PRINTF("finalize cs: port mint pass instruction %d program id index out of range\n",
+                   (int) i);
+            return -1;
+        }
+        if (memcmp(header.pubkeys[instruction.program_id_index].data,
+                   &compute_budget_program_id,
+                   PUBKEY_SIZE) == 0) {
+            continue;
+        }
+        if (walked_index >= count) {
+            PRINTF("finalize cs: port mint pass kept instruction count exceeds walked count\n");
+            return -1;
+        }
         if (resolve_port_mints_for_instruction(cs_tx,
                                                &header,
                                                &instruction,
-                                               walked_instructions[i].template,
-                                               walked_instructions[i].resolved_ports,
+                                               walked_instructions[walked_index].template,
+                                               walked_instructions[walked_index].resolved_ports,
                                                bindings,
                                                binding_count) != 0) {
             return -1;
         }
+        walked_index++;
     }
     return 0;
 }

@@ -100,6 +100,34 @@ static void test_render_u64_leaf(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+// A u32 with the high bit set must render as an unsigned value, not sign-extended into 64 bits.
+static void test_render_u32_high_bit_leaf(void) {
+    printf("  test_render_u32_high_bit_leaf\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+    init_dummy_template();
+
+    // 0x80000000 (2147483648) little-endian: high bit of the u32 set.
+    uint8_t value[] = {0x00, 0x00, 0x00, 0x80};
+    RENDER_TEST_RESULT(instr);
+    instr.template = &G_dummy_template;
+    instr.resolved[0].kind = IDL_KIND_U32;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 4;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+
+    const cs_display_flat_element_t *elem = get_flat(1);
+    assert(elem != NULL);
+    assert(strcmp(elem->title, "Amount") == 0);
+    assert(strcmp(elem->value, "2147483648") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 static void test_render_bool_leaf(void) {
     printf("  test_render_bool_leaf\n");
     mock_mem_reset();
@@ -2708,6 +2736,7 @@ int main(void) {
     printf("cs_display_renderer_test\n");
     test_initial_state();
     test_render_u64_leaf();
+    test_render_u32_high_bit_leaf();
     test_render_bool_leaf();
     test_render_skips_null_value();
     test_render_empty_input();

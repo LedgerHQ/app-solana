@@ -122,11 +122,20 @@ int encode_text(const uint8_t *in, size_t in_len, bool ascii_only, char *out, si
         PRINTF("encode_text: output does not fit\n");
         return -1;
     }
+    // The UTF-8 encoding renders multi-byte sequences verbatim, so the buffer must be valid
+    // UTF-8; ASCII mode's per-byte range check already rejects any non-ASCII byte.
+    if (!ascii_only && !is_data_utf8(in, in_len)) {
+        PRINTF("encode_text: input is not well-formed UTF-8\n");
+        return -1;
+    }
     for (size_t i = 0; i < in_len; i++) {
+        // An embedded NUL would terminate the C-string display early, showing fewer bytes than
+        // were signed, so it is rejected in both encodings.
         if (in[i] == 0) {
             PRINTF("encode_text: embedded NUL byte\n");
             return -1;
         }
+        // ASCII permits only printable 7-bit bytes; everything else is rejected.
         if (ascii_only && (in[i] < 0x20 || in[i] > 0x7E)) {
             PRINTF("encode_text: non-printable ASCII byte 0x%02x\n", in[i]);
             return -1;

@@ -169,7 +169,12 @@ static bool try_static_size(uint8_t idx, const size_t *sizes, size_t *out) {
 //
 // Returns 0 on success (caller owns *out_sizes), -1 on out-of-space.
 static int compute_fixed_sizes(uint8_t count, size_t **out_sizes) {
-    size_t alloc_count = (count == 0) ? 1 : count;
+    // An empty pool still gets one slot, since asking the allocator for zero bytes is
+    // not worth doing.
+    size_t alloc_count = count;
+    if (count == 0) {
+        alloc_count = 1;
+    }
     size_t *sizes = APP_MEM_ALLOC(alloc_count * sizeof(size_t));
     if (sizes == NULL) {
         PRINTF("idl_walker: fixed-size table allocation failed\n");
@@ -234,7 +239,7 @@ typedef struct frame_s {
     bool entered;         // first-visit work (length/flag reads) already done
     size_t child_i;       // next child to descend into
     size_t child_count;   // total children to descend into
-    size_t mark;          // cursor at last child push (ARRAY_REMAINDER progress guard)
+    size_t mark;          // cursor at last child push, read by the array progress guard
     uint8_t parent_kind;  // kind of the parent that pushed this frame (0 = root)
     size_t step_value;    // step index this frame occupies within its parent
     size_t step_bytes;    // byte width of this frame's step in its parent's path
@@ -1127,6 +1132,18 @@ static int push_inline_frame(walk_ctx_t *walk,
     return 0;
 }
 
+// Whether another element is due while the one just walked consumed no data.
+// Call once the frame's child_count is settled.
+static bool array_element_made_no_progress(const walk_ctx_t *walk, const frame_t *frame) {
+    // `mark` only holds a cursor once an element has been descended into, and walking the
+    // same element again at an unchanged cursor is deterministic: it consumes nothing again.
+    if (frame->child_i > 0 && frame->child_i < frame->child_count && walk->cursor == frame->mark) {
+        PRINTF("idl_walker: array element consumed no bytes, refusing\n");
+        return true;
+    }
+    return false;
+}
+
 // Descend into the current frame's next child, or pop the frame when its
 // children are exhausted. Used by every aggregate/option/hidden kind whose
 // child count is fixed once `entered`. `children_base` locates the first
@@ -1138,6 +1155,9 @@ static int step_children(walk_ctx_t *walk,
     if (frame->child_i < frame->child_count) {
         uint8_t parent_kind = frame->kind;
         size_t step_bytes = step_width(parent_kind);
+        // Taken before the descent so an array can compare it against the cursor on its
+        // next step and see whether the element consumed anything.
+        frame->mark = walk->cursor;
         if (frame->is_inline) {
             size_t dci;
             size_t step_val;
@@ -1164,6 +1184,9 @@ static int step_children(walk_ctx_t *walk,
             return push_frame(walk, ref_idx, parent_kind, step_val, step_bytes);
         }
     }
+    PRINTF("idl_walker: frame kind=0x%02x children exhausted at %d, popping\n",
+           frame->kind,
+           frame->child_count);
     walk->stack_len--;  // pop
     return 0;
 }
@@ -1324,50 +1347,34 @@ static int walk_top(walk_ctx_t *walk) {
                     return -1;
                 }
                 PRINTF("idl_walker: ARRAY_PREFIXED element count=%d\n", len);
+                // A count wider than the walker can index would be silently narrowed, and
+                // the walk would then walk a different array than the data states.
+                if (len > (uint64_t) SIZE_MAX) {
+                    PRINTF("idl_walker: ARRAY_PREFIXED count %d exceeds addressable range\n", len);
+                    return -1;
+                }
                 frame->child_count = (size_t) len;
                 frame->child_i = 0;
                 frame->entered = true;
+            } else if (array_element_made_no_progress(walk, frame)) {
+                // The count comes from the data and can name more elements than any buffer
+                // holds, so a zero-width element would be walked for as long as it says.
+                return -1;
             }
             return step_children(walk, frame, entry, children_base);
 
         // ---- remainder array: iterate until the buffer is consumed ----------
-        case IDL_KIND_ARRAY_REMAINDER: {
-            if (frame->entered && walk->cursor == frame->mark) {
-                // The previous element consumed no bytes — would loop forever.
-                PRINTF("idl_walker: ARRAY_REMAINDER element consumed no bytes\n");
+        case IDL_KIND_ARRAY_REMAINDER:
+            // The element count is not stated anywhere: one more element is due for as
+            // long as bytes remain, so the bound is recomputed before every step.
+            frame->child_count = frame->child_i;
+            if (walk->cursor < walk->data_size) {
+                frame->child_count = frame->child_i + 1;
+            }
+            if (array_element_made_no_progress(walk, frame)) {
                 return -1;
             }
-            if (walk->cursor < walk->data_size) {
-                uint8_t parent_kind = frame->kind;
-                size_t step_bytes = step_width(parent_kind);
-                size_t step_val;
-                frame->entered = true;
-                frame->mark = walk->cursor;
-                if (frame->is_inline) {
-                    size_t dci;
-                    select_child_inline(frame->kind, frame->child_i, &dci, &step_val);
-                    const uint8_t *inline_end = frame->source.inline_descriptor.end;
-                    const uint8_t *child_ptr;
-                    if (inline_child_ptr(walk, children_base, inline_end, dci, &child_ptr) != 0) {
-                        return -1;
-                    }
-                    frame->child_i++;
-                    return push_inline_frame(walk,
-                                             child_ptr,
-                                             inline_end,
-                                             parent_kind,
-                                             step_val,
-                                             step_bytes);
-                } else {
-                    uint8_t ref_idx;
-                    select_child(entry, frame->kind, frame->child_i, &ref_idx, &step_val);
-                    frame->child_i++;
-                    return push_frame(walk, ref_idx, parent_kind, step_val, step_bytes);
-                }
-            }
-            walk->stack_len--;
-            return 0;
-        }
+            return step_children(walk, frame, entry, children_base);
 
         // ---- options --------------------------------------------------------
         case IDL_KIND_OPTION_DYNAMIC:
@@ -1379,7 +1386,10 @@ static int walk_top(walk_ctx_t *walk) {
                 PRINTF("idl_walker: OPTION_DYNAMIC flag=%d (%s)\n",
                        flag,
                        (flag != 0) ? "present" : "absent");
-                frame->child_count = (flag != 0) ? 1 : 0;
+                frame->child_count = 0;
+                if (flag != 0) {
+                    frame->child_count = 1;
+                }
                 frame->child_i = 0;
                 frame->entered = true;
             }
@@ -1466,7 +1476,10 @@ static int walk_top(walk_ctx_t *walk) {
 
         case IDL_KIND_OPTION_REMAINDER:
             if (!frame->entered) {
-                frame->child_count = (walk->cursor < walk->data_size) ? 1 : 0;
+                frame->child_count = 0;
+                if (walk->cursor < walk->data_size) {
+                    frame->child_count = 1;
+                }
                 frame->child_i = 0;
                 frame->entered = true;
             }

@@ -1800,6 +1800,52 @@ void test_error_array_prefixed_len_truncated() {
     assert(run_walk(pool_buf, sizeof(pool_buf), 1, NULL, 0, &tw) == -1);
 }
 
+// A count read from the data can name more elements than the data could ever hold, so a
+// zero-width element must be refused rather than walked for as long as the count says.
+void test_error_array_prefixed_zero_progress() {
+    const uint8_t pool[] = {
+        IDL_KIND_STRUCT,
+        0x00,  // 0: empty struct, no data footprint
+        IDL_KIND_ARRAY_PREFIXED,
+        IDL_KIND_U64,
+        0,  // 1
+    };
+    uint8_t pool_buf[1 + sizeof(pool)];
+    pool_buf[0] = 2;
+    memcpy(pool_buf + 1, pool, sizeof(pool));
+
+    // Count 0xffffffffffffffff, the whole data being the prefix.
+    const uint8_t data[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    test_walk_t tw = {0};
+    assert(run_walk(pool_buf, sizeof(pool_buf), 1, data, sizeof(data), &tw) == -1);
+}
+
+// A single zero-width element never repeats, so it stays acceptable: the guard only
+// rejects a count that would walk the same empty element again.
+void test_array_prefixed_single_zero_width_element() {
+    const uint8_t pool[] = {
+        IDL_KIND_STRUCT,
+        0x00,  // 0: empty struct, no data footprint
+        IDL_KIND_ARRAY_PREFIXED,
+        IDL_KIND_U8,
+        0,  // 1
+    };
+    uint8_t pool_buf[1 + sizeof(pool)];
+    pool_buf[0] = 2;
+    memcpy(pool_buf + 1, pool, sizeof(pool));
+
+    const uint8_t data[] = {0x01};
+    // Element 0 of the array: depth 1, then the two-byte element index.
+    const uint8_t path0[] = {0x01, 0x00, 0x00};
+
+    test_walk_t tw = {0};
+    tw_add_path(&tw, 0, path0, sizeof(path0));
+    assert(run_walk(pool_buf, sizeof(pool_buf), 1, data, sizeof(data), &tw) == 0);
+    // The element is walked but has no leaf to offer, so the slot stays empty.
+    assert(tw.resolved_count == 0);
+    assert(tw.resolved[0].value == NULL);
+}
+
 void test_error_array_remainder_zero_progress() {
     const uint8_t pool[] = {
         IDL_KIND_STRUCT,
@@ -1879,6 +1925,8 @@ int main() {
     RUN_TEST(test_error_bytes_fixed_too_short);
     RUN_TEST(test_error_string_prefixed_value_too_short);
     RUN_TEST(test_error_array_prefixed_len_truncated);
+    RUN_TEST(test_error_array_prefixed_zero_progress);
+    RUN_TEST(test_array_prefixed_single_zero_width_element);
     RUN_TEST(test_error_array_remainder_zero_progress);
 
     // Enum variant decoding
