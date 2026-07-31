@@ -17,7 +17,7 @@
 // =============================================================================
 
 typedef struct cs_instruction_template_table_s {
-    cs_instruction_template_t *builder;  // heap, non-NULL while a template is in flight
+    cs_instruction_template_t *builder;     // heap, non-NULL while a template is in flight
     cs_instruction_template_t **committed;  // demand-grown array of template pointers
     size_t committed_count;
 } cs_instruction_template_table_t;
@@ -92,7 +92,8 @@ static void free_template_owned_buffers(cs_instruction_template_t *template) {
         if (template->display_fields[f].source == CS_VALUE_SOURCE_ARGUMENT_PATH &&
             template->display_fields[f].argument.param_type == CS_PARAM_TYPE_UNIT &&
             template->display_fields[f].argument.format.unit.symbol != NULL) {
-            APP_MEM_FREE_AND_NULL((void **) &template->display_fields[f].argument.format.unit.symbol);
+            APP_MEM_FREE_AND_NULL(
+                (void **) &template->display_fields[f].argument.format.unit.symbol);
         }
         if (template->display_fields[f].source == CS_VALUE_SOURCE_ARGUMENT_PATH &&
             template->display_fields[f].argument.param_type == CS_PARAM_TYPE_AMOUNT &&
@@ -143,9 +144,9 @@ static void free_template_owned_buffers(cs_instruction_template_t *template) {
 // Grow the builder's display-field array by one zeroed slot and return it, or
 // NULL on allocation failure (the existing array is left intact).
 static cs_display_field_t *append_display_field(cs_instruction_template_t *builder) {
-    cs_display_field_t *grown =
-        APP_MEM_REALLOC(builder->display_fields,
-                        (builder->display_field_count + 1) * sizeof(*grown));
+    cs_display_field_t *grown = APP_MEM_REALLOC(
+        builder->display_fields,
+        (builder->display_field_count + 1) * sizeof(*grown));
     if (grown == NULL) {
         PRINTF("cs_instruction_template: display field array growth failed\n");
         return NULL;
@@ -209,8 +210,8 @@ static int copy_token_value(cs_token_value_t *dst, const cs_token_value_t *sourc
 // Grow a merge-engine substructure array by one zeroed slot, returning it or NULL
 // on allocation failure (the existing array is left intact).
 static cs_value_flow_port_t *append_port(cs_instruction_template_t *builder) {
-    cs_value_flow_port_t *grown =
-        APP_MEM_REALLOC(builder->ports, (builder->port_count + 1) * sizeof(*grown));
+    cs_value_flow_port_t *grown = APP_MEM_REALLOC(builder->ports,
+                                                  (builder->port_count + 1) * sizeof(*grown));
     if (grown == NULL) {
         PRINTF("cs_instruction_template: port array growth failed\n");
         return NULL;
@@ -223,8 +224,8 @@ static cs_value_flow_port_t *append_port(cs_instruction_template_t *builder) {
 }
 
 static cs_hide_rule_t *append_hide_rule(cs_instruction_template_t *builder) {
-    cs_hide_rule_t *grown =
-        APP_MEM_REALLOC(builder->hide_rules, (builder->hide_rule_count + 1) * sizeof(*grown));
+    cs_hide_rule_t *grown = APP_MEM_REALLOC(builder->hide_rules,
+                                            (builder->hide_rule_count + 1) * sizeof(*grown));
     if (grown == NULL) {
         PRINTF("cs_instruction_template: hide rule array growth failed\n");
         return NULL;
@@ -237,9 +238,9 @@ static cs_hide_rule_t *append_hide_rule(cs_instruction_template_t *builder) {
 }
 
 static cs_account_reset_t *append_account_reset(cs_instruction_template_t *builder) {
-    cs_account_reset_t *grown =
-        APP_MEM_REALLOC(builder->account_resets,
-                        (builder->account_reset_count + 1) * sizeof(*grown));
+    cs_account_reset_t *grown = APP_MEM_REALLOC(
+        builder->account_resets,
+        (builder->account_reset_count + 1) * sizeof(*grown));
     if (grown == NULL) {
         PRINTF("cs_instruction_template: account reset array growth failed\n");
         return NULL;
@@ -379,7 +380,8 @@ int cs_instruction_template_add_constant_field(const uint8_t *data,
         return -1;
     }
     if (data_size == 0 || data_size > UINT8_MAX) {
-        PRINTF("cs_instruction_template_add_constant_field: invalid data size %d\n", (int) data_size);
+        PRINTF("cs_instruction_template_add_constant_field: invalid data size %d\n",
+               (int) data_size);
         return -1;
     }
 
@@ -429,8 +431,8 @@ static int copy_optional_label(char **dst, const uint8_t *label, size_t label_si
 }
 
 int cs_instruction_template_set_format_amount(uint8_t decimals,
-                                             const uint8_t *max_label,
-                                             size_t max_label_size) {
+                                              const uint8_t *max_label,
+                                              size_t max_label_size) {
     cs_instruction_template_t *builder = cs_instruction_template_current();
     if (builder == NULL || builder->display_field_count == 0) {
         PRINTF("cs_instruction_template_set_format_amount: no field to configure\n");
@@ -612,7 +614,8 @@ static int set_builder_string(char **dst, const char *str, size_t str_size) {
         APP_MEM_FREE_AND_NULL((void **) dst);
     }
     if (!APP_MEM_CALLOC((void **) dst, str_size + 1)) {
-        PRINTF("cs_instruction_template: string allocation failed (%d bytes)\n", (int) str_size + 1);
+        PRINTF("cs_instruction_template: string allocation failed (%d bytes)\n",
+               (int) str_size + 1);
         return -1;
     }
     memcpy(*dst, str, str_size);
@@ -776,7 +779,9 @@ int cs_instruction_template_add_account_reset(const cs_account_reset_t *reset) {
             if (!APP_MEM_CALLOC(
                     (void **) &slot->scope.discriminators,
                     reset->scope.discriminator_count * sizeof(*slot->scope.discriminators))) {
-                PRINTF("cs_instruction_template_add_account_reset: discriminator array alloc failed\n");
+                PRINTF(
+                    "cs_instruction_template_add_account_reset: discriminator array alloc "
+                    "failed\n");
                 free_account_reset_owned_buffers(slot);
                 return -1;
             }
@@ -788,7 +793,8 @@ int cs_instruction_template_add_account_reset(const cs_account_reset_t *reset) {
                 }
                 if (!APP_MEM_CALLOC((void **) &slot->scope.discriminators[d].data,
                                     reset->scope.discriminators[d].size)) {
-                    PRINTF("cs_instruction_template_add_account_reset: discriminator alloc failed\n");
+                    PRINTF(
+                        "cs_instruction_template_add_account_reset: discriminator alloc failed\n");
                     free_account_reset_owned_buffers(slot);
                     return -1;
                 }
@@ -830,9 +836,9 @@ int cs_instruction_template_commit(void) {
 
     // Grow the pointer array by one, then hand the builder block over: a zero-copy
     // transfer, so the builder's idl_type_pool rides along with no aliasing.
-    cs_instruction_template_t **grown =
-        APP_MEM_REALLOC(G_template_table->committed,
-                        (G_template_table->committed_count + 1) * sizeof(*grown));
+    cs_instruction_template_t **grown = APP_MEM_REALLOC(
+        G_template_table->committed,
+        (G_template_table->committed_count + 1) * sizeof(*grown));
     if (grown == NULL) {
         PRINTF("cs_instruction_template_commit: committed array growth failed\n");
         return -1;

@@ -177,23 +177,22 @@ int handle_provide_instruction_info(void) {
     }
 
     // MINT_ASSOC_ACCOUNT and MINT_ASSOC_MINT must both be present or both absent
-    bool has_mint_account =
-        TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, II_TAG_MINT_ASSOC_ACCOUNT);
-    bool has_mint_mint =
-        TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, II_TAG_MINT_ASSOC_MINT);
+    bool has_mint_account = TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags,
+                                                    II_TAG_MINT_ASSOC_ACCOUNT);
+    bool has_mint_mint = TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags,
+                                                 II_TAG_MINT_ASSOC_MINT);
     if (has_mint_account != has_mint_mint) {
         PRINTF("Error: MINT_ASSOC_ACCOUNT and MINT_ASSOC_MINT must both be present or absent\n");
         return reply_sw(ApduReplySolanaInvalidInstructionInfo);
     }
 
     // OWNER_ASSOC_ACCOUNT and OWNER_ASSOC_OWNER must both be present or both absent
-    bool has_owner_account =
-        TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, II_TAG_OWNER_ASSOC_ACCOUNT);
-    bool has_owner_owner =
-        TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, II_TAG_OWNER_ASSOC_OWNER);
+    bool has_owner_account = TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags,
+                                                     II_TAG_OWNER_ASSOC_ACCOUNT);
+    bool has_owner_owner = TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags,
+                                                   II_TAG_OWNER_ASSOC_OWNER);
     if (has_owner_account != has_owner_owner) {
-        PRINTF(
-            "Error: OWNER_ASSOC_ACCOUNT and OWNER_ASSOC_OWNER must both be present or absent\n");
+        PRINTF("Error: OWNER_ASSOC_ACCOUNT and OWNER_ASSOC_OWNER must both be present or absent\n");
         return reply_sw(ApduReplySolanaInvalidInstructionInfo);
     }
 
@@ -204,8 +203,10 @@ int handle_provide_instruction_info(void) {
 
     uint8_t expected_key_usage = CERTIFICATE_PUBLIC_KEY_USAGE_CALLDATA;
     cx_curve_t curve = CX_CURVE_SECP256K1;
-    check_signature_with_pki_status_t err =
-        check_signature_with_pki(hash, &expected_key_usage, &curve, tlv_extracted.signature);
+    check_signature_with_pki_status_t err = check_signature_with_pki(hash,
+                                                                     &expected_key_usage,
+                                                                     &curve,
+                                                                     tlv_extracted.signature);
     if (err != CHECK_SIGNATURE_WITH_PKI_SUCCESS) {
         PRINTF("Error: signature verification failed (%d)\n", err);
         return reply_sw(ApduReplySolanaInvalidInstructionInfo);
@@ -228,8 +229,8 @@ int handle_provide_instruction_info(void) {
     PRINTF("idl_root_type      = %d\n", tlv_extracted.idl_root_type);
 
     // A SIGN MESSAGE GENERIC PREVIEW (0x0A) must have opened the context first.
-    cs_instruction_template_t *template =
-        cs_instruction_template_open(tlv_extracted.substructures_hash);
+    cs_instruction_template_t *template = cs_instruction_template_open(
+        tlv_extracted.substructures_hash);
     if (template == NULL) {
         PRINTF("Error: no clear-signing context or template capacity exhausted\n");
         return reply_sw(ApduReplySolanaClearSigningIncomplete);

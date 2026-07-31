@@ -28,14 +28,14 @@
     memset(tpl##_fields, 0, sizeof(tpl##_fields));           \
     (tpl).display_fields = tpl##_fields
 
-#define RENDER_TEST_RESULT(res)                                  \
-    cs_instruction_result_t res;                                 \
-    idl_resolved_leaf_t res##_resolved[TEST_RENDER_MAX_FIELDS];  \
-    const uint8_t *res##_field_mint[TEST_RENDER_MAX_FIELDS];     \
-    memset(&(res), 0, sizeof(res));                              \
-    memset(res##_resolved, 0, sizeof(res##_resolved));           \
-    memset(res##_field_mint, 0, sizeof(res##_field_mint));       \
-    (res).resolved = res##_resolved;                             \
+#define RENDER_TEST_RESULT(res)                                 \
+    cs_instruction_result_t res;                                \
+    idl_resolved_leaf_t res##_resolved[TEST_RENDER_MAX_FIELDS]; \
+    const uint8_t *res##_field_mint[TEST_RENDER_MAX_FIELDS];    \
+    memset(&(res), 0, sizeof(res));                             \
+    memset(res##_resolved, 0, sizeof(res##_resolved));          \
+    memset(res##_field_mint, 0, sizeof(res##_field_mint));      \
+    (res).resolved = res##_resolved;                            \
     (res).field_mint = res##_field_mint
 
 // Fetch a flat element by index, asserting that it exists.
@@ -2079,8 +2079,8 @@ static void test_override_amount_argument_path(void) {
     template.ports = ports;
     template.port_count = 1;
 
-    uint8_t field_amount[] = {0x64, 0x00, 0x00, 0x00};   // 100
-    uint8_t port_amount[] = {0xFA, 0x00, 0x00, 0x00};    // 250
+    uint8_t field_amount[] = {0x64, 0x00, 0x00, 0x00};  // 100
+    uint8_t port_amount[] = {0xFA, 0x00, 0x00, 0x00};   // 250
     RENDER_TEST_RESULT(instr);
     instr.template = &template;
     instr.resolved[0].kind = IDL_KIND_U32;
@@ -2126,7 +2126,8 @@ static void test_override_token_mint(void) {
     template.display_fields[0].name = "Amount";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
-    template.display_fields[0].argument.format.token_amount.mint_source = CS_TOKEN_MINT_ACCOUNT_INDEX;
+    template.display_fields[0]
+        .argument.format.token_amount.mint_source = CS_TOKEN_MINT_ACCOUNT_INDEX;
     template.display_fields[0].argument.format.token_amount.ref.account_index = 3;
     template.display_field_count = 1;
 
@@ -2346,7 +2347,8 @@ static void test_override_token_mint_no_match(void) {
     template.display_fields[0].name = "Amount";
     template.display_fields[0].source = CS_VALUE_SOURCE_ARGUMENT_PATH;
     template.display_fields[0].argument.param_type = CS_PARAM_TYPE_TOKEN_AMOUNT;
-    template.display_fields[0].argument.format.token_amount.mint_source = CS_TOKEN_MINT_ACCOUNT_INDEX;
+    template.display_fields[0]
+        .argument.format.token_amount.mint_source = CS_TOKEN_MINT_ACCOUNT_INDEX;
     template.display_fields[0].argument.format.token_amount.ref.account_index = 3;
     template.display_field_count = 1;
 

@@ -15,7 +15,7 @@
 #include "globals.h"
 
 typedef struct cs_transaction_s {
-    uint8_t *transaction;   // heap copy of the serialized message captured at 0x0A
+    uint8_t *transaction;  // heap copy of the serialized message captured at 0x0A
     size_t transaction_size;
     uint32_t derivation_path[MAX_BIP32_PATH_LENGTH];
     uint32_t derivation_path_length;

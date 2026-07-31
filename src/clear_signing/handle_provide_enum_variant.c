@@ -206,8 +206,10 @@ int handle_provide_enum_variant(void) {
 
     uint8_t expected_key_usage = CERTIFICATE_PUBLIC_KEY_USAGE_CALLDATA;
     cx_curve_t curve = CX_CURVE_SECP256K1;
-    check_signature_with_pki_status_t err =
-        check_signature_with_pki(hash, &expected_key_usage, &curve, tlv_extracted.signature);
+    check_signature_with_pki_status_t err = check_signature_with_pki(hash,
+                                                                     &expected_key_usage,
+                                                                     &curve,
+                                                                     tlv_extracted.signature);
     if (err != CHECK_SIGNATURE_WITH_PKI_SUCCESS) {
         PRINTF("Error: signature verification failed (%d)\n", err);
         return reply_sw(ApduReplySolanaInvalidEnumVariant);

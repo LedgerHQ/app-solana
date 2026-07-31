@@ -15,10 +15,10 @@
 #include "sol/pubkey.h"
 
 enum substructure_type {
-    SUBSTRUCTURE_TYPE_DISPLAY_FIELD   = 0x00,
+    SUBSTRUCTURE_TYPE_DISPLAY_FIELD = 0x00,
     SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT = 0x01,
-    SUBSTRUCTURE_TYPE_HIDE_RULE       = 0x02,
-    SUBSTRUCTURE_TYPE_ACCOUNT_RESET   = 0x03,
+    SUBSTRUCTURE_TYPE_HIDE_RULE = 0x02,
+    SUBSTRUCTURE_TYPE_ACCOUNT_RESET = 0x03,
 };
 
 // ---- PARAM_RAW parser -------------------------------------------------------
@@ -145,14 +145,12 @@ typedef struct param_token_amount_out_s {
     buffer_t max_label;
 } param_token_amount_out_t;
 
-static bool param_token_amount_handle_value(const tlv_data_t *data,
-                                            param_token_amount_out_t *out) {
+static bool param_token_amount_handle_value(const tlv_data_t *data, param_token_amount_out_t *out) {
     out->value = data->value;
     return true;
 }
 
-static bool param_token_amount_handle_token(const tlv_data_t *data,
-                                            param_token_amount_out_t *out) {
+static bool param_token_amount_handle_token(const tlv_data_t *data, param_token_amount_out_t *out) {
     out->token = data->value;
     return true;
 }
@@ -361,14 +359,12 @@ typedef struct param_trusted_name_out_s {
     buffer_t types;
 } param_trusted_name_out_t;
 
-static bool param_trusted_name_handle_value(const tlv_data_t *data,
-                                            param_trusted_name_out_t *out) {
+static bool param_trusted_name_handle_value(const tlv_data_t *data, param_trusted_name_out_t *out) {
     out->value = data->value;
     return true;
 }
 
-static bool param_trusted_name_handle_types(const tlv_data_t *data,
-                                            param_trusted_name_out_t *out) {
+static bool param_trusted_name_handle_types(const tlv_data_t *data, param_trusted_name_out_t *out) {
     out->types = data->value;
     return true;
 }
@@ -402,8 +398,7 @@ typedef struct display_field_out_s {
     buffer_t param;
 } display_field_out_t;
 
-static bool display_field_handle_substruct_type(const tlv_data_t *data,
-                                               display_field_out_t *out) {
+static bool display_field_handle_substruct_type(const tlv_data_t *data, display_field_out_t *out) {
     if (data->value.size != 1) {
         return false;
     }
@@ -463,9 +458,7 @@ static int parse_display_field_envelope(uint8_t apdu_type,
         return -1;
     }
     if (out->substruct_type != apdu_type) {
-        PRINTF("substructure: SUBSTRUCT_TYPE=%d != APDU type=%d\n",
-               out->substruct_type,
-               apdu_type);
+        PRINTF("substructure: SUBSTRUCT_TYPE=%d != APDU type=%d\n", out->substruct_type, apdu_type);
         return -1;
     }
     if (!TLV_CHECK_RECEIVED_TAGS(out->received_tags, DISPLAY_FIELD_TAG_PARAM)) {
@@ -541,9 +534,9 @@ static int register_param_raw(const display_field_out_t *display_field, const ch
             kind = param.kind.ptr[0];
         }
         if (cs_instruction_template_add_constant_field(value.payload.ptr,
-                                                      value.payload.size,
-                                                      kind,
-                                                      field_name) != 0) {
+                                                       value.payload.size,
+                                                       kind,
+                                                       field_name) != 0) {
             return -1;
         }
         PRINTF("substructure: registered constant field kind=%d size=%d name=%s\n",
@@ -575,7 +568,8 @@ static int register_param_enum(const display_field_out_t *display_field, const c
     // renderer already shows the variant name alone and displays inner-payload
     // fields only when the descriptor emits explicit inner display fields, so the
     // flag drives no rendering state; it is validated and accepted here.
-    if (param.skip_inner.ptr != NULL && (param.skip_inner.size != 1 || param.skip_inner.ptr[0] > 1)) {
+    if (param.skip_inner.ptr != NULL &&
+        (param.skip_inner.size != 1 || param.skip_inner.ptr[0] > 1)) {
         PRINTF("substructure: PARAM_ENUM SKIP_INNER must be a 0/1 byte (size %d)\n",
                param.skip_inner.size);
         return -1;
@@ -610,8 +604,7 @@ static int register_param_enum(const display_field_out_t *display_field, const c
 
 // Register a PARAM_AMOUNT display field. An ACCOUNT_PATH value is rendered as a
 // base58 address instead of a formatted amount.
-static int register_param_amount(const display_field_out_t *display_field,
-                                 const char *field_name) {
+static int register_param_amount(const display_field_out_t *display_field, const char *field_name) {
     param_amount_out_t param = {0};
     if (!parse_param_amount(&display_field->param, &param, &param.received_tags)) {
         PRINTF("substructure: PARAM_AMOUNT parsing failed\n");
@@ -694,13 +687,14 @@ static int register_param_token_amount(const display_field_out_t *display_field,
         bool is_native = (param.is_native.ptr != NULL && param.is_native.size == 1 &&
                           param.is_native.ptr[0] == 1);
         bool has_token = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_TOKEN_AMOUNT_TAG_TOKEN);
-        bool has_decimals =
-            TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_TOKEN_AMOUNT_TAG_DECIMALS);
+        bool has_decimals = TLV_CHECK_RECEIVED_TAGS(param.received_tags,
+                                                    PARAM_TOKEN_AMOUNT_TAG_DECIMALS);
 
         // Native SOL carries its own built-in metadata; a mint reference or decimals
         // override alongside it is contradictory.
         if (is_native && (has_token || has_decimals)) {
-            PRINTF("substructure: TOKEN_AMOUNT native cannot carry a TOKEN reference or DECIMALS\n");
+            PRINTF(
+                "substructure: TOKEN_AMOUNT native cannot carry a TOKEN reference or DECIMALS\n");
             return -1;
         }
 
@@ -754,8 +748,8 @@ static int register_param_token_amount(const display_field_out_t *display_field,
         }
 
         if (cs_instruction_template_set_format_token_amount(&format,
-                                                             param.max_label.ptr,
-                                                             param.max_label.size) != 0) {
+                                                            param.max_label.ptr,
+                                                            param.max_label.size) != 0) {
             PRINTF("substructure: set_format_token_amount failed\n");
             return -1;
         }
@@ -922,8 +916,7 @@ static int register_param_unit(const display_field_out_t *display_field, const c
 
 // Register a PARAM_STRING display field. An ACCOUNT_PATH value is rendered as a
 // base58 address instead of a decoded string.
-static int register_param_string(const display_field_out_t *display_field,
-                                 const char *field_name) {
+static int register_param_string(const display_field_out_t *display_field, const char *field_name) {
     param_string_out_t param = {0};
     if (!parse_param_string(&display_field->param, &param, &param.received_tags)) {
         PRINTF("substructure: PARAM_STRING parsing failed\n");
@@ -967,12 +960,12 @@ static int register_param_string(const display_field_out_t *display_field,
 
         // Presence of SLICE_KIND enables slicing; the other slice tags are only
         // valid for the matching kind.
-        format.has_slice =
-            TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_KIND);
+        format.has_slice = TLV_CHECK_RECEIVED_TAGS(param.received_tags,
+                                                   PARAM_STRING_TAG_SLICE_KIND);
         bool has_end = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_END);
         bool has_size = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_SIZE);
-        bool has_reversed =
-            TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_REVERSED);
+        bool has_reversed = TLV_CHECK_RECEIVED_TAGS(param.received_tags,
+                                                    PARAM_STRING_TAG_SLICE_REVERSED);
         bool has_start = TLV_CHECK_RECEIVED_TAGS(param.received_tags, PARAM_STRING_TAG_SLICE_START);
 
         if (!format.has_slice) {
@@ -1023,8 +1016,9 @@ static int register_param_string(const display_field_out_t *display_field,
                 format.slice.sized.size = (uint16_t) size;
                 if (has_reversed) {
                     if (param.slice_reversed.size != 1) {
-                        PRINTF("substructure: PARAM_STRING SLICE_REVERSED must be 1 byte (got %d)\n",
-                               param.slice_reversed.size);
+                        PRINTF(
+                            "substructure: PARAM_STRING SLICE_REVERSED must be 1 byte (got %d)\n",
+                            param.slice_reversed.size);
                         return -1;
                     }
                     format.slice.sized.reversed = (param.slice_reversed.ptr[0] == 1);
@@ -1210,17 +1204,13 @@ static int dispatch_display_field(const display_field_out_t *display_field,
             return register_param_datetime(display_field, field_name);
 
         case CS_PARAM_TYPE_DURATION:
-            return register_param_plain_argument(display_field,
-                                                 field_name,
-                                                 CS_PARAM_TYPE_DURATION);
+            return register_param_plain_argument(display_field, field_name, CS_PARAM_TYPE_DURATION);
 
         case CS_PARAM_TYPE_UNIT:
             return register_param_unit(display_field, field_name);
 
         case CS_PARAM_TYPE_ACCOUNT:
-            return register_param_plain_argument(display_field,
-                                                 field_name,
-                                                 CS_PARAM_TYPE_ACCOUNT);
+            return register_param_plain_argument(display_field, field_name, CS_PARAM_TYPE_ACCOUNT);
 
         case CS_PARAM_TYPE_STRING:
             return register_param_string(display_field, field_name);
@@ -1478,8 +1468,9 @@ static bool reset_scope_handle_discriminator(const tlv_data_t *data, reset_scope
         PRINTF("substructure: SCOPE_DISCRIMINATOR too long (%d)\n", data->value.size);
         return false;
     }
-    cs_reset_discriminator_t *grown =
-        APP_MEM_REALLOC(out->discriminators, (out->discriminator_count + 1) * sizeof(*grown));
+    cs_reset_discriminator_t *grown = APP_MEM_REALLOC(
+        out->discriminators,
+        (out->discriminator_count + 1) * sizeof(*grown));
     if (grown == NULL) {
         PRINTF("substructure: SCOPE_DISCRIMINATOR list growth failed\n");
         return false;

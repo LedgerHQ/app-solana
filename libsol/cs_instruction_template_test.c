@@ -62,8 +62,9 @@ static void test_open_and_commit(void) {
     assert(cs_instruction_template_committed_count() == 1);
 
     // The IDL pool buffer survives the commit with its content intact.
-    const cs_instruction_template_t *found =
-        cs_instruction_template_find(PROGRAM_A, DISC_A, sizeof(DISC_A));
+    const cs_instruction_template_t *found = cs_instruction_template_find(PROGRAM_A,
+                                                                          DISC_A,
+                                                                          sizeof(DISC_A));
     assert(found != NULL);
     assert(found->idl_type_pool_size == sizeof(IDL_POOL));
     assert(memcmp(found->idl_type_pool, IDL_POOL, sizeof(IDL_POOL)) == 0);
@@ -251,11 +252,13 @@ static void test_add_field_name_variants(void) {
 
     const uint8_t path[] = {0x20, 0x00};
     // Empty (non-NULL) label rejected; the already-allocated path copy is released.
-    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, "") == -1);
+    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, "") ==
+           -1);
     assert(builder->display_field_count == 0);
 
     // NULL label is valid (unlabeled field).
-    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, NULL) == 0);
+    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, NULL) ==
+           0);
     assert(builder->display_field_count == 1);
     assert(builder->display_fields[0].name == NULL);
 
@@ -303,10 +306,9 @@ static void test_add_display_fields_grows_past_old_cap(void) {
     const size_t total = 20;
     for (size_t i = 0; i < total; i++) {
         uint8_t path[] = {0x20, (uint8_t) i};
-        assert(cs_instruction_template_add_display_path(path,
-                                                        sizeof(path),
-                                                        CS_PARAM_TYPE_RAW,
-                                                        NULL) == 0);
+        assert(
+            cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, NULL) ==
+            0);
     }
     assert(builder->display_field_count == total);
     for (size_t i = 0; i < total; i++) {
@@ -331,8 +333,9 @@ static void test_add_display_field_growth_alloc_fail(void) {
     // Path copy (0) and name copy (1) succeed; the array growth (2) fails: the two
     // owned buffers must be released and no field stored.
     mock_mem_fail_after(2);
-    assert(cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, "Amount") ==
-           -1);
+    assert(
+        cs_instruction_template_add_display_path(path, sizeof(path), CS_PARAM_TYPE_RAW, "Amount") ==
+        -1);
     assert(builder->display_field_count == 0);
     assert(builder->display_fields == NULL);
 
@@ -618,7 +621,8 @@ static void test_add_constant_field_alloc_fail(void) {
     const uint8_t data[] = {0x01, 0x02, 0x03};
     // The name copy (second allocation) fails: the data copy must be freed, no field stored.
     mock_mem_fail_after(1);
-    assert(cs_instruction_template_add_constant_field(data, sizeof(data), IDL_KIND_U8, "Fee") == -1);
+    assert(cs_instruction_template_add_constant_field(data, sizeof(data), IDL_KIND_U8, "Fee") ==
+           -1);
     assert(builder->display_field_count == 0);
 
     mock_mem_fail_after(-1);
@@ -696,9 +700,8 @@ static void test_set_format_amount_max_label(void) {
                                                     CS_PARAM_TYPE_AMOUNT,
                                                     "Amount") == 0);
     const char label[] = "Unlimited";
-    assert(cs_instruction_template_set_format_amount(0,
-                                                     (const uint8_t *) label,
-                                                     strlen(label)) == 0);
+    assert(cs_instruction_template_set_format_amount(0, (const uint8_t *) label, strlen(label)) ==
+           0);
     assert(builder->display_fields[0].argument.format.amount.max_label != NULL);
     assert(strcmp(builder->display_fields[0].argument.format.amount.max_label, "Unlimited") == 0);
 

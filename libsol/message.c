@@ -55,7 +55,9 @@ static int parse_validate_and_debug_instruction_accounts(Parser *parser,
     for (size_t i = 0; i < instruction->accounts_length; ++i) {
         if (instruction->accounts[i] >= header->pubkeys_header.pubkeys_length) {
             // ALT-loaded account: not present in the wire format, cannot be resolved on device
-            PRINTF("accounts[%d] = pubkeys[%d] = <ALT loaded>\n", (int) i, instruction->accounts[i]);
+            PRINTF("accounts[%d] = pubkeys[%d] = <ALT loaded>\n",
+                   (int) i,
+                   instruction->accounts[i]);
         } else {
             PRINTF("accounts[%d] = pubkeys[%d] = %.*H\n",
                    (int) i,

@@ -72,27 +72,21 @@ void reset_unrelated_sessions(uint8_t instruction) {
     // the validated fingerprint in the delayed signing storage, so the CS session is over.
     if (G_cs_session_state != CS_SESSION_IDLE
         // CS instructions
-        && instruction != InsStartGenericClearSigningSession
-        && instruction != InsProvideInstructionInfo
-        && instruction != InsProvideInstructionSubstructure
-        && instruction != InsProvideEnumVariant
-        && instruction != InsProvideTokenAccountState
-        && instruction != InsProvideAltResolution
-        && instruction != InsProvideTrustedName
-        && instruction != InsFinalizeGenericClearSigning
-        && instruction != InsPromptUiDisplay
+        && instruction != InsStartGenericClearSigningSession &&
+        instruction != InsProvideInstructionInfo &&
+        instruction != InsProvideInstructionSubstructure && instruction != InsProvideEnumVariant &&
+        instruction != InsProvideTokenAccountState && instruction != InsProvideAltResolution &&
+        instruction != InsProvideTrustedName && instruction != InsFinalizeGenericClearSigning &&
+        instruction != InsPromptUiDisplay
 
         // Token CAL info
-        && instruction != InsTrustedInfoGetChallenge
-        && instruction != InsTrustedInfoProvideInfo
-        && instruction != InsTrustedInfoProvideDynamicDescriptor
+        && instruction != InsTrustedInfoGetChallenge && instruction != InsTrustedInfoProvideInfo &&
+        instruction != InsTrustedInfoProvideDynamicDescriptor
 
         // Stateless queries: they answer from the seed or from settings and touch no
         // signing state, so a session parked mid-stream survives them untouched.
-        && instruction != InsGetPubkey
-        && instruction != InsDeprecatedGetPubkey
-        && instruction != InsGetAppConfiguration
-        && instruction != InsDeprecatedGetAppConfiguration) {
+        && instruction != InsGetPubkey && instruction != InsDeprecatedGetPubkey &&
+        instruction != InsGetAppConfiguration && instruction != InsDeprecatedGetAppConfiguration) {
         cs_session_reset();
     }
 }

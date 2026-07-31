@@ -18,8 +18,7 @@ void reset_dynamic_token_info(void) {
 // on demand. The pool struct itself is allocated on the first call.
 int dynamic_token_info_add(dynamic_token_info_t *entry) {
     if (g_dynamic_token_info == NULL) {
-        if (!APP_MEM_CALLOC((void **) &g_dynamic_token_info,
-                            sizeof(dynamic_token_info_pool_t))) {
+        if (!APP_MEM_CALLOC((void **) &g_dynamic_token_info, sizeof(dynamic_token_info_pool_t))) {
             PRINTF("dynamic_token_info_add: pool allocation failed\n");
             return -1;
         }
@@ -60,9 +59,7 @@ static const dynamic_token_info_t *find_entry(const uint8_t *mint_address,
         if (!g_dynamic_token_info->entries[i].received) {
             continue;
         }
-        if (memcmp(g_dynamic_token_info->entries[i].mint_address,
-                   mint_address,
-                   PUBKEY_SIZE) != 0) {
+        if (memcmp(g_dynamic_token_info->entries[i].mint_address, mint_address, PUBKEY_SIZE) != 0) {
             continue;
         }
         if (is_token_2022_kind != g_dynamic_token_info->entries[i].is_token_2022_kind) {
@@ -77,9 +74,7 @@ static const dynamic_token_info_t *find_entry(const uint8_t *mint_address,
 const char *get_dynamic_token_symbol(const uint8_t *mint_address, bool is_token_2022_kind) {
     const dynamic_token_info_t *found = find_entry(mint_address, is_token_2022_kind);
     if (found == NULL) {
-        PRINTF("get_dynamic_token_symbol: no match for mint '%.*H'\n",
-               PUBKEY_SIZE,
-               mint_address);
+        PRINTF("get_dynamic_token_symbol: no match for mint '%.*H'\n", PUBKEY_SIZE, mint_address);
         return NULL;
     }
     PRINTF("get_dynamic_token_symbol: mint '%.*H' == ticker '%s'\n",
@@ -102,9 +97,7 @@ const char *get_token_symbol(const uint8_t *mint_address, bool is_token_2022_kin
 int get_token_magnitude(const uint8_t *mint_address, bool is_token_2022_kind) {
     const dynamic_token_info_t *found = find_entry(mint_address, is_token_2022_kind);
     if (found == NULL) {
-        PRINTF("get_token_magnitude: no match for mint '%.*H'\n",
-               PUBKEY_SIZE,
-               mint_address);
+        PRINTF("get_token_magnitude: no match for mint '%.*H'\n", PUBKEY_SIZE, mint_address);
         return -1;
     }
     return (int) found->magnitude;

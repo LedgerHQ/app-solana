@@ -975,9 +975,9 @@ static void test_unaccounted_depositor_port_refused(void) {
     build_wrap_chain(&create, &transfer, &wrap);
 
     cs_instruction_result_t items[4] = {depositor.result,
-                                       create.result,
-                                       transfer.result,
-                                       wrap.result};
+                                        create.result,
+                                        transfer.result,
+                                        wrap.result};
     bool survivors[4] = {false, false, false, false};
     assert(cs_merge_engine_run(items, 4, NULL, survivors) == 0);
     assert(survivors[3] == true);
@@ -999,9 +999,9 @@ static void test_zero_amount_port_is_not_a_depositor(void) {
     build_wrap_chain(&create, &transfer, &wrap);
 
     cs_instruction_result_t items[4] = {placeholder.result,
-                                       create.result,
-                                       transfer.result,
-                                       wrap.result};
+                                        create.result,
+                                        transfer.result,
+                                        wrap.result};
     bool survivors[4] = {false, false, false, false};
     assert(cs_merge_engine_run(items, 4, NULL, survivors) == 0);
     assert(survivors[3] == false);
@@ -1023,9 +1023,9 @@ static void test_unaccounted_depositor_writable_refused(void) {
     build_wrap_chain(&create, &transfer, &wrap);
 
     cs_instruction_result_t items[4] = {toucher.result,
-                                       create.result,
-                                       transfer.result,
-                                       wrap.result};
+                                        create.result,
+                                        transfer.result,
+                                        wrap.result};
     bool survivors[4] = {false, false, false, false};
     assert(cs_merge_engine_run(items, 4, NULL, survivors) == 0);
     assert(survivors[3] == true);
@@ -1047,9 +1047,9 @@ static void test_incomplete_writable_list_refused(void) {
     build_wrap_chain(&create, &transfer, &wrap);
 
     cs_instruction_result_t items[4] = {unresolved.result,
-                                       create.result,
-                                       transfer.result,
-                                       wrap.result};
+                                        create.result,
+                                        transfer.result,
+                                        wrap.result};
     bool survivors[4] = {false, false, false, false};
     assert(cs_merge_engine_run(items, 4, NULL, survivors) == 0);
     assert(survivors[3] == true);
@@ -1109,9 +1109,9 @@ static void test_declined_junction_stops_the_scan(void) {
     item_set_identity(&consumer, PROGRAM_OTHER, WRAP_DATA, sizeof(WRAP_DATA));
 
     cs_instruction_result_t items[4] = {create.result,
-                                       producer.result,
-                                       interloper.result,
-                                       consumer.result};
+                                        producer.result,
+                                        interloper.result,
+                                        consumer.result};
     bool survivors[4] = {false, false, false, false};
     assert(cs_merge_engine_run(items, 4, NULL, survivors) == 0);
 

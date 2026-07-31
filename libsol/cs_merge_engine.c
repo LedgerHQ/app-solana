@@ -71,8 +71,7 @@ static size_t nth_directional_port_index(const cs_instruction_result_t *item,
     size_t seen = 0;
     for (size_t p = 0; p < item->resolved_port_count; p++) {
         // An ACTIVE_WHEN-excluded port is not a leg: the scan treats it as never declared.
-        if (item->template->ports[p].direction == direction &&
-            !item->resolved_ports[p].excluded) {
+        if (item->template->ports[p].direction == direction && !item->resolved_ports[p].excluded) {
             if (seen == n) {
                 return p;
             }
@@ -101,8 +100,7 @@ static size_t count_directional_ports(const cs_instruction_result_t *item, uint8
     size_t count = 0;
     for (size_t p = 0; p < item->resolved_port_count; p++) {
         // An ACTIVE_WHEN-excluded port is not counted: the scan treats it as never declared.
-        if (item->template->ports[p].direction == direction &&
-            !item->resolved_ports[p].excluded) {
+        if (item->template->ports[p].direction == direction && !item->resolved_ports[p].excluded) {
             count++;
         }
     }
@@ -181,9 +179,10 @@ static bool value_kinds_compatible(uint8_t output_kind, uint8_t input_kind) {
     // Both defined kinds move fungible value between accounts, so a junction may
     // change form across them: a lamport deposit then a wrap reads the same account as
     // NATIVE then as SPL_TOKEN. Any other kind is unknown here and lines up with nothing.
-    bool compatible =
-        (output_kind == CS_PORT_VALUE_KIND_NATIVE || output_kind == CS_PORT_VALUE_KIND_SPL_TOKEN) &&
-        (input_kind == CS_PORT_VALUE_KIND_NATIVE || input_kind == CS_PORT_VALUE_KIND_SPL_TOKEN);
+    bool compatible = (output_kind == CS_PORT_VALUE_KIND_NATIVE ||
+                       output_kind == CS_PORT_VALUE_KIND_SPL_TOKEN) &&
+                      (input_kind == CS_PORT_VALUE_KIND_NATIVE ||
+                       input_kind == CS_PORT_VALUE_KIND_SPL_TOKEN);
     if (!compatible) {
         PRINTF("value_kinds_compatible: unknown kind (%d, %d)\n", output_kind, input_kind);
     }
@@ -265,10 +264,12 @@ static enum cs_merge_rule determine_junction_rule(const cs_instruction_result_t 
 
     enum cs_merge_rule junction_rule = CS_MERGE_RULE_NONE;
     for (size_t leg = 0; leg < output_count; leg++) {
-        const cs_resolved_port_t *output_port =
-            nth_directional_port(upstream, CS_PORT_DIRECTION_OUTPUT, leg);
-        const cs_resolved_port_t *input_port =
-            nth_directional_port(downstream, CS_PORT_DIRECTION_INPUT, leg);
+        const cs_resolved_port_t *output_port = nth_directional_port(upstream,
+                                                                     CS_PORT_DIRECTION_OUTPUT,
+                                                                     leg);
+        const cs_resolved_port_t *input_port = nth_directional_port(downstream,
+                                                                    CS_PORT_DIRECTION_INPUT,
+                                                                    leg);
         if (output_port == NULL || input_port == NULL) {
             PRINTF("determine_junction_rule: leg %d missing\n", (int) leg);
             return CS_MERGE_RULE_NONE;
@@ -360,10 +361,12 @@ static enum cs_item_role classify_item_role(const cs_instruction_result_t *item)
     // the first one it finds.
     bool changes_form = false;
     for (size_t leg = 0; leg < input_count && !changes_form; leg++) {
-        const cs_resolved_port_t *input_port =
-            nth_directional_port(item, CS_PORT_DIRECTION_INPUT, leg);
-        const cs_resolved_port_t *output_port =
-            nth_directional_port(item, CS_PORT_DIRECTION_OUTPUT, leg);
+        const cs_resolved_port_t *input_port = nth_directional_port(item,
+                                                                    CS_PORT_DIRECTION_INPUT,
+                                                                    leg);
+        const cs_resolved_port_t *output_port = nth_directional_port(item,
+                                                                     CS_PORT_DIRECTION_OUTPUT,
+                                                                     leg);
         if (input_port == NULL || output_port == NULL) {
             PRINTF("classify_item_role: leg %d missing, treated as a relay\n", (int) leg);
             return CS_ITEM_ROLE_RELAY;
@@ -391,8 +394,8 @@ static size_t symbolic_junction_port_count(const cs_instruction_result_t *item, 
     // propagate, not what it has to trust.
     size_t count = 0;
     for (size_t p = 0; p < item->resolved_port_count; p++) {
-        if (item->template->ports[p].direction == direction &&
-            !item->resolved_ports[p].excluded && item->resolved_ports[p].is_symbolic) {
+        if (item->template->ports[p].direction == direction && !item->resolved_ports[p].excluded &&
+            item->resolved_ports[p].is_symbolic) {
             count++;
         }
     }
@@ -431,10 +434,9 @@ static int assign_merge_roles(const cs_instruction_result_t *upstream,
     } else {
         // Over a symbolic junction, the side naming fewer amounts describes the movement
         // less precisely and is the one worth losing.
-        size_t upstream_symbolic =
-            symbolic_junction_port_count(upstream, CS_PORT_DIRECTION_OUTPUT);
-        size_t downstream_symbolic =
-            symbolic_junction_port_count(downstream, CS_PORT_DIRECTION_INPUT);
+        size_t upstream_symbolic = symbolic_junction_port_count(upstream, CS_PORT_DIRECTION_OUTPUT);
+        size_t downstream_symbolic = symbolic_junction_port_count(downstream,
+                                                                  CS_PORT_DIRECTION_INPUT);
         if (upstream_symbolic > downstream_symbolic) {
             PRINTF("assign_merge_roles: upstream more symbolic, it is consumed\n");
             *consumed_is_downstream = false;
@@ -590,12 +592,14 @@ static void resolve_balance_amounts(cs_instruction_result_t *walked_instructions
                 walked_instructions[i].resolved_ports[p].amount_kind != CS_AMOUNT_KIND_BALANCE) {
                 continue;
             }
-            const known_balance_t *known =
-                known_balance_find(scratch, walked_instructions[i].resolved_ports[p].account);
+            const known_balance_t *known = known_balance_find(
+                scratch,
+                walked_instructions[i].resolved_ports[p].account);
             if (known == NULL) {
-                PRINTF("resolve_balance_amounts: instruction %d port %d drains an unknown balance\n",
-                       (int) i,
-                       (int) p);
+                PRINTF(
+                    "resolve_balance_amounts: instruction %d port %d drains an unknown balance\n",
+                    (int) i,
+                    (int) p);
                 walked_instructions[i].resolved_ports[p].is_symbolic = true;
             } else {
                 PRINTF("resolve_balance_amounts: instruction %d port %d drains a known balance\n",
@@ -697,12 +701,12 @@ static void build_safe_accounts(const cs_instruction_result_t *walked_instructio
                        (int) r);
                 continue;
             }
-            scratch->safe_accounts[scratch->safe_account_count].account =
-                walked_instructions[i].resolved_resets[r].account;
+            scratch->safe_accounts[scratch->safe_account_count]
+                .account = walked_instructions[i].resolved_resets[r].account;
             scratch->safe_accounts[scratch->safe_account_count].declarer_index = i;
             if (walked_instructions[i].template->account_resets[r].has_scope) {
-                scratch->safe_accounts[scratch->safe_account_count].scope =
-                    &walked_instructions[i].template->account_resets[r].scope;
+                scratch->safe_accounts[scratch->safe_account_count]
+                    .scope = &walked_instructions[i].template->account_resets[r].scope;
             } else {
                 scratch->safe_accounts[scratch->safe_account_count].scope = NULL;
             }
@@ -717,7 +721,7 @@ static void build_safe_accounts(const cs_instruction_result_t *walked_instructio
 // program's own entry points: a ledger snapshot means nothing to any other program,
 // which still sees the account's full balance.
 static bool reset_scope_admits(const cs_reset_scope_t *scope,
-                              const cs_instruction_result_t *consumer) {
+                               const cs_instruction_result_t *consumer) {
     // An unscoped reset changed the account itself, so it holds for anyone.
     if (scope == NULL) {
         return true;
@@ -817,8 +821,7 @@ static bool declares_admitting_reset(const merge_scratch_t *scratch,
 
 // Whether an instruction could have put value into an account. Answers conservatively:
 // only a definite no lets a collapse through.
-static bool instruction_may_deposit(const cs_instruction_result_t *item,
-                                    const uint8_t *account) {
+static bool instruction_may_deposit(const cs_instruction_result_t *item, const uint8_t *account) {
     // What the descriptor declares comes first, since it says how much moved and so lets
     // a creation step with nothing in it pass.
     for (size_t p = 0; p < item->resolved_port_count; p++) {
@@ -876,7 +879,9 @@ static size_t collect_symbolic_junction_accounts(const cs_instruction_result_t *
         bool already_listed = false;
         for (size_t a = 0; a < account_count && !already_listed; a++) {
             already_listed = (accounts[a] != NULL && consumed->resolved_ports[p].account != NULL &&
-                              memcmp(accounts[a], consumed->resolved_ports[p].account, PUBKEY_SIZE) == 0);
+                              memcmp(accounts[a],
+                                     consumed->resolved_ports[p].account,
+                                     PUBKEY_SIZE) == 0);
         }
         if (!already_listed) {
             accounts[account_count] = consumed->resolved_ports[p].account;
@@ -907,12 +912,11 @@ static bool symbolic_junction_guard(const cs_instruction_result_t *walked_instru
         consumed_direction = CS_PORT_DIRECTION_INPUT;
     }
 
-    size_t account_count =
-        collect_symbolic_junction_accounts(&walked_instructions[survivor_index],
-                                           survivor_direction,
-                                           &walked_instructions[consumed_index],
-                                           consumed_direction,
-                                           symbolic_accounts);
+    size_t account_count = collect_symbolic_junction_accounts(&walked_instructions[survivor_index],
+                                                              survivor_direction,
+                                                              &walked_instructions[consumed_index],
+                                                              consumed_direction,
+                                                              symbolic_accounts);
     // Both sides named their amounts, so there is nothing to take on trust and this is an
     // exact relay rather than the case this guard is for.
     if (account_count == 0) {
@@ -1071,10 +1075,12 @@ static void apply_merge(cs_instruction_result_t *survivor,
     for (size_t leg = 0; leg < leg_count && leg < replacement_count; leg++) {
         // Written through the index rather than the port pointer: the survivor's ports are
         // being modified, not read.
-        size_t survivor_port_index =
-            nth_directional_port_index(survivor, survivor_junction_direction, leg);
-        size_t replacement_index =
-            nth_directional_port_index(consumed, consumed_far_side_direction, leg);
+        size_t survivor_port_index = nth_directional_port_index(survivor,
+                                                                survivor_junction_direction,
+                                                                leg);
+        size_t replacement_index = nth_directional_port_index(consumed,
+                                                              consumed_far_side_direction,
+                                                              leg);
         if (survivor_port_index == SIZE_MAX || replacement_index == SIZE_MAX) {
             PRINTF("apply_merge: leg %d missing, left untouched\n", (int) leg);
             continue;
@@ -1112,8 +1118,9 @@ static bool touches_upstream_outputs(const cs_instruction_result_t *upstream,
             }
         }
         for (size_t w = 0; w < downstream->writable_account_count; w++) {
-            if (memcmp(upstream->resolved_ports[up].account, downstream->writable_accounts[w], PUBKEY_SIZE) ==
-                0) {
+            if (memcmp(upstream->resolved_ports[up].account,
+                       downstream->writable_accounts[w],
+                       PUBKEY_SIZE) == 0) {
                 PRINTF("touches_upstream_outputs: the junction is writable downstream\n");
                 return true;
             }
@@ -1230,8 +1237,8 @@ static void run_merge_scan(cs_instruction_result_t *walked_instructions,
             // still checked below for touching one.
             bool consumed_is_downstream = false;
             bool merged = false;
-            if (count_directional_ports(&walked_instructions[downstream],
-                                        CS_PORT_DIRECTION_INPUT) > 0) {
+            if (count_directional_ports(&walked_instructions[downstream], CS_PORT_DIRECTION_INPUT) >
+                0) {
                 merged = try_merge_pair(walked_instructions,
                                         scratch,
                                         upstream,
@@ -1303,7 +1310,8 @@ static bool condition_created_in_transaction(const cs_instruction_result_t *walk
             }
             // A zero-amount, no-token output is an account brought into existence rather
             // than value moving through it.
-            if (memcmp(walked_instructions[i].resolved_ports[p].account, target, PUBKEY_SIZE) == 0 &&
+            if (memcmp(walked_instructions[i].resolved_ports[p].account, target, PUBKEY_SIZE) ==
+                    0 &&
                 port_moves_no_value(&walked_instructions[i].resolved_ports[p])) {
                 PRINTF("condition_created_in_transaction: instruction %d creates the target\n",
                        (int) i);
@@ -1394,7 +1402,8 @@ static bool condition_account_used_elsewhere(const cs_instruction_result_t *walk
         for (size_t p = 0; p < walked_instructions[i].resolved_port_count; p++) {
             if (!walked_instructions[i].resolved_ports[p].excluded &&
                 walked_instructions[i].resolved_ports[p].account != NULL &&
-                memcmp(walked_instructions[i].resolved_ports[p].account, target, PUBKEY_SIZE) == 0) {
+                memcmp(walked_instructions[i].resolved_ports[p].account, target, PUBKEY_SIZE) ==
+                    0) {
                 PRINTF("condition_account_used_elsewhere: a port of instruction %d uses it\n",
                        (int) i);
                 return true;
@@ -1685,8 +1694,9 @@ static bool account_represented_by_survivor(const uint8_t *target,
                                                scratch,
                                                j,
                                                target)) {
-                PRINTF("account_represented_by_survivor: survivor %d stands in via a scoped reset\n",
-                       (int) j);
+                PRINTF(
+                    "account_represented_by_survivor: survivor %d stands in via a scoped reset\n",
+                    (int) j);
                 return true;
             }
         }
@@ -1756,12 +1766,13 @@ static bool condition_account_effects_displayed_elsewhere(
     if (walked_instructions[current_index].has_resolved_mint_assoc &&
         memcmp(walked_instructions[current_index].mint_assoc_token_account, target, PUBKEY_SIZE) ==
             0) {
-        mint_covered = mint_effect_covered_somewhere(target,
-                                                     walked_instructions[current_index].mint_assoc_mint,
-                                                     survivors,
-                                                     walked_instructions,
-                                                     count,
-                                                     current_index);
+        mint_covered = mint_effect_covered_somewhere(
+            target,
+            walked_instructions[current_index].mint_assoc_mint,
+            survivors,
+            walked_instructions,
+            count,
+            current_index);
     }
 
     // An owner the hidden instruction binds the target to reduces on screen to the account being
@@ -1770,8 +1781,11 @@ static bool condition_account_effects_displayed_elsewhere(
     if (walked_instructions[current_index].has_resolved_owner_assoc &&
         memcmp(walked_instructions[current_index].owner_assoc_token_account, target, PUBKEY_SIZE) ==
             0) {
-        owner_covered =
-            account_displayed_somewhere(target, survivors, walked_instructions, count, current_index);
+        owner_covered = account_displayed_somewhere(target,
+                                                    survivors,
+                                                    walked_instructions,
+                                                    count,
+                                                    current_index);
     }
 
     bool represented = account_represented_by_survivor(target,
@@ -1780,14 +1794,15 @@ static bool condition_account_effects_displayed_elsewhere(
                                                        count,
                                                        current_index,
                                                        scratch);
-    PRINTF("condition_account_effects_displayed_elsewhere: instruction %d represented=%d ports=%d "
-           "resets=%d mint=%d owner=%d\n",
-           (int) current_index,
-           represented,
-           ports_covered,
-           resets_covered,
-           mint_covered,
-           owner_covered);
+    PRINTF(
+        "condition_account_effects_displayed_elsewhere: instruction %d represented=%d ports=%d "
+        "resets=%d mint=%d owner=%d\n",
+        (int) current_index,
+        represented,
+        ports_covered,
+        resets_covered,
+        mint_covered,
+        owner_covered);
     return represented && ports_covered && resets_covered && mint_covered && owner_covered;
 }
 
@@ -1810,8 +1825,10 @@ static bool hide_condition_holds(uint8_t condition,
             holds = condition_is_device_signer(target, context);
             break;
         case CS_HIDE_CONDITION_ACCOUNT_USED_ELSEWHERE:
-            holds =
-                condition_account_used_elsewhere(walked_instructions, count, instruction_index, target);
+            holds = condition_account_used_elsewhere(walked_instructions,
+                                                     count,
+                                                     instruction_index,
+                                                     target);
             break;
         case CS_HIDE_CONDITION_IS_ANOTHER_SIGNER:
             holds = condition_is_another_signer(target, context);
@@ -1849,7 +1866,9 @@ static bool active_when_predicate_holds(uint8_t opcode,
     bool holds = false;
     switch (opcode) {
         case CS_ACTIVE_WHEN_CREATED_IN_TRANSACTION:
-            holds = condition_created_in_transaction(walked_instructions, count, resolved_port->account);
+            holds = condition_created_in_transaction(walked_instructions,
+                                                     count,
+                                                     resolved_port->account);
             break;
         case CS_ACTIVE_WHEN_IS_SIGNER:
             holds = condition_is_device_signer(resolved_port->account, context);
@@ -1971,14 +1990,15 @@ static bool hide_rule_set_passes(const cs_instruction_result_t *walked_instructi
         if (template->hide_rules[r].rule_set_index != set_index) {
             continue;
         }
-        if (!hide_condition_holds(template->hide_rules[r].condition,
-                                  walked_instructions[instruction_index].resolved_hide_rules[r].target,
-                                  walked_instructions,
-                                  count,
-                                  instruction_index,
-                                  context,
-                                  survivors,
-                                  scratch)) {
+        if (!hide_condition_holds(
+                template->hide_rules[r].condition,
+                walked_instructions[instruction_index].resolved_hide_rules[r].target,
+                walked_instructions,
+                count,
+                instruction_index,
+                context,
+                survivors,
+                scratch)) {
             PRINTF("hide_rule_set_passes: rule %d of set %d fails\n", (int) r, set_index);
             return false;
         }
@@ -2074,9 +2094,7 @@ static size_t max_port_count(const cs_instruction_result_t *walked_instructions,
 // Allocate the merge scratch: per-instruction state with its own chain history, the
 // safe-account set and the known-balance map. Returns 0, -1 on allocation failure
 // (the caller frees whatever was allocated).
-static int merge_scratch_allocate(merge_scratch_t *scratch,
-                                  size_t count,
-                                  size_t reset_count) {
+static int merge_scratch_allocate(merge_scratch_t *scratch, size_t count, size_t reset_count) {
     // The histories are one block rather than an allocation each, so freeing cannot
     // half-succeed and the state array can be handed out with slices already pointing
     // into it.
@@ -2093,11 +2111,10 @@ static int merge_scratch_allocate(merge_scratch_t *scratch,
     }
     // A transaction with no resets needs neither map, and asking for zero bytes is not
     // worth doing.
-    if (reset_count > 0 &&
-        (!APP_MEM_CALLOC((void **) &scratch->safe_accounts,
-                         reset_count * sizeof(*scratch->safe_accounts)) ||
-         !APP_MEM_CALLOC((void **) &scratch->known_balances,
-                         reset_count * sizeof(*scratch->known_balances)))) {
+    if (reset_count > 0 && (!APP_MEM_CALLOC((void **) &scratch->safe_accounts,
+                                            reset_count * sizeof(*scratch->safe_accounts)) ||
+                            !APP_MEM_CALLOC((void **) &scratch->known_balances,
+                                            reset_count * sizeof(*scratch->known_balances)))) {
         PRINTF("merge_scratch_allocate: reset map allocation failed\n");
         return -1;
     }
@@ -2179,15 +2196,15 @@ int cs_merge_engine_run(cs_instruction_result_t *walked_instructions,
     merge_scratch_t scratch;
     memset(&scratch, 0, sizeof(scratch));
     const uint8_t **symbolic_accounts = NULL;
-    int rc = merge_scratch_allocate(&scratch,
-                                    walked_instructions_count,
-                                    total_reset_count(walked_instructions,
-                                                      walked_instructions_count));
+    int rc = merge_scratch_allocate(
+        &scratch,
+        walked_instructions_count,
+        total_reset_count(walked_instructions, walked_instructions_count));
     if (rc == 0) {
         // Allocated once for the whole run rather than per guard call: the guard fills it
         // and reads the count back, so nothing carries over between calls.
-        size_t symbolic_capacity =
-            2 * max_port_count(walked_instructions, walked_instructions_count);
+        size_t symbolic_capacity = 2 *
+                                   max_port_count(walked_instructions, walked_instructions_count);
         if (symbolic_capacity > 0 &&
             !APP_MEM_CALLOC((void **) &symbolic_accounts,
                             symbolic_capacity * sizeof(*symbolic_accounts))) {

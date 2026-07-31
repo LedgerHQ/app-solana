@@ -51,8 +51,7 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
                             const bool *survivors);
 
 // Append a transaction-level field (fees, etc) after all instruction groups.
-int cs_display_renderer_append_transaction_field(const char *title,
-                                                 const char *value);
+int cs_display_renderer_append_transaction_field(const char *title, const char *value);
 
 // Number of instruction groups rendered.
 size_t cs_display_renderer_instruction_count(void);
@@ -61,16 +60,14 @@ size_t cs_display_renderer_instruction_count(void);
 const cs_display_instruction_t *cs_display_renderer_instruction(size_t index);
 
 // Access the transaction-level trailing fields.
-const cs_display_transaction_fields_t *cs_display_renderer_transaction_fields(
-    void);
+const cs_display_transaction_fields_t *cs_display_renderer_transaction_fields(void);
 
 // Total flat element count for the NBGL callback (separators + fields).
 size_t cs_display_renderer_flat_count(void);
 
 // Translate a flat NBGL index into a display element with layout flags.
 // Returns 0 on success, -1 when index is out of range.
-int cs_display_renderer_flat_element(size_t index,
-                                     cs_display_flat_element_t *out);
+int cs_display_renderer_flat_element(size_t index, cs_display_flat_element_t *out);
 
 // Release all produced data and return to empty state.
 void cs_display_renderer_reset(void);

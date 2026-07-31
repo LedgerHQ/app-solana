@@ -78,7 +78,9 @@ int cs_transaction_begin(const uint8_t *transaction,
 
     memcpy(G_cs_transaction->transaction, transaction, transaction_size);
     G_cs_transaction->transaction_size = transaction_size;
-    memcpy(G_cs_transaction->derivation_path, derivation_path, derivation_path_length * sizeof(uint32_t));
+    memcpy(G_cs_transaction->derivation_path,
+           derivation_path,
+           derivation_path_length * sizeof(uint32_t));
     G_cs_transaction->derivation_path_length = derivation_path_length;
     return 0;
 }

@@ -123,7 +123,7 @@ enum cs_token_mint_source {
 typedef struct cs_format_token_amount_s {
     uint8_t mint_source;  // enum cs_token_mint_source
     union {
-        uint8_t account_index;  // CS_TOKEN_MINT_ACCOUNT_INDEX
+        uint8_t account_index;      // CS_TOKEN_MINT_ACCOUNT_INDEX
         uint8_t mint[PUBKEY_SIZE];  // CS_TOKEN_MINT_CONSTANT
     } ref;
     bool has_decimals;
@@ -261,7 +261,7 @@ typedef struct cs_token_value_s {
 // ordered list resolved to the first-provided candidate at finalize;
 // `active_when` holds the raw packed predicate bytes evaluated by the merge engine.
 typedef struct cs_value_flow_port_s {
-    uint8_t direction;           // enum cs_port_direction
+    uint8_t direction;            // enum cs_port_direction
     uint8_t *account_candidates;  // heap, sized to candidate_count
     size_t candidate_count;
     uint8_t value_kind;  // enum cs_port_value_kind
@@ -316,7 +316,8 @@ typedef struct cs_instruction_template_s {
     uint8_t *idl_type_pool;  // heap, sized to idl_type_pool_size; owned by this template
     size_t idl_type_pool_size;
     uint8_t idl_root_type;
-    cs_display_field_t *display_fields;  // heap, sized to display_field_count; owned by this template
+    cs_display_field_t
+        *display_fields;  // heap, sized to display_field_count; owned by this template
     size_t display_field_count;
     uint8_t mint_assoc_account;
     uint8_t mint_assoc_mint;
@@ -374,8 +375,8 @@ int cs_instruction_template_set_discriminator(const uint8_t *data, size_t size);
 // owned by the template. Must be called immediately after adding a field with
 // param_type == AMOUNT. Returns 0, -1 on no matching field or allocation failure.
 int cs_instruction_template_set_format_amount(uint8_t decimals,
-                                             const uint8_t *max_label,
-                                             size_t max_label_size);
+                                              const uint8_t *max_label,
+                                              size_t max_label_size);
 
 // Set TOKEN_AMOUNT format parameters on the last added display field. The
 // caller builds a fully-validated `format` (mint source, optional embedded mint

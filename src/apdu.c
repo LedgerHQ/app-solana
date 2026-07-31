@@ -176,7 +176,8 @@ void apdu_reset_command(apdu_command_t *apdu_command) {
 // Ensures message can hold message_length + incoming_length bytes plus a trailing NUL, growing the
 // buffer as needed. Payloads grow dynamically and are bounded only by allocation success, except a
 // chunked offchain message which preallocates its full cap once (realloc cannot grow a large buffer
-// in the pool, as growth needs the old and new blocks resident simultaneously) and cannot exceed it.
+// in the pool, as growth needs the old and new blocks resident simultaneously) and cannot exceed
+// it.
 static int ensure_message_capacity(apdu_command_t *apdu_command,
                                    uint8_t instruction,
                                    bool first_data_chunk,
@@ -360,7 +361,8 @@ int apdu_handle_message(const uint8_t *apdu_message,
         }
     }
 
-    // Copy header data into the message buffer, growing it and reserving room for the NUL terminator
+    // Copy header data into the message buffer, growing it and reserving room for the NUL
+    // terminator
     if (header.data != NULL) {
         ret = ensure_message_capacity(apdu_command,
                                       header.instruction,
@@ -386,8 +388,7 @@ int apdu_handle_message(const uint8_t *apdu_message,
         PRINTF("Received APDU is complete\n");
         apdu_command->state = ApduStatePayloadComplete;
         // OCMS preallocated its full cap; shrink to the received size now that it is known
-        if (apdu_command->instruction == InsSignOffchainMessage &&
-            apdu_command->message != NULL &&
+        if (apdu_command->instruction == InsSignOffchainMessage && apdu_command->message != NULL &&
             apdu_command->message_capacity > (size_t) apdu_command->message_length) {
             uint8_t *shrunk = APP_MEM_REALLOC(apdu_command->message,
                                               (size_t) apdu_command->message_length + 1);

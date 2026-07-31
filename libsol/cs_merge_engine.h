@@ -45,7 +45,7 @@
 // values mirror the descriptor port in cs_value_flow_port_t. Borrowed pointers
 // reference the buffered transaction / ALT cache / token-account cache / template.
 typedef struct cs_resolved_port_s {
-    bool resolved;             // account candidate resolved to a concrete pubkey
+    bool resolved;  // account candidate resolved to a concrete pubkey
     // Set by the Annotate stage when an ACTIVE_WHEN predicate excludes the port, so every
     // later stage and the renderer treat it as never declared. Zero-initialised, so a port
     // with no ACTIVE_WHEN, and any port before annotation runs, is included.

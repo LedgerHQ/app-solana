@@ -49,19 +49,18 @@ static nbgl_warning_t G_warning;
 // G_current_pair will point at values stored in displayed_slots[]
 // this will enable displaying at most sizeof(displayed_slots) values
 // simultaneously
-static nbgl_contentTagValue_t* get_review_pair(uint8_t index) {
+static nbgl_contentTagValue_t *get_review_pair(uint8_t index) {
     PRINTF("get_review_pair index = %d\n", index);
     // We use a rotating access to the displayed_slots buffers to ensure there
     // is no overwrite by adjacent indexes
     uint8_t slot = index % ARRAY_COUNT(displayed_slots);
     // Final step is special for ASCII messages
-    if (index == G_transaction_steps_number - 1 &&
-        G_operation_type == TYPE_MESSAGE && G_is_ascii_message) {
+    if (index == G_transaction_steps_number - 1 && G_operation_type == TYPE_MESSAGE &&
+        G_is_ascii_message) {
         // For ASCII offchain messages, the last step points directly to the
         // message text to avoid truncation by the slot buffer and allow
         // displaying long messages.
-        strlcpy(displayed_slots[slot].title, "Message",
-                sizeof(displayed_slots[slot].title));
+        strlcpy(displayed_slots[slot].title, "Message", sizeof(displayed_slots[slot].title));
         // G_command.message_text_start is NULL terminated by construct.
         G_current_pair.value = G_command.message_text_start;
     } else {
@@ -73,14 +72,14 @@ static nbgl_contentTagValue_t* get_review_pair(uint8_t index) {
             // Should never happen as items were validated during finalization
             // TODO: investigate how to gracefully handle display errors in NBGL
             // callbacks
-            PRINTF(
-                "Fatal: transaction_summary_display_item failed for index %d\n",
-                index);
+            PRINTF("Fatal: transaction_summary_display_item failed for index %d\n", index);
             app_exit();
         }
-        memcpy(&displayed_slots[slot].title, &G_transaction_summary_title,
+        memcpy(&displayed_slots[slot].title,
+               &G_transaction_summary_title,
                sizeof(displayed_slots[slot].title));
-        memcpy(&displayed_slots[slot].text, &G_transaction_summary_text,
+        memcpy(&displayed_slots[slot].text,
+               &G_transaction_summary_text,
                sizeof(displayed_slots[slot].text));
         G_current_pair.value = displayed_slots[slot].text;
     }
@@ -94,11 +93,9 @@ static nbgl_reviewStatusType_t get_status_type(bool accepted) {
     // Solana "onchain message" is what we call "transactions" in Ledger UI
     bool is_message = (G_operation_type == TYPE_MESSAGE);
     if (accepted) {
-        return is_message ? STATUS_TYPE_MESSAGE_SIGNED
-                          : STATUS_TYPE_TRANSACTION_SIGNED;
+        return is_message ? STATUS_TYPE_MESSAGE_SIGNED : STATUS_TYPE_TRANSACTION_SIGNED;
     } else {
-        return is_message ? STATUS_TYPE_MESSAGE_REJECTED
-                          : STATUS_TYPE_TRANSACTION_REJECTED;
+        return is_message ? STATUS_TYPE_MESSAGE_REJECTED : STATUS_TYPE_TRANSACTION_REJECTED;
     }
 }
 
@@ -125,9 +122,10 @@ void ui_signing_review_choice(bool confirm) {
         if (cs_transaction_get() != NULL) {
             ret = store_cs_preview_fingerprint();
         } else {
-            ret = store_preview_fingerprint(
-                G_command.message, G_command.message_length,
-                G_command.derivation_path, G_command.derivation_path_length);
+            ret = store_preview_fingerprint(G_command.message,
+                                            G_command.message_length,
+                                            G_command.derivation_path,
+                                            G_command.derivation_path_length);
         }
         if (ret == 0) {
             reply_sw(ApduReplySuccess);
@@ -170,11 +168,9 @@ static void init_review_content(nbgl_opType_t operation_type,
 }
 
 // Returns the appropriate confirmation text based on warning bits.
-static const char* maybe_warning_confirmation(
-    const char* default_confirmation) {
+static const char *maybe_warning_confirmation(const char *default_confirmation) {
     if (G_warning.predefinedSet & SET_BIT(W3C_THREAT_DETECTED_WARN)) {
-        PRINTF(
-            "Transaction_Check threat detected, override confirmation text\n");
+        PRINTF("Transaction_Check threat detected, override confirmation text\n");
         return "Accept threat and sign";
     } else if (G_warning.predefinedSet & SET_BIT(W3C_RISK_DETECTED_WARN)) {
         PRINTF("Transaction_Check risk detected, override confirmation text\n");
@@ -184,8 +180,7 @@ static const char* maybe_warning_confirmation(
     }
 }
 
-static void start_blind_signing_ui(const char* review_title,
-                                   const char* confirmation_text) {
+static void start_blind_signing_ui(const char *review_title, const char *confirmation_text) {
     G_warning.predefinedSet |= SET_BIT(BLIND_SIGNING_WARN);
 #ifdef HAVE_TRANSACTION_CHECKS
     if (G_operation_type == TYPE_TRANSACTION) {
@@ -193,10 +188,15 @@ static void start_blind_signing_ui(const char* review_title,
         apply_transaction_check_report(&G_warning);
     }
 #endif
-    nbgl_useCaseAdvancedReview(G_operation_type, &G_content, &ICON_SIGN_MENU,
-                               review_title, NULL,
+    nbgl_useCaseAdvancedReview(G_operation_type,
+                               &G_content,
+                               &ICON_SIGN_MENU,
+                               review_title,
+                               NULL,
                                maybe_warning_confirmation(confirmation_text),
-                               NULL, &G_warning, ui_signing_review_choice);
+                               NULL,
+                               &G_warning,
+                               ui_signing_review_choice);
 }
 
 // This function handles post warnings UI for both onchain and offchain message
@@ -208,11 +208,11 @@ static void start_message_signing_review(void) {
         apply_transaction_check_report(&G_warning);
     }
 #endif
-    const char* review_title = NULL;
+    const char *review_title = NULL;
     // On Nano devices we display only the default "Sign transaction?"
     // We forward NULL to let NBGL handle it
-    const char* confirmation_text = NULL;
-    const nbgl_icon_details_t* icon;
+    const char *confirmation_text = NULL;
+    const nbgl_icon_details_t *icon;
 
     if (G_operation_type == TYPE_TRANSACTION) {
         icon = &ICON_SIGN_MENU;
@@ -281,10 +281,15 @@ static void start_message_signing_review(void) {
 #endif
     }
 
-    nbgl_useCaseAdvancedReview(G_operation_type, &G_content, icon, review_title,
+    nbgl_useCaseAdvancedReview(G_operation_type,
+                               &G_content,
+                               icon,
+                               review_title,
                                NULL,
                                maybe_warning_confirmation(confirmation_text),
-                               NULL, &G_warning, ui_signing_review_choice);
+                               NULL,
+                               &G_warning,
+                               ui_signing_review_choice);
 }
 
 // Function called by the Transaction Hook / Unknown Transaction Fees flow
@@ -301,15 +306,14 @@ void start_sign_message_ui(size_t num_summary_steps) {
     init_review_content(TYPE_TRANSACTION, num_summary_steps, false);
 
     if (transaction_summary_is_blind_signing()) {
-        start_blind_signing_ui("Review transaction",
-                               "Accept risk and sign transaction?");
+        start_blind_signing_ui("Review transaction", "Accept risk and sign transaction?");
     } else {
         bool fee_warning;
         bool hook_warning;
         transaction_summary_get_token_warnings(&fee_warning, &hook_warning);
         if (hook_warning || fee_warning) {
-            const char* warning_title = NULL;
-            const char* warning_text = NULL;
+            const char *warning_title = NULL;
+            const char *warning_text = NULL;
             if (hook_warning) {
                 // Transfer hook is more dangerous than unverified fees, so its
                 // warning takes priority
@@ -326,8 +330,11 @@ void start_sign_message_ui(size_t num_summary_steps) {
                     "lead "
                     "to additional fees upon broadcast.";
             }
-            nbgl_useCaseChoice(&ICON_WARNING, warning_title, warning_text,
-                               "Back to safety", "Continue anyway",
+            nbgl_useCaseChoice(&ICON_WARNING,
+                               warning_title,
+                               warning_text,
+                               "Back to safety",
+                               "Continue anyway",
                                // on_token_warning_choice is a wrapper around
                                // start_message_signing_review
                                on_token_warning_choice);
@@ -343,8 +350,7 @@ void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
 
     if (!is_ascii) {
         PRINTF("Non-ASCII message, blind signing required\n");
-        start_blind_signing_ui("Review UTF-8 message",
-                               "Accept risk and sign UTF-8 message");
+        start_blind_signing_ui("Review UTF-8 message", "Accept risk and sign UTF-8 message");
     } else {
         start_message_signing_review();
     }
@@ -362,14 +368,14 @@ static void ui_error_blind_signing_choice(bool confirm) {
 
 void start_blind_sign_error_ui(void) {
 #ifdef SCREEN_SIZE_WALLET
-    nbgl_useCaseChoice(
-        &ICON_WARNING, "This transaction cannot be clear-signed",
-        "Enable blind signing in the settings to sign this transaction.",
-        "Go to settings", "Reject transaction", ui_error_blind_signing_choice);
+    nbgl_useCaseChoice(&ICON_WARNING,
+                       "This transaction cannot be clear-signed",
+                       "Enable blind signing in the settings to sign this transaction.",
+                       "Go to settings",
+                       "Reject transaction",
+                       ui_error_blind_signing_choice);
 #else
-    nbgl_useCaseAction(&ICON_WARNING,
-                       "Blind signing must\nbe enabled in\nsettings", NULL,
-                       ui_idle);
+    nbgl_useCaseAction(&ICON_WARNING, "Blind signing must\nbe enabled in\nsettings", NULL, ui_idle);
 #endif
 }
 
@@ -384,7 +390,7 @@ void ui_transaction_modal(bool is_success) {
 // Function called by NBGL to get the pair indexed by "index" for the generic
 // clear signing review. The flat index is translated into the proper
 // instruction/field from the hierarchical renderer data.
-static nbgl_contentTagValue_t* cs_get_review_pair(uint8_t index) {
+static nbgl_contentTagValue_t *cs_get_review_pair(uint8_t index) {
     PRINTF("cs_get_review_pair index=%d\n", index);
     cs_display_flat_element_t flat;
     if (cs_display_renderer_flat_element(index, &flat) != 0) {
@@ -414,18 +420,27 @@ int ui_clear_signing_review(void) {
         static char review_title[96];
         static char finish_title[96];
         int written;
-        written = snprintf(review_title, sizeof(review_title), "Review transaction to %s", instruction->intent);
+        written = snprintf(review_title,
+                           sizeof(review_title),
+                           "Review transaction to %s",
+                           instruction->intent);
         if (written < 0 || (size_t) written >= sizeof(review_title)) {
             PRINTF("review_title truncated: intent '%s' too long\n", instruction->intent);
             return -1;
         }
-        written = snprintf(finish_title, sizeof(finish_title), "Sign transaction to %s?", instruction->intent);
+        written = snprintf(finish_title,
+                           sizeof(finish_title),
+                           "Sign transaction to %s?",
+                           instruction->intent);
         if (written < 0 || (size_t) written >= sizeof(finish_title)) {
             PRINTF("finish_title truncated: intent '%s' too long\n", instruction->intent);
             return -1;
         }
-        nbgl_useCaseReview(TYPE_TRANSACTION, &G_content, &ICON_SIGN_MENU,
-                           review_title, NULL,
+        nbgl_useCaseReview(TYPE_TRANSACTION,
+                           &G_content,
+                           &ICON_SIGN_MENU,
+                           review_title,
+                           NULL,
 #ifdef SCREEN_SIZE_WALLET
                            finish_title,
 #else
@@ -433,8 +448,11 @@ int ui_clear_signing_review(void) {
 #endif
                            ui_signing_review_choice);
     } else {
-        nbgl_useCaseReview(TYPE_TRANSACTION, &G_content, &ICON_SIGN_MENU,
-                           "Review transaction", NULL,
+        nbgl_useCaseReview(TYPE_TRANSACTION,
+                           &G_content,
+                           &ICON_SIGN_MENU,
+                           "Review transaction",
+                           NULL,
 #ifdef SCREEN_SIZE_WALLET
                            "Sign transaction on the Solana network?",
 #else

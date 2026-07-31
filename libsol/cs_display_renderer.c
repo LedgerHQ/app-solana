@@ -21,7 +21,7 @@
 #include "spl_associated_token_account_instruction.h"
 #include "compute_budget_instruction.h"
 
-#define CS_FIELD_CAP_STEP 8
+#define CS_FIELD_CAP_STEP       8
 #define CS_INSTRUCTION_CAP_STEP 4
 
 typedef struct cs_display_renderer_table_s {
@@ -37,16 +37,13 @@ static cs_display_renderer_table_t G_cs_display_renderer;
 #define CS_RENDER_BUFFER_SIZE 128
 
 // Grow a rendered field array by one step.
-static int ensure_field_capacity(cs_rendered_field_t **fields,
-                                 size_t count,
-                                 size_t *capacity) {
+static int ensure_field_capacity(cs_rendered_field_t **fields, size_t count, size_t *capacity) {
     if (count < *capacity) {
         return 0;
     }
     if (*capacity == 0) {
         cs_rendered_field_t *initial = NULL;
-        if (!APP_MEM_CALLOC((void **) &initial,
-                            CS_FIELD_CAP_STEP * sizeof(*initial))) {
+        if (!APP_MEM_CALLOC((void **) &initial, CS_FIELD_CAP_STEP * sizeof(*initial))) {
             PRINTF("ensure_field_capacity: allocation failed\n");
             return -1;
         }
@@ -54,8 +51,7 @@ static int ensure_field_capacity(cs_rendered_field_t **fields,
         *capacity = CS_FIELD_CAP_STEP;
     } else {
         size_t new_capacity = *capacity + CS_FIELD_CAP_STEP;
-        cs_rendered_field_t *grown =
-            APP_MEM_REALLOC(*fields, new_capacity * sizeof(*grown));
+        cs_rendered_field_t *grown = APP_MEM_REALLOC(*fields, new_capacity * sizeof(*grown));
         if (grown == NULL) {
             PRINTF("ensure_field_capacity: growth failed\n");
             return -1;
@@ -68,26 +64,21 @@ static int ensure_field_capacity(cs_rendered_field_t **fields,
 
 // Ensure the instruction array can hold one more entry.
 static int ensure_instruction_capacity(void) {
-    if (G_cs_display_renderer.instruction_count <
-        G_cs_display_renderer.instruction_capacity) {
+    if (G_cs_display_renderer.instruction_count < G_cs_display_renderer.instruction_capacity) {
         return 0;
     }
     if (G_cs_display_renderer.instruction_capacity == 0) {
         cs_display_instruction_t *initial = NULL;
-        if (!APP_MEM_CALLOC(
-                (void **) &initial,
-                CS_INSTRUCTION_CAP_STEP * sizeof(*initial))) {
+        if (!APP_MEM_CALLOC((void **) &initial, CS_INSTRUCTION_CAP_STEP * sizeof(*initial))) {
             PRINTF("ensure_instruction_capacity: allocation failed\n");
             return -1;
         }
         G_cs_display_renderer.instructions = initial;
         G_cs_display_renderer.instruction_capacity = CS_INSTRUCTION_CAP_STEP;
     } else {
-        size_t new_capacity = G_cs_display_renderer.instruction_capacity +
-                              CS_INSTRUCTION_CAP_STEP;
-        cs_display_instruction_t *grown = APP_MEM_REALLOC(
-            G_cs_display_renderer.instructions,
-            new_capacity * sizeof(*grown));
+        size_t new_capacity = G_cs_display_renderer.instruction_capacity + CS_INSTRUCTION_CAP_STEP;
+        cs_display_instruction_t *grown = APP_MEM_REALLOC(G_cs_display_renderer.instructions,
+                                                          new_capacity * sizeof(*grown));
         if (grown == NULL) {
             PRINTF("ensure_instruction_capacity: growth failed\n");
             return -1;
@@ -103,9 +94,8 @@ static cs_display_instruction_t *append_instruction(void) {
     if (ensure_instruction_capacity() != 0) {
         return NULL;
     }
-    cs_display_instruction_t *instruction =
-        &G_cs_display_renderer
-             .instructions[G_cs_display_renderer.instruction_count];
+    cs_display_instruction_t
+        *instruction = &G_cs_display_renderer.instructions[G_cs_display_renderer.instruction_count];
     explicit_bzero(instruction, sizeof(*instruction));
     G_cs_display_renderer.instruction_count++;
     PRINTF("append_instruction: index=%u\n",
@@ -114,8 +104,7 @@ static cs_display_instruction_t *append_instruction(void) {
 }
 
 // Append a rendered field to an instruction's field list.
-static cs_rendered_field_t *append_instruction_field(
-    cs_display_instruction_t *instruction) {
+static cs_rendered_field_t *append_instruction_field(cs_display_instruction_t *instruction) {
     if (ensure_field_capacity(&instruction->fields,
                               instruction->field_count,
                               &instruction->field_capacity) != 0) {
@@ -129,10 +118,8 @@ static cs_rendered_field_t *append_instruction_field(
 
 // Append a rendered field to the transaction-level field list.
 static cs_rendered_field_t *append_transaction_field(void) {
-    cs_display_transaction_fields_t *txn =
-        &G_cs_display_renderer.transaction_fields;
-    if (ensure_field_capacity(&txn->fields, txn->field_count,
-                              &txn->field_capacity) != 0) {
+    cs_display_transaction_fields_t *txn = &G_cs_display_renderer.transaction_fields;
+    if (ensure_field_capacity(&txn->fields, txn->field_count, &txn->field_capacity) != 0) {
         return NULL;
     }
     cs_rendered_field_t *field = &txn->fields[txn->field_count];
@@ -161,15 +148,13 @@ static void free_rendered_fields(cs_rendered_field_t **fields, size_t count) {
 void cs_display_renderer_reset(void) {
     PRINTF("cs_display_renderer_reset\n");
     for (size_t i = 0; i < G_cs_display_renderer.instruction_count; i++) {
-        cs_display_instruction_t *instruction =
-            &G_cs_display_renderer.instructions[i];
+        cs_display_instruction_t *instruction = &G_cs_display_renderer.instructions[i];
         APP_MEM_FREE_AND_NULL((void **) &instruction->intent);
         APP_MEM_FREE_AND_NULL((void **) &instruction->program);
         free_rendered_fields(&instruction->fields, instruction->field_count);
     }
     if (G_cs_display_renderer.instructions != NULL) {
-        APP_MEM_FREE_AND_NULL(
-            (void **) &G_cs_display_renderer.instructions);
+        APP_MEM_FREE_AND_NULL((void **) &G_cs_display_renderer.instructions);
     }
     G_cs_display_renderer.instruction_count = 0;
     G_cs_display_renderer.instruction_capacity = 0;
@@ -186,13 +171,11 @@ static char *shrink_render_buffer(char *buffer) {
     size_t fitted_size = strlen(buffer) + 1;
     char *fitted = APP_MEM_REALLOC(buffer, fitted_size);
     if (fitted == NULL) {
-        PRINTF("shrink_render_buffer: shrink to %u bytes failed\n",
-               (unsigned) fitted_size);
+        PRINTF("shrink_render_buffer: shrink to %u bytes failed\n", (unsigned) fitted_size);
         APP_MEM_FREE_AND_NULL((void **) &buffer);
         return NULL;
     }
-    PRINTF("shrink_render_buffer: %u bytes: %s\n",
-           (unsigned) fitted_size, fitted);
+    PRINTF("shrink_render_buffer: %u bytes: %s\n", (unsigned) fitted_size, fitted);
     return fitted;
 }
 
@@ -201,8 +184,7 @@ static char *duplicate_string(const char *source) {
     size_t size = strlen(source) + 1;
     char *copy = NULL;
     if (!APP_MEM_CALLOC((void **) &copy, size)) {
-        PRINTF("duplicate_string: allocation of %u bytes failed\n",
-               (unsigned) size);
+        PRINTF("duplicate_string: allocation of %u bytes failed\n", (unsigned) size);
         return NULL;
     }
     memcpy(copy, source, size);
@@ -253,9 +235,7 @@ static int read_leaf_i64(const idl_resolved_leaf_t *leaf, int64_t *out) {
 
 // Format a single resolved leaf into the value buffer based on its kind.
 // Returns 0 on success, -1 on failure.
-static int format_leaf(const idl_resolved_leaf_t *leaf,
-                       char *value_out,
-                       size_t value_out_size) {
+static int format_leaf(const idl_resolved_leaf_t *leaf, char *value_out, size_t value_out_size) {
     if (leaf->value == NULL || leaf->value_size == 0) {
         strlcpy(value_out, "<empty>", value_out_size);
         return 0;
@@ -275,9 +255,9 @@ static int format_leaf(const idl_resolved_leaf_t *leaf,
                 PRINTF("format_leaf: u16 truncated\n");
                 return -1;
             }
-            print_u64(
-                (uint64_t) (leaf->value[0] | (leaf->value[1] << 8)),
-                value_out, value_out_size);
+            print_u64((uint64_t) (leaf->value[0] | (leaf->value[1] << 8)),
+                      value_out,
+                      value_out_size);
             return 0;
 
         case IDL_KIND_U32:
@@ -285,11 +265,10 @@ static int format_leaf(const idl_resolved_leaf_t *leaf,
                 PRINTF("format_leaf: u32 truncated\n");
                 return -1;
             }
-            print_u64(
-                (uint64_t) (leaf->value[0] | (leaf->value[1] << 8) |
-                            (leaf->value[2] << 16) |
-                            (leaf->value[3] << 24)),
-                value_out, value_out_size);
+            print_u64((uint64_t) (leaf->value[0] | (leaf->value[1] << 8) | (leaf->value[2] << 16) |
+                                  (leaf->value[3] << 24)),
+                      value_out,
+                      value_out_size);
             return 0;
 
         case IDL_KIND_U64:
@@ -297,16 +276,12 @@ static int format_leaf(const idl_resolved_leaf_t *leaf,
                 PRINTF("format_leaf: u64 truncated\n");
                 return -1;
             }
-            print_u64(
-                (uint64_t) leaf->value[0] |
-                    ((uint64_t) leaf->value[1] << 8) |
-                    ((uint64_t) leaf->value[2] << 16) |
-                    ((uint64_t) leaf->value[3] << 24) |
-                    ((uint64_t) leaf->value[4] << 32) |
-                    ((uint64_t) leaf->value[5] << 40) |
-                    ((uint64_t) leaf->value[6] << 48) |
-                    ((uint64_t) leaf->value[7] << 56),
-                value_out, value_out_size);
+            print_u64((uint64_t) leaf->value[0] | ((uint64_t) leaf->value[1] << 8) |
+                          ((uint64_t) leaf->value[2] << 16) | ((uint64_t) leaf->value[3] << 24) |
+                          ((uint64_t) leaf->value[4] << 32) | ((uint64_t) leaf->value[5] << 40) |
+                          ((uint64_t) leaf->value[6] << 48) | ((uint64_t) leaf->value[7] << 56),
+                      value_out,
+                      value_out_size);
             return 0;
 
         case IDL_KIND_U128:
@@ -351,8 +326,7 @@ static int format_leaf(const idl_resolved_leaf_t *leaf,
             // The leaf carries the raw compact-u16 varint bytes; re-decode them.
             uint64_t decoded = 0;
             for (size_t i = 0; i < leaf->value_size && i < 3; i++) {
-                decoded |=
-                    (uint64_t) (leaf->value[i] & 0x7F) << (7 * i);
+                decoded |= (uint64_t) (leaf->value[i] & 0x7F) << (7 * i);
                 if ((leaf->value[i] & 0x80) == 0) {
                     break;
                 }
@@ -418,8 +392,7 @@ static int format_leaf(const idl_resolved_leaf_t *leaf,
 
         case IDL_KIND_BYTES_FIXED:
         case IDL_KIND_BYTES_REMAINDER:
-            if (encode_hex(leaf->value, leaf->value_size, value_out,
-                           value_out_size) < 0) {
+            if (encode_hex(leaf->value, leaf->value_size, value_out, value_out_size) < 0) {
                 PRINTF("format_leaf: bytes hex encode failed\n");
                 return -1;
             }
@@ -430,8 +403,7 @@ static int format_leaf(const idl_resolved_leaf_t *leaf,
                 PRINTF("format_leaf: pubkey truncated\n");
                 return -1;
             }
-            if (encode_base58(leaf->value, PUBKEY_SIZE, value_out,
-                              value_out_size) < 0) {
+            if (encode_base58(leaf->value, PUBKEY_SIZE, value_out, value_out_size) < 0) {
                 PRINTF("format_leaf: base58 encode failed\n");
                 return -1;
             }
@@ -502,12 +474,9 @@ static bool leaf_at_unsigned_max(uint8_t kind, uint64_t value) {
 }
 
 // Render a MAX_LABEL sentinel.
-static int render_max_label(const char *max_label,
-                            char *value_out,
-                            size_t value_out_size) {
+static int render_max_label(const char *max_label, char *value_out, size_t value_out_size) {
     if (strlen(max_label) >= value_out_size) {
-        PRINTF("render_max_label: label does not fit buffer (%u)\n",
-               (unsigned) value_out_size);
+        PRINTF("render_max_label: label does not fit buffer (%u)\n", (unsigned) value_out_size);
         return -1;
     }
     strlcpy(value_out, max_label, value_out_size);
@@ -530,8 +499,7 @@ static int format_amount(const idl_resolved_leaf_t *leaf,
     if (fmt->max_label != NULL && leaf_at_unsigned_max(leaf->kind, amount)) {
         status = render_max_label(fmt->max_label, value_out, value_out_size);
     } else {
-        status = print_token_amount(amount, NULL, fmt->decimals, value_out,
-                                    value_out_size);
+        status = print_token_amount(amount, NULL, fmt->decimals, value_out, value_out_size);
         if (status != 0) {
             PRINTF("format_amount: print_token_amount failed\n");
             status = -1;
@@ -573,9 +541,10 @@ static int format_token_amount(const idl_resolved_leaf_t *leaf,
                 if (fmt->has_decimals) {
                     magnitude = fmt->decimals;
                 }
-                PRINTF("format_token_amount: no mint, bare render "
-                       "decimals=%d\n",
-                       magnitude);
+                PRINTF(
+                    "format_token_amount: no mint, bare render "
+                    "decimals=%d\n",
+                    magnitude);
                 break;
 
             case CS_TOKEN_MINT_ACCOUNT_INDEX:
@@ -591,31 +560,33 @@ static int format_token_amount(const idl_resolved_leaf_t *leaf,
                 }
                 symbol = get_token_symbol(mint_pubkey, false);
                 magnitude = get_token_magnitude(mint_pubkey, false);
-                PRINTF("format_token_amount: registry symbol=%s "
-                       "magnitude=%d\n",
-                       symbol == NULL ? "(none)" : symbol, magnitude);
+                PRINTF(
+                    "format_token_amount: registry symbol=%s "
+                    "magnitude=%d\n",
+                    symbol == NULL ? "(none)" : symbol,
+                    magnitude);
                 if (fmt->has_decimals) {
                     magnitude = fmt->decimals;
-                    PRINTF("format_token_amount: decimals overridden to "
-                           "%d\n",
-                           magnitude);
+                    PRINTF(
+                        "format_token_amount: decimals overridden to "
+                        "%d\n",
+                        magnitude);
                 }
                 if (magnitude < 0) {
-                    PRINTF("format_token_amount: mint unknown, "
-                           "ticker=???\n");
+                    PRINTF(
+                        "format_token_amount: mint unknown, "
+                        "ticker=???\n");
                     symbol = "???";
                     magnitude = 0;
                 }
                 break;
 
             default:
-                PRINTF("format_token_amount: unknown mint_source %d\n",
-                       fmt->mint_source);
+                PRINTF("format_token_amount: unknown mint_source %d\n", fmt->mint_source);
                 return -1;
         }
 
-        status = print_token_amount(amount, symbol, (uint8_t) magnitude,
-                                    value_out, value_out_size);
+        status = print_token_amount(amount, symbol, (uint8_t) magnitude, value_out, value_out_size);
         if (status != 0) {
             PRINTF("format_token_amount: print_token_amount failed\n");
             status = -1;
@@ -637,10 +608,9 @@ static bool resolve_trusted_name(const idl_resolved_leaf_t *leaf,
     if (entry == NULL) {
         return false;
     }
-    bool type_allowed =
-        (allowed_types_mask == 0) ||
-        (entry->type < 8 &&
-         (allowed_types_mask & (uint8_t) (1 << entry->type)) != 0);
+    bool type_allowed = (allowed_types_mask == 0) ||
+                        (entry->type < 8 &&
+                         (allowed_types_mask & (uint8_t) (1 << entry->type)) != 0);
     if (type_allowed) {
         strlcpy(value_out, entry->name, value_out_size);
         PRINTF("resolve_trusted_name: resolved name=%s\n", value_out);
@@ -650,16 +620,12 @@ static bool resolve_trusted_name(const idl_resolved_leaf_t *leaf,
 }
 
 // ACCOUNT_PATH: full base58 address.
-static int format_account(const idl_resolved_leaf_t *leaf,
-                          char *value_out,
-                          size_t value_out_size) {
+static int format_account(const idl_resolved_leaf_t *leaf, char *value_out, size_t value_out_size) {
     if (leaf->value_size < PUBKEY_SIZE) {
-        PRINTF("format_account: value too short (%u < 32)\n",
-               (unsigned) leaf->value_size);
+        PRINTF("format_account: value too short (%u < 32)\n", (unsigned) leaf->value_size);
         return -1;
     }
-    if (encode_base58(leaf->value, PUBKEY_SIZE, value_out, value_out_size) <
-        0) {
+    if (encode_base58(leaf->value, PUBKEY_SIZE, value_out, value_out_size) < 0) {
         PRINTF("format_account: base58 encode failed\n");
         return -1;
     }
@@ -674,8 +640,7 @@ static int format_account_short(const idl_resolved_leaf_t *leaf,
     char full[BASE58_PUBKEY_LENGTH];
 
     if (leaf->value_size < PUBKEY_SIZE) {
-        PRINTF("format_account_short: value too short (%u < 32)\n",
-               (unsigned) leaf->value_size);
+        PRINTF("format_account_short: value too short (%u < 32)\n", (unsigned) leaf->value_size);
         return -1;
     }
     if (encode_base58(leaf->value, PUBKEY_SIZE, full, sizeof(full)) < 0) {
@@ -688,8 +653,7 @@ static int format_account_short(const idl_resolved_leaf_t *leaf,
                (unsigned) BASE58_PUBKEY_SHORT);
         return -1;
     }
-    if (print_summary(full, value_out, BASE58_PUBKEY_SHORT, SUMMARY_LENGTH,
-                      SUMMARY_LENGTH) != 0) {
+    if (print_summary(full, value_out, BASE58_PUBKEY_SHORT, SUMMARY_LENGTH, SUMMARY_LENGTH) != 0) {
         PRINTF("format_account_short: print_summary failed\n");
         return -1;
     }
@@ -704,17 +668,16 @@ static int format_trusted_name(const idl_resolved_leaf_t *leaf,
                                char *value_out,
                                size_t value_out_size) {
     if (leaf->value_size < PUBKEY_SIZE) {
-        PRINTF("format_trusted_name: value too short (%u < 32)\n",
-               (unsigned) leaf->value_size);
+        PRINTF("format_trusted_name: value too short (%u < 32)\n", (unsigned) leaf->value_size);
         return -1;
     }
 
-    if (resolve_trusted_name(leaf, format->allowed_types_mask, value_out,
-                             value_out_size)) {
+    if (resolve_trusted_name(leaf, format->allowed_types_mask, value_out, value_out_size)) {
         return 0;
     } else {
-        PRINTF("format_trusted_name: no permitted name, rendering short "
-               "address\n");
+        PRINTF(
+            "format_trusted_name: no permitted name, rendering short "
+            "address\n");
         return format_account_short(leaf, value_out, value_out_size);
     }
 }
@@ -743,8 +706,8 @@ static int format_account_short_named(const idl_resolved_leaf_t *leaf,
 
 // True for the signed integer leaf kinds.
 static bool is_signed_int_kind(uint8_t kind) {
-    return kind == IDL_KIND_I8 || kind == IDL_KIND_I16 ||
-           kind == IDL_KIND_I32 || kind == IDL_KIND_I64;
+    return kind == IDL_KIND_I8 || kind == IDL_KIND_I16 || kind == IDL_KIND_I32 ||
+           kind == IDL_KIND_I64;
 }
 
 // PARAM_DURATION: a numeric value of seconds rendered as "H:MM:SS".
@@ -765,15 +728,13 @@ static int format_duration(const idl_resolved_leaf_t *leaf,
             return -1;
         }
         if (signed_seconds < 0) {
-            PRINTF("format_duration: negative duration %lld\n",
-                   signed_seconds);
+            PRINTF("format_duration: negative duration %lld\n", signed_seconds);
             return -1;
         }
         total_seconds = (uint64_t) signed_seconds;
     } else {
         if (read_leaf_u64(leaf, &total_seconds) != 0) {
-            PRINTF("format_duration: unsupported leaf kind %d\n",
-                   leaf->kind);
+            PRINTF("format_duration: unsupported leaf kind %d\n", leaf->kind);
             return -1;
         }
     }
@@ -788,8 +749,13 @@ static int format_duration(const idl_resolved_leaf_t *leaf,
     if (strlen(hours_str) < 2) {
         hours_pad = "0";
     }
-    written = snprintf(value_out, value_out_size, "%s%s:%02u:%02u",
-                       hours_pad, hours_str, minutes, seconds);
+    written = snprintf(value_out,
+                       value_out_size,
+                       "%s%s:%02u:%02u",
+                       hours_pad,
+                       hours_str,
+                       minutes,
+                       seconds);
     if (written < 0 || (size_t) written >= value_out_size) {
         PRINTF("format_duration: output does not fit\n");
         return -1;
@@ -821,8 +787,7 @@ static int format_datetime(const idl_resolved_leaf_t *leaf,
     } else {
         uint64_t unsigned_ticks;
         if (read_leaf_u64(leaf, &unsigned_ticks) != 0) {
-            PRINTF("format_datetime: unsupported leaf kind %d\n",
-                   leaf->kind);
+            PRINTF("format_datetime: unsupported leaf kind %d\n", leaf->kind);
             return -1;
         }
         if (unsigned_ticks > (uint64_t) INT64_MAX) {
@@ -845,8 +810,7 @@ static int format_datetime(const idl_resolved_leaf_t *leaf,
         return -1;
     }
     *separator = '\0';
-    written = snprintf(value_out, value_out_size, "%sT%s+00:00", timestamp,
-                       separator + 1);
+    written = snprintf(value_out, value_out_size, "%sT%s+00:00", timestamp, separator + 1);
     if (written < 0 || (size_t) written >= value_out_size) {
         PRINTF("format_datetime: output does not fit\n");
         return -1;
@@ -868,8 +832,7 @@ static int format_unit(const idl_resolved_leaf_t *leaf,
         PRINTF("format_unit: unsupported leaf kind %d\n", leaf->kind);
         return -1;
     }
-    if (print_token_amount(amount, NULL, unit->decimals, number,
-                           sizeof(number)) != 0) {
+    if (print_token_amount(amount, NULL, unit->decimals, number, sizeof(number)) != 0) {
         PRINTF("format_unit: print_token_amount failed\n");
         return -1;
     }
@@ -880,11 +843,9 @@ static int format_unit(const idl_resolved_leaf_t *leaf,
         sep = " ";
     }
     if (unit->prefix) {
-        written = snprintf(value_out, value_out_size, "%s%s%s", symbol, sep,
-                           number);
+        written = snprintf(value_out, value_out_size, "%s%s%s", symbol, sep, number);
     } else {
-        written = snprintf(value_out, value_out_size, "%s%s%s", number, sep,
-                           symbol);
+        written = snprintf(value_out, value_out_size, "%s%s%s", number, sep, symbol);
     }
     if (written < 0 || (size_t) written >= value_out_size) {
         PRINTF("format_unit: output does not fit\n");
@@ -921,8 +882,7 @@ static int encode_string_bytes(uint8_t encoding,
             return encode_hex(in, in_len, out, out_size);
 
         default:
-            PRINTF("encode_string_bytes: unsupported encoding %d\n",
-                   encoding);
+            PRINTF("encode_string_bytes: unsupported encoding %d\n", encoding);
             return -1;
     }
 }
@@ -939,10 +899,12 @@ static int compute_string_slice(const cs_format_string_t *string,
             end = total_len;
         }
         if (end < start) {
-            PRINTF("compute_string_slice: bounded window [%u,%u) invalid "
-                   "for length %u\n",
-                   (unsigned) start, (unsigned) end,
-                   (unsigned) total_len);
+            PRINTF(
+                "compute_string_slice: bounded window [%u,%u) invalid "
+                "for length %u\n",
+                (unsigned) start,
+                (unsigned) end,
+                (unsigned) total_len);
             return -1;
         }
         *start_out = start;
@@ -951,9 +913,11 @@ static int compute_string_slice(const cs_format_string_t *string,
         size_t size = string->slice.sized.size;
         if (string->slice.sized.reversed) {
             if (size > total_len) {
-                PRINTF("compute_string_slice: sized reversed size %u "
-                       "exceeds length %u\n",
-                       (unsigned) size, (unsigned) total_len);
+                PRINTF(
+                    "compute_string_slice: sized reversed size %u "
+                    "exceeds length %u\n",
+                    (unsigned) size,
+                    (unsigned) total_len);
                 return -1;
             }
             *start_out = total_len - size;
@@ -961,18 +925,19 @@ static int compute_string_slice(const cs_format_string_t *string,
         } else {
             size_t start = string->slice_start;
             if (start > total_len || size > total_len - start) {
-                PRINTF("compute_string_slice: sized window start=%u "
-                       "size=%u exceeds length %u\n",
-                       (unsigned) start, (unsigned) size,
-                       (unsigned) total_len);
+                PRINTF(
+                    "compute_string_slice: sized window start=%u "
+                    "size=%u exceeds length %u\n",
+                    (unsigned) start,
+                    (unsigned) size,
+                    (unsigned) total_len);
                 return -1;
             }
             *start_out = start;
             *len_out = size;
         }
     } else {
-        PRINTF("compute_string_slice: unsupported slice_kind %d\n",
-               string->slice_kind);
+        PRINTF("compute_string_slice: unsupported slice_kind %d\n", string->slice_kind);
         return -1;
     }
     return 0;
@@ -985,9 +950,12 @@ static int format_string(const idl_resolved_leaf_t *leaf,
                          size_t value_out_size) {
     if (!string->has_slice) {
         PRINTF("format_string: no slice, encoding %u bytes encoding=%d\n",
-               (unsigned) leaf->value_size, string->encoding);
-        if (encode_string_bytes(string->encoding, leaf->value,
-                                leaf->value_size, value_out,
+               (unsigned) leaf->value_size,
+               string->encoding);
+        if (encode_string_bytes(string->encoding,
+                                leaf->value,
+                                leaf->value_size,
+                                value_out,
                                 value_out_size) < 0) {
             PRINTF("format_string: whole-value encode failed\n");
             return -1;
@@ -995,40 +963,47 @@ static int format_string(const idl_resolved_leaf_t *leaf,
     } else if (string->slice_applies_to == CS_SLICE_APPLIES_TO_SOURCE) {
         size_t start;
         size_t len;
-        if (compute_string_slice(string, leaf->value_size, &start, &len) !=
-            0) {
+        if (compute_string_slice(string, leaf->value_size, &start, &len) != 0) {
             PRINTF("format_string: source slice computation failed\n");
             return -1;
         }
         PRINTF("format_string: source slice start=%u len=%u encoding=%d\n",
-               (unsigned) start, (unsigned) len, string->encoding);
-        if (encode_string_bytes(string->encoding, leaf->value + start, len,
-                                value_out, value_out_size) < 0) {
+               (unsigned) start,
+               (unsigned) len,
+               string->encoding);
+        if (encode_string_bytes(string->encoding,
+                                leaf->value + start,
+                                len,
+                                value_out,
+                                value_out_size) < 0) {
             PRINTF("format_string: source-slice encode failed\n");
             return -1;
         }
     } else {
         char encoded[CS_RENDER_BUFFER_SIZE];
-        int encoded_len =
-            encode_string_bytes(string->encoding, leaf->value,
-                                leaf->value_size, encoded, sizeof(encoded));
+        int encoded_len = encode_string_bytes(string->encoding,
+                                              leaf->value,
+                                              leaf->value_size,
+                                              encoded,
+                                              sizeof(encoded));
         if (encoded_len < 0) {
             PRINTF("format_string: formatted-slice encode failed\n");
             return -1;
         }
         size_t start;
         size_t len;
-        if (compute_string_slice(string, (size_t) encoded_len, &start,
-                                 &len) != 0) {
+        if (compute_string_slice(string, (size_t) encoded_len, &start, &len) != 0) {
             PRINTF("format_string: formatted slice computation failed\n");
             return -1;
         }
-        PRINTF("format_string: formatted slice start=%u len=%u of "
-               "encoded=%d\n",
-               (unsigned) start, (unsigned) len, encoded_len);
+        PRINTF(
+            "format_string: formatted slice start=%u len=%u of "
+            "encoded=%d\n",
+            (unsigned) start,
+            (unsigned) len,
+            encoded_len);
         if (len + 1 > value_out_size) {
-            PRINTF("format_string: sliced value does not fit (%u)\n",
-                   (unsigned) len);
+            PRINTF("format_string: sliced value does not fit (%u)\n", (unsigned) len);
             return -1;
         }
         memcpy(value_out, encoded + start, len);
@@ -1049,41 +1024,41 @@ static int format_argument_field(const cs_display_field_t *field,
             return format_leaf(leaf, value_out, value_out_size);
 
         case CS_PARAM_TYPE_AMOUNT:
-            return format_amount(leaf, &field->argument.format.amount,
-                                 value_out, value_out_size);
+            return format_amount(leaf, &field->argument.format.amount, value_out, value_out_size);
 
         case CS_PARAM_TYPE_TOKEN_AMOUNT:
-            return format_token_amount(
-                leaf, &field->argument.format.token_amount, mint_pubkey,
-                value_out, value_out_size);
+            return format_token_amount(leaf,
+                                       &field->argument.format.token_amount,
+                                       mint_pubkey,
+                                       value_out,
+                                       value_out_size);
 
         case CS_PARAM_TYPE_ENUM:
             return format_leaf(leaf, value_out, value_out_size);
 
         case CS_PARAM_TYPE_DATETIME:
-            return format_datetime(
-                leaf, field->argument.format.datetime.ticks_per_second,
-                value_out, value_out_size);
+            return format_datetime(leaf,
+                                   field->argument.format.datetime.ticks_per_second,
+                                   value_out,
+                                   value_out_size);
 
         case CS_PARAM_TYPE_DURATION:
             return format_duration(leaf, value_out, value_out_size);
 
         case CS_PARAM_TYPE_UNIT:
-            return format_unit(leaf, &field->argument.format.unit, value_out,
-                               value_out_size);
+            return format_unit(leaf, &field->argument.format.unit, value_out, value_out_size);
 
         case CS_PARAM_TYPE_ACCOUNT:
-            return format_account_short_named(leaf, value_out,
-                                              value_out_size);
+            return format_account_short_named(leaf, value_out, value_out_size);
 
         case CS_PARAM_TYPE_TRUSTED_NAME:
-            return format_trusted_name(
-                leaf, &field->argument.format.trusted_name, value_out,
-                value_out_size);
+            return format_trusted_name(leaf,
+                                       &field->argument.format.trusted_name,
+                                       value_out,
+                                       value_out_size);
 
         case CS_PARAM_TYPE_STRING:
-            return format_string(leaf, &field->argument.format.string,
-                                 value_out, value_out_size);
+            return format_string(leaf, &field->argument.format.string, value_out, value_out_size);
 
         default:
             PRINTF("format_argument_field: unsupported param_type %d\n",
@@ -1105,8 +1080,7 @@ static int format_field(const cs_display_field_t *field,
 
     switch (field->source) {
         case CS_VALUE_SOURCE_ARGUMENT_PATH:
-            return format_argument_field(field, leaf, mint_pubkey, value_out,
-                                         value_out_size);
+            return format_argument_field(field, leaf, mint_pubkey, value_out, value_out_size);
 
         case CS_VALUE_SOURCE_ACCOUNT_PATH:
             return format_account_named(leaf, value_out, value_out_size);
@@ -1133,17 +1107,18 @@ static const cs_resolved_port_t *find_port_by_account_index(
             resolved_ports[p].account_index != account_index) {
             continue;
         }
-        bool is_output =
-            (template->ports[p].direction == CS_PORT_DIRECTION_OUTPUT);
+        bool is_output = (template->ports[p].direction == CS_PORT_DIRECTION_OUTPUT);
         if (match == NULL || is_output || !match_is_output) {
             match = &resolved_ports[p];
             match_is_output = is_output;
         }
     }
     if (match != NULL) {
-        PRINTF("find_port_by_account_index: slot %u matched, "
-               "is_output=%d\n",
-               (unsigned) account_index, (int) match_is_output);
+        PRINTF(
+            "find_port_by_account_index: slot %u matched, "
+            "is_output=%d\n",
+            (unsigned) account_index,
+            (int) match_is_output);
     }
     return match;
 }
@@ -1160,34 +1135,33 @@ static const cs_resolved_port_t *find_port_by_argument_path(
     for (size_t p = 0; p < resolved_port_count && match == NULL; p++) {
         if (resolved_ports[p].excluded || !resolved_ports[p].resolved ||
             resolved_ports[p].amount_kind != CS_AMOUNT_KIND_NUMERIC ||
-            resolved_ports[p].amount_le == NULL ||
-            !template->ports[p].amount.has_value ||
-            template->ports[p].amount.value.source !=
-                CS_VALUE_SOURCE_ARGUMENT_PATH) {
+            resolved_ports[p].amount_le == NULL || !template->ports[p].amount.has_value ||
+            template->ports[p].amount.value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
             continue;
         }
         if (template->ports[p].amount.value.payload_size == path_size &&
-            memcmp(template->ports[p].amount.value.payload, path,
-                   path_size) == 0) {
+            memcmp(template->ports[p].amount.value.payload, path, path_size) == 0) {
             match = &resolved_ports[p];
-            PRINTF("find_port_by_argument_path: matched port %u "
-                   "path_size=%u\n",
-                   (unsigned) p, (unsigned) path_size);
+            PRINTF(
+                "find_port_by_argument_path: matched port %u "
+                "path_size=%u\n",
+                (unsigned) p,
+                (unsigned) path_size);
         }
     }
     return match;
 }
 
 // Override a field's leaf and mint from a value-flow port before formatting.
-static void apply_port_overrides(
-    const cs_instruction_result_t *instruction,
-    const cs_display_field_t *display_field,
-    idl_resolved_leaf_t *override_leaf,
-    const idl_resolved_leaf_t **leaf,
-    const uint8_t **mint) {
+static void apply_port_overrides(const cs_instruction_result_t *instruction,
+                                 const cs_display_field_t *display_field,
+                                 idl_resolved_leaf_t *override_leaf,
+                                 const idl_resolved_leaf_t **leaf,
+                                 const uint8_t **mint) {
     if (display_field->source == CS_VALUE_SOURCE_ACCOUNT_PATH) {
         const cs_resolved_port_t *port = find_port_by_account_index(
-            instruction->template, instruction->resolved_ports,
+            instruction->template,
+            instruction->resolved_ports,
             instruction->resolved_port_count,
             display_field->account.index);
         if (port != NULL) {
@@ -1195,15 +1169,16 @@ static void apply_port_overrides(
             override_leaf->value = port->account;
             override_leaf->value_size = PUBKEY_SIZE;
             *leaf = override_leaf;
-            PRINTF("apply_port_overrides: account field overridden by "
-                   "port\n");
+            PRINTF(
+                "apply_port_overrides: account field overridden by "
+                "port\n");
         }
     } else if (display_field->source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
         if (display_field->argument.param_type == CS_PARAM_TYPE_AMOUNT ||
-            display_field->argument.param_type ==
-                CS_PARAM_TYPE_TOKEN_AMOUNT) {
+            display_field->argument.param_type == CS_PARAM_TYPE_TOKEN_AMOUNT) {
             const cs_resolved_port_t *port = find_port_by_argument_path(
-                instruction->template, instruction->resolved_ports,
+                instruction->template,
+                instruction->resolved_ports,
                 instruction->resolved_port_count,
                 display_field->argument.path,
                 display_field->argument.path_size);
@@ -1213,23 +1188,24 @@ static void apply_port_overrides(
                 override_leaf->value_size = port->amount_size;
                 override_leaf->kind = port->amount_leaf_kind;
                 *leaf = override_leaf;
-                PRINTF("apply_port_overrides: amount field overridden by "
-                       "port\n");
+                PRINTF(
+                    "apply_port_overrides: amount field overridden by "
+                    "port\n");
             }
         }
-        if (display_field->argument.param_type ==
-                CS_PARAM_TYPE_TOKEN_AMOUNT &&
+        if (display_field->argument.param_type == CS_PARAM_TYPE_TOKEN_AMOUNT &&
             display_field->argument.format.token_amount.mint_source ==
                 CS_TOKEN_MINT_ACCOUNT_INDEX) {
             const cs_resolved_port_t *port = find_port_by_account_index(
-                instruction->template, instruction->resolved_ports,
+                instruction->template,
+                instruction->resolved_ports,
                 instruction->resolved_port_count,
-                display_field->argument.format.token_amount.ref
-                    .account_index);
+                display_field->argument.format.token_amount.ref.account_index);
             if (port != NULL && port->mint != NULL) {
                 *mint = port->mint;
-                PRINTF("apply_port_overrides: token mint overridden by "
-                       "port\n");
+                PRINTF(
+                    "apply_port_overrides: token mint overridden by "
+                    "port\n");
             }
         }
     }
@@ -1244,15 +1220,11 @@ static bool is_native_program(const uint8_t program_id[PUBKEY_SIZE]) {
         return true;
     } else if (memcmp(program_id, &spl_token_program_id, PUBKEY_SIZE) == 0) {
         return true;
-    } else if (memcmp(program_id, &spl_token2022_program_id, PUBKEY_SIZE) ==
-               0) {
+    } else if (memcmp(program_id, &spl_token2022_program_id, PUBKEY_SIZE) == 0) {
         return true;
-    } else if (memcmp(program_id,
-                      &spl_associated_token_account_program_id,
-                      PUBKEY_SIZE) == 0) {
+    } else if (memcmp(program_id, &spl_associated_token_account_program_id, PUBKEY_SIZE) == 0) {
         return true;
-    } else if (memcmp(program_id, &compute_budget_program_id, PUBKEY_SIZE) ==
-               0) {
+    } else if (memcmp(program_id, &compute_budget_program_id, PUBKEY_SIZE) == 0) {
         return true;
     }
     PRINTF("is_native_program: program is not native\n");
@@ -1260,11 +1232,9 @@ static bool is_native_program(const uint8_t program_id[PUBKEY_SIZE]) {
 }
 
 // Populate an instruction's intent and optional program fields.
-static int render_instruction_header(
-    cs_display_instruction_t *display_instruction,
-    const cs_instruction_result_t *instruction) {
-    display_instruction->intent =
-        duplicate_string(instruction->template->operation_type);
+static int render_instruction_header(cs_display_instruction_t *display_instruction,
+                                     const cs_instruction_result_t *instruction) {
+    display_instruction->intent = duplicate_string(instruction->template->operation_type);
     if (display_instruction->intent == NULL) {
         PRINTF("render_instruction_header: intent allocation failed\n");
         return -1;
@@ -1272,8 +1242,7 @@ static int render_instruction_header(
 
     // Program field: skip for native programs
     if (!is_native_program(instruction->template->program_id)) {
-        if (!APP_MEM_CALLOC((void **) &display_instruction->program,
-                            CS_RENDER_BUFFER_SIZE)) {
+        if (!APP_MEM_CALLOC((void **) &display_instruction->program, CS_RENDER_BUFFER_SIZE)) {
             PRINTF("render_instruction_header: program allocation failed\n");
             return -1;
         }
@@ -1284,19 +1253,19 @@ static int render_instruction_header(
                     CS_RENDER_BUFFER_SIZE);
         } else {
             char address[BASE58_PUBKEY_LENGTH];
-            if (encode_base58(instruction->template->program_id, PUBKEY_SIZE,
-                              address, sizeof(address)) < 0) {
-                PRINTF("render_instruction_header: base58 encode "
-                       "program_id failed\n");
-                APP_MEM_FREE_AND_NULL(
-                    (void **) &display_instruction->program);
+            if (encode_base58(instruction->template->program_id,
+                              PUBKEY_SIZE,
+                              address,
+                              sizeof(address)) < 0) {
+                PRINTF(
+                    "render_instruction_header: base58 encode "
+                    "program_id failed\n");
+                APP_MEM_FREE_AND_NULL((void **) &display_instruction->program);
                 return -1;
             }
-            strlcpy(display_instruction->program, address,
-                    CS_RENDER_BUFFER_SIZE);
+            strlcpy(display_instruction->program, address, CS_RENDER_BUFFER_SIZE);
         }
-        display_instruction->program =
-            shrink_render_buffer(display_instruction->program);
+        display_instruction->program = shrink_render_buffer(display_instruction->program);
         if (display_instruction->program == NULL) {
             return -1;
         }
@@ -1304,9 +1273,7 @@ static int render_instruction_header(
 
     PRINTF("render_instruction_header: intent=%s program=%s\n",
            display_instruction->intent,
-           display_instruction->program != NULL
-               ? display_instruction->program
-               : "(native)");
+           display_instruction->program != NULL ? display_instruction->program : "(native)");
     return 0;
 }
 
@@ -1316,14 +1283,12 @@ static int render_field(cs_display_instruction_t *display_instruction,
                         size_t field_index) {
     cs_rendered_field_t *rendered = append_instruction_field(display_instruction);
     if (rendered == NULL) {
-        PRINTF("render_field: field append failed field=%u\n",
-               (unsigned) field_index);
+        PRINTF("render_field: field append failed field=%u\n", (unsigned) field_index);
         return -1;
     }
 
     if (!APP_MEM_CALLOC((void **) &rendered->title, CS_RENDER_BUFFER_SIZE)) {
-        PRINTF("render_field: title buffer allocation failed field=%u\n",
-               (unsigned) field_index);
+        PRINTF("render_field: title buffer allocation failed field=%u\n", (unsigned) field_index);
         return -1;
     }
     if (instruction->template->display_fields[field_index].name != NULL &&
@@ -1332,8 +1297,7 @@ static int render_field(cs_display_instruction_t *display_instruction,
                 instruction->template->display_fields[field_index].name,
                 CS_RENDER_BUFFER_SIZE);
     } else {
-        snprintf(rendered->title, CS_RENDER_BUFFER_SIZE, "Field %u",
-                 (unsigned) (field_index + 1));
+        snprintf(rendered->title, CS_RENDER_BUFFER_SIZE, "Field %u", (unsigned) (field_index + 1));
     }
     rendered->title = shrink_render_buffer(rendered->title);
     if (rendered->title == NULL) {
@@ -1341,8 +1305,7 @@ static int render_field(cs_display_instruction_t *display_instruction,
     }
 
     if (!APP_MEM_CALLOC((void **) &rendered->value, CS_RENDER_BUFFER_SIZE)) {
-        PRINTF("render_field: value buffer allocation failed field=%u\n",
-               (unsigned) field_index);
+        PRINTF("render_field: value buffer allocation failed field=%u\n", (unsigned) field_index);
         return -1;
     }
     const idl_resolved_leaf_t *leaf = &instruction->resolved[field_index];
@@ -1350,13 +1313,16 @@ static int render_field(cs_display_instruction_t *display_instruction,
     idl_resolved_leaf_t override_leaf;
     apply_port_overrides(instruction,
                          &instruction->template->display_fields[field_index],
-                         &override_leaf, &leaf, &mint);
+                         &override_leaf,
+                         &leaf,
+                         &mint);
 
     if (format_field(&instruction->template->display_fields[field_index],
-                     leaf, mint, rendered->value,
+                     leaf,
+                     mint,
+                     rendered->value,
                      CS_RENDER_BUFFER_SIZE) != 0) {
-        PRINTF("render_field: format failed field=%u\n",
-               (unsigned) field_index);
+        PRINTF("render_field: format failed field=%u\n", (unsigned) field_index);
         APP_MEM_FREE_AND_NULL((void **) &rendered->value);
         return -1;
     }
@@ -1372,52 +1338,55 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
                             const bool *survivors) {
     if (G_cs_display_renderer.instruction_count != 0 ||
         G_cs_display_renderer.instructions != NULL) {
-        PRINTF("cs_display_renderer_run: renderer already populated, "
-               "refusing to run\n");
+        PRINTF(
+            "cs_display_renderer_run: renderer already populated, "
+            "refusing to run\n");
         return -1;
     }
 
-    PRINTF("cs_display_renderer_run: %u instructions\n",
-           (unsigned) walked_instructions_count);
+    PRINTF("cs_display_renderer_run: %u instructions\n", (unsigned) walked_instructions_count);
 
     for (size_t ix = 0; ix < walked_instructions_count; ix++) {
         if (!survivors[ix]) {
             continue;
         }
-        PRINTF("cs_display_renderer_run: rendering instruction ix=%u "
-               "operation=%s\n",
-               (unsigned) ix,
-               walked_instructions[ix].template->operation_type);
+        PRINTF(
+            "cs_display_renderer_run: rendering instruction ix=%u "
+            "operation=%s\n",
+            (unsigned) ix,
+            walked_instructions[ix].template->operation_type);
 
         cs_display_instruction_t *display_instruction = append_instruction();
         if (display_instruction == NULL) {
-            PRINTF("cs_display_renderer_run: instruction append failed "
-                   "ix=%u\n",
-                   (unsigned) ix);
+            PRINTF(
+                "cs_display_renderer_run: instruction append failed "
+                "ix=%u\n",
+                (unsigned) ix);
             return -1;
         }
 
-        if (render_instruction_header(display_instruction,
-                                      &walked_instructions[ix]) != 0) {
-            PRINTF("cs_display_renderer_run: header render failed "
-                   "ix=%u\n",
-                   (unsigned) ix);
+        if (render_instruction_header(display_instruction, &walked_instructions[ix]) != 0) {
+            PRINTF(
+                "cs_display_renderer_run: header render failed "
+                "ix=%u\n",
+                (unsigned) ix);
             return -1;
         }
 
-        for (size_t field = 0;
-             field < walked_instructions[ix].resolved_count; field++) {
+        for (size_t field = 0; field < walked_instructions[ix].resolved_count; field++) {
             if (walked_instructions[ix].resolved[field].value == NULL) {
-                PRINTF("cs_display_renderer_run: field=%u has no value, "
-                       "skipped\n",
-                       (unsigned) field);
+                PRINTF(
+                    "cs_display_renderer_run: field=%u has no value, "
+                    "skipped\n",
+                    (unsigned) field);
                 continue;
             }
-            if (render_field(display_instruction, &walked_instructions[ix],
-                             field) != 0) {
-                PRINTF("cs_display_renderer_run: field render failed "
-                       "ix=%u field=%u\n",
-                       (unsigned) ix, (unsigned) field);
+            if (render_field(display_instruction, &walked_instructions[ix], field) != 0) {
+                PRINTF(
+                    "cs_display_renderer_run: field render failed "
+                    "ix=%u field=%u\n",
+                    (unsigned) ix,
+                    (unsigned) field);
                 return -1;
             }
         }
@@ -1428,17 +1397,18 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
     return 0;
 }
 
-int cs_display_renderer_append_transaction_field(const char *title,
-                                                 const char *value) {
+int cs_display_renderer_append_transaction_field(const char *title, const char *value) {
     if (title == NULL || value == NULL) {
-        PRINTF("cs_display_renderer_append_transaction_field: NULL title "
-               "or value\n");
+        PRINTF(
+            "cs_display_renderer_append_transaction_field: NULL title "
+            "or value\n");
         return -1;
     }
     cs_rendered_field_t *field = append_transaction_field();
     if (field == NULL) {
-        PRINTF("cs_display_renderer_append_transaction_field: append "
-               "failed\n");
+        PRINTF(
+            "cs_display_renderer_append_transaction_field: append "
+            "failed\n");
         return -1;
     }
     field->title = duplicate_string(title);
@@ -1449,8 +1419,7 @@ int cs_display_renderer_append_transaction_field(const char *title,
     if (field->value == NULL) {
         return -1;
     }
-    PRINTF("cs_display_renderer_append_transaction_field: %s = %s\n",
-           title, value);
+    PRINTF("cs_display_renderer_append_transaction_field: %s = %s\n", title, value);
     return 0;
 }
 
@@ -1458,24 +1427,20 @@ size_t cs_display_renderer_instruction_count(void) {
     return G_cs_display_renderer.instruction_count;
 }
 
-const cs_display_instruction_t *cs_display_renderer_instruction(
-    size_t index) {
+const cs_display_instruction_t *cs_display_renderer_instruction(size_t index) {
     if (index >= G_cs_display_renderer.instruction_count) {
-        PRINTF("cs_display_renderer_instruction: index %u out of range\n",
-               (unsigned) index);
+        PRINTF("cs_display_renderer_instruction: index %u out of range\n", (unsigned) index);
         return NULL;
     }
     return &G_cs_display_renderer.instructions[index];
 }
 
-const cs_display_transaction_fields_t *
-cs_display_renderer_transaction_fields(void) {
+const cs_display_transaction_fields_t *cs_display_renderer_transaction_fields(void) {
     return &G_cs_display_renderer.transaction_fields;
 }
 
 // Count flat elements for one instruction: intent + optional program + fields.
-static size_t instruction_flat_count(
-    const cs_display_instruction_t *instruction) {
+static size_t instruction_flat_count(const cs_display_instruction_t *instruction) {
     // "Instruction intent" field is always present
     size_t count = 1;
     if (instruction->program != NULL) {
@@ -1487,16 +1452,14 @@ static size_t instruction_flat_count(
 
 size_t cs_display_renderer_flat_count(void) {
     size_t total = 0;
-    bool multi =
-        (G_cs_display_renderer.instruction_count > 1);
+    bool multi = (G_cs_display_renderer.instruction_count > 1);
 
     for (size_t i = 0; i < G_cs_display_renderer.instruction_count; i++) {
         if (multi) {
             // Separator screen per instruction
             total++;
         }
-        total += instruction_flat_count(
-            &G_cs_display_renderer.instructions[i]);
+        total += instruction_flat_count(&G_cs_display_renderer.instructions[i]);
     }
 
     // Transaction-level fields (fees)
@@ -1517,17 +1480,14 @@ size_t cs_display_renderer_flat_count(void) {
 //   [separator] [intent] [program?] [field0..N] ... [fee separator] [fee fields]
 // Layout for single instruction:
 //   [intent] [program?] [field0..N] [fee fields]
-int cs_display_renderer_flat_element(size_t index,
-                                     cs_display_flat_element_t *out) {
+int cs_display_renderer_flat_element(size_t index, cs_display_flat_element_t *out) {
     explicit_bzero(out, sizeof(*out));
     size_t remaining = index;
-    bool multi =
-        (G_cs_display_renderer.instruction_count > 1);
+    bool multi = (G_cs_display_renderer.instruction_count > 1);
 
     // Walk instruction groups
     for (size_t i = 0; i < G_cs_display_renderer.instruction_count; i++) {
-        const cs_display_instruction_t *instruction =
-            &G_cs_display_renderer.instructions[i];
+        const cs_display_instruction_t *instruction = &G_cs_display_renderer.instructions[i];
 
         // Multi-instruction separator
         if (multi) {
@@ -1536,7 +1496,8 @@ int cs_display_renderer_flat_element(size_t index,
                 // Format "X of Y" into a static buffer: the NBGL callback
                 // copies the result, so a single static buffer is safe.
                 static char separator_value[16];
-                snprintf(separator_value, sizeof(separator_value),
+                snprintf(separator_value,
+                         sizeof(separator_value),
                          "%u of %u",
                          (unsigned) (i + 1),
                          (unsigned) G_cs_display_renderer.instruction_count);
@@ -1578,8 +1539,7 @@ int cs_display_renderer_flat_element(size_t index,
     }
 
     // Transaction-level fields (fees)
-    const cs_display_transaction_fields_t *txn_fields =
-        &G_cs_display_renderer.transaction_fields;
+    const cs_display_transaction_fields_t *txn_fields = &G_cs_display_renderer.transaction_fields;
     if (txn_fields->field_count > 0) {
         // Fee separator in multi-instruction layout
         if (multi) {
@@ -1600,7 +1560,6 @@ int cs_display_renderer_flat_element(size_t index,
         }
     }
 
-    PRINTF("cs_display_renderer_flat_element: index %u out of range\n",
-           (unsigned) index);
+    PRINTF("cs_display_renderer_flat_element: index %u out of range\n", (unsigned) index);
     return -1;
 }

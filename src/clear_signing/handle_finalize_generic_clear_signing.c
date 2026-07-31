@@ -84,9 +84,9 @@ static const uint8_t *resolve_field_mint(const mint_binding_t *bindings,
 // without a matching attested resolution it returns NULL so finalize refuses to
 // sign. Returns NULL when the index is out of range or unresolved.
 static const uint8_t *pubkey_from_account_index(const cs_transaction_t *cs_tx,
-                                                 const MessageHeader *header,
-                                                 const Instruction *instruction,
-                                                 size_t account_index) {
+                                                const MessageHeader *header,
+                                                const Instruction *instruction,
+                                                size_t account_index) {
     if (account_index >= instruction->accounts_length) {
         PRINTF("finalize cs: account_index %d out of range (%d)\n",
                (int) account_index,
@@ -208,8 +208,8 @@ enum walk_scatter_kind {
 };
 
 typedef struct walk_scatter_target_s {
-    uint8_t kind;   // enum walk_scatter_kind
-    size_t index;   // display field / port / reset / hide-rule index (unused for OWNER)
+    uint8_t kind;  // enum walk_scatter_kind
+    size_t index;  // display field / port / reset / hide-rule index (unused for OWNER)
 } walk_scatter_target_t;
 
 // Register one ARGUMENT_PATH VALUE path into the walker match set, recording where
@@ -255,8 +255,10 @@ static const uint8_t *resolve_port_account(const cs_transaction_t *cs_tx,
         // In range but unresolved means an ALT-loaded account with no attested
         // resolution: a provided candidate we cannot resolve, so refuse rather
         // than skip to a later/default candidate.
-        const uint8_t *pubkey =
-            pubkey_from_account_index(cs_tx, header, instruction, port->account_candidates[c]);
+        const uint8_t *pubkey = pubkey_from_account_index(cs_tx,
+                                                          header,
+                                                          instruction,
+                                                          port->account_candidates[c]);
         if (pubkey == NULL) {
             PRINTF("finalize cs: in-range port candidate unresolved, refusing to sign\n");
             return NULL;
@@ -363,8 +365,11 @@ static int resolve_port_local(const cs_transaction_t *cs_tx,
         out->token_kind = CS_TOKEN_KIND_NULL;
     }
 
-    const uint8_t *account =
-        resolve_port_account(cs_tx, header, instruction, port, &out->account_index);
+    const uint8_t *account = resolve_port_account(cs_tx,
+                                                  header,
+                                                  instruction,
+                                                  port,
+                                                  &out->account_index);
     if (account == NULL) {
         return -1;
     }
@@ -385,8 +390,10 @@ static int resolve_port_local(const cs_transaction_t *cs_tx,
     // map (second pass); ARGUMENT_PATH mint is filled by the walker scatter.
     if (port->has_token && port->token.kind == CS_TOKEN_KIND_DIRECT && port->token.has_value &&
         port->token.value.source != CS_VALUE_SOURCE_ARGUMENT_PATH) {
-        const uint8_t *mint =
-            resolve_pubkey_value_direct(cs_tx, header, instruction, &port->token.value);
+        const uint8_t *mint = resolve_pubkey_value_direct(cs_tx,
+                                                          header,
+                                                          instruction,
+                                                          &port->token.value);
         if (mint == NULL) {
             return -1;
         }
@@ -398,12 +405,14 @@ static int resolve_port_local(const cs_transaction_t *cs_tx,
 // Resolve everything local to one account reset (ARGUMENT_PATH amount deferred to
 // the walker scatter). Returns 0, -1 on error.
 static int resolve_reset_local(const cs_transaction_t *cs_tx,
-                              const MessageHeader *header,
-                              const Instruction *instruction,
-                              const cs_account_reset_t *reset,
-                              cs_resolved_reset_t *out) {
-    const uint8_t *account =
-        pubkey_from_account_index(cs_tx, header, instruction, reset->account_index);
+                               const MessageHeader *header,
+                               const Instruction *instruction,
+                               const cs_account_reset_t *reset,
+                               cs_resolved_reset_t *out) {
+    const uint8_t *account = pubkey_from_account_index(cs_tx,
+                                                       header,
+                                                       instruction,
+                                                       reset->account_index);
     if (account == NULL) {
         return -1;
     }
@@ -488,15 +497,15 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
     for (size_t r = 0; r < template->account_reset_count && register_status == 0; r++) {
         if (template->account_resets[r].has_reset_value &&
             template->account_resets[r].reset_value.has_value &&
-            template->account_resets[r].reset_value.value.source ==
-                CS_VALUE_SOURCE_ARGUMENT_PATH) {
-            register_status = match_set_register(argument_paths,
-                                                 scatter_targets,
-                                                 &match_count,
-                                                 template->account_resets[r].reset_value.value.payload,
-                                                 template->account_resets[r].reset_value.value.payload_size,
-                                                 WALK_SCATTER_RESET_AMOUNT,
-                                                 r);
+            template->account_resets[r].reset_value.value.source == CS_VALUE_SOURCE_ARGUMENT_PATH) {
+            register_status = match_set_register(
+                argument_paths,
+                scatter_targets,
+                &match_count,
+                template->account_resets[r].reset_value.value.payload,
+                template->account_resets[r].reset_value.value.payload_size,
+                WALK_SCATTER_RESET_AMOUNT,
+                r);
         }
     }
     for (size_t h = 0; h < template->hide_rule_count && register_status == 0; h++) {
@@ -604,11 +613,11 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
         if (template->display_fields[f].source != CS_VALUE_SOURCE_ACCOUNT_PATH) {
             continue;
         }
-        const uint8_t *pubkey =
-            pubkey_from_account_index(cs_tx,
-                                      header,
-                                      instruction,
-                                      template->display_fields[f].account.index);
+        const uint8_t *pubkey = pubkey_from_account_index(
+            cs_tx,
+            header,
+            instruction,
+            template->display_fields[f].account.index);
         if (pubkey == NULL) {
             PRINTF("finalize cs: ACCOUNT_PATH field %d index out of range\n", (int) f);
             return -1;
@@ -630,10 +639,14 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
 
     // Seed the mint-binding map from this instruction's MINT_ASSOC pair.
     if (template->has_mint_assoc) {
-        const uint8_t *token_account =
-            pubkey_from_account_index(cs_tx, header, instruction, template->mint_assoc_account);
-        const uint8_t *mint =
-            pubkey_from_account_index(cs_tx, header, instruction, template->mint_assoc_mint);
+        const uint8_t *token_account = pubkey_from_account_index(cs_tx,
+                                                                 header,
+                                                                 instruction,
+                                                                 template->mint_assoc_account);
+        const uint8_t *mint = pubkey_from_account_index(cs_tx,
+                                                        header,
+                                                        instruction,
+                                                        template->mint_assoc_mint);
         if (token_account == NULL || mint == NULL) {
             PRINTF("finalize cs: mint_assoc index out of range\n");
             return -1;
@@ -706,8 +719,11 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
                 return -1;
             }
         }
-        const uint8_t *owner_token_account =
-            pubkey_from_account_index(cs_tx, header, instruction, template->owner_assoc_account);
+        const uint8_t *owner_token_account = pubkey_from_account_index(
+            cs_tx,
+            header,
+            instruction,
+            template->owner_assoc_account);
         if (owner_token_account == NULL) {
             PRINTF("finalize cs: owner assoc account index out of range\n");
             return -1;
@@ -739,11 +755,11 @@ static int walk_instruction_inner(const cs_transaction_t *cs_tx,
             case CS_TOKEN_MINT_NONE:
                 break;
             case CS_TOKEN_MINT_ACCOUNT_INDEX: {
-                const uint8_t *token_ref =
-                    pubkey_from_account_index(cs_tx,
-                                              header,
-                                              instruction,
-                                              field->argument.format.token_amount.ref.account_index);
+                const uint8_t *token_ref = pubkey_from_account_index(
+                    cs_tx,
+                    header,
+                    instruction,
+                    field->argument.format.token_amount.ref.account_index);
                 if (token_ref == NULL) {
                     PRINTF("finalize cs: TOKEN account index out of range\n");
                     return -1;
@@ -776,8 +792,10 @@ static int walk_instruction(const cs_transaction_t *cs_tx,
                             size_t *binding_count,
                             cs_owner_binding_t *owner_bindings,
                             size_t *owner_binding_count) {
-    const cs_instruction_template_t *template =
-        cs_instruction_template_find(program_id, instruction->data, instruction->data_length);
+    const cs_instruction_template_t *template = cs_instruction_template_find(
+        program_id,
+        instruction->data,
+        instruction->data_length);
     if (template == NULL) {
         PRINTF("finalize cs: no template for instruction, refusing to sign\n");
         return -1;
@@ -917,10 +935,10 @@ static int resolve_port_mints_for_instruction(const cs_transaction_t *cs_tx,
 // whole transaction's binding map is complete. Re-parses the buffered
 // transaction for each instruction's account context. Returns 0, -1 on error.
 static int resolve_port_mints(const cs_transaction_t *cs_tx,
-                             cs_instruction_result_t *walked_instructions,
-                             size_t count,
-                             const mint_binding_t *bindings,
-                             size_t binding_count) {
+                              cs_instruction_result_t *walked_instructions,
+                              size_t count,
+                              const mint_binding_t *bindings,
+                              size_t binding_count) {
     Parser parser = {cs_tx->transaction, cs_tx->transaction_size};
     MessageHeader header;
     if (parse_message_header(&parser, &header) != 0) {
@@ -1034,8 +1052,16 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
         }
 
         cs_instruction_result_t *result = &walked_instructions[*walked_instructions_count];
-        if (walk_instruction(cs_tx, &header, &instruction, program_id, alt_writable_count, result,
-                             bindings, &binding_count, owner_bindings, owner_binding_count) != 0) {
+        if (walk_instruction(cs_tx,
+                             &header,
+                             &instruction,
+                             program_id,
+                             alt_writable_count,
+                             result,
+                             bindings,
+                             &binding_count,
+                             owner_bindings,
+                             owner_binding_count) != 0) {
             PRINTF("finalize cs: instruction %d walk failed\n", (int) i);
             return -1;
         }
@@ -1048,16 +1074,19 @@ static int walk_transaction(const cs_transaction_t *cs_tx,
     for (size_t i = 0; i < *walked_instructions_count; i++) {
         for (size_t f = 0; f < walked_instructions[i].resolved_count; f++) {
             if (walked_instructions[i].field_mint[f] != NULL) {
-                walked_instructions[i].field_mint[f] =
-                    resolve_field_mint(bindings,
-                                       binding_count,
-                                       walked_instructions[i].field_mint[f]);
+                walked_instructions[i].field_mint[f] = resolve_field_mint(
+                    bindings,
+                    binding_count,
+                    walked_instructions[i].field_mint[f]);
             }
         }
     }
 
     // Resolve RESOLVE-kind port token mints against the same completed map.
-    if (resolve_port_mints(cs_tx, walked_instructions, *walked_instructions_count, bindings,
+    if (resolve_port_mints(cs_tx,
+                           walked_instructions,
+                           *walked_instructions_count,
+                           bindings,
                            binding_count) != 0) {
         return -1;
     }
@@ -1136,8 +1165,13 @@ static uint16_t finalize_cs_run(const cs_transaction_t *cs_tx,
     size_t walked_instructions_count = 0;
     size_t owner_binding_count = 0;
     cs_compute_budget_summary_t cb_summary;
-    if (walk_transaction(cs_tx, walked_instructions, &walked_instructions_count, bindings,
-                         owner_bindings, &owner_binding_count, &cb_summary) != 0) {
+    if (walk_transaction(cs_tx,
+                         walked_instructions,
+                         &walked_instructions_count,
+                         bindings,
+                         owner_bindings,
+                         &owner_binding_count,
+                         &cb_summary) != 0) {
         PRINTF("finalize cs: walk engine failed\n");
         return ApduReplySolanaInvalidGenericPreview;
     }
@@ -1153,9 +1187,8 @@ static uint16_t finalize_cs_run(const cs_transaction_t *cs_tx,
     // Derive the device user's own signing key so isSigner and isAnotherSigner match against
     // it, never the fee payer. Lives on this stack frame, which outlives the merge run below.
     Pubkey device_signer;
-    if (get_public_key(device_signer.data,
-                       cs_tx->derivation_path,
-                       cs_tx->derivation_path_length) != CX_OK) {
+    if (get_public_key(device_signer.data, cs_tx->derivation_path, cs_tx->derivation_path_length) !=
+        CX_OK) {
         PRINTF("finalize cs: device signer derivation failed\n");
         return ApduReplySolanaInvalidGenericPreview;
     }
@@ -1228,12 +1261,12 @@ int handle_finalize_generic_clear_signing(void) {
     bool *survivors = NULL;
     mint_binding_t *bindings = NULL;
     cs_owner_binding_t *owner_bindings = NULL;
-    bool alloc_ok =
-        APP_MEM_CALLOC((void **) &walked_instructions,
-                       instruction_count * sizeof(*walked_instructions)) &&
-        APP_MEM_CALLOC((void **) &survivors, instruction_count * sizeof(*survivors)) &&
-        APP_MEM_CALLOC((void **) &bindings, instruction_count * sizeof(*bindings)) &&
-        APP_MEM_CALLOC((void **) &owner_bindings, instruction_count * sizeof(*owner_bindings));
+    bool alloc_ok = APP_MEM_CALLOC((void **) &walked_instructions,
+                                   instruction_count * sizeof(*walked_instructions)) &&
+                    APP_MEM_CALLOC((void **) &survivors, instruction_count * sizeof(*survivors)) &&
+                    APP_MEM_CALLOC((void **) &bindings, instruction_count * sizeof(*bindings)) &&
+                    APP_MEM_CALLOC((void **) &owner_bindings,
+                                   instruction_count * sizeof(*owner_bindings));
 
     uint16_t sw;
     if (!alloc_ok) {
