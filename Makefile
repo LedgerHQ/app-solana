@@ -96,9 +96,7 @@ ENABLE_DYNAMIC_ALLOC = 1
 ########################################
 #        SDK Stack protection          #
 ########################################
-# Undo STACK_PROTECTOR pending investigations
-# ENABLE_STACK_PROTECTOR=1
-# --8<-- [end:variables]
+ENABLE_STACK_PROTECTOR = 1
 
 ########################################
 #          Features disablers          #
