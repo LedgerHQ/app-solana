@@ -27,8 +27,8 @@ typedef struct cs_token_account_cache_table_s {
 static cs_token_account_cache_table_t G_token_account_cache;
 
 int cs_token_account_cache_add(const uint8_t account_address[PUBKEY_SIZE],
-                               const uint8_t mint[PUBKEY_SIZE],
-                               const uint8_t owner[PUBKEY_SIZE],
+                               const uint8_t *mint,
+                               const uint8_t *owner,
                                uint64_t pre_balance) {
     // The account_address key must be unique.
     if (cs_token_account_cache_find(account_address) != NULL) {
@@ -51,8 +51,20 @@ int cs_token_account_cache_add(const uint8_t account_address[PUBKEY_SIZE],
         return -1;
     }
     memcpy(slot->account_address, account_address, PUBKEY_SIZE);
-    memcpy(slot->mint, mint, PUBKEY_SIZE);
-    memcpy(slot->owner, owner, PUBKEY_SIZE);
+    // An omitted mint or owner leaves the zeroed field behind its flag, so no reader can
+    // mistake the placeholder for an attested key.
+    if (mint != NULL) {
+        memcpy(slot->mint, mint, PUBKEY_SIZE);
+        slot->has_mint = true;
+    } else {
+        PRINTF("cs_token_account_cache_add: no mint attested for this account\n");
+    }
+    if (owner != NULL) {
+        memcpy(slot->owner, owner, PUBKEY_SIZE);
+        slot->has_owner = true;
+    } else {
+        PRINTF("cs_token_account_cache_add: no owner attested for this account\n");
+    }
     slot->pre_balance = pre_balance;
 
     G_token_account_cache.accounts[G_token_account_cache.count] = slot;

@@ -139,11 +139,22 @@ int handle_provide_token_account_state(void) {
                                  TAS_TAG_STRUCT_VERSION,
                                  TAS_TAG_CHALLENGE,
                                  TAS_TAG_ACCOUNT_ADDRESS,
-                                 TAS_TAG_MINT,
-                                 TAS_TAG_OWNER,
                                  TAS_TAG_PRE_BALANCE,
                                  TAS_TAG_SIGNATURE)) {
         PRINTF("Error: missing required fields\n");
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
+    }
+
+    // Mint and owner are optional: an account that does not exist yet has neither, and the
+    // transaction itself is what derives them. Only such an account can be attested without
+    // them, and it holds nothing, so any other pre-balance makes the descriptor malformed.
+    bool has_mint = TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAS_TAG_MINT);
+    bool has_owner = TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAS_TAG_OWNER);
+    if ((!has_mint || !has_owner) && tlv_extracted.pre_balance != 0) {
+        PRINTF("Error: pre_balance %llu attested without mint (%d) and owner (%d)\n",
+               tlv_extracted.pre_balance,
+               has_mint,
+               has_owner);
         return reply_sw(ApduReplySolanaInvalidTokenAccountState);
     }
 
@@ -176,16 +187,28 @@ int handle_provide_token_account_state(void) {
     // Consume the challenge to prevent replay
     roll_challenge();
 
+    // The cache reads an absent field as a NULL pointer rather than a flag of its own.
+    const uint8_t *mint = NULL;
+    if (has_mint) {
+        mint = tlv_extracted.mint;
+    }
+    const uint8_t *owner = NULL;
+    if (has_owner) {
+        owner = tlv_extracted.owner;
+    }
+
     PRINTF("=== TOKEN ACCOUNT STATE ===\n");
     PRINTF("version         = %d\n", tlv_extracted.version);
     PRINTF("account_address = %.*H\n", PUBKEY_SIZE, tlv_extracted.account_address);
+    PRINTF("has_mint        = %d\n", has_mint);
     PRINTF("mint            = %.*H\n", PUBKEY_SIZE, tlv_extracted.mint);
+    PRINTF("has_owner       = %d\n", has_owner);
     PRINTF("owner           = %.*H\n", PUBKEY_SIZE, tlv_extracted.owner);
     PRINTF("pre_balance     = %llu\n", tlv_extracted.pre_balance);
 
     if (cs_token_account_cache_add(tlv_extracted.account_address,
-                                   tlv_extracted.mint,
-                                   tlv_extracted.owner,
+                                   mint,
+                                   owner,
                                    tlv_extracted.pre_balance) != 0) {
         PRINTF("Error: cs_token_account_cache_add rejected account\n");
         return reply_sw(ApduReplySolanaInvalidTokenAccountState);

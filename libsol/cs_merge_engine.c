@@ -19,7 +19,12 @@ enum cs_merge_rule {
     CS_MERGE_RULE_SYMBOLIC_JUNCTION,
 };
 
-// One ACCOUNT_RESET declaration, reduced to what the guard needs from it.
+// Stands in for the declarer of a safe account vouched for by a chain-attested zero
+// pre-balance rather than by an ACCOUNT_RESET. No instruction carries this index.
+#define ATTESTED_DECLARER_INDEX SIZE_MAX
+
+// One ACCOUNT_RESET declaration, or one chain-attested empty account, reduced to what the
+// guard needs from it.
 typedef struct safe_account_s {
     const uint8_t *account;
     // Instruction that declared the reset. The guard needs it twice: to check the reset
@@ -580,12 +585,36 @@ static void known_balance_set(merge_scratch_t *scratch,
     scratch->known_balance_count++;
 }
 
+// Record a zero balance for every account whose attested pre-balance says it held nothing
+// when the transaction began.
+static void seed_attested_empty_balances(merge_scratch_t *scratch) {
+    for (size_t i = 0; i < cs_token_account_cache_count(); i++) {
+        const cs_token_account_t *state = cs_token_account_cache_at(i);
+        if (state == NULL || state->pre_balance != 0) {
+            continue;
+        }
+        // The cache outlives the merge run, so its storage backs the borrowed account
+        // pointer just as the walked transaction backs an instruction's own.
+        PRINTF("seed_attested_empty_balances: attested state %d starts its account empty\n",
+               (int) i);
+        known_balance_set(scratch,
+                          state->account_address,
+                          G_implicit_zero_reset_le,
+                          sizeof(G_implicit_zero_reset_le),
+                          IDL_KIND_U64);
+    }
+}
+
 // Give every whole-balance port an amount where the transaction says what the account
 // holds, and mark the rest symbolic. Runs before any merge, so a junction the device can
 // read as numbers never reaches the guarded collapse in the first place.
 static void resolve_balance_amounts(cs_instruction_result_t *walked_instructions,
                                     size_t count,
                                     merge_scratch_t *scratch) {
+    // An attested pre-balance speaks for the account before the first instruction runs, so
+    // it is in place before the walk and any instruction writing the account ends it.
+    seed_attested_empty_balances(scratch);
+
     // Walked in execution order: a reset speaks only for the instructions after it, and
     // the three passes below are ordered the way one instruction's effects happen.
     for (size_t i = 0; i < count; i++) {
@@ -680,11 +709,33 @@ static bool reset_establishes_empty_account(const cs_resolved_reset_t *resolved)
     return balance == 0;
 }
 
-// Gather, from every ACCOUNT_RESET in the transaction, the accounts a symbolic junction
-// is allowed to sit on. Built once before the scan and read by the guard.
+// Enter every account with an attested zero pre-balance into the safe-account set.
+static void add_attested_safe_accounts(merge_scratch_t *scratch) {
+    for (size_t i = 0; i < cs_token_account_cache_count(); i++) {
+        const cs_token_account_t *state = cs_token_account_cache_at(i);
+        if (state == NULL || state->pre_balance != 0) {
+            continue;
+        }
+        // The chain itself says the account held nothing before the transaction, which is
+        // what a reset has to establish. That holds from before the first instruction and
+        // for every consumer, so the entry precedes any junction and carries no scope.
+        scratch->safe_accounts[scratch->safe_account_count].account = state->account_address;
+        scratch->safe_accounts[scratch->safe_account_count].declarer_index =
+            ATTESTED_DECLARER_INDEX;
+        scratch->safe_accounts[scratch->safe_account_count].scope = NULL;
+        scratch->safe_account_count++;
+        PRINTF("add_attested_safe_accounts: attested state %d vouches for its account\n", (int) i);
+    }
+}
+
+// Gather, from every ACCOUNT_RESET in the transaction and every attested empty account, the
+// accounts a symbolic junction is allowed to sit on. Built once before the scan and read by
+// the guard.
 static void build_safe_accounts(const cs_instruction_result_t *walked_instructions,
                                 size_t count,
                                 merge_scratch_t *scratch) {
+    add_attested_safe_accounts(scratch);
+
     // One account may be reset more than once, and each declaration is recorded on its
     // own: the guard accepts a junction when any single one of them covers it.
     for (size_t i = 0; i < count; i++) {
@@ -772,8 +823,9 @@ static bool safe_account_entry_covers(const safe_account_t *entry,
     // A reset states what the account holds once its own instruction has run. One
     // declared after the junction therefore says nothing about the balance that already
     // crossed it, and the balance this guard exists to neutralise is one the account held
-    // before the chain started.
-    if (entry->declarer_index > junction_index) {
+    // before the chain started. An attested pre-balance predates every instruction.
+    if (entry->declarer_index != ATTESTED_DECLARER_INDEX &&
+        entry->declarer_index > junction_index) {
         PRINTF("safe_account_entry_covers: reset declared at %d is later than junction %d\n",
                (int) entry->declarer_index,
                (int) junction_index);
@@ -2091,6 +2143,21 @@ static size_t total_reset_count(const cs_instruction_result_t *walked_instructio
     return total;
 }
 
+// Count the chain-attested states declaring an empty account.
+static size_t attested_empty_account_count(void) {
+    // Sizes the same two maps as the resets do: each such attestation vouches for one
+    // account and starts it on one known balance.
+    size_t total = 0;
+    for (size_t i = 0; i < cs_token_account_cache_count(); i++) {
+        const cs_token_account_t *state = cs_token_account_cache_at(i);
+        if (state != NULL && state->pre_balance == 0) {
+            total++;
+        }
+    }
+    PRINTF("attested_empty_account_count: %d\n", (int) total);
+    return total;
+}
+
 // Find the largest number of ports any one instruction declares.
 static size_t max_port_count(const cs_instruction_result_t *walked_instructions, size_t count) {
     // Sizes the guard's account scratch: a junction reaches across two instructions, and
@@ -2108,7 +2175,7 @@ static size_t max_port_count(const cs_instruction_result_t *walked_instructions,
 // Allocate the merge scratch: per-instruction state with its own chain history, the
 // safe-account set and the known-balance map. Returns 0, -1 on allocation failure
 // (the caller frees whatever was allocated).
-static int merge_scratch_allocate(merge_scratch_t *scratch, size_t count, size_t reset_count) {
+static int merge_scratch_allocate(merge_scratch_t *scratch, size_t count, size_t map_capacity) {
     // The histories are one block rather than an allocation each, so freeing cannot
     // half-succeed and the state array can be handed out with slices already pointing
     // into it.
@@ -2123,12 +2190,12 @@ static int merge_scratch_allocate(merge_scratch_t *scratch, size_t count, size_t
         scratch->states[i].merged_from = &scratch->history[i * count];
         scratch->states[i].merged_from[i] = true;
     }
-    // A transaction with no resets needs neither map, and asking for zero bytes is not
-    // worth doing.
-    if (reset_count > 0 && (!APP_MEM_CALLOC((void **) &scratch->safe_accounts,
-                                            reset_count * sizeof(*scratch->safe_accounts)) ||
-                            !APP_MEM_CALLOC((void **) &scratch->known_balances,
-                                            reset_count * sizeof(*scratch->known_balances)))) {
+    // A transaction with neither a reset nor an attested empty account needs neither map,
+    // and asking for zero bytes is not worth doing.
+    if (map_capacity > 0 && (!APP_MEM_CALLOC((void **) &scratch->safe_accounts,
+                                             map_capacity * sizeof(*scratch->safe_accounts)) ||
+                             !APP_MEM_CALLOC((void **) &scratch->known_balances,
+                                             map_capacity * sizeof(*scratch->known_balances)))) {
         PRINTF("merge_scratch_allocate: reset map allocation failed\n");
         return -1;
     }
@@ -2213,7 +2280,8 @@ int cs_merge_engine_run(cs_instruction_result_t *walked_instructions,
     int rc = merge_scratch_allocate(
         &scratch,
         walked_instructions_count,
-        total_reset_count(walked_instructions, walked_instructions_count));
+        total_reset_count(walked_instructions, walked_instructions_count) +
+            attested_empty_account_count());
     if (rc == 0) {
         // Allocated once for the whole run rather than per guard call: the guard fills it
         // and reads the count back, so nothing carries over between calls.

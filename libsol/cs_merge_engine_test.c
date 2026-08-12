@@ -959,6 +959,108 @@ static void test_pre_balance_non_zero_refused(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+// An attested zero pre-balance is itself a reset: the account held nothing before the
+// transaction, so the junction collapses with no ACCOUNT_RESET declared at all.
+static void test_attested_empty_account_admits_without_reset(void) {
+    printf("  test_attested_empty_account_admits_without_reset\n");
+    mock_mem_reset();
+    cs_token_account_cache_reset();
+    assert(cs_token_account_cache_add(ACCT_JUNCTION, MINT_X, ACCT_SOURCE, 0) == 0);
+
+    test_item_t create;
+    test_item_t transfer;
+    test_item_t wrap;
+    build_wrap_chain(&create, &transfer, &wrap);
+    create.template.account_reset_count = 0;
+    create.result.resolved_reset_count = 0;
+
+    cs_instruction_result_t items[3] = {create.result, transfer.result, wrap.result};
+    bool survivors[3] = {false, false, false};
+    assert(cs_merge_engine_run(items, 3, NULL, survivors) == 0);
+    assert(survivors[2] == false);
+
+    cs_token_account_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// The same attestation for an account that does not exist yet, so it carries neither mint
+// nor owner: the zero pre-balance alone still vouches for the junction.
+static void test_attested_empty_account_without_mint_and_owner_admits(void) {
+    printf("  test_attested_empty_account_without_mint_and_owner_admits\n");
+    mock_mem_reset();
+    cs_token_account_cache_reset();
+    assert(cs_token_account_cache_add(ACCT_JUNCTION, NULL, NULL, 0) == 0);
+
+    test_item_t create;
+    test_item_t transfer;
+    test_item_t wrap;
+    build_wrap_chain(&create, &transfer, &wrap);
+    create.template.account_reset_count = 0;
+    create.result.resolved_reset_count = 0;
+
+    cs_instruction_result_t items[3] = {create.result, transfer.result, wrap.result};
+    bool survivors[3] = {false, false, false};
+    assert(cs_merge_engine_run(items, 3, NULL, survivors) == 0);
+    assert(survivors[2] == false);
+
+    cs_token_account_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// An attested non-zero pre-balance vouches for nothing on its own: the account already
+// held value no instruction accounts for.
+static void test_attested_non_empty_account_refused_without_reset(void) {
+    printf("  test_attested_non_empty_account_refused_without_reset\n");
+    mock_mem_reset();
+    cs_token_account_cache_reset();
+    assert(cs_token_account_cache_add(ACCT_JUNCTION, MINT_X, ACCT_SOURCE, 7) == 0);
+
+    test_item_t create;
+    test_item_t transfer;
+    test_item_t wrap;
+    build_wrap_chain(&create, &transfer, &wrap);
+    create.template.account_reset_count = 0;
+    create.result.resolved_reset_count = 0;
+
+    cs_instruction_result_t items[3] = {create.result, transfer.result, wrap.result};
+    bool survivors[3] = {false, false, false};
+    assert(cs_merge_engine_run(items, 3, NULL, survivors) == 0);
+    assert(survivors[2] == true);
+
+    cs_token_account_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// An instruction depositing into the attested-empty account is still an unaccounted
+// depositor: the attestation speaks for the account before the transaction, not after.
+static void test_attested_empty_account_depositor_refused(void) {
+    printf("  test_attested_empty_account_depositor_refused\n");
+    mock_mem_reset();
+    cs_token_account_cache_reset();
+    assert(cs_token_account_cache_add(ACCT_JUNCTION, MINT_X, ACCT_SOURCE, 0) == 0);
+
+    test_item_t depositor;
+    test_item_t create;
+    test_item_t transfer;
+    test_item_t wrap;
+    item_init(&depositor);
+    item_add_port(&depositor, CS_PORT_DIRECTION_OUTPUT, ACCT_JUNCTION, AMT_100);
+    build_wrap_chain(&create, &transfer, &wrap);
+    create.template.account_reset_count = 0;
+    create.result.resolved_reset_count = 0;
+
+    cs_instruction_result_t items[4] = {depositor.result,
+                                        create.result,
+                                        transfer.result,
+                                        wrap.result};
+    bool survivors[4] = {false, false, false, false};
+    assert(cs_merge_engine_run(items, 4, NULL, survivors) == 0);
+    assert(survivors[3] == true);
+
+    cs_token_account_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 // An earlier instruction outside the chain fed the junction through a declared
 // output port: the reset no longer accounts for everything the account holds.
 static void test_unaccounted_depositor_port_refused(void) {
@@ -2075,6 +2177,10 @@ int main(void) {
     test_pre_balance_zero_without_attestation_refused();
     test_pre_balance_zero_attested_admits();
     test_pre_balance_non_zero_refused();
+    test_attested_empty_account_admits_without_reset();
+    test_attested_empty_account_without_mint_and_owner_admits();
+    test_attested_non_empty_account_refused_without_reset();
+    test_attested_empty_account_depositor_refused();
     test_unaccounted_depositor_port_refused();
     test_zero_amount_port_is_not_a_depositor();
     test_unaccounted_depositor_writable_refused();
