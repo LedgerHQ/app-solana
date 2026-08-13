@@ -37,9 +37,35 @@ static void test_add_and_find(void) {
     const cs_token_account_t *found = cs_token_account_cache_find(ACCOUNT_A);
     assert(found != NULL);
     assert(memcmp(found->account_address, ACCOUNT_A, 32) == 0);
+    assert(found->has_mint);
     assert(memcmp(found->mint, MINT_A, 32) == 0);
+    assert(found->has_owner);
     assert(memcmp(found->owner, OWNER_A, 32) == 0);
     assert(found->pre_balance == 12345);
+
+    cs_token_account_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// An account that does not exist yet is attested by its pre-balance alone: the entry is
+// stored with no mint and no owner, and the zeroed fields stay behind their flags.
+static void test_add_without_mint_and_owner(void) {
+    printf("  test_add_without_mint_and_owner\n");
+    mock_mem_reset();
+    cs_token_account_cache_reset();
+
+    assert(cs_token_account_cache_add(ACCOUNT_A, NULL, NULL, 0) == 0);
+    assert(cs_token_account_cache_count() == 1);
+
+    const uint8_t zeroes[32] = {0};
+    const cs_token_account_t *found = cs_token_account_cache_find(ACCOUNT_A);
+    assert(found != NULL);
+    assert(memcmp(found->account_address, ACCOUNT_A, 32) == 0);
+    assert(!found->has_mint);
+    assert(memcmp(found->mint, zeroes, 32) == 0);
+    assert(!found->has_owner);
+    assert(memcmp(found->owner, zeroes, 32) == 0);
+    assert(found->pre_balance == 0);
 
     cs_token_account_cache_reset();
     assert(mock_mem_outstanding() == 0);
@@ -155,6 +181,7 @@ int main(void) {
     printf("cs_token_account_cache_test\n");
     test_empty_cache();
     test_add_and_find();
+    test_add_without_mint_and_owner();
     test_key_disambiguation();
     test_duplicate_rejected();
     test_grows_past_old_cap();

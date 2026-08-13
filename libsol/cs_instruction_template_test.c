@@ -167,6 +167,41 @@ static void test_find_empty_discriminator_matches_any(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+// A program carrying both a catch-all template and a specific one resolves to the
+// specific one whichever order the descriptors arrived in.
+static void test_find_prefers_longest_discriminator(void) {
+    printf("  test_find_prefers_longest_discriminator\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    commit_template(PROGRAM_A, NULL, 0);
+    commit_template(PROGRAM_A, DISC_A, sizeof(DISC_A));
+
+    const uint8_t data[] = {0x01, 0x02, 0x03, 0x04, 0xFF};
+    const cs_instruction_template_t *found = cs_instruction_template_find(PROGRAM_A,
+                                                                          data,
+                                                                          sizeof(data));
+    assert(found != NULL);
+    assert(found->discriminator_size == sizeof(DISC_A));
+
+    // Reversed streaming order, same outcome.
+    cs_instruction_template_table_reset();
+    commit_template(PROGRAM_A, DISC_A, sizeof(DISC_A));
+    commit_template(PROGRAM_A, NULL, 0);
+    found = cs_instruction_template_find(PROGRAM_A, data, sizeof(data));
+    assert(found != NULL);
+    assert(found->discriminator_size == sizeof(DISC_A));
+
+    // Instruction data the specific template does not match still meets the catch-all.
+    const uint8_t other[] = {0x99, 0x99};
+    found = cs_instruction_template_find(PROGRAM_A, other, sizeof(other));
+    assert(found != NULL);
+    assert(found->discriminator_size == 0);
+
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 static void test_add_display_path(void) {
     printf("  test_add_display_path\n");
     mock_mem_reset();
@@ -801,6 +836,7 @@ int main(void) {
     test_find_wrong_discriminator();
     test_find_data_too_short();
     test_find_empty_discriminator_matches_any();
+    test_find_prefers_longest_discriminator();
     test_add_display_path();
     test_add_display_path_no_builder();
     test_add_display_path_empty();

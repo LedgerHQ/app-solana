@@ -1868,6 +1868,14 @@ int handle_provide_instruction_substructure(void) {
     const uint8_t *tlv = G_command.message + 1;
     size_t tlv_size = (size_t) G_command.message_length - 1;
 
+    // A hidden instruction declares no user-facing content, so a display field, a value-flow
+    // port or a hide rule contradicts the hide. ACCOUNT_RESET carries none: it declares a
+    // post-instruction balance the merge engine reads whether or not the screen shows it.
+    if (cs_instruction_template_current()->hidden && type != SUBSTRUCTURE_TYPE_ACCOUNT_RESET) {
+        PRINTF("substructure: type %d refused on a hidden instruction\n", type);
+        return reply_sw(ApduReplySolanaInvalidInstructionSubstructure);
+    }
+
     // Accumulate the substructure TLV (type byte excluded) into the running hash.
     if (cs_substructure_update(tlv, tlv_size) != 0) {
         PRINTF("substructure: hash accumulation refused\n");

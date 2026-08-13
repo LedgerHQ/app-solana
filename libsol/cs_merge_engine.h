@@ -26,9 +26,11 @@
 //     (AND within a set, OR across sets); a survivor whose rules pass is dropped from the
 //     output so its plumbing does not reach the screen.
 //
-// The pipeline this implements also drops described instructions that resolve to no
-// ports and carry no intent. That stage has no effect here: an operation type is a
-// required INSTRUCTION_INFO field, so every committed template carries an intent.
+// The pipeline this implements also drops described instructions that carry no intent:
+// INSTRUCTION_INFO marks them with an empty operation type, and their descriptor may hold
+// nothing user-facing (no display field, no port, no hide rule). They are dropped from the
+// output after the scan rather than before it, so the passes above still read their writable
+// accounts and their ACCOUNT_RESETs: hiding an instruction never loosens a merge guard.
 //
 // Output is a caller-provided bool array: survivors[i] == true means
 // walked_instructions[i] should be rendered.

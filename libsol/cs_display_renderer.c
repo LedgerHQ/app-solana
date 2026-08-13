@@ -974,11 +974,36 @@ static int format_unit(const idl_resolved_leaf_t *leaf,
                        char *value_out,
                        size_t value_out_size) {
     uint64_t amount;
-    if (read_leaf_u64(leaf, &amount) != 0) {
-        PRINTF("format_unit: unsupported leaf kind %d\n", leaf->kind);
-        return -1;
+    size_t sign_size = 0;
+
+    if (is_signed_int_kind(leaf->kind)) {
+        int64_t signed_value;
+        if (read_leaf_i64(leaf, &signed_value) != 0) {
+            PRINTF("format_unit: signed read failed\n");
+            return -1;
+        }
+        if (signed_value < 0) {
+            PRINTF("format_unit: negative value, prepending its sign\n");
+            // The magnitude is built in the unsigned domain, where INT64_MIN is representable.
+            amount = (uint64_t) (-(signed_value + 1)) + 1;
+            value_out[0] = '-';
+            sign_size = 1;
+        } else {
+            amount = (uint64_t) signed_value;
+        }
+    } else {
+        if (read_leaf_u64(leaf, &amount) != 0) {
+            PRINTF("format_unit: unsupported leaf kind %d\n", leaf->kind);
+            return -1;
+        }
     }
-    if (print_token_amount(amount, NULL, unit->decimals, value_out, value_out_size) != 0) {
+    // The number follows any sign already written, so the two form one string the symbol
+    // affixing below can measure and move as a whole.
+    if (print_token_amount(amount,
+                           NULL,
+                           unit->decimals,
+                           value_out + sign_size,
+                           value_out_size - sign_size) != 0) {
         PRINTF("format_unit: print_token_amount failed\n");
         return -1;
     }
@@ -1401,6 +1426,12 @@ static bool is_native_program(const uint8_t program_id[PUBKEY_SIZE]) {
 // Populate an instruction's intent and optional program fields.
 static int render_instruction_header(cs_display_instruction_t *display_instruction,
                                      const cs_instruction_result_t *instruction) {
+    // A hidden instruction carries no operation type and must have been dropped by the merge
+    // engine, so reaching the renderer with one is a caller-sequencing breach.
+    if (instruction->template->operation_type == NULL) {
+        PRINTF("render_instruction_header: hidden instruction reached the renderer\n");
+        return -1;
+    }
     display_instruction->intent = duplicate_string(instruction->template->operation_type);
     if (display_instruction->intent == NULL) {
         PRINTF("render_instruction_header: intent allocation failed\n");
@@ -1474,10 +1505,16 @@ static size_t argument_render_capacity(const cs_display_field_t *field,
         case CS_PARAM_TYPE_DURATION:
             return CS_DURATION_TEXT_SIZE;
 
-        case CS_PARAM_TYPE_UNIT:
-            return amount_render_capacity(field->argument.format.unit.decimals,
-                                          field->argument.format.unit.symbol,
-                                          NULL);
+        case CS_PARAM_TYPE_UNIT: {
+            size_t needed = amount_render_capacity(field->argument.format.unit.decimals,
+                                                   field->argument.format.unit.symbol,
+                                                   NULL);
+            if (is_signed_int_kind(leaf->kind)) {
+                // A negative value prints a minus ahead of the number.
+                needed += 1;
+            }
+            return needed;
+        }
 
         case CS_PARAM_TYPE_ACCOUNT:
         case CS_PARAM_TYPE_TRUSTED_NAME:
@@ -1614,11 +1651,9 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
         if (!survivors[ix]) {
             continue;
         }
-        PRINTF(
-            "cs_display_renderer_run: rendering instruction ix=%u "
-            "operation=%s\n",
-            (unsigned) ix,
-            walked_instructions[ix].template->operation_type);
+        // The operation type is logged by render_instruction_header, which also refuses a
+        // hidden instruction rather than dereferencing its absent one.
+        PRINTF("cs_display_renderer_run: rendering instruction ix=%u\n", (unsigned) ix);
 
         cs_display_instruction_t *display_instruction = append_instruction();
         if (display_instruction == NULL) {

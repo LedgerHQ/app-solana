@@ -314,7 +314,12 @@ typedef struct cs_instruction_template_s {
     uint8_t program_id[PUBKEY_SIZE];
     uint8_t *discriminator;  // heap, sized to discriminator_size; owned by this template
     uint8_t discriminator_size;
-    char *operation_type;    // heap, NUL-terminated; owned by this template
+    char *operation_type;  // heap, NUL-terminated; owned by this template, NULL when hidden
+    // Set when INSTRUCTION_INFO carried an empty OPERATION_TYPE: the instruction has no
+    // user-facing meaning and never reaches the screen. Display fields, value-flow ports
+    // and hide rules are refused on such a template, so `operation_type` is the only
+    // field it can lack.
+    bool hidden;
     char *program_name;      // heap, NUL-terminated; owned by this template, NULL when absent
     uint8_t *idl_type_pool;  // heap, sized to idl_type_pool_size; owned by this template
     size_t idl_type_pool_size;
@@ -456,7 +461,8 @@ size_t cs_instruction_template_committed_count(void);
 bool cs_instruction_template_pending(void);
 
 // Find the committed template whose program_id matches and whose discriminator
-// is a prefix of `data`. Returns NULL when none matches.
+// is a prefix of `data`, preferring the longest such discriminator. Returns NULL
+// when none matches.
 const cs_instruction_template_t *cs_instruction_template_find(const uint8_t program_id[PUBKEY_SIZE],
                                                               const uint8_t *data,
                                                               size_t data_size);

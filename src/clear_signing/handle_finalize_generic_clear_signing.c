@@ -56,10 +56,12 @@ static const uint8_t *lookup_mint_binding(const mint_binding_t *bindings,
             return bindings[b].mint;
         }
     }
+    // A state attesting only an empty account carries no mint, so it covers nothing here.
     const cs_token_account_t *entry = cs_token_account_cache_find(token_ref);
-    if (entry != NULL) {
+    if (entry != NULL && entry->has_mint) {
         return entry->mint;
     }
+    PRINTF("finalize cs: no mint bound to this token reference\n");
     return NULL;
 }
 
@@ -1018,6 +1020,11 @@ static void append_attested_owner_bindings(cs_owner_binding_t *owner_bindings,
     for (size_t i = 0; i < cs_token_account_cache_count(); i++) {
         const cs_token_account_t *entry = cs_token_account_cache_at(i);
         if (entry == NULL) {
+            continue;
+        }
+        // A state attesting only an empty account names no owner to bind.
+        if (!entry->has_owner) {
+            PRINTF("finalize cs: attested state %d carries no owner\n", (int) i);
             continue;
         }
         bool already_bound = false;
