@@ -870,9 +870,14 @@ const cs_instruction_template_t *cs_instruction_template_find(const uint8_t prog
                                                               const uint8_t *data,
                                                               size_t data_size) {
     if (G_template_table == NULL) {
+        PRINTF("cs_instruction_template_find: no template table\n");
         return NULL;
     }
 
+    // A program can carry both a catch-all template (empty discriminator, typically a
+    // hidden one) and templates for specific instructions. Keeping the longest match
+    // rather than the first makes the outcome independent of the streaming order.
+    const cs_instruction_template_t *best = NULL;
     for (size_t i = 0; i < G_template_table->committed_count; i++) {
         const cs_instruction_template_t *template = G_template_table->committed[i];
         if (memcmp(template->program_id, program_id, PUBKEY_SIZE) != 0) {
@@ -886,9 +891,17 @@ const cs_instruction_template_t *cs_instruction_template_find(const uint8_t prog
             memcmp(data, template->discriminator, template->discriminator_size) != 0) {
             continue;
         }
-        return template;
+        if (best == NULL || template->discriminator_size > best->discriminator_size) {
+            PRINTF("cs_instruction_template_find: template %d matches, discriminator_size=%d\n",
+                   (int) i,
+                   template->discriminator_size);
+            best = template;
+        }
     }
-    return NULL;
+    if (best == NULL) {
+        PRINTF("cs_instruction_template_find: no template matches the instruction\n");
+    }
+    return best;
 }
 
 void cs_instruction_template_table_reset(void) {

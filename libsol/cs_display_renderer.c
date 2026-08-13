@@ -1401,6 +1401,12 @@ static bool is_native_program(const uint8_t program_id[PUBKEY_SIZE]) {
 // Populate an instruction's intent and optional program fields.
 static int render_instruction_header(cs_display_instruction_t *display_instruction,
                                      const cs_instruction_result_t *instruction) {
+    // A hidden instruction carries no operation type and must have been dropped by the merge
+    // engine, so reaching the renderer with one is a caller-sequencing breach.
+    if (instruction->template->operation_type == NULL) {
+        PRINTF("render_instruction_header: hidden instruction reached the renderer\n");
+        return -1;
+    }
     display_instruction->intent = duplicate_string(instruction->template->operation_type);
     if (display_instruction->intent == NULL) {
         PRINTF("render_instruction_header: intent allocation failed\n");
@@ -1614,11 +1620,9 @@ int cs_display_renderer_run(const cs_instruction_result_t *walked_instructions,
         if (!survivors[ix]) {
             continue;
         }
-        PRINTF(
-            "cs_display_renderer_run: rendering instruction ix=%u "
-            "operation=%s\n",
-            (unsigned) ix,
-            walked_instructions[ix].template->operation_type);
+        // The operation type is logged by render_instruction_header, which also refuses a
+        // hidden instruction rather than dereferencing its absent one.
+        PRINTF("cs_display_renderer_run: rendering instruction ix=%u\n", (unsigned) ix);
 
         cs_display_instruction_t *display_instruction = append_instruction();
         if (display_instruction == NULL) {
