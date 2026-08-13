@@ -2107,6 +2107,16 @@ static bool instruction_is_hidden(const cs_instruction_result_t *walked_instruct
     return false;
 }
 
+// Whether INSTRUCTION_INFO declared this instruction as carrying no user-facing meaning.
+static bool instruction_is_declared_hidden(const cs_instruction_result_t *item) {
+    if (item->template == NULL) {
+        PRINTF("instruction_is_declared_hidden: no template, nothing declared\n");
+        return false;
+    }
+    PRINTF("instruction_is_declared_hidden: hidden=%d\n", item->template->hidden);
+    return item->template->hidden;
+}
+
 // Drop from the output every merge survivor whose HIDE_RULEs hide it, so its plumbing never
 // reaches the screen. Runs after the scan, over survivors, so a merged-away instruction is
 // never reconsidered. A rule set is judged against the survivors still standing, so an
@@ -2241,9 +2251,12 @@ static int merge_engine_run_inner(cs_instruction_result_t *walked_instructions,
     build_safe_accounts(walked_instructions, count, scratch);
     run_merge_scan(walked_instructions, count, scratch, symbolic_accounts);
 
-    // The scan marks what disappeared; the renderer is told what remains.
+    // The scan marks what disappeared; the renderer is told what remains. A hidden
+    // instruction drops out here rather than before the scan, so the passes above still
+    // read its writable accounts and its ACCOUNT_RESETs.
     for (size_t i = 0; i < count; i++) {
-        survivors[i] = !scratch->states[i].consumed;
+        survivors[i] = !scratch->states[i].consumed &&
+                       !instruction_is_declared_hidden(&walked_instructions[i]);
         PRINTF("merge_engine_run_inner: instruction %d survives=%d\n", (int) i, survivors[i]);
     }
 

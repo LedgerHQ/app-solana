@@ -2142,6 +2142,111 @@ static void test_hide_applies_to_merge_survivor(void) {
     assert(survivors[1] == false);  // survived the merge, then hidden
 }
 
+// ---- Declared-hidden instructions -------------------------------------------
+
+// An instruction the descriptor marked hidden carries no user-facing meaning, so it
+// never reaches the renderer while its neighbours are untouched.
+static void test_declared_hidden_instruction_is_dropped(void) {
+    printf("  test_declared_hidden_instruction_is_dropped\n");
+    mock_mem_reset();
+
+    test_item_t visible;
+    test_item_t noop;
+    item_init(&visible);
+    item_init(&noop);
+    item_add_port(&visible, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_100);
+    item_add_port(&visible, CS_PORT_DIRECTION_OUTPUT, ACCT_DEST, AMT_100);
+    noop.template.hidden = true;
+
+    cs_instruction_result_t items[2] = {visible.result, noop.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, NULL, survivors) == 0);
+    assert(survivors[0] == true);
+    assert(survivors[1] == false);
+    assert(mock_mem_outstanding() == 0);
+}
+
+// The hide happens after the scan, so a hidden instruction writing the junction still
+// stops the forward scan: leaving the screen never loosens a merge guard.
+static void test_declared_hidden_instruction_still_stops_the_scan(void) {
+    printf("  test_declared_hidden_instruction_still_stops_the_scan\n");
+    mock_mem_reset();
+
+    test_item_t a;
+    test_item_t toucher;
+    test_item_t b;
+    item_init(&a);
+    item_init(&toucher);
+    item_init(&b);
+    item_add_port(&a, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_100);
+    item_add_port(&a, CS_PORT_DIRECTION_OUTPUT, ACCT_JUNCTION, AMT_100);
+    item_add_writable(&toucher, ACCT_JUNCTION);
+    toucher.template.hidden = true;
+    item_add_port(&b, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_100);
+    item_add_port(&b, CS_PORT_DIRECTION_OUTPUT, ACCT_DEST, AMT_100);
+
+    cs_instruction_result_t items[3] = {a.result, toucher.result, b.result};
+    bool survivors[3] = {false, false, false};
+    assert(cs_merge_engine_run(items, 3, NULL, survivors) == 0);
+    assert(survivors[0] == true);   // the merge was refused
+    assert(survivors[1] == false);  // hidden, but it still blocked the collapse
+    assert(survivors[2] == true);
+    assert(mock_mem_outstanding() == 0);
+}
+
+// The account initializer is the typical hidden instruction, and its ACCOUNT_RESET is
+// what lets the symbolic junction collapse: the reset outlives the hide.
+static void test_declared_hidden_instruction_reset_still_admits(void) {
+    printf("  test_declared_hidden_instruction_reset_still_admits\n");
+    mock_mem_reset();
+
+    test_item_t create;
+    test_item_t transfer;
+    test_item_t wrap;
+    build_wrap_chain(&create, &transfer, &wrap);
+    create.template.hidden = true;
+
+    cs_instruction_result_t items[3] = {create.result, transfer.result, wrap.result};
+    bool survivors[3] = {false, false, false};
+    assert(cs_merge_engine_run(items, 3, NULL, survivors) == 0);
+    assert(survivors[0] == false);  // hidden
+    assert(survivors[1] == true);
+    assert(survivors[2] == false);  // collapsed into the transfer, on the hidden reset
+    assert(items[1].resolved_ports[1].mint == MINT_X);
+    assert(items[1].resolved_ports[1].amount_le == AMT_100);
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A hidden instruction shows nothing, so it cannot stand in for another instruction's
+// effects: an accountEffectsDisplayedElsewhere rule finds no cover behind it.
+static void test_declared_hidden_instruction_covers_nothing(void) {
+    printf("  test_declared_hidden_instruction_covers_nothing\n");
+    mock_mem_reset();
+
+    test_context_t ctx;
+    context_init(&ctx, SIGNER_DEVICE);
+    test_item_t candidate;
+    test_item_t cover;
+    item_init(&candidate);
+    item_init(&cover);
+    item_add_port(&candidate, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_100);
+    item_add_hide_rule(&candidate,
+                       0,
+                       CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
+                       ACCT_SOURCE);
+    // The only other instruction moving value on the account is hidden itself.
+    item_add_port(&cover, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_50);
+    item_add_account_field(&cover, ACCT_SOURCE);
+    cover.template.hidden = true;
+
+    cs_instruction_result_t items[2] = {candidate.result, cover.result};
+    bool survivors[2] = {false, false};
+    assert(cs_merge_engine_run(items, 2, &ctx.context, survivors) == 0);
+    assert(survivors[0] == true);   // nothing displays the account, so the rule fails
+    assert(survivors[1] == false);  // hidden
+    assert(mock_mem_outstanding() == 0);
+}
+
 int main(void) {
     printf("cs_merge_engine_test\n");
     test_no_ports_all_survive();
@@ -2225,6 +2330,11 @@ int main(void) {
     test_active_when_multiple_predicates_anded();
     test_hide_created_ignores_excluded_port();
     test_hide_applies_to_merge_survivor();
+
+    test_declared_hidden_instruction_is_dropped();
+    test_declared_hidden_instruction_still_stops_the_scan();
+    test_declared_hidden_instruction_reset_still_admits();
+    test_declared_hidden_instruction_covers_nothing();
     printf("  All passed!\n");
     return 0;
 }
