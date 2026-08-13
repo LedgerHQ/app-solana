@@ -1292,6 +1292,121 @@ static void test_render_unit_no_symbol(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+// A unit held in a signed integer renders like the unsigned form.
+static void test_render_unit_signed_positive(void) {
+    printf("  test_render_unit_signed_positive\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Slippage", CS_PARAM_TYPE_UNIT);
+    template.display_fields[0].argument.format.unit.symbol = NULL;
+    template.display_fields[0].argument.format.unit.decimals = 0;
+    template.display_fields[0].argument.format.unit.prefix = false;
+
+    uint8_t value[] = {0x05, 0x00, 0x00, 0x00};  // 5 as a little-endian i32
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_I32;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 4;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(get_flat(1)->value, "5") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A negative unit keeps its sign ahead of the scaled number.
+static void test_render_unit_signed_negative(void) {
+    printf("  test_render_unit_signed_negative\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Rate", CS_PARAM_TYPE_UNIT);
+    template.display_fields[0].argument.format.unit.symbol = "%";
+    template.display_fields[0].argument.format.unit.decimals = 2;
+    template.display_fields[0].argument.format.unit.prefix = false;
+
+    // -1250 as a little-endian i32, which 2 decimals scale to -12.5
+    uint8_t value[] = {0x1E, 0xFB, 0xFF, 0xFF};
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_I32;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 4;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(get_flat(1)->value, "-12.5 %") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A prefixed symbol stays ahead of the sign of a negative unit.
+static void test_render_unit_signed_negative_prefix(void) {
+    printf("  test_render_unit_signed_negative_prefix\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Price", CS_PARAM_TYPE_UNIT);
+    template.display_fields[0].argument.format.unit.symbol = "$";
+    template.display_fields[0].argument.format.unit.decimals = 0;
+    template.display_fields[0].argument.format.unit.prefix = true;
+
+    // -42 as a little-endian i64
+    uint8_t value[] = {0xD6, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_I64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(get_flat(1)->value, "$ -42") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// The most negative i64 has no positive counterpart, so its magnitude must still print.
+static void test_render_unit_signed_minimum(void) {
+    printf("  test_render_unit_signed_minimum\n");
+    mock_mem_reset();
+    cs_display_renderer_reset();
+
+    cs_instruction_template_t template;
+    init_argument_template(&template, "Offset", CS_PARAM_TYPE_UNIT);
+    template.display_fields[0].argument.format.unit.symbol = NULL;
+    template.display_fields[0].argument.format.unit.decimals = 0;
+    template.display_fields[0].argument.format.unit.prefix = false;
+
+    // INT64_MIN as a little-endian i64
+    uint8_t value[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80};
+    RENDER_TEST_RESULT(instr);
+    instr.template = &template;
+    instr.resolved[0].kind = IDL_KIND_I64;
+    instr.resolved[0].value = value;
+    instr.resolved[0].value_size = 8;
+    instr.resolved_count = 1;
+
+    bool survivor = true;
+    assert(cs_display_renderer_run(&instr, 1, &survivor) == 0);
+    assert(strcmp(get_flat(1)->value, "-9223372036854775808") == 0);
+
+    cs_display_renderer_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 // A transaction-level field appended after a normal run becomes the last element.
 static void test_display_renderer_append(void) {
     printf("  test_display_renderer_append\n");
@@ -2776,6 +2891,10 @@ int main(void) {
     test_render_unit_suffix();
     test_render_unit_prefix();
     test_render_unit_no_symbol();
+    test_render_unit_signed_positive();
+    test_render_unit_signed_negative();
+    test_render_unit_signed_negative_prefix();
+    test_render_unit_signed_minimum();
     test_display_renderer_append();
     test_render_account_short_form();
     test_render_trusted_name_resolved();
