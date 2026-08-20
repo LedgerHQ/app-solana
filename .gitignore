@@ -26,3 +26,9 @@ tests/swap/.test_dependencies/app-exchange
 tests/swap/test_raw.py
 
 other_projects
+
+# Fuzzing
+fuzzing/build/
+.fuzz-artifacts/
+# Per-build Absolution invariant snapshot (machine-local; see the SDK fuzzing docs).
+fuzzing/invariants/fuzz_globals.zon

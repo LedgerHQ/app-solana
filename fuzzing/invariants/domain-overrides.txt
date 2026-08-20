@@ -1,0 +1,111 @@
+# Domain overrides for the Solana fuzzer.
+#
+# Constrain enum/state fields to valid values so Absolution explores
+# reachable state space efficiently.
+#
+# Format:
+#   GLOBAL.field = values \xHH [\xHH ...]   (enumerated byte values)
+#   GLOBAL.field = top                        (fully fuzzable)
+
+# ── G_command state machine ──────────────────────────────────────────
+# ApduState: Uninitialized=0, PayloadInProgress=1, PayloadComplete=2.
+
+# InstructionCode: all 13 defined opcodes.
+
+# BIP32 derivation framing.
+
+# Boolean/flag fields.
+
+# message_length: constrain to valid range so prefix doesn't seed OOB.
+
+# message_text_start: pointer into message[] — must be NULL (harness sets).
+
+# ── N_storage settings (NVRAM in real firmware) ──────────────────────
+
+# ── Swap flags (lib_standard_app globals) ────────────────────────────
+G_called_from_swap. = values \x00 \x01
+G_swap_response_ready. = values \x00 \x01
+
+# ── Preview state ────────────────────────────────────────────────────
+
+# ── Trusted info ─────────────────────────────────────────────────────
+
+# ── Dynamic token info ───────────────────────────────────────────────
+
+# ── Saved instruction descriptors ────────────────────────────────────
+# static in handle_provide_instruction_descriptor.c
+
+# ── Swap-validated block ─────────────────────────────────────────────
+G_swap_validated.initialized = values \x00 \x01
+G_swap_validated.swap_mode = values \x00 \x01 \x02
+G_swap_validated.decimals = values \x00 \x06 \x09
+# template_id must match the TLV descriptor's template_id for check_template_id()
+# to succeed.  Fully fuzzable lets Absolution align both sides.
+G_swap_validated.template_id = top
+
+# ── Challenge ─────────────────────────────────────────────────────────
+# Pinned to zero: TLV handlers check tlv_output.challenge == get_challenge().
+# With both sides fuzzable, the probability of a match is 1/2^32 (dead path).
+# Pinning to zero costs zero prefix bytes (single-value elimination) and
+# lets the TLV mutator produce matching values trivially — unlocking the
+# ENTIRE trusted-info and dynamic-descriptor post-PKI validation chain.
+challenge. = values \x00\x00\x00\x00
+
+# ── TLV mutator config (from tlv_mutator.h — let Absolution track it) ─
+
+# ── SDK mock toggles ─────────────────────────────────────────────────
+fuzz_mock_nbgl_reject. = values \x00 \x01
+fuzz_mock_crypto_fail. = values \x00 \x01
+
+# ── G_command: the APDU state machine, restored from the prefix ──
+# Every deep branch in the sign handlers is gated on state a previous APDU built:
+# the continuation path needs state == ApduStatePayloadInProgress with a matching
+# instruction, and delayed signing compares against a stored fingerprint. One APDU
+# per iteration can never pass those gates, so the prefix supplies the state
+# instead. Domains keep each restored state one a host could actually have
+# produced -- an out-of-range length or a stray enum is a crash with no bug.
+# ApduStatePayloadInProgress only: the other states make apdu.c reject the
+# continuation outright, and a first chunk overwrites this field anyway.
+G_command.state = values \x01
+# The instructions that carry a message; a continuation is rejected unless the
+# restored value equals the incoming one, so the other nine only waste draws.
+G_command.instruction = values \x03 \x06 \x08 \x09
+# apdu.c accepts exactly one path.
+G_command.num_derivation_paths = values \x01
+# read_derivation_path bounds this to [1, MAX_BIP32_PATH_LENGTH] and the policy
+# check needs at least two components.
+G_command.derivation_path_length = values \x02\x00\x00\x00 \x03\x00\x00\x00 \x04\x00\x00\x00 \x05\x00\x00\x00
+G_command.non_confirm = values \x00 \x01
+G_command.is_preview_mode = values \x00 \x01
+G_command.deprecated_host = values \x00 \x01
+G_command.user_input_is_ata_or_token_account = values \x00 \x01
+# int, and used as a length by the hash and compare paths: a negative or
+# oversized value is unreachable on device, so keep it plausible.
+# The app's view of how much message is present. Deliberately NOT derived from
+# sizeof(fuzz_msg_t) == 390: values below it truncate, values above it make the
+# parser read past what was written, and both are states a host can produce by
+# chunking. An int used as a length, so kept non-negative -- a negative value is
+# unreachable on device and would only manufacture crashes.
+G_command.message_length = values \x00\x00\x00\x00 \x45\x00\x00\x00 \x86\x00\x00\x00 \x86\x01\x00\x00 \x00\x02\x00\x00 \x58\x02\x00\x00
+# Out of the prefix: 15 KB of restored buffer made the prefix inert, and the payload
+# is where LLVMFuzzerMutate is dense and dictionary splices land.
+G_command.message = values \x00
+# Pointer into message[]; a fuzzed value is an immediate SEGV.
+G_command.message_text_start = values \x00\x00\x00\x00\x00\x00\x00\x00
+# Element-wise domain: each word draws from the components a Solana path is built
+# from, so read_derivation_path's 44'/501' policy is satisfiable by search rather
+# than by a 2^-64 coincidence. Little-endian in memory.
+G_command.derivation_path = values \x2C\x00\x00\x80 \xF5\x01\x00\x80 \x00\x00\x00\x80
+
+# ── Heap-held state, restored via the harness backing stores (mocks.c) ──
+# fuzz_state_present selects which of the three exist this iteration and carries
+# no override: only its low three bits are read, so the unconstrained byte
+# already reaches all eight combinations, including "nothing received yet".
+fuzz_backing_trusted_info.received = values \x00 \x01
+fuzz_backing_dynamic_token.received = values \x00 \x01
+fuzz_backing_dynamic_token.is_token_2022_kind = values \x00 \x01
+fuzz_backing_preview.initialized = values \x00 \x01
+# int used as a length by the delayed-sign compare.
+fuzz_backing_preview.message_length = values \x00\x00\x00\x00 \x40\x00\x00\x00 \x80\x00\x00\x00
+fuzz_backing_preview.derivation_path_length = values \x02\x00\x00\x00 \x03\x00\x00\x00 \x05\x00\x00\x00
+fuzz_backing_nvram.initialized = values \x00 \x01
