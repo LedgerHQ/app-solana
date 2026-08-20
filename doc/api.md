@@ -408,6 +408,11 @@ _This command provides the chain-attested state of one SPL or Token-2022 account
 its owner and its pre-transaction balance. Bound to a device challenge. Requires
 `STREAMING`._
 
+The mint and the owner are optional, so that an account which does not exist on chain yet can
+still be attested: it has neither, and the transaction's own `MINT_ASSOC` / `OWNER_ASSOC`
+bindings supply them. Such an account holds nothing, so a descriptor omitting either field
+must carry a zero pre-balance and is refused otherwise.
+
 ##### Command
 
 | _CLA_ | _INS_ | _P1_ | _P2_ |   _Lc_   |     _Le_ |

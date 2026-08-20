@@ -71,6 +71,35 @@ static void test_add_without_mint_and_owner(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
+// The two fields are omitted independently, so each one's flag has to answer for itself
+// rather than for the pair.
+static void test_add_with_one_field_omitted(void) {
+    printf("  test_add_with_one_field_omitted\n");
+    mock_mem_reset();
+    cs_token_account_cache_reset();
+
+    assert(cs_token_account_cache_add(ACCOUNT_A, MINT_A, NULL, 0) == 0);
+    assert(cs_token_account_cache_add(ACCOUNT_B, NULL, OWNER_B, 0) == 0);
+
+    const uint8_t zeroes[32] = {0};
+    const cs_token_account_t *mint_only = cs_token_account_cache_find(ACCOUNT_A);
+    assert(mint_only != NULL);
+    assert(mint_only->has_mint);
+    assert(memcmp(mint_only->mint, MINT_A, 32) == 0);
+    assert(!mint_only->has_owner);
+    assert(memcmp(mint_only->owner, zeroes, 32) == 0);
+
+    const cs_token_account_t *owner_only = cs_token_account_cache_find(ACCOUNT_B);
+    assert(owner_only != NULL);
+    assert(!owner_only->has_mint);
+    assert(memcmp(owner_only->mint, zeroes, 32) == 0);
+    assert(owner_only->has_owner);
+    assert(memcmp(owner_only->owner, OWNER_B, 32) == 0);
+
+    cs_token_account_cache_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
 // Distinct account keys must resolve to their own record (or miss).
 static void test_key_disambiguation(void) {
     printf("  test_key_disambiguation\n");
@@ -182,6 +211,7 @@ int main(void) {
     test_empty_cache();
     test_add_and_find();
     test_add_without_mint_and_owner();
+    test_add_with_one_field_omitted();
     test_key_disambiguation();
     test_duplicate_rejected();
     test_grows_past_old_cap();

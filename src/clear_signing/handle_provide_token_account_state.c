@@ -145,21 +145,21 @@ int handle_provide_token_account_state(void) {
         return reply_sw(ApduReplySolanaInvalidTokenAccountState);
     }
 
-    // Mint and owner are optional: an account that does not exist yet has neither, and the
-    // transaction itself is what derives them. Only such an account can be attested without
+    if (tlv_extracted.version != 1) {
+        PRINTF("Error: unsupported version %d\n", tlv_extracted.version);
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
+    }
+
+    // MINT and OWNER are optional: an account that does not exist yet has neither on chain,
+    // and the transaction is what derives them. Only such an account may be attested without
     // them, and it holds nothing, so any other pre-balance makes the descriptor malformed.
     bool has_mint = TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAS_TAG_MINT);
     bool has_owner = TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAS_TAG_OWNER);
     if ((!has_mint || !has_owner) && tlv_extracted.pre_balance != 0) {
-        PRINTF("Error: pre_balance %llu attested without mint (%d) and owner (%d)\n",
+        PRINTF("Error: pre_balance %llu attested with has_mint=%d has_owner=%d\n",
                tlv_extracted.pre_balance,
                has_mint,
                has_owner);
-        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
-    }
-
-    if (tlv_extracted.version != 1) {
-        PRINTF("Error: unsupported version %d\n", tlv_extracted.version);
         return reply_sw(ApduReplySolanaInvalidTokenAccountState);
     }
 
@@ -200,10 +200,18 @@ int handle_provide_token_account_state(void) {
     PRINTF("=== TOKEN ACCOUNT STATE ===\n");
     PRINTF("version         = %d\n", tlv_extracted.version);
     PRINTF("account_address = %.*H\n", PUBKEY_SIZE, tlv_extracted.account_address);
-    PRINTF("has_mint        = %d\n", has_mint);
-    PRINTF("mint            = %.*H\n", PUBKEY_SIZE, tlv_extracted.mint);
-    PRINTF("has_owner       = %d\n", has_owner);
-    PRINTF("owner           = %.*H\n", PUBKEY_SIZE, tlv_extracted.owner);
+    // An absent field holds nothing worth dumping: printing its zeroes would read like an
+    // attested key.
+    if (has_mint) {
+        PRINTF("mint            = %.*H\n", PUBKEY_SIZE, mint);
+    } else {
+        PRINTF("mint            = absent\n");
+    }
+    if (has_owner) {
+        PRINTF("owner           = %.*H\n", PUBKEY_SIZE, owner);
+    } else {
+        PRINTF("owner           = absent\n");
+    }
     PRINTF("pre_balance     = %llu\n", tlv_extracted.pre_balance);
 
     if (cs_token_account_cache_add(tlv_extracted.account_address,

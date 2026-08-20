@@ -478,6 +478,47 @@ def test_token_account_state_valid(backend):
     _wipe_session(sol)
 
 
+def test_token_account_state_without_mint_and_owner(backend):
+    """An account that does not exist on chain yet has neither mint nor owner, so a
+    descriptor attesting it carries only the zero pre-balance."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    sol.provide_token_account_state(
+        challenge=sol.get_challenge(),
+        account_address=b'\x11' * 32,
+        pre_balance=0,
+    )
+    _wipe_session(sol)
+
+
+@pytest.mark.parametrize("mint,owner", [
+    (None, b'\x33' * 32),
+    (b'\x22' * 32, None),
+    (None, None),
+])
+def test_token_account_state_omitted_field_needs_zero_pre_balance(backend, mint, owner):
+    """Either field may be omitted on its own, and each omission obliges a zero
+    pre-balance: an account with no on-chain state holds nothing."""
+    sol = SolanaClient(backend)
+    _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
+    sol.provide_token_account_state(
+        challenge=sol.get_challenge(),
+        account_address=b'\x11' * 32,
+        mint=mint,
+        owner=owner,
+        pre_balance=0,
+    )
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_token_account_state(
+            challenge=sol.get_challenge(),
+            account_address=b'\x12' * 32,
+            mint=mint,
+            owner=owner,
+            pre_balance=1,
+        )
+    assert exc_info.value.status == ErrorType.INVALID_TOKEN_ACCOUNT_STATE
+
+
 def test_token_account_state_bad_challenge(backend):
     sol = SolanaClient(backend)
     _begin_session(sol, _craft_single_instruction_message(sol, b'\x05' * 32, b'\x00'))
@@ -1450,6 +1491,35 @@ def _provide_chain(sol: SolanaClient, *, reset: bytes = None) -> None:
     _provide_chain_wrap(sol)
 
 
+def _craft_transfer_wrap_message(sol: SolanaClient) -> bytes:
+    """The same chain without its create step, so no instruction outside the junction
+    pair writes the junction. What vouches for the junction balance is then the only
+    thing deciding the collapse."""
+    sender = Pubkey.from_bytes(sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH))
+    signer_meta = AccountMeta(pubkey=sender, is_signer=True, is_writable=True)
+    junction_meta = AccountMeta(pubkey=Pubkey.from_bytes(CHAIN_JUNCTION),
+                                is_signer=False, is_writable=True)
+    mint_meta = AccountMeta(pubkey=Pubkey.from_bytes(CHAIN_MINT),
+                            is_signer=False, is_writable=False)
+
+    transfer = Instruction(
+        program_id=Pubkey.from_bytes(CHAIN_TRANSFER_PROGRAM_ID),
+        accounts=[signer_meta, junction_meta],
+        data=CHAIN_TRANSFER_DISCRIMINATOR + struct.pack("<Q", CHAIN_TRANSFER_AMOUNT),
+    )
+    wrap = Instruction(
+        program_id=Pubkey.from_bytes(CHAIN_WRAP_PROGRAM_ID),
+        accounts=[signer_meta, junction_meta, mint_meta],
+        data=CHAIN_WRAP_DISCRIMINATOR,
+    )
+    return sol.craft_tx([transfer, wrap], sender)
+
+
+def _provide_transfer_wrap(sol: SolanaClient) -> None:
+    _provide_chain_transfer(sol)
+    _provide_chain_wrap(sol)
+
+
 def test_cs_symbolic_junction_collapses(backend, sol, scenario_navigator, root_pytest_dir):
     """The create's ACCOUNT_RESET vouches for the junction starting empty, so the
     whole balance the wrap moves is exactly what the transfer put there. The wrap is
@@ -1567,6 +1637,97 @@ def test_cs_symbolic_junction_pre_balance_non_zero_shows_both(backend, sol,
                                     pre_balance=42)
     _provide_chain(sol, reset=_build_account_reset(account_index=CHAIN_SLOT_JUNCTION,
                                                   require_zero=True))
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_symbolic_junction_non_existing_ata_collapses(backend, sol, scenario_navigator,
+                                                         root_pytest_dir):
+    """The junction account does not exist on chain yet, so its attested state carries
+    neither mint nor owner. The zero pre-balance is all REQUIRE_PRE_BALANCE_ZERO needs,
+    so the collapse stands."""
+    _begin_session(sol, _craft_chain_message(sol))
+    sol.provide_token_account_state(challenge=sol.get_challenge(),
+                                    account_address=CHAIN_JUNCTION,
+                                    pre_balance=0)
+    _provide_chain(sol, reset=_build_account_reset(account_index=CHAIN_SLOT_JUNCTION,
+                                                  require_zero=True))
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_symbolic_junction_attested_empty_collapses(backend, sol, scenario_navigator,
+                                                      root_pytest_dir):
+    """An attested zero pre-balance vouches for the junction on its own: the chain says
+    the account held nothing before the transaction, which is what a reset would have had
+    to establish. Nothing outside the pair writes the junction here, so the collapse
+    stands with no ACCOUNT_RESET declared at all."""
+    _begin_session(sol, _craft_transfer_wrap_message(sol))
+    sol.provide_token_account_state(challenge=sol.get_challenge(),
+                                    account_address=CHAIN_JUNCTION,
+                                    pre_balance=0)
+    _provide_transfer_wrap(sol)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_symbolic_junction_attested_non_empty_shows_both(backend, sol, scenario_navigator,
+                                                            root_pytest_dir):
+    """The same pair with a non-zero attested pre-balance: the junction already held
+    value no instruction accounts for, so nothing vouches for it and both instructions
+    are reviewed."""
+    _begin_session(sol, _craft_transfer_wrap_message(sol))
+    sol.provide_token_account_state(challenge=sol.get_challenge(),
+                                    account_address=CHAIN_JUNCTION,
+                                    mint=CHAIN_MINT,
+                                    owner=sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH),
+                                    pre_balance=42)
+    _provide_transfer_wrap(sol)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_symbolic_junction_no_attestation_shows_both(backend, sol, scenario_navigator,
+                                                        root_pytest_dir):
+    """The same pair with no TOKEN_ACCOUNT_STATE at all, which is what isolates the
+    attestation as the reason the two tests above differ."""
+    _begin_session(sol, _craft_transfer_wrap_message(sol))
+    _provide_transfer_wrap(sol)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_symbolic_junction_attestation_does_not_excuse_the_writer(backend, sol,
+                                                                     scenario_navigator,
+                                                                     root_pytest_dir):
+    """The attestation vouches for the account, but the create instruction still writes
+    it and only a reset an instruction declares itself excuses its own write. The create
+    therefore remains an unaccounted depositor and all three instructions are reviewed."""
+    _begin_session(sol, _craft_chain_message(sol))
+    sol.provide_token_account_state(challenge=sol.get_challenge(),
+                                    account_address=CHAIN_JUNCTION,
+                                    pre_balance=0)
+    _provide_chain(sol)
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():
@@ -2291,6 +2452,60 @@ def test_token_amount_mint_assoc_priority_over_tas(backend, sol, scenario_naviga
         account_address=token_account,
         mint=SOL.USDC_MINT_PUBLIC_KEY,  # deliberately different; must be ignored
         owner=b'\x33' * 32,
+        pre_balance=0,
+    )
+
+    display_field = _build_token_amount_field_with_token(
+        BRIDGE_PATH_U64, "Amount",
+        token_source=VALUE_SOURCE_ACCOUNT_PATH, token_payload=bytes([1]))
+    substructures_hash = hashlib.sha256(display_field).digest()
+
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=substructures_hash,
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+        mint_assoc_account=1,
+        mint_assoc_mint=2,
+    )
+
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    rapdu = sol.finalize_generic_clear_signing()
+    assert rapdu.status == 0x9000
+
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_token_amount_mint_assoc_covers_attested_state_without_mint(backend, sol,
+                                                                    scenario_navigator,
+                                                                    root_pytest_dir):
+    """The token account does not exist on chain yet, so its attested state names no mint.
+    The device must not read the absent field as a mint of its own: the MINT_ASSOC binding
+    the transaction carries is what resolves the ticker, and 'GORK' is shown."""
+    token_account = bytes(Pubkey.from_string("BmDpgEq8fViLCYVfrJFwsivyMfgGL7g95NivUWqJjAnz"))
+    mint_account = SOL.GORK_MINT_PUBLIC_KEY
+    message = _craft_instruction_with_accounts(
+        sol,
+        BRIDGE_PROGRAM_ID,
+        _bridge_instruction_data(1000, 1_500_000),
+        extra_accounts=[token_account, mint_account],
+    )
+    _begin_session(sol, message)
+
+    sol.provide_dynamic_token(ticker="GORK", magnitude=6, is_token_2022=False,
+                              mint_address=SOL.GORK_MINT_ADDRESS)
+
+    sol.provide_token_account_state(
+        challenge=sol.get_challenge(),
+        account_address=token_account,
         pre_balance=0,
     )
 

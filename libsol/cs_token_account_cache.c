@@ -51,8 +51,8 @@ int cs_token_account_cache_add(const uint8_t account_address[PUBKEY_SIZE],
         return -1;
     }
     memcpy(slot->account_address, account_address, PUBKEY_SIZE);
-    // An omitted mint or owner leaves the zeroed field behind its flag, so no reader can
-    // mistake the placeholder for an attested key.
+    // The calloc left every absent field zeroed, so raising the flag is what marks a copied
+    // key apart from that placeholder.
     if (mint != NULL) {
         memcpy(slot->mint, mint, PUBKEY_SIZE);
         slot->has_mint = true;

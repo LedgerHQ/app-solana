@@ -27,8 +27,9 @@ enum cs_merge_rule {
 // guard needs from it.
 typedef struct safe_account_s {
     const uint8_t *account;
-    // Instruction that declared the reset. The guard needs it twice: to check the reset
-    // precedes the junction, and to exempt that instruction's own write of the account.
+    // Instruction that declared the reset, or ATTESTED_DECLARER_INDEX. The guard needs it
+    // twice: to check the reset precedes the junction, and to exempt that instruction's own
+    // write of the account.
     size_t declarer_index;
     // Restricts which consumer may rely on the reset. NULL admits any consumer.
     const cs_reset_scope_t *scope;
@@ -486,6 +487,21 @@ static bool consumed_is_symmetric(const cs_instruction_result_t *consumed) {
 // Known balances and the safe-account set
 // ============================================================================
 
+// Whether one cached token account state says its account held nothing when the transaction
+// began, which is what a reset otherwise has to establish. A NULL state is a descriptor the
+// host never sent, and one it withheld attests nothing.
+static bool attested_state_declares_empty_account(const cs_token_account_t *state) {
+    if (state == NULL) {
+        PRINTF("attested_state_declares_empty_account: no attested state\n");
+        return false;
+    }
+    if (state->pre_balance != 0) {
+        PRINTF("attested_state_declares_empty_account: attested pre-balance is not zero\n");
+        return false;
+    }
+    return true;
+}
+
 // Whether a reset's preconditions hold, and so whether the engine may believe the
 // balance it declares.
 static bool reset_is_applicable(const cs_account_reset_t *reset,
@@ -494,23 +510,20 @@ static bool reset_is_applicable(const cs_account_reset_t *reset,
         PRINTF("reset_is_applicable: unresolved reset account\n");
         return false;
     }
-    // Without this flag the instruction cannot silently succeed on an existing account,
-    // so its reset needs nothing corroborated.
+    bool applicable = false;
     if (!reset->require_pre_balance_zero) {
-        return true;
+        // Without this flag the instruction cannot silently succeed on an existing account,
+        // so its reset needs nothing corroborated.
+        PRINTF("reset_is_applicable: reset corroborates nothing, it applies\n");
+        applicable = true;
+    } else {
+        // The streaming contract requires an attested state for every such reset, and it has
+        // to say the account was empty or the instruction may have left a balance behind.
+        applicable =
+            attested_state_declares_empty_account(cs_token_account_cache_find(resolved->account));
+        PRINTF("reset_is_applicable: pre-balance-zero reset applies=%d\n", applicable);
     }
-    // An absent descriptor is indistinguishable from one the host withheld, so it
-    // attests nothing. The streaming contract requires one for every such reset.
-    const cs_token_account_t *state = cs_token_account_cache_find(resolved->account);
-    if (state == NULL) {
-        PRINTF("reset_is_applicable: no attested state for a pre-balance-zero reset\n");
-        return false;
-    }
-    if (state->pre_balance != 0) {
-        PRINTF("reset_is_applicable: attested pre-balance is not zero\n");
-        return false;
-    }
-    return true;
+    return applicable;
 }
 
 // Read out the balance a reset declares for its account.
@@ -590,11 +603,12 @@ static void known_balance_set(merge_scratch_t *scratch,
 static void seed_attested_empty_balances(merge_scratch_t *scratch) {
     for (size_t i = 0; i < cs_token_account_cache_count(); i++) {
         const cs_token_account_t *state = cs_token_account_cache_at(i);
-        if (state == NULL || state->pre_balance != 0) {
+        if (!attested_state_declares_empty_account(state)) {
+            PRINTF("seed_attested_empty_balances: state %d starts no account empty\n", (int) i);
             continue;
         }
         // The cache outlives the merge run, so its storage backs the borrowed account
-        // pointer just as the walked transaction backs an instruction's own.
+        // pointer the map keeps.
         PRINTF("seed_attested_empty_balances: attested state %d starts its account empty\n",
                (int) i);
         known_balance_set(scratch,
@@ -713,12 +727,12 @@ static bool reset_establishes_empty_account(const cs_resolved_reset_t *resolved)
 static void add_attested_safe_accounts(merge_scratch_t *scratch) {
     for (size_t i = 0; i < cs_token_account_cache_count(); i++) {
         const cs_token_account_t *state = cs_token_account_cache_at(i);
-        if (state == NULL || state->pre_balance != 0) {
+        if (!attested_state_declares_empty_account(state)) {
+            PRINTF("add_attested_safe_accounts: state %d vouches for nothing\n", (int) i);
             continue;
         }
-        // The chain itself says the account held nothing before the transaction, which is
-        // what a reset has to establish. That holds from before the first instruction and
-        // for every consumer, so the entry precedes any junction and carries no scope.
+        // The attestation holds from before the first instruction and for every consumer, so
+        // the entry precedes any junction and carries no scope.
         scratch->safe_accounts[scratch->safe_account_count].account = state->account_address;
         scratch->safe_accounts[scratch->safe_account_count].declarer_index =
             ATTESTED_DECLARER_INDEX;
@@ -2149,8 +2163,7 @@ static size_t attested_empty_account_count(void) {
     // account and starts it on one known balance.
     size_t total = 0;
     for (size_t i = 0; i < cs_token_account_cache_count(); i++) {
-        const cs_token_account_t *state = cs_token_account_cache_at(i);
-        if (state != NULL && state->pre_balance == 0) {
+        if (attested_state_declares_empty_account(cs_token_account_cache_at(i))) {
             total++;
         }
     }
@@ -2173,8 +2186,8 @@ static size_t max_port_count(const cs_instruction_result_t *walked_instructions,
 }
 
 // Allocate the merge scratch: per-instruction state with its own chain history, the
-// safe-account set and the known-balance map. Returns 0, -1 on allocation failure
-// (the caller frees whatever was allocated).
+// safe-account set and the known-balance map, the last two holding `map_capacity` entries
+// each. Returns 0, -1 on allocation failure (the caller frees whatever was allocated).
 static int merge_scratch_allocate(merge_scratch_t *scratch, size_t count, size_t map_capacity) {
     // The histories are one block rather than an allocation each, so freeing cannot
     // half-succeed and the state array can be handed out with slices already pointing
@@ -2196,7 +2209,7 @@ static int merge_scratch_allocate(merge_scratch_t *scratch, size_t count, size_t
                                              map_capacity * sizeof(*scratch->safe_accounts)) ||
                              !APP_MEM_CALLOC((void **) &scratch->known_balances,
                                              map_capacity * sizeof(*scratch->known_balances)))) {
-        PRINTF("merge_scratch_allocate: reset map allocation failed\n");
+        PRINTF("merge_scratch_allocate: safe-account or known-balance map allocation failed\n");
         return -1;
     }
     return 0;

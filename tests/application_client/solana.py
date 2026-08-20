@@ -502,15 +502,19 @@ class SolanaClient:
     def provide_token_account_state(self,
                                     challenge: bytes,
                                     account_address: bytes,
-                                    mint: bytes,
-                                    owner: bytes,
-                                    pre_balance: int):
+                                    pre_balance: int,
+                                    mint: bytes = None,
+                                    owner: bytes = None):
+        """MINT and OWNER are optional: an account that does not exist on chain yet has
+        neither, and the device then requires a zero PRE_BALANCE."""
         payload = format_tlv(TokenAccountStateTag.STRUCT_TYPE, 0x15)
         payload += format_tlv(TokenAccountStateTag.STRUCT_VERSION, 1)
         payload += format_tlv(TokenAccountStateTag.CHALLENGE, challenge)
         payload += format_tlv(TokenAccountStateTag.ACCOUNT_ADDRESS, account_address)
-        payload += format_tlv(TokenAccountStateTag.MINT, mint)
-        payload += format_tlv(TokenAccountStateTag.OWNER, owner)
+        if mint is not None:
+            payload += format_tlv(TokenAccountStateTag.MINT, mint)
+        if owner is not None:
+            payload += format_tlv(TokenAccountStateTag.OWNER, owner)
         payload += format_tlv(TokenAccountStateTag.PRE_BALANCE, pre_balance)
         payload += format_tlv(TokenAccountStateTag.SIGNATURE,
                               TRUSTED_NAME_PARTNER.sign(payload))
