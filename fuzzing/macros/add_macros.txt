@@ -1,0 +1,5 @@
+# Fuzz-only defines NOT already produced by the app Makefile (`make list-defines`).
+# Production-enabled flags (HAVE_SWAP, HAVE_LEDGER_PKI, HAVE_NBGL, ...) arrive from
+# there automatically, so do not duplicate them here.
+HAVE_TLV_LIBRARY
+IO_SEPROXYHAL_BUFFER_SIZE_B=260

@@ -1,0 +1,66 @@
+# App-local symbols to zero out in the invariant (one per line).
+# These are merged with the framework's default SDK/NBGL zero list.
+
+# ── Pointer globals (random = ASAN crash) ────────────────────────────
+G_swap_signing_return_value_address
+
+# ── App-side scratch buffers (no cross-iteration meaning) ────────────
+G_publicKey@handle_get_pubkey.c
+G_publicKeyStr
+
+# ── Transaction summary (always zeroed by transaction_summary_reset at
+# handler entry — 608 prefix bytes wasted on content that gets wiped) ──
+G_transaction_summary@transaction_summary.c
+
+# ── UX step counters (pure UI state, no handler branches) ────────────
+ux_step
+ux_step_count
+
+# ── UI state (excluded from build, but zero if symbols appear) ───────
+
+# ── libsol display scratch ───────────────────────────────────────────
+G_transaction_summary_title
+G_transaction_summary_text
+
+# ── SDK crypto workspace ─────────────────────────────────────────────
+G_cx
+
+# ── SDK IO/UX state (large, no handler branches) ────────────────────
+
+# ── USB/BLE/NFC infrastructure ──────────────────────────────────────
+G_io_u2f
+io_os_legacy_apdu_type
+need_to_start_io
+ble_ledger_init_data
+ep_in_stall_status
+ep_out_stall_status
+usbd_bcdusb
+usbd_vid
+usbd_pid
+usbd_desc_product_str_len
+usbd_iad
+usbd_ledger_descriptor_size
+ledger_hid_u2f_settings
+ledger_hid_free_cid
+
+# ── NBGL layout pools ───────────────────────────────────────────────
+nbTicks
+pos
+
+# ── BSS markers ─────────────────────────────────────────────────────
+_bss
+_ebss
+
+# ── Heap-allocated pointer globals (8 bytes each; random = immediate crash) ──
+# Freed and re-NULLed each iteration by fuzz_app_reset(); the app reaches them
+# only after its own APP_MEM_CALLOC, so the fuzzer must never author the pointer.
+G_preview_state
+g_trusted_info
+g_dynamic_token_info
+G_saved_descriptors@handle_provide_instruction_descriptor.c
+
+# ── Written before use, so fuzzing them only inflates the prefix ──
+# mem_buffer is the APP_MEM pool's backing store, re-initialised by
+# app_mem_init() every iteration; heap bytes the fuzzer authored would be read
+# back as chunk headers.
+mem_buffer@mem_utils.c

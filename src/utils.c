@@ -73,8 +73,11 @@ int read_derivation_path(const uint8_t *data_buffer,
     }
 
     for (size_t i = 0; i < len; i++) {
-        derivation_path[i] = ((data_buffer[0] << 24u) | (data_buffer[1] << 16u) |
-                              (data_buffer[2] << 8u) | (data_buffer[3]));
+        // Cast before shifting: uint8_t promotes to int, so a hardened component
+        // (high bit set, which every Solana path has) overflows a signed shift.
+        derivation_path[i] = (((uint32_t) data_buffer[0] << 24) |
+                              ((uint32_t) data_buffer[1] << 16) | ((uint32_t) data_buffer[2] << 8) |
+                              ((uint32_t) data_buffer[3]));
         data_buffer += 4;
     }
 

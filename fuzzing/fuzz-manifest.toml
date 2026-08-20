@@ -1,0 +1,156 @@
+[target]
+fuzzer = "fuzz_app"
+harness_version = "1"
+
+[coverage]
+key_files = [
+    "src/apdu.c",
+    "src/handle_get_pubkey.c",
+    "src/handle_get_challenge.c",
+    "src/handle_sign_message.c",
+    "src/handle_sign_message_preview.c",
+    "src/handle_sign_offchain_message.c",
+    "src/handle_provide_instruction_descriptor.c",
+    "src/handle_provide_trusted_info.c",
+    "src/handle_provide_dynamic_descriptor.c",
+    "src/dynamic_token_info.c",
+    "src/trusted_info.c",
+    "src/ed25519_helpers.c",
+    "src/utils.c",
+    "src/swap/handle_check_address.c",
+    "src/swap/handle_get_printable_amount.c",
+    "src/swap/handle_swap_sign_transaction.c",
+    "libsol/parser.c",
+    "libsol/message.c",
+    "libsol/instruction.c",
+    "libsol/print_config.c",
+    "libsol/printer.c",
+    "libsol/stake_instruction.c",
+    "libsol/spl_token_instruction.c",
+    "libsol/spl_token2022_instruction.c",
+    "libsol/spl_associated_token_account_instruction.c",
+    "libsol/spl_memo_instruction.c",
+    "libsol/system_instruction.c",
+    "libsol/vote_instruction.c",
+    "libsol/compute_budget_instruction.c",
+    "libsol/serum_assert_owner_instruction.c",
+    "libsol/offchain_message_signing.c",
+    "libsol/rfc3339.c",
+    "libsol/string_utils.c",
+]
+exclude_regexes = [
+    '.*ledger-secure-sdk.*',
+    '.*fuzz_dispatcher\.c',
+    '.*fuzzer\.c',
+    '.*fuzzing/mock/.*',
+    '.*fuzzing-libsol-legacy/.*',
+    '.*libsol/.*_test\.c',
+    '.*libsol/mock/.*',
+    '.*src/main_application\.c',
+    '.*src/ui/.*',
+]
+
+[dictionary]
+tokens = [
+    # Well-known 32-byte program ids and sysvars. instruction_program_id()
+    # memcmp's all 32 bytes, so random mutation cannot produce these: they
+    # are the gate in front of every per-program parser.
+    { name = "system_program_id", value = "\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00" },
+    { name = "spl_token_program_id", value = "\\x06\\xDD\\xF6\\xE1\\xD7\\x65\\xA1\\x93\\xD9\\xCB\\xE1\\x46\\xCE\\xEB\\x79\\xAC\\x1C\\xB4\\x85\\xED\\x5F\\x5B\\x37\\x91\\x3A\\x8C\\xF5\\x85\\x7E\\xFF\\x00\\xA9" },
+    { name = "spl_token2022_program_id", value = "\\x06\\xDD\\xF6\\xE1\\xEE\\x75\\x8F\\xDE\\x18\\x42\\x5D\\xBC\\xE4\\x6C\\xCD\\xDA\\xB6\\x1A\\xFC\\x4D\\x83\\xB9\\x0D\\x27\\xFE\\xBD\\xF9\\x28\\xD8\\xA1\\x8B\\xFC" },
+    { name = "stake_program_id", value = "\\x06\\xA1\\xD8\\x17\\x91\\x37\\x54\\x2A\\x98\\x34\\x37\\xBD\\xFE\\x2A\\x7A\\xB2\\x55\\x7F\\x53\\x5C\\x8A\\x78\\x72\\x2B\\x68\\xA4\\x9D\\xC0\\x00\\x00\\x00\\x00" },
+    { name = "vote_program_id", value = "\\x07\\x61\\x48\\x1D\\x35\\x74\\x74\\xBB\\x7C\\x4D\\x76\\x24\\xEB\\xD3\\xBD\\xB3\\xD8\\x35\\x5E\\x73\\xD1\\x10\\x43\\xFC\\x0D\\xA3\\x53\\x80\\x00\\x00\\x00\\x00" },
+    { name = "spl_ata_program_id", value = "\\x8C\\x97\\x25\\x8F\\x4E\\x24\\x89\\xF1\\xBB\\x3D\\x10\\x29\\x14\\x8E\\x0D\\x83\\x0B\\x5A\\x13\\x99\\xDA\\xFF\\x10\\x84\\x04\\x8E\\x7B\\xD8\\xDB\\xE9\\xF8\\x59" },
+    { name = "spl_memo_program_id", value = "\\x05\\x4A\\x53\\x5A\\x99\\x29\\x21\\x06\\x4D\\x24\\xE8\\x71\\x60\\xDA\\x38\\x7C\\x7C\\x35\\xB5\\xDD\\xBC\\x92\\xBB\\x81\\xE4\\x1F\\xA8\\x40\\x41\\x05\\x44\\x8D" },
+    { name = "compute_budget_program_id", value = "\\x03\\x06\\x46\\x6F\\xE5\\x21\\x17\\x32\\xFF\\xEC\\xAD\\xBA\\x72\\xC3\\x9B\\xE7\\xBC\\x8C\\xE5\\xBB\\xC5\\xF7\\x12\\x6B\\x2C\\x43\\x9B\\x3A\\x40\\x00\\x00\\x00" },
+    { name = "serum_assert_owner_id", value = "\\x31\\xCA\\xDC\\xE2\\xAA\\x36\\xEC\\x04\\x60\\x46\\x83\\xEA\\xA6\\xF1\\x36\\x2C\\x32\\x9E\\x11\\x91\\x04\\x28\\x42\\xA0\\x4E\\x09\\xB8\\x2B\\x75\\x9F\\xB3\\x24" },
+    { name = "serum_assert_owner_phantom_id", value = "\\xBB\\xDA\\x27\\xBC\\x25\\x19\\xCB\\xBE\\xD7\\xD4\\x6F\\x6B\\x19\\x77\\x2F\\xE7\\x1D\\x72\\xF3\\x79\\x94\\x6C\\x56\\x9E\\x7D\\x85\\x0E\\xCA\\x3C\\x71\\x1D\\x31" },
+    { name = "sysvar_rent_id", value = "\\x06\\xA7\\xD5\\x17\\x19\\x2C\\x5C\\x51\\x21\\x8C\\xC9\\x4C\\x3D\\x4A\\xF1\\x7F\\x58\\xDA\\xEE\\x08\\x9B\\xA1\\xFD\\x44\\xE3\\xDB\\xD9\\x8A\\x00\\x00\\x00\\x00" },
+
+    # Instruction discriminators, little-endian u32. The low indices are shared
+    # by the system, stake and vote programs, so one entry per value serves
+    # all three.
+    { name = "sys_ins_create_account", value = "\\x00\\x00\\x00\\x00" },
+    { name = "sys_ins_assign", value = "\\x01\\x00\\x00\\x00" },
+    { name = "sys_ins_transfer", value = "\\x02\\x00\\x00\\x00" },
+    { name = "sys_ins_create_with_seed", value = "\\x03\\x00\\x00\\x00" },
+    { name = "sys_ins_advance_nonce", value = "\\x04\\x00\\x00\\x00" },
+    { name = "sys_ins_withdraw_nonce", value = "\\x05\\x00\\x00\\x00" },
+    { name = "sys_ins_init_nonce", value = "\\x06\\x00\\x00\\x00" },
+    { name = "sys_ins_authorize_nonce", value = "\\x07\\x00\\x00\\x00" },
+    { name = "sys_ins_allocate", value = "\\x08\\x00\\x00\\x00" },
+    { name = "sys_ins_transfer_with_seed", value = "\\x0B\\x00\\x00\\x00" },
+    { name = "sys_ins_upgrade_nonce", value = "\\x0C\\x00\\x00\\x00" },
+
+    # Message header shape: num_required_sigs, num_readonly_signed,
+    # num_readonly_unsigned.
+    { name = "msg_hdr_1sig_0ro_0roRO", value = "\\x01\\x00\\x00" },
+    { name = "msg_hdr_1sig_0ro_1ro", value = "\\x01\\x00\\x01" },
+    { name = "msg_hdr_1sig_1ro_1ro", value = "\\x01\\x01\\x01" },
+
+    # BIP32 path framing: u8 component count then big-endian words.
+    { name = "bip32_sol_m44h501h0h_0h_0h", value = "\\x05\\x80\\x00\\x00\\x2C\\x80\\x00\\x01\\xF5\\x80\\x00\\x00\\x00\\x80\\x00\\x00\\x00\\x80\\x00\\x00\\x00" },
+
+    # TLV tag+length pairs, ProvideInstructionDescriptor.
+    { name = "tlv_desc_struct_type",          value = "\\x01\\x01" },
+    { name = "tlv_desc_version",              value = "\\x02\\x01" },
+    { name = "tlv_desc_chain_id",             value = "\\x23\\x08" },
+    { name = "tlv_desc_template_id",          value = "\\x90\\x08" },
+    { name = "tlv_desc_program_id",           value = "\\x91\\x20" },
+    { name = "tlv_desc_discriminator",        value = "\\x92\\x08" },
+    { name = "tlv_desc_amount_size",          value = "\\x93\\x01" },
+    { name = "tlv_desc_amount_offset",        value = "\\x94\\x01" },
+    { name = "tlv_desc_amount_rules",         value = "\\x95\\x01" },
+    { name = "tlv_desc_asset_account_idx",    value = "\\x96\\x01" },
+    { name = "tlv_desc_asset_ata_idx",        value = "\\x97\\x01" },
+    { name = "tlv_desc_recipient_account_idx",value = "\\x98\\x01" },
+    { name = "tlv_desc_recipient_ata_idx",    value = "\\x99\\x01" },
+    { name = "tlv_desc_der_signature",        value = "\\x15\\x46" },
+
+    # TLV tag+length pairs, ProvideInfo (trusted name).
+    { name = "tlv_tn_name_type",         value = "\\x70\\x01" },
+    { name = "tlv_tn_name_source",       value = "\\x71\\x01" },
+    { name = "tlv_tn_trusted_name",      value = "\\x20\\x20" },
+    { name = "tlv_tn_address",           value = "\\x22\\x20" },
+    { name = "tlv_tn_nft_id",            value = "\\x72\\x20" },
+    { name = "tlv_tn_source_contract",   value = "\\x73\\x20" },
+    { name = "tlv_tn_challenge",         value = "\\x12\\x04" },
+    { name = "tlv_tn_not_valid_after",   value = "\\x10\\x03" },
+    { name = "tlv_tn_signer_key_id",     value = "\\x13\\x01" },
+    { name = "tlv_tn_signer_algorithm",  value = "\\x14\\x01" },
+
+    # TLV tag+length pairs, ProvideDynamicDescriptor and its TUID sub-TLV.
+    { name = "tlv_dd_coin_type",      value = "\\x03\\x04" },
+    { name = "tlv_dd_app_name",       value = "\\x04\\x06" },
+    { name = "tlv_dd_ticker",         value = "\\x05\\x04" },
+    { name = "tlv_dd_magnitude",      value = "\\x06\\x01" },
+    { name = "tlv_dd_tuid",           value = "\\x07\\x20" },
+    { name = "tlv_dd_signature",      value = "\\x08\\x40" },
+    { name = "tlv_tuid_token_type",   value = "\\x10\\x01" },
+    { name = "tlv_tuid_mint_addr",    value = "\\x11\\x20" },
+    { name = "tlv_tuid_ext_code",     value = "\\x12\\x01" },
+
+    # Field values a handler compares against a fixed constant.
+    { name = "stake_ins_initialize_checked", value = "\\x09\\x00\\x00\\x00" },
+    { name = "stake_ins_authorize_checked", value = "\\x0A\\x00\\x00\\x00" },
+    { name = "coin_type_solana", value = "\\x00\\x00\\x01\\xF5" },
+    { name = "coin_type_solana_h", value = "\\x80\\x00\\x01\\xF5" },
+    { name = "app_name_solana", value = "Solana" },
+    { name = "chain_id_900", value = "\\x00\\x00\\x00\\x00\\x00\\x00\\x03\\x84" },
+    { name = "chain_id_901", value = "\\x00\\x00\\x00\\x00\\x00\\x00\\x03\\x85" },
+    { name = "offchain_sig_header", value = "\\xFF\\x73\\x6F\\x6C\\x61\\x6E\\x61\\x20\\x6F\\x66\\x66\\x63\\x68\\x61\\x69\\x6E" },
+]
+
+[seeds]
+cla = 0xE0
+ins = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x16, 0x20, 0x21, 0x22]
+
+[seeds.generic]
+enabled = true
+
+[seeds.custom]
+enabled = true
+script = "fuzzing/scripts/generate_custom_seeds.py"
+
+[mocks]
+override_sources = []
