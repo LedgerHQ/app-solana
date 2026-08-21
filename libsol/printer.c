@@ -62,6 +62,24 @@ int print_token_amount(uint64_t amount,
     return 0;
 }
 
+int print_signed_token_amount(int64_t amount,
+                              const char *const asset,
+                              uint8_t decimals,
+                              char *out,
+                              size_t out_length) {
+    BAIL_IF(out_length < 1);
+    uint64_t magnitude = (uint64_t) amount;
+    if (amount < 0) {
+        // Negating INT64_MIN overflows the signed domain, so the two's complement is taken in
+        // the unsigned one, where the magnitude is representable.
+        magnitude = (magnitude ^ 0xffffffffffffffff) + 1;
+        out[0] = '-';
+        out++;
+        out_length--;
+    }
+    return print_token_amount(magnitude, asset, decimals, out, out_length);
+}
+
 int print_amount(uint64_t amount, char *out, size_t out_length) {
     return print_token_amount(amount, "SOL", SOL_DECIMALS, out, out_length);
 }

@@ -75,6 +75,7 @@ IDL_KIND_U8 = 0x01
 IDL_KIND_U32 = 0x03
 IDL_KIND_U64 = 0x04
 IDL_KIND_U128 = 0x05
+IDL_KIND_I32 = 0x08
 IDL_KIND_I64 = 0x09
 IDL_KIND_I128 = 0x0A
 IDL_KIND_F32 = 0x0B
@@ -3684,6 +3685,68 @@ def test_typed_unit_suffix(backend, sol, scenario_navigator, root_pytest_dir):
 
     display_field = _build_unit_display_field(TYPED_PATH_U32, "Rate", symbol="%", decimals=2)
     _provide_typed_info(sol, hashlib.sha256(display_field).digest())
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_typed_unit_signed_negative(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_UNIT over a signed i32 leaf: -1250 scaled by 2 decimals -> '-12.5 %'."""
+    program_id = b'\x0b' * 32
+    discriminator = b'\x0b'
+    # Pool: STRUCT(2 fields) = [BYTES_FIXED(disc), I32].
+    pool = bytes([3, 0x20, 2, 1, 2, 0x12, 0x00, 0x01, IDL_KIND_I32])
+    path_i32 = b'\x01\x01'
+
+    message = _craft_single_instruction_message(
+        sol, program_id, discriminator + struct.pack("<i", -1250))
+    _begin_session(sol, message)
+
+    display_field = _build_unit_display_field(path_i32, "Rate", symbol="%", decimals=2)
+    sol.provide_instruction_info(
+        program_id=program_id,
+        discriminator=discriminator,
+        operation_type="Transfer",
+        program_name="Typed",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=pool,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_typed_unit_signed_negative_prefix(backend, sol, scenario_navigator, root_pytest_dir):
+    """PARAM_UNIT with a prefixed symbol keeps the symbol ahead of the sign: '$ -42'."""
+    program_id = b'\x0c' * 32
+    discriminator = b'\x0c'
+    # Pool: STRUCT(2 fields) = [BYTES_FIXED(disc), I64].
+    pool = bytes([3, 0x20, 2, 1, 2, 0x12, 0x00, 0x01, IDL_KIND_I64])
+    path_i64 = b'\x01\x01'
+
+    message = _craft_single_instruction_message(
+        sol, program_id, discriminator + struct.pack("<q", -42))
+    _begin_session(sol, message)
+
+    display_field = _build_unit_display_field(path_i64, "Price", symbol="$", prefix=True)
+    sol.provide_instruction_info(
+        program_id=program_id,
+        discriminator=discriminator,
+        operation_type="Transfer",
+        program_name="Typed",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=pool,
+        idl_root_type=0,
+    )
     sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
 
     assert sol.finalize_generic_clear_signing().status == 0x9000

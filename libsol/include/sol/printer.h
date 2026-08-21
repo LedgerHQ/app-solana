@@ -20,6 +20,13 @@ int print_token_amount(uint64_t amount,
                        char *out,
                        size_t out_length);
 
+// Render a decimal-scaled amount held in a signed integer, sign included.
+int print_signed_token_amount(int64_t amount,
+                              const char *asset,
+                              uint8_t decimals,
+                              char *out,
+                              size_t out_length);
+
 int print_amount(uint64_t amount, char *out, size_t out_length);
 
 int print_i64(int64_t i64, char *out, size_t out_length);

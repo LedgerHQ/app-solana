@@ -966,15 +966,12 @@ static int format_datetime(const idl_resolved_leaf_t *leaf,
     return 0;
 }
 
-// PARAM_UNIT: a numeric value scaled by decimals with a symbol affixed. The caller sized
-// value_out for the number plus the symbol, so the number is rendered in place and the
-// symbol appended or shifted in, keeping the render step free of its own allocation.
+// PARAM_UNIT: a numeric value scaled by decimals with a symbol affixed.
 static int format_unit(const idl_resolved_leaf_t *leaf,
                        const cs_format_unit_t *unit,
                        char *value_out,
                        size_t value_out_size) {
-    uint64_t amount;
-    size_t sign_size = 0;
+    int status;
 
     if (is_signed_int_kind(leaf->kind)) {
         int64_t signed_value;
@@ -982,52 +979,44 @@ static int format_unit(const idl_resolved_leaf_t *leaf,
             PRINTF("format_unit: signed read failed\n");
             return -1;
         }
-        if (signed_value < 0) {
-            PRINTF("format_unit: negative value, prepending its sign\n");
-            // The magnitude is built in the unsigned domain, where INT64_MIN is representable.
-            amount = (uint64_t) (-(signed_value + 1)) + 1;
-            value_out[0] = '-';
-            sign_size = 1;
-        } else {
-            amount = (uint64_t) signed_value;
-        }
+        status = print_signed_token_amount(signed_value,
+                                           NULL,
+                                           unit->decimals,
+                                           value_out,
+                                           value_out_size);
     } else {
+        uint64_t amount;
         if (read_leaf_u64(leaf, &amount) != 0) {
             PRINTF("format_unit: unsupported leaf kind %d\n", leaf->kind);
             return -1;
         }
+        status = print_token_amount(amount, NULL, unit->decimals, value_out, value_out_size);
     }
-    // The number follows any sign already written, so the two form one string the symbol
-    // affixing below can measure and move as a whole.
-    if (print_token_amount(amount,
-                           NULL,
-                           unit->decimals,
-                           value_out + sign_size,
-                           value_out_size - sign_size) != 0) {
-        PRINTF("format_unit: print_token_amount failed\n");
+    if (status != 0) {
+        PRINTF("format_unit: amount print failed\n");
         return -1;
-    }
-    if (unit->symbol == NULL) {
-        PRINTF("format_unit: rendered value=%s\n", value_out);
-        return 0;
     }
 
-    size_t number_len = strlen(value_out);
-    size_t symbol_len = strlen(unit->symbol);
-    // One separating space, and the NUL.
-    if (number_len + 1 + symbol_len + 1 > value_out_size) {
-        PRINTF("format_unit: output does not fit (%u)\n", (unsigned) value_out_size);
-        return -1;
-    }
-    if (unit->prefix) {
-        // Open a gap at the front for "symbol " without a second rendering of the number.
-        memmove(value_out + symbol_len + 1, value_out, number_len + 1);
-        memcpy(value_out, unit->symbol, symbol_len);
-        value_out[symbol_len] = ' ';
-    } else {
-        value_out[number_len] = ' ';
-        memcpy(value_out + number_len + 1, unit->symbol, symbol_len);
-        value_out[number_len + 1 + symbol_len] = '\0';
+    if (unit->symbol != NULL) {
+        // value_out was sized for the number plus the symbol, so the symbol is placed over the
+        // rendered number rather than into a buffer of its own.
+        size_t number_len = strlen(value_out);  // counts the sign a negative value wrote
+        size_t symbol_len = strlen(unit->symbol);
+        // One separating space, and the NUL.
+        if (number_len + 1 + symbol_len + 1 > value_out_size) {
+            PRINTF("format_unit: output does not fit (%u)\n", (unsigned) value_out_size);
+            return -1;
+        }
+        if (unit->prefix) {
+            // Open a gap at the front for "symbol " without a second rendering of the number.
+            memmove(value_out + symbol_len + 1, value_out, number_len + 1);
+            memcpy(value_out, unit->symbol, symbol_len);
+            value_out[symbol_len] = ' ';
+        } else {
+            value_out[number_len] = ' ';
+            memcpy(value_out + number_len + 1, unit->symbol, symbol_len);
+            value_out[number_len + 1 + symbol_len] = '\0';
+        }
     }
     PRINTF("format_unit: rendered value=%s\n", value_out);
     return 0;

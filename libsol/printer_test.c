@@ -47,6 +47,32 @@ void test_print_token_amount() {
     assert_string_equal(printed, "18446744073709551615 TST");
 }
 
+void test_print_signed_token_amount() {
+    char printed[26];
+
+    assert(print_signed_token_amount(0, "TST", 0, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "0 TST");
+    assert(print_signed_token_amount(1250, "%", 2, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "12.5 %");
+    assert(print_signed_token_amount(-1250, "%", 2, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "-12.5 %");
+    assert(print_signed_token_amount(-1, NULL, 0, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "-1");
+    assert(print_signed_token_amount(-1, NULL, 10, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "-0.0000000001");
+    assert(print_signed_token_amount(INT64_MAX, NULL, 0, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "9223372036854775807");
+    // The most negative i64 has no positive counterpart, so its magnitude must still print.
+    assert(print_signed_token_amount(INT64_MIN, NULL, 0, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "-9223372036854775808");
+    assert(print_signed_token_amount(INT64_MIN, NULL, 9, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "-9223372036.854775808");
+
+    // The sign takes one byte of the buffer: what fits unsigned can overflow signed.
+    assert(print_signed_token_amount(INT64_MIN, NULL, 0, printed, 21) == 1);
+    assert(print_signed_token_amount(0, NULL, 0, printed, 0) == 1);
+}
+
 void test_print_sized_string() {
     char buf[5];
     const char test[] = {0x74, 0x65, 0x73, 0x74};
@@ -338,6 +364,7 @@ void test_amount_as_string_is_greater_or_equal() {
 int main() {
     RUN_TEST(test_print_amount);
     RUN_TEST(test_print_token_amount);
+    RUN_TEST(test_print_signed_token_amount);
     RUN_TEST(test_print_sized_string);
     RUN_TEST(test_print_string);
     RUN_TEST(test_print_summary);
