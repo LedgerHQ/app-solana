@@ -519,8 +519,8 @@ static bool reset_is_applicable(const cs_account_reset_t *reset,
     } else {
         // The streaming contract requires an attested state for every such reset, and it has
         // to say the account was empty or the instruction may have left a balance behind.
-        applicable =
-            attested_state_declares_empty_account(cs_token_account_cache_find(resolved->account));
+        applicable = attested_state_declares_empty_account(
+            cs_token_account_cache_find(resolved->account));
         PRINTF("reset_is_applicable: pre-balance-zero reset applies=%d\n", applicable);
     }
     return applicable;
@@ -734,8 +734,8 @@ static void add_attested_safe_accounts(merge_scratch_t *scratch) {
         // The attestation holds from before the first instruction and for every consumer, so
         // the entry precedes any junction and carries no scope.
         scratch->safe_accounts[scratch->safe_account_count].account = state->account_address;
-        scratch->safe_accounts[scratch->safe_account_count].declarer_index =
-            ATTESTED_DECLARER_INDEX;
+        scratch->safe_accounts[scratch->safe_account_count]
+            .declarer_index = ATTESTED_DECLARER_INDEX;
         scratch->safe_accounts[scratch->safe_account_count].scope = NULL;
         scratch->safe_account_count++;
         PRINTF("add_attested_safe_accounts: attested state %d vouches for its account\n", (int) i);
@@ -2121,16 +2121,6 @@ static bool instruction_is_hidden(const cs_instruction_result_t *walked_instruct
     return false;
 }
 
-// Whether INSTRUCTION_INFO declared this instruction as carrying no user-facing meaning.
-static bool instruction_is_declared_hidden(const cs_instruction_result_t *item) {
-    if (item->template == NULL) {
-        PRINTF("instruction_is_declared_hidden: no template, nothing declared\n");
-        return false;
-    }
-    PRINTF("instruction_is_declared_hidden: hidden=%d\n", item->template->hidden);
-    return item->template->hidden;
-}
-
 // Drop from the output every merge survivor whose HIDE_RULEs hide it, so its plumbing never
 // reaches the screen. Runs after the scan, over survivors, so a merged-away instruction is
 // never reconsidered. A rule set is judged against the survivors still standing, so an
@@ -2264,12 +2254,11 @@ static int merge_engine_run_inner(cs_instruction_result_t *walked_instructions,
     build_safe_accounts(walked_instructions, count, scratch);
     run_merge_scan(walked_instructions, count, scratch, symbolic_accounts);
 
-    // The scan marks what disappeared; the renderer is told what remains. A hidden
-    // instruction drops out here rather than before the scan, so the passes above still
-    // read its writable accounts and its ACCOUNT_RESETs.
+    // Hidden instructions drop out here and not before the scan, so the passes above still
+    // read their writable accounts and their ACCOUNT_RESETs.
     for (size_t i = 0; i < count; i++) {
         survivors[i] = !scratch->states[i].consumed &&
-                       !instruction_is_declared_hidden(&walked_instructions[i]);
+                       !cs_instruction_template_is_hidden(walked_instructions[i].template);
         PRINTF("merge_engine_run_inner: instruction %d survives=%d\n", (int) i, survivors[i]);
     }
 

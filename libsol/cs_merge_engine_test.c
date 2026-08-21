@@ -38,6 +38,8 @@ typedef struct test_item_s {
 
 static void item_init(test_item_t *item) {
     memset(item, 0, sizeof(*item));
+    // A committed template always has an intent; the hidden tests clear it back to NULL.
+    item->template.operation_type = "Transfer";
     item->template.ports = item->ports;
     item->template.account_resets = item->resets;
     item->template.hide_rules = item->hide_rules;
@@ -2216,10 +2218,9 @@ static void test_hide_applies_to_merge_survivor(void) {
     assert(survivors[1] == false);  // survived the merge, then hidden
 }
 
-// ---- Declared-hidden instructions -------------------------------------------
+// ---- Hidden instructions ----------------------------------------------------
 
-// An instruction the descriptor marked hidden carries no user-facing meaning, so it
-// never reaches the renderer while its neighbours are untouched.
+// A hidden instruction is dropped and its neighbours are untouched.
 static void test_declared_hidden_instruction_is_dropped(void) {
     printf("  test_declared_hidden_instruction_is_dropped\n");
     mock_mem_reset();
@@ -2230,7 +2231,7 @@ static void test_declared_hidden_instruction_is_dropped(void) {
     item_init(&noop);
     item_add_port(&visible, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_100);
     item_add_port(&visible, CS_PORT_DIRECTION_OUTPUT, ACCT_DEST, AMT_100);
-    noop.template.hidden = true;
+    noop.template.operation_type = NULL;
 
     cs_instruction_result_t items[2] = {visible.result, noop.result};
     bool survivors[2] = {false, false};
@@ -2240,8 +2241,7 @@ static void test_declared_hidden_instruction_is_dropped(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-// The hide happens after the scan, so a hidden instruction writing the junction still
-// stops the forward scan: leaving the screen never loosens a merge guard.
+// A hidden instruction writing the junction still stops the forward scan.
 static void test_declared_hidden_instruction_still_stops_the_scan(void) {
     printf("  test_declared_hidden_instruction_still_stops_the_scan\n");
     mock_mem_reset();
@@ -2255,7 +2255,7 @@ static void test_declared_hidden_instruction_still_stops_the_scan(void) {
     item_add_port(&a, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_100);
     item_add_port(&a, CS_PORT_DIRECTION_OUTPUT, ACCT_JUNCTION, AMT_100);
     item_add_writable(&toucher, ACCT_JUNCTION);
-    toucher.template.hidden = true;
+    toucher.template.operation_type = NULL;
     item_add_port(&b, CS_PORT_DIRECTION_INPUT, ACCT_JUNCTION, AMT_100);
     item_add_port(&b, CS_PORT_DIRECTION_OUTPUT, ACCT_DEST, AMT_100);
 
@@ -2268,8 +2268,7 @@ static void test_declared_hidden_instruction_still_stops_the_scan(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-// The account initializer is the typical hidden instruction, and its ACCOUNT_RESET is
-// what lets the symbolic junction collapse: the reset outlives the hide.
+// A hidden instruction's ACCOUNT_RESET still admits the symbolic junction collapse.
 static void test_declared_hidden_instruction_reset_still_admits(void) {
     printf("  test_declared_hidden_instruction_reset_still_admits\n");
     mock_mem_reset();
@@ -2278,7 +2277,7 @@ static void test_declared_hidden_instruction_reset_still_admits(void) {
     test_item_t transfer;
     test_item_t wrap;
     build_wrap_chain(&create, &transfer, &wrap);
-    create.template.hidden = true;
+    create.template.operation_type = NULL;
 
     cs_instruction_result_t items[3] = {create.result, transfer.result, wrap.result};
     bool survivors[3] = {false, false, false};
@@ -2291,8 +2290,8 @@ static void test_declared_hidden_instruction_reset_still_admits(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-// A hidden instruction shows nothing, so it cannot stand in for another instruction's
-// effects: an accountEffectsDisplayedElsewhere rule finds no cover behind it.
+// A hidden instruction shows nothing, so accountEffectsDisplayedElsewhere finds no cover
+// behind it.
 static void test_declared_hidden_instruction_covers_nothing(void) {
     printf("  test_declared_hidden_instruction_covers_nothing\n");
     mock_mem_reset();
@@ -2308,10 +2307,10 @@ static void test_declared_hidden_instruction_covers_nothing(void) {
                        0,
                        CS_HIDE_CONDITION_ACCOUNT_EFFECTS_DISPLAYED_ELSEWHERE,
                        ACCT_SOURCE);
-    // The only other instruction moving value on the account is hidden itself.
+    // The only other instruction naming the account is itself hidden.
     item_add_port(&cover, CS_PORT_DIRECTION_INPUT, ACCT_SOURCE, AMT_50);
     item_add_account_field(&cover, ACCT_SOURCE);
-    cover.template.hidden = true;
+    cover.template.operation_type = NULL;
 
     cs_instruction_result_t items[2] = {candidate.result, cover.result};
     bool survivors[2] = {false, false};

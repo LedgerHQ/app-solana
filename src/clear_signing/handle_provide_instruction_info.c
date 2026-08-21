@@ -57,7 +57,7 @@ static bool handle_discriminator(const tlv_data_t *data, tlv_out_t *out) {
     return get_buffer_from_tlv_data(data, &out->discriminator, 0, G_command.message_length);
 }
 
-// An empty OPERATION_TYPE is the descriptor's way of declaring the instruction hidden.
+// Minimum size 0: an empty OPERATION_TYPE declares a hidden instruction.
 static bool handle_operation_type(const tlv_data_t *data, tlv_out_t *out) {
     return get_buffer_from_tlv_data(data, &out->operation_type, 0, G_command.message_length);
 }
@@ -251,11 +251,10 @@ int handle_provide_instruction_info(void) {
         PRINTF("Error: failed to store discriminator\n");
         return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
-    // An empty OPERATION_TYPE declares an instruction with no user-facing meaning: it is
-    // still walked and still feeds the merge guards, but it never reaches the screen.
+    // Leave operation_type at the NULL the builder was opened with: that is what marks the
+    // instruction hidden. It is still walked and still feeds the merge guards.
     if (tlv_extracted.operation_type.size == 0) {
         PRINTF("empty operation type: instruction is hidden\n");
-        template->hidden = true;
     } else if (cs_instruction_template_set_operation_type(
                    (const char *) tlv_extracted.operation_type.ptr,
                    tlv_extracted.operation_type.size) != 0) {
@@ -296,17 +295,17 @@ int handle_provide_instruction_info(void) {
         }
     }
 
-    // A descriptor committing to the empty digest declares no substructure at all, so no
-    // PROVIDE INSTRUCTION SUBSTRUCTURE will follow to latch the template: it is whole here.
+    // The empty digest declares no substructure, so nothing will follow to commit the
+    // template. It is whole here.
     bool complete = false;
     if (cs_substructure_check_complete(&complete) != 0) {
         PRINTF("Error: substructure completeness check refused\n");
-        return reply_sw(ApduReplySolanaInvalidInstructionInfo);
+        return reply_sw(ApduReplySolanaClearSigningIncomplete);
     }
     if (complete) {
         if (cs_instruction_template_commit() != 0) {
             PRINTF("Error: template commit refused\n");
-            return reply_sw(ApduReplySolanaInvalidInstructionInfo);
+            return reply_sw(ApduReplySolanaClearSigningIncomplete);
         }
         PRINTF("descriptor commits to no substructure, template committed\n");
     } else {

@@ -327,6 +327,19 @@ _This command opens one instruction template, keyed by `(PROGRAM_ID, DISCRIMINAT
 commits to the SHA-256 of the substructures that must follow it. `DISCRIMINATOR` is at most
 8 bytes. Requires `STREAMING`._
 
+An empty `OPERATION_TYPE` declares an instruction carrying no user-facing meaning, such as a
+bridge tracker or an oracle refresh. It is still walked and still feeds the merge guards with
+its writable accounts and its `ACCOUNT_RESET`s, but it is dropped from the review, together
+with any display field its descriptor carries.
+
+A descriptor announcing the SHA-256 of the empty byte string declares no substructure at all.
+No `PROVIDE INSTRUCTION SUBSTRUCTURE` follows it, so the template is committed by this command
+and a later substructure is refused with `6D21`.
+
+Several templates of the same `PROGRAM_ID` may match one instruction, since an empty
+`DISCRIMINATOR` matches any instruction data. The longest matching discriminator wins,
+whichever order the descriptors arrived in.
+
 ##### Command
 
 | _CLA_ | _INS_ | _P1_ | _P2_ |   _Lc_   |     _Le_ |

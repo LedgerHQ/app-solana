@@ -167,8 +167,8 @@ static void test_find_empty_discriminator_matches_any(void) {
     assert(mock_mem_outstanding() == 0);
 }
 
-// A program carrying both a catch-all template and a specific one resolves to the
-// specific one whichever order the descriptors arrived in.
+// A catch-all and a specific template on one program resolve to the specific one, whatever
+// order they arrived in.
 static void test_find_prefers_longest_discriminator(void) {
     printf("  test_find_prefers_longest_discriminator\n");
     mock_mem_reset();
@@ -323,6 +323,25 @@ static void test_set_strings_reject_empty(void) {
     assert(cs_instruction_template_set_operation_type("Swap", 4) == 0);
     assert(builder->operation_type != NULL);
     assert(strcmp(builder->operation_type, "Swap") == 0);
+
+    cs_instruction_template_table_reset();
+    assert(mock_mem_outstanding() == 0);
+}
+
+// A template reads as hidden until it is given an operation type.
+static void test_is_hidden_tracks_the_operation_type(void) {
+    printf("  test_is_hidden_tracks_the_operation_type\n");
+    mock_mem_reset();
+    cs_instruction_template_table_reset();
+
+    assert(cs_instruction_template_is_hidden(NULL) == false);
+
+    cs_instruction_template_t *builder = cs_instruction_template_open(TARGET_HASH);
+    assert(builder != NULL);
+    assert(cs_instruction_template_is_hidden(builder) == true);
+
+    assert(cs_instruction_template_set_operation_type("Swap", 4) == 0);
+    assert(cs_instruction_template_is_hidden(builder) == false);
 
     cs_instruction_template_table_reset();
     assert(mock_mem_outstanding() == 0);
@@ -843,6 +862,7 @@ int main(void) {
     test_add_display_path_alloc_fail();
     test_add_field_name_variants();
     test_set_strings_reject_empty();
+    test_is_hidden_tracks_the_operation_type();
     test_add_display_fields_grows_past_old_cap();
     test_add_display_field_growth_alloc_fail();
     test_commit_no_builder();

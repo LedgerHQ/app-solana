@@ -1331,6 +1331,166 @@ def test_cs_account_reset_forwarded(backend, sol):
     _wipe_session(sol)
 
 
+# ── Instructions with no intent ───────────────────────────────────────────────
+#
+# An empty OPERATION_TYPE means the instruction is never shown: a bridge tracker, an oracle
+# refresh. It is still walked and still feeds the merge guards. Its descriptor may carry
+# display fields and hide rules anyway, since the registry emits account fields regardless.
+
+NO_INTENT_PROGRAM_ID = b'\x41' * 32
+NO_INTENT_DISCRIMINATOR = b'\x41'
+
+# IDL type pool for an instruction whose data is only its discriminator:
+#   [0] STRUCT(0x20) field_count=1 refs=[1]
+#   [1] BYTES_FIXED(0x12) fixed_size=1
+NO_INTENT_POOL = bytes([2, 0x20, 1, 1, 0x12, 0x00, 0x01])
+
+
+def _craft_no_intent_message(sol: SolanaClient, *, with_visible: bool) -> bytes:
+    """The intent-less instruction, optionally preceded by a bridge instruction that shows,
+    so the review has something left to display."""
+    sender = Pubkey.from_bytes(sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH))
+    signer_meta = AccountMeta(pubkey=sender, is_signer=True, is_writable=True)
+    instructions = []
+    if with_visible:
+        instructions.append(Instruction(
+            program_id=Pubkey.from_bytes(BRIDGE_PROGRAM_ID),
+            accounts=[signer_meta],
+            data=_bridge_instruction_data(1000, 5_000_000),
+        ))
+    instructions.append(Instruction(
+        program_id=Pubkey.from_bytes(NO_INTENT_PROGRAM_ID),
+        accounts=[signer_meta],
+        data=NO_INTENT_DISCRIMINATOR,
+    ))
+    return sol.craft_tx(instructions, sender)
+
+
+def _provide_bridge_visible(sol: SolanaClient) -> None:
+    """The bridge instruction with one raw display field, as the surviving screen."""
+    display_field = _build_display_field(BRIDGE_PATH_U32)
+    sol.provide_instruction_info(
+        program_id=BRIDGE_PROGRAM_ID,
+        discriminator=BRIDGE_DISCRIMINATOR,
+        operation_type="Transfer",
+        program_name="Bridge",
+        substructures_hash=hashlib.sha256(display_field).digest(),
+        idl_type_pool=BRIDGE_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, display_field)
+
+
+def _provide_no_intent(sol: SolanaClient, substructures: list = None) -> None:
+    """The intent-less instruction, streaming `substructures` as (type, tlv) pairs. An empty
+    list announces the digest of an empty stream and sends nothing."""
+    substructures = substructures or []
+    payload = b"".join(tlv for _, tlv in substructures)
+    sol.provide_instruction_info(
+        program_id=NO_INTENT_PROGRAM_ID,
+        discriminator=NO_INTENT_DISCRIMINATOR,
+        operation_type="",
+        program_name="Tracker",
+        substructures_hash=hashlib.sha256(payload).digest(),
+        idl_type_pool=NO_INTENT_POOL,
+        idl_root_type=0,
+    )
+    for substructure_type, tlv in substructures:
+        sol.provide_instruction_substructure(substructure_type, tlv)
+
+
+def test_cs_no_intent_with_display_fields_is_not_displayed(backend, sol, scenario_navigator,
+                                                           root_pytest_dir):
+    """The device accepts the display fields the registry emits for an intent-less
+    instruction, and drops the instruction anyway. Only the bridge transfer is shown."""
+    _begin_session(sol, _craft_no_intent_message(sol, with_visible=True))
+    _provide_bridge_visible(sol)
+    _provide_no_intent(sol, [(SUBSTRUCTURE_TYPE_DISPLAY_FIELD,
+                              _build_account_display_field(0, "Signer"))])
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_no_intent_without_substructures_is_not_displayed(backend, sol, scenario_navigator,
+                                                             root_pytest_dir):
+    """A descriptor that sends no substructure commits its template on the INSTRUCTION_INFO,
+    and the instruction is dropped just the same."""
+    _begin_session(sol, _craft_no_intent_message(sol, with_visible=True))
+    _provide_bridge_visible(sol)
+    _provide_no_intent(sol)
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def test_cs_no_intent_alone_leaves_nothing_to_review(backend, sol):
+    """With nothing else in the transaction, every item is dropped and PROMPT UI DISPLAY has
+    no review to build."""
+    _begin_session(sol, _craft_no_intent_message(sol, with_visible=False))
+    _provide_no_intent(sol, [(SUBSTRUCTURE_TYPE_DISPLAY_FIELD,
+                              _build_account_display_field(0, "Signer"))])
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.prompt_ui_display()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+    _wipe_session(sol)
+
+
+def test_cs_no_intent_accepts_hide_rule(backend, sol):
+    """A HIDE_RULE is accepted here. The instruction is already dropped, so it never runs."""
+    _begin_session(sol, _craft_no_intent_message(sol, with_visible=False))
+    _provide_no_intent(sol, [(SUBSTRUCTURE_TYPE_HIDE_RULE, _build_hide_rule(
+        target_account_index=0))])
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.prompt_ui_display()
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+    _wipe_session(sol)
+
+
+# TODO: re-enable with the substructure guard in handle_provide_instruction_substructure.c.
+# def test_cs_no_intent_rejects_value_flow_port(backend, sol):
+#     _begin_session(sol, _craft_no_intent_message(sol, with_visible=False))
+#     port = _build_constant_amount_port(account_index=0, amount=1,
+#                                        direction=PORT_DIRECTION_OUTPUT)
+#
+#     sol.provide_instruction_info(
+#         program_id=NO_INTENT_PROGRAM_ID,
+#         discriminator=NO_INTENT_DISCRIMINATOR,
+#         operation_type="",
+#         program_name="Tracker",
+#         substructures_hash=hashlib.sha256(port).digest(),
+#         idl_type_pool=NO_INTENT_POOL,
+#         idl_root_type=0,
+#     )
+#     with pytest.raises(ExceptionRAPDU) as exc_info:
+#         sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_VALUE_FLOW_PORT, port)
+#     assert exc_info.value.status == ErrorType.INVALID_INSTRUCTION_SUBSTRUCTURE
+#     _wipe_session(sol)
+
+
+def test_cs_no_intent_substructure_after_empty_digest_rejected(backend, sol):
+    """The template was committed on the INSTRUCTION_INFO, so a substructure arriving after
+    it finds no template open and is refused."""
+    _begin_session(sol, _craft_no_intent_message(sol, with_visible=False))
+    _provide_no_intent(sol)
+
+    with pytest.raises(ExceptionRAPDU) as exc_info:
+        sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD,
+                                             _build_account_display_field(0, "Signer"))
+    assert exc_info.value.status == ErrorType.CLEAR_SIGNING_INCOMPLETE
+    _wipe_session(sol)
+
+
 # ── Merge engine end-to-end: a symbolic-junction chain ────────────────────────
 #
 # Three programs standing in for the wrap pattern that dominates real Solana
@@ -1527,6 +1687,42 @@ def test_cs_symbolic_junction_collapses(backend, sol, scenario_navigator, root_p
     _begin_session(sol, _craft_chain_message(sol))
     _provide_chain(sol, reset=_build_account_reset(account_index=CHAIN_SLOT_JUNCTION,
                                                   require_zero=False))
+
+    assert sol.finalize_generic_clear_signing().status == 0x9000
+    with sol.send_prompt_ui_display():
+        scenario_navigator.review_approve_with_spinner(spinner_text="Signing", path=root_pytest_dir)
+    assert sol.get_async_response().status == 0x9000
+    _wipe_session(sol)
+
+
+def _provide_chain_create_no_intent(sol: SolanaClient, reset: bytes) -> None:
+    """The create with no intent and no port, keeping only the account it names and the
+    ACCOUNT_RESET vouching for it."""
+    account_field = _build_account_display_field(CHAIN_SLOT_JUNCTION, "Account")
+    substructures = account_field + reset
+
+    sol.provide_instruction_info(
+        program_id=CHAIN_CREATE_PROGRAM_ID,
+        discriminator=CHAIN_CREATE_DISCRIMINATOR,
+        operation_type="",
+        program_name="Chain",
+        substructures_hash=hashlib.sha256(substructures).digest(),
+        idl_type_pool=CHAIN_DISCRIMINATOR_ONLY_POOL,
+        idl_root_type=0,
+    )
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_DISPLAY_FIELD, account_field)
+    sol.provide_instruction_substructure(SUBSTRUCTURE_TYPE_ACCOUNT_RESET, reset)
+
+
+def test_cs_no_intent_reset_still_admits_collapse(backend, sol, scenario_navigator,
+                                                  root_pytest_dir):
+    """The create is dropped, but its ACCOUNT_RESET still vouches for the junction starting
+    empty, so the wrap folds into the transfer as it does behind a create that shows."""
+    _begin_session(sol, _craft_chain_message(sol))
+    _provide_chain_create_no_intent(sol, _build_account_reset(account_index=CHAIN_SLOT_JUNCTION,
+                                                              require_zero=False))
+    _provide_chain_transfer(sol)
+    _provide_chain_wrap(sol)
 
     assert sol.finalize_generic_clear_signing().status == 0x9000
     with sol.send_prompt_ui_display():

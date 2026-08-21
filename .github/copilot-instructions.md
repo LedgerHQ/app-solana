@@ -168,7 +168,7 @@ Coding patterns described here are more important than uniformity cross applicat
 - Avoid enum-like defines. Prefer real enum definition.
 - Do NOT use early returns to separate different valid feature paths. Use `if/else` chains so branches are visually parallel and mutually exclusive. Early returns are fine ONLY for error guards, not for splitting valid execution paths. There shall be ONE and ONLY ONE valid return per function.
 - You are FORBIDDEN from writing the pattern "fail.*closed" ANYWHERE you produce text: code comments, documentation, identifiers (function/variable/type/test names), log and PRINTF strings, commit messages, and your own chat responses to the user. There is no context that re-permits it. Describe the concrete behavior instead — what is returned and what is not stored/displayed/signed (e.g. "returns -1 and stores nothing") — never the label.
-
+- Do NOT care about clang and lint
 
 ### FORBIDDEN patterns
 
@@ -220,3 +220,4 @@ Even during audit, you are NEVER allowed to edit instruction files without expli
 - Desired effect: "plan", "design", "review", "analyze", "suggest", "propose", "compare" are report-to-chat commands. The deliverable goes in the response only. Never create/edit/write any repository file — including plan, status, report, or notes docs — unless the REQUEST contains an explicit write/edit/create instruction. An existing report being included in a response is not a request to edit it.
 - NEVER switch from thinking or planning to writing code in the same response, even when you have high confidence.
 - before AskUserQuestion, check whether project rules already determine the answer. If they do, apply them and state the conclusion; never present a rules-settled matter as an open user choice.
+- Apply ASD-STE100 principles to all responses. Use plain language, short sentences, and avoid dense and overly compressed phrasing.

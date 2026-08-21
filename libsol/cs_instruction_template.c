@@ -866,6 +866,15 @@ bool cs_instruction_template_pending(void) {
     return G_template_table->builder != NULL;
 }
 
+bool cs_instruction_template_is_hidden(const cs_instruction_template_t *template) {
+    if (template == NULL) {
+        PRINTF("cs_instruction_template_is_hidden: no template\n");
+        return false;
+    }
+    PRINTF("cs_instruction_template_is_hidden: %d\n", template->operation_type == NULL);
+    return template->operation_type == NULL;
+}
+
 const cs_instruction_template_t *cs_instruction_template_find(const uint8_t program_id[PUBKEY_SIZE],
                                                               const uint8_t *data,
                                                               size_t data_size) {
@@ -874,9 +883,8 @@ const cs_instruction_template_t *cs_instruction_template_find(const uint8_t prog
         return NULL;
     }
 
-    // A program can carry both a catch-all template (empty discriminator, typically a
-    // hidden one) and templates for specific instructions. Keeping the longest match
-    // rather than the first makes the outcome independent of the streaming order.
+    // A catch-all template matches alongside the specific ones, so keep the longest match to
+    // stay independent of the streaming order.
     const cs_instruction_template_t *best = NULL;
     for (size_t i = 0; i < G_template_table->committed_count; i++) {
         const cs_instruction_template_t *template = G_template_table->committed[i];
