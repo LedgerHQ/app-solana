@@ -14,6 +14,14 @@ class NavigationHelper:
         self._root_pytest_dir = root_pytest_dir
 
     @property
+    def test_name(self) -> str:
+        return self._test_name
+
+    @test_name.setter
+    def test_name(self, test_name: str):
+        self._test_name = test_name
+
+    @property
     def snapshots_dir_name(self) -> str:
         return self._test_name + self._test_name_suffix
 
