@@ -19,6 +19,7 @@
 #include "handle_provide_trusted_info.h"
 #include "io.h"
 #include "app_mem_utils.h"
+#include "reply.h"
 
 trusted_info_t *g_trusted_info;
 
@@ -115,10 +116,8 @@ int handle_provide_trusted_info(void) {
     // prevent brute-force guesses
     roll_challenge();
     if (ret == 0) {
-        return io_send_sw(ApduReplySuccess);
+        return reply_sw(ApduReplySuccess);
     } else {
-        // Free the partially filled struct on failure to avoid leaking memory
-        reset_trusted_info();
-        return io_send_sw(ApduReplySolanaInvalidTrustedInfo);
+        return reply_sw(ApduReplySolanaInvalidTrustedInfo);
     }
 }

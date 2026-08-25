@@ -20,6 +20,7 @@
 #include "handle_provide_dynamic_descriptor.h"
 #include "io.h"
 #include "app_mem_utils.h"
+#include "reply.h"
 
 #define SOLANA_SLIP_44_VALUE          501
 #define SOLANA_SLIP_44_VALUE_HARDENED (0x80000000 | SOLANA_SLIP_44_VALUE)
@@ -101,18 +102,10 @@ static bool handle_tuid_ext_code(const tlv_data_t *data, tlv_TUID_data_t *tlv_TU
 
 DEFINE_TLV_PARSER(TUID_TLV_TAGS, NULL, parse_dynamic_token_tuid)
 
-dynamic_token_info_t *g_dynamic_token_info;
+dynamic_token_info_pool_t *g_dynamic_token_info;
 
 static int handle_provide_dynamic_descriptor_internal(void) {
-    // Allocate if not yet allocated, otherwise reset
-    if (g_dynamic_token_info == NULL) {
-        if (!APP_MEM_CALLOC((void **) &g_dynamic_token_info, sizeof(dynamic_token_info_t))) {
-            PRINTF("Memory allocation failed for dynamic_token_info\n");
-            return -1;
-        }
-    } else {
-        explicit_bzero(g_dynamic_token_info, sizeof(*g_dynamic_token_info));
-    }
+    dynamic_token_info_t new_entry = {0};
 
     tlv_dynamic_descriptor_out_t tlv_output = {0};
 
@@ -160,25 +153,28 @@ static int handle_provide_dynamic_descriptor_internal(void) {
     // We will save this decode them and save both the encoded and decoded format.
     // We could save just one but as we need to decode them to ensure they are valid we save both
     if (copy_and_decode_pubkey(tlv_TUID_data.encoded_mint_address,
-                               g_dynamic_token_info->encoded_mint_address,
-                               g_dynamic_token_info->mint_address) != 0) {
+                               new_entry.encoded_mint_address,
+                               new_entry.mint_address) != 0) {
         PRINTF("copy_and_decode_pubkey error for encoded_mint_address\n");
         return -1;
     }
 
-    // g_dynamic_token_info->ticker and tlv_extracted->ticker have the same size
-    memcpy(g_dynamic_token_info->ticker, tlv_output.ticker, sizeof(g_dynamic_token_info->ticker));
-    // Will never actually be used as we always use the _checked instructions but save it anyway
-    g_dynamic_token_info->magnitude = tlv_output.magnitude;
-    g_dynamic_token_info->is_token_2022_kind = (tlv_TUID_data.token_type == TOKEN_2022);
-    g_dynamic_token_info->received = true;
+    memcpy(new_entry.ticker, tlv_output.ticker, sizeof(new_entry.ticker));
+    new_entry.magnitude = tlv_output.magnitude;
+    new_entry.is_token_2022_kind = (tlv_TUID_data.token_type == TOKEN_2022);
+    new_entry.received = true;
+
+    if (dynamic_token_info_add(&new_entry) != 0) {
+        PRINTF("dynamic_token_info_add failed\n");
+        return -1;
+    }
 
     PRINTF("=== DYNAMIC TOKEN INFO ===\n");
-    PRINTF("ticker               = %s\n", g_dynamic_token_info->ticker);
-    PRINTF("token_2022           = %d\n", g_dynamic_token_info->is_token_2022_kind);
-    PRINTF("magnitude            = %d\n", g_dynamic_token_info->magnitude);
-    PRINTF("encoded_mint_address = %s\n", g_dynamic_token_info->encoded_mint_address);
-    PRINTF("mint_address         = %.*H\n", PUBKEY_LENGTH, g_dynamic_token_info->mint_address);
+    PRINTF("ticker               = %s\n", new_entry.ticker);
+    PRINTF("token_2022           = %d\n", new_entry.is_token_2022_kind);
+    PRINTF("magnitude            = %d\n", new_entry.magnitude);
+    PRINTF("encoded_mint_address = %s\n", new_entry.encoded_mint_address);
+    PRINTF("mint_address         = %.*H\n", PUBKEY_LENGTH, new_entry.mint_address);
 
     return 0;
 }
@@ -186,10 +182,8 @@ static int handle_provide_dynamic_descriptor_internal(void) {
 int handle_provide_dynamic_descriptor(void) {
     int ret = handle_provide_dynamic_descriptor_internal();
     if (ret == 0) {
-        return io_send_sw(ApduReplySuccess);
+        return reply_sw(ApduReplySuccess);
     } else {
-        // Free the partially filled struct on failure to avoid leaking memory
-        reset_dynamic_token_info();
-        return io_send_sw(ApduReplySolanaInvalidDynamicToken);
+        return reply_sw(ApduReplySolanaInvalidDynamicToken);
     }
 }

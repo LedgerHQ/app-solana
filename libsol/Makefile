@@ -80,8 +80,11 @@ release_CFLAGS = -O2
 libsol_source_files = $(filter-out %_test.c,$(shell find . -name "*.c"))
 libsol_object_files = $(patsubst %.c,$o/%.o,$(libsol_source_files))
 libsol_depend_files = $(patsubst %.c,$o/%.d,$(libsol_source_files))
+test_depend_files = $(patsubst %.c,$o/%.d,$(test_files))
 
+# Without the test deps, a header change leaves stale test objects and the tests crash.
 -include $(libsol_depend_files)
+-include $(test_depend_files)
 
 $o/%.o: %.c $(mock_files)
 	$(progress) "==> Compile $<"

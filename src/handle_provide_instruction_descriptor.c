@@ -26,30 +26,33 @@
 #include "io.h"
 #include "sol/safe_math.h"
 #include "app_mem_utils.h"
+#include "reply.h"
 
 // https://ledgerhq.atlassian.net/wiki/spaces/TA/pages/5764022544/ARCH+Solana+LiFi+swap+support
-
-#define MAX_DISCRIMINATOR_NUMBER 15
 
 #define TYPE_SOLANA_SWAP_TEMPLATE     0x0a
 #define AMOUNT_RULES_ENDIANESS_MASK   (1 << 0)
 #define AMOUNT_RULES_OFFSET_TYPE_MASK (1 << 1)
 
 typedef struct saved_descriptors_s {
-    uint8_t saved_count;
-    uint8_t read_count;
+    size_t saved_count;
+    size_t read_count;
+    size_t capacity;
     bool is_main_net;
     uint32_t template_id;
-    instruction_descriptor_t descriptors[MAX_DISCRIMINATOR_NUMBER];
+    instruction_descriptor_t *descriptors;
 } saved_descriptors_t;
 
 static saved_descriptors_t *G_saved_descriptors;
 
 void reset_saved_descriptors(void) {
-    APP_MEM_FREE_AND_NULL((void **) &G_saved_descriptors);
+    if (G_saved_descriptors != NULL) {
+        APP_MEM_FREE_AND_NULL((void **) &G_saved_descriptors->descriptors);
+        APP_MEM_FREE_AND_NULL((void **) &G_saved_descriptors);
+    }
 }
 
-uint8_t get_descriptor_count(void) {
+size_t get_descriptor_count(void) {
     return G_saved_descriptors->saved_count;
 }
 
@@ -57,7 +60,7 @@ int get_next_descriptor(const instruction_descriptor_t **instruction_descriptor)
     if (G_saved_descriptors->read_count >= G_saved_descriptors->saved_count) {
         return -1;
     }
-    PRINTF("Reading descriptor n %d\n", G_saved_descriptors->read_count);
+    PRINTF("Reading descriptor n %u\n", (unsigned) G_saved_descriptors->read_count);
 
     *instruction_descriptor = &G_saved_descriptors->descriptors[G_saved_descriptors->read_count];
     G_saved_descriptors->read_count++;
@@ -71,12 +74,8 @@ bool instruction_descriptor_received(void) {
 static bool save_instruction_descriptor(bool is_main_net,
                                         uint32_t template_id,
                                         const instruction_descriptor_t *instruction_descriptor) {
-    PRINTF("Attempting to save descriptor n %d\n", G_saved_descriptors->saved_count + 1);
-
-    if (G_saved_descriptors->saved_count >= MAX_DISCRIMINATOR_NUMBER) {
-        PRINTF("Error, descriptor limit reached (%d)\n", MAX_DISCRIMINATOR_NUMBER);
-        return false;
-    }
+    PRINTF("Attempting to save descriptor n %u\n",
+           (unsigned) (G_saved_descriptors->saved_count + 1));
 
     if (G_saved_descriptors->saved_count > 0) {
         if (is_main_net != G_saved_descriptors->is_main_net) {
@@ -97,7 +96,24 @@ static bool save_instruction_descriptor(bool is_main_net,
         G_saved_descriptors->template_id = template_id;
     }
 
-    PRINTF("Saving descriptor in slot n %d\n", G_saved_descriptors->saved_count);
+    if (G_saved_descriptors->saved_count >= G_saved_descriptors->capacity) {
+        size_t new_capacity;
+        if (G_saved_descriptors->capacity == 0) {
+            new_capacity = 1;
+        } else {
+            new_capacity = G_saved_descriptors->capacity * 2;
+        }
+        void *grown = APP_MEM_REALLOC(G_saved_descriptors->descriptors,
+                                      new_capacity * sizeof(instruction_descriptor_t));
+        if (grown == NULL) {
+            PRINTF("Error, descriptor realloc failed (capacity=%u)\n", (unsigned) new_capacity);
+            return false;
+        }
+        G_saved_descriptors->descriptors = grown;
+        G_saved_descriptors->capacity = new_capacity;
+    }
+
+    PRINTF("Saving descriptor in slot n %u\n", (unsigned) G_saved_descriptors->saved_count);
     memcpy(&(G_saved_descriptors->descriptors[G_saved_descriptors->saved_count]),
            instruction_descriptor,
            sizeof(instruction_descriptor_t));
@@ -374,7 +390,7 @@ static bool handle_provide_instruction_descriptor_internal(void) {
            tlv_extracted.ins.capped_amount_token_index_received);
     PRINTF("capped_amount_token_index = %u\n", tlv_extracted.ins.capped_amount_token_index);
 
-    // Allocate saved_descriptors on first call
+    // Allocate the descriptor pool on first call
     if (G_saved_descriptors == NULL) {
         if (!APP_MEM_CALLOC((void **) &G_saved_descriptors, sizeof(saved_descriptors_t))) {
             PRINTF("Memory allocation failed for saved_descriptors\n");
@@ -384,7 +400,7 @@ static bool handle_provide_instruction_descriptor_internal(void) {
         }
     }
 
-    // Store descriptor
+    // Store descriptor (grows the pool on demand)
     if (!save_instruction_descriptor(tlv_extracted.is_main_net,
                                      tlv_extracted.template_id,
                                      &tlv_extracted.ins)) {
@@ -401,15 +417,15 @@ static bool handle_provide_instruction_descriptor_internal(void) {
 int handle_provide_instruction_descriptor(void) {
     if (!G_called_from_swap) {
         PRINTF("Error: instruction descriptors are only allowed in swap context\n");
-        return io_send_sw(ApduReplySolanaInvalidInstructionDescriptor);
+        return reply_sw(ApduReplySolanaInvalidInstructionDescriptor);
     }
 
     // Sends a swap error and exits on failure, only returns on success
     if (handle_provide_instruction_descriptor_internal()) {
-        return io_send_sw(ApduReplySuccess);
+        return reply_sw(ApduReplySuccess);
     } else {
         // Unreachable in theory, handle_provide_instruction_descriptor_internal exits on failure
-        return io_send_sw(ApduReplySolanaInvalidInstructionDescriptor);
+        return reply_sw(ApduReplySolanaInvalidInstructionDescriptor);
     }
 }
 

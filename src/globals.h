@@ -29,19 +29,11 @@
 #define SOLANA_CHAIN_ID_DEVNET  901
 #define SOLANA_CHAIN_ID_TESTNET 902
 
-#define ROUND_TO_NEXT(x, next) (((x) == 0) ? 0 : ((((x - 1) / (next)) + 1) * (next)))
+// Off-chain message reception buffer size. v1 (sRFC 38) messages have no length prefix and no
+// format-imposed bound, so this is the size preallocated for a chunked off-chain message.
+#define MAX_OFFCHAIN_MESSAGE_LENGTH ((15 * 1024) - 40 - 8)
 
-/* See constant by same name in sdk/src/packet.rs */
-// Packet data size increased to allow handling bigger messages (OCMS)
-#define PACKET_DATA_SIZE ((15 * 1024) - 40 - 8)
-
-#define MAX_BIP32_PATH_LENGTH             5
-#define MAX_DERIVATION_PATH_BUFFER_LENGTH (1 + MAX_BIP32_PATH_LENGTH * 4)
-#define TOTAL_SIGN_MESSAGE_BUFFER_LENGTH  (PACKET_DATA_SIZE + MAX_DERIVATION_PATH_BUFFER_LENGTH)
-
-#define MAX_OFFCHAIN_MESSAGE_LENGTH PACKET_DATA_SIZE
-
-#define MAX_MESSAGE_LENGTH ROUND_TO_NEXT(TOTAL_SIGN_MESSAGE_BUFFER_LENGTH, USB_SEGMENT_SIZE)
+#define MAX_BIP32_PATH_LENGTH 5
 
 // credit: https://stackoverflow.com/questions/807244/c-compiler-asserts-how-to-implement
 #define CASSERT(predicate, file) _impl_CASSERT_LINE(predicate, __LINE__, file)
@@ -61,6 +53,9 @@ typedef enum InstructionCode {
     InsSignOffchainMessage = 0x07,
     InsSignMessagePreview = 0x08,
     InsSignMessageDelayed = 0x09,
+    InsStartGenericClearSigningSession = 0x0A,
+    InsPromptUiDisplay = 0x0B,
+    InsFinalizeGenericClearSigning = 0x0C,
     InsTrustedInfoProvideInstructionDescriptor = 0x16,
     InsTrustedInfoGetChallenge = 0x20,
     InsTrustedInfoProvideInfo = 0x21,
@@ -68,8 +63,28 @@ typedef enum InstructionCode {
 #ifdef HAVE_TRANSACTION_CHECKS
     InsProvideTransactionCheck = 0x23,
 #endif
+    InsProvideInstructionInfo = 0x24,
+    InsProvideInstructionSubstructure = 0x25,
+    InsProvideEnumVariant = 0x26,
+    InsProvideTokenAccountState = 0x27,
+    InsProvideAltResolution = 0x28,
+    InsProvideTrustedName = 0x29,
 } InstructionCode;
 
+// Generic clear signing
+typedef enum cs_session_state_e {
+    CS_SESSION_IDLE,
+    CS_SESSION_STREAMING,
+    CS_SESSION_FINALIZED,
+} cs_session_state_t;
+
+extern cs_session_state_t G_cs_session_state;
+
+// Tears down preview and clear-signing session state that the incoming instruction does not own.
+// Called when a new command begins, before its message buffer is allocated.
+void reset_unrelated_sessions(uint8_t instruction);
+
+// SWAP flow globals, defined in SDK
 extern volatile bool G_called_from_swap;
 extern volatile bool G_swap_response_ready;
 

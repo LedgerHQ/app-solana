@@ -13,6 +13,24 @@
 #include "ui_api.h"
 #include "io.h"
 #include "app_mem_utils.h"
+#include "cs_transaction.h"
+#include "reply.h"
+
+// Preview state for delayed signing
+typedef struct {
+    bool initialized;
+
+    // SHA-512 hash of the message with zeroed blockhash
+    uint8_t message_hash_with_zero_blockhash[CX_SHA512_SIZE];
+
+    // Not technically needed because we check that the hash matches but reduces probability of
+    // finding a collision
+    int message_length;
+
+    // Needed because not in the hashed data itself
+    uint32_t derivation_path_length;
+    uint32_t derivation_path[MAX_BIP32_PATH_LENGTH];
+} preview_state_t;
 
 preview_state_t *G_preview_state;
 
@@ -103,16 +121,19 @@ static uint16_t verify_delayed_message_matches_preview(void) {
     return ApduReplySuccess;
 }
 
-int store_preview_fingerprint(void) {
+int store_preview_fingerprint(const uint8_t *message,
+                              size_t message_length,
+                              const uint32_t *derivation_path,
+                              uint32_t derivation_path_length) {
+    // Release any state left by a prior preview so a re-store cannot leak it.
+    clear_preview_state();
     if (!APP_MEM_CALLOC((void **) &G_preview_state, sizeof(preview_state_t))) {
         PRINTF("Failed to allocate preview state\n");
         return -1;
     }
 
-    // Compute SHA-512 hash of the message with blockhash treated as zeros
-    // without modifying the input buffer
-    if (hash_message_with_zeroed_blockhash(G_command.message,
-                                           G_command.message_length,
+    if (hash_message_with_zeroed_blockhash(message,
+                                           message_length,
                                            G_preview_state->message_hash_with_zero_blockhash) !=
         0) {
         PRINTF("Failed to compute message hash\n");
@@ -124,22 +145,28 @@ int store_preview_fingerprint(void) {
            sizeof(G_preview_state->message_hash_with_zero_blockhash),
            G_preview_state->message_hash_with_zero_blockhash);
 
-    // Store derivation path
-    PRINTF("Storing derivation path (length=%d)\n", G_command.derivation_path_length);
-    G_preview_state->derivation_path_length = G_command.derivation_path_length;
-    for (size_t i = 0; i < G_command.derivation_path_length; i++) {
-        G_preview_state->derivation_path[i] = G_command.derivation_path[i];
-        PRINTF("  path[%d] = %08x\n", i, G_command.derivation_path[i]);
-    }
+    G_preview_state->derivation_path_length = derivation_path_length;
+    memcpy(G_preview_state->derivation_path,
+           derivation_path,
+           derivation_path_length * sizeof(uint32_t));
 
-    // Store message length for verification
-    G_preview_state->message_length = G_command.message_length;
-    PRINTF("Storing message length: %d bytes\n", G_preview_state->message_length);
-
+    G_preview_state->message_length = message_length;
     G_preview_state->initialized = true;
-    PRINTF("Preview fingerprint initialized\n");
+    PRINTF("Preview fingerprint stored and armed\n");
 
     return 0;
+}
+
+// Wrapper reading fingerprint inputs from the clear-signing session context
+int store_cs_preview_fingerprint(void) {
+    if (cs_transaction_get() == NULL) {
+        PRINTF("store_cs_preview_fingerprint: no transaction context\n");
+        return -1;
+    }
+    return store_preview_fingerprint(cs_transaction_get()->transaction,
+                                     cs_transaction_get()->transaction_size,
+                                     cs_transaction_get()->derivation_path,
+                                     cs_transaction_get()->derivation_path_length);
 }
 
 static int handle_sign_message_delayed_internal(void) {
@@ -147,13 +174,13 @@ static int handle_sign_message_delayed_internal(void) {
     if (G_command.instruction != InsSignMessageDelayed ||
         G_command.state != ApduStatePayloadComplete) {
         // Small sanity check, should never happen but let's double check
-        return io_send_sw(ApduReplySdkInvalidParameter);
+        return reply_sw(ApduReplySdkInvalidParameter);
     }
 
     // Verify preview was initialized
     if (G_preview_state == NULL || !G_preview_state->initialized) {
         PRINTF("No preview state found - must preview before delayed sign\n");
-        return io_send_sw(ApduReplySolanaDelayedPreviewNotFound);
+        return reply_sw(ApduReplySolanaDelayedPreviewNotFound);
     }
 
     // Delayed signing does not make sense in swap context.
@@ -161,14 +188,14 @@ static int handle_sign_message_delayed_internal(void) {
     // G_preview_state->initialized is always false but let's double check
     if (G_called_from_swap) {
         PRINTF("Delayed signing not supported in swap context\n");
-        return io_send_sw(ApduReplySdkNotSupported);
+        return reply_sw(ApduReplySdkNotSupported);
     }
 
     // Verify the delayed message matches the preview fingerprint
     uint16_t verification_result = verify_delayed_message_matches_preview();
     if (verification_result != ApduReplySuccess) {
         ui_transaction_modal(false);
-        return io_send_sw(verification_result);
+        return reply_sw(verification_result);
     }
 
     // Sign the message directly (with real blockhash)
@@ -176,11 +203,11 @@ static int handle_sign_message_delayed_internal(void) {
     if (tx_len < 0) {
         PRINTF("set_result_sign_message failed\n");
         ui_transaction_modal(false);
-        return io_send_sw(ApduReplySdkException);
+        return reply_sw(ApduReplySdkException);
     }
 
     PRINTF("Delayed signing complete\n");
-    ret = io_send_response_pointer(G_io_apdu_buffer, tx_len, ApduReplySuccess);
+    ret = reply_data(G_io_apdu_buffer, tx_len, ApduReplySuccess);
     ui_transaction_modal(ret >= 0);
     return ret;
 }

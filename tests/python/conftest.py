@@ -26,3 +26,13 @@ def navigation_helper(backend, navigator, scenario_navigator, test_name, root_py
 @pytest.fixture(scope="function")
 def sol(backend):
     return SolanaClient(backend)
+
+# Pytest is trying to do "smart" stuff and reorders tests using parametrize by alphabetical order of parameter
+# This breaks the backend scope optim. We disable this
+def pytest_collection_modifyitems(config, items):
+    def param_part(item):
+        # Sort by node id as usual
+        return item.nodeid
+
+    # re-order the items using the param_part function as key
+    items[:] = sorted(items, key=param_part)

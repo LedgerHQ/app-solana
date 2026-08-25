@@ -495,6 +495,193 @@ void test_skip_alt_truncated_readonly() {
     assert(skip_address_table_lookups(&parser) == 1);
 }
 
+// Build a versioned (v0) transaction with `num_static` static keys, zero
+// instructions, and a two-table ALT lookup section:
+//   Table A (key 0xA0): writable [10, 11], readonly [20]
+//   Table B (key 0xB0): writable [12],     readonly [21, 22]
+// Writable-loaded accounts (A/10, A/11, B/12) come before readonly-loaded
+// (A/20, B/21, B/22) in the resolved key ordering. Returns the total length.
+static size_t build_v0_tx_with_alt(uint8_t *buf, uint8_t num_static) {
+    size_t cursor = 0;
+    buf[cursor++] = 0x80;        // version prefix: versioned, version 0
+    buf[cursor++] = 1;           // num_required_signatures
+    buf[cursor++] = 0;           // num_readonly_signed
+    buf[cursor++] = 0;           // num_readonly_unsigned
+    buf[cursor++] = num_static;  // pubkeys_length (compact-u16, < 128)
+    for (uint8_t k = 0; k < num_static; k++) {
+        memset(buf + cursor, 0x10 + k, PUBKEY_SIZE);
+        cursor += PUBKEY_SIZE;
+    }
+    memset(buf + cursor, 0xEE, BLOCKHASH_SIZE);  // blockhash
+    cursor += BLOCKHASH_SIZE;
+    buf[cursor++] = 0;  // instructions_length
+
+    buf[cursor++] = 2;  // num_tables
+    // Table A
+    memset(buf + cursor, 0xA0, PUBKEY_SIZE);
+    cursor += PUBKEY_SIZE;
+    buf[cursor++] = 2;   // writable count
+    buf[cursor++] = 10;  // writable index
+    buf[cursor++] = 11;  // writable index
+    buf[cursor++] = 1;   // readonly count
+    buf[cursor++] = 20;  // readonly index
+    // Table B
+    memset(buf + cursor, 0xB0, PUBKEY_SIZE);
+    cursor += PUBKEY_SIZE;
+    buf[cursor++] = 1;   // writable count
+    buf[cursor++] = 12;  // writable index
+    buf[cursor++] = 2;   // readonly count
+    buf[cursor++] = 21;  // readonly index
+    buf[cursor++] = 22;  // readonly index
+    return cursor;
+}
+
+// resolve_alt_loaded_index: writable-loaded accounts resolve first, across
+// tables in order.
+void test_resolve_alt_writable() {
+    uint8_t buf[256];
+    size_t len = build_v0_tx_with_alt(buf, 3);
+    const uint8_t *alt = NULL;
+    uint8_t entry = 0;
+
+    // global 3 -> Table A, writable entry 10
+    assert(resolve_alt_loaded_index(buf, len, 3, &alt, &entry) == 0);
+    assert(alt[0] == 0xA0 && entry == 10);
+    // global 4 -> Table A, writable entry 11
+    assert(resolve_alt_loaded_index(buf, len, 4, &alt, &entry) == 0);
+    assert(alt[0] == 0xA0 && entry == 11);
+    // global 5 -> Table B, writable entry 12
+    assert(resolve_alt_loaded_index(buf, len, 5, &alt, &entry) == 0);
+    assert(alt[0] == 0xB0 && entry == 12);
+}
+
+// resolve_alt_loaded_index: readonly-loaded accounts follow all writable ones.
+void test_resolve_alt_readonly() {
+    uint8_t buf[256];
+    size_t len = build_v0_tx_with_alt(buf, 3);
+    const uint8_t *alt = NULL;
+    uint8_t entry = 0;
+
+    // global 6 -> Table A, readonly entry 20
+    assert(resolve_alt_loaded_index(buf, len, 6, &alt, &entry) == 0);
+    assert(alt[0] == 0xA0 && entry == 20);
+    // global 7 -> Table B, readonly entry 21
+    assert(resolve_alt_loaded_index(buf, len, 7, &alt, &entry) == 0);
+    assert(alt[0] == 0xB0 && entry == 21);
+    // global 8 -> Table B, readonly entry 22
+    assert(resolve_alt_loaded_index(buf, len, 8, &alt, &entry) == 0);
+    assert(alt[0] == 0xB0 && entry == 22);
+}
+
+// resolve_alt_loaded_index: a static index (below pubkeys_length) is not an
+// ALT-loaded account.
+void test_resolve_alt_static_index_rejected() {
+    uint8_t buf[256];
+    size_t len = build_v0_tx_with_alt(buf, 3);
+    const uint8_t *alt = NULL;
+    uint8_t entry = 0;
+    assert(resolve_alt_loaded_index(buf, len, 2, &alt, &entry) != 0);
+}
+
+// resolve_alt_loaded_index: an index beyond every loaded entry is out of range.
+void test_resolve_alt_out_of_range_rejected() {
+    uint8_t buf[256];
+    size_t len = build_v0_tx_with_alt(buf, 3);
+    const uint8_t *alt = NULL;
+    uint8_t entry = 0;
+    // 3 static + 3 writable + 3 readonly = 9 total; global 9 is out of range.
+    assert(resolve_alt_loaded_index(buf, len, 9, &alt, &entry) != 0);
+}
+
+// resolve_alt_loaded_index: a legacy (non-versioned) transaction has no ALT.
+void test_resolve_alt_legacy_rejected() {
+    uint8_t buf[MSG_HEADER_BUF_SIZE(3)];
+    build_message_header_buf(buf, 1, 0, 0, 3);  // legacy header, no version prefix
+    const uint8_t *alt = NULL;
+    uint8_t entry = 0;
+    assert(resolve_alt_loaded_index(buf, sizeof(buf), 3, &alt, &entry) != 0);
+}
+
+// message_alt_writable_count: the two-table fixture loads 3 writable accounts.
+void test_alt_writable_count_versioned() {
+    uint8_t buf[256];
+    size_t len = build_v0_tx_with_alt(buf, 3);
+    size_t count = SIZE_MAX;
+    assert(message_alt_writable_count(buf, len, &count) == 0);
+    assert(count == 3);
+}
+
+// message_alt_writable_count: a legacy transaction loads nothing through an ALT.
+void test_alt_writable_count_legacy() {
+    uint8_t buf[MSG_HEADER_BUF_SIZE(3)];
+    build_message_header_buf(buf, 1, 0, 0, 3);
+    size_t count = SIZE_MAX;
+    assert(message_alt_writable_count(buf, sizeof(buf), &count) == 0);
+    assert(count == 0);
+}
+
+// message_alt_writable_count: a truncated ALT section is an error, not a zero count.
+void test_alt_writable_count_truncated() {
+    uint8_t buf[256];
+    size_t len = build_v0_tx_with_alt(buf, 3);
+    size_t count = SIZE_MAX;
+    // Cut the buffer mid-way through the second table's index lists.
+    assert(message_alt_writable_count(buf, len - 4, &count) != 0);
+}
+
+// pubkey_index_is_writable: static signer / non-signer blocks each split into a
+// writable then a readonly run.
+void test_pubkey_index_is_writable_static() {
+    // 5 static keys: 2 signers (1 readonly) + 3 unsigned (1 readonly)
+    // index 0: writable signer, 1: readonly signer,
+    // index 2,3: writable unsigned, 4: readonly unsigned
+    uint8_t buf[MSG_HEADER_BUF_SIZE(5)];
+    build_message_header_buf(buf, 2, 1, 1, 5);
+    Parser parser = {buf, sizeof(buf)};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 0);
+
+    assert(pubkey_index_is_writable(&header, 0, 0) == true);
+    assert(pubkey_index_is_writable(&header, 0, 1) == false);
+    assert(pubkey_index_is_writable(&header, 0, 2) == true);
+    assert(pubkey_index_is_writable(&header, 0, 3) == true);
+    assert(pubkey_index_is_writable(&header, 0, 4) == false);
+}
+
+// pubkey_index_is_writable: every signer is writable when none is readonly.
+void test_pubkey_index_is_writable_all_signers_writable() {
+    uint8_t buf[MSG_HEADER_BUF_SIZE(3)];
+    build_message_header_buf(buf, 2, 0, 0, 3);
+    Parser parser = {buf, sizeof(buf)};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 0);
+
+    assert(pubkey_index_is_writable(&header, 0, 0) == true);
+    assert(pubkey_index_is_writable(&header, 0, 1) == true);
+    assert(pubkey_index_is_writable(&header, 0, 2) == true);
+}
+
+// pubkey_index_is_writable: loaded accounts split at the total writable count, and
+// an index past every loaded entry is not writable.
+void test_pubkey_index_is_writable_alt_loaded() {
+    uint8_t buf[256];
+    size_t len = build_v0_tx_with_alt(buf, 3);
+    Parser parser = {buf, len};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 0);
+
+    size_t alt_writable_count = 0;
+    assert(message_alt_writable_count(buf, len, &alt_writable_count) == 0);
+
+    // 3 static keys, then 3 writable-loaded (global 3..5), then readonly-loaded.
+    assert(pubkey_index_is_writable(&header, alt_writable_count, 3) == true);
+    assert(pubkey_index_is_writable(&header, alt_writable_count, 5) == true);
+    assert(pubkey_index_is_writable(&header, alt_writable_count, 6) == false);
+    assert(pubkey_index_is_writable(&header, alt_writable_count, 8) == false);
+    // Beyond every loaded entry: still reported as not writable.
+    assert(pubkey_index_is_writable(&header, alt_writable_count, 9) == false);
+}
+
 int main() {
     RUN_TEST(test_parse_u8);
     RUN_TEST(test_parse_u8_too_short);
@@ -528,6 +715,17 @@ int main() {
     RUN_TEST(test_skip_alt_truncated_key);
     RUN_TEST(test_skip_alt_truncated_writable);
     RUN_TEST(test_skip_alt_truncated_readonly);
+    RUN_TEST(test_resolve_alt_writable);
+    RUN_TEST(test_resolve_alt_readonly);
+    RUN_TEST(test_resolve_alt_static_index_rejected);
+    RUN_TEST(test_resolve_alt_out_of_range_rejected);
+    RUN_TEST(test_resolve_alt_legacy_rejected);
+    RUN_TEST(test_alt_writable_count_versioned);
+    RUN_TEST(test_alt_writable_count_legacy);
+    RUN_TEST(test_alt_writable_count_truncated);
+    RUN_TEST(test_pubkey_index_is_writable_static);
+    RUN_TEST(test_pubkey_index_is_writable_all_signers_writable);
+    RUN_TEST(test_pubkey_index_is_writable_alt_loaded);
 
     printf("passed\n");
     return 0;

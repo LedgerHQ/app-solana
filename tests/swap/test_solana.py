@@ -696,11 +696,6 @@ class SolanaDescriptorTests(SPLTokenTests):
         sol = SolanaClient(self.backend)
         sol.provide_instruction_descriptor(template_id=self.template_id_1, discriminator=bytes.fromhex("00" * 9))
 
-    def perform_final_tx_too_many_descriptors(self, destination, send_amount, fees, memo):
-        sol = SolanaClient(self.backend)
-        for x in range(16):
-            sol.provide_instruction_descriptor(template_id=self.template_id_1)
-
     def perform_final_tx_mismatch_template(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
         sol.provide_instruction_descriptor(template_id=self.template_id_1)
@@ -1020,7 +1015,6 @@ class TestsSolanaDescriptor:
         "perform_final_tx_bad_size_program_id_too_small",
         "perform_final_tx_bad_size_program_id_too_big",
         "perform_final_tx_discriminator_too_big",
-        "perform_final_tx_too_many_descriptors",
         "perform_final_tx_mismatch_network",
         "perform_final_tx_no_descriptor",
         "perform_final_tx_mismatch_descriptor_count",

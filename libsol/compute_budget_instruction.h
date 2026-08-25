@@ -60,3 +60,7 @@ int parse_compute_budget_instructions(const Instruction *instruction,
 
 int calculate_max_fee(const ComputeBudgetFeeInfo *info, uint64_t *max_fee);
 int print_compute_budget_max_fee(uint64_t max_fee, const PrintConfig *print_config);
+
+// Compute the aggregate max fee and format it as a SOL amount string into out.
+// Returns 0 on success, -1 on fee overflow or when the amount does not fit out.
+int format_compute_budget_max_fee(const ComputeBudgetFeeInfo *info, char *out, size_t out_size);

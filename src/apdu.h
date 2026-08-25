@@ -53,6 +53,17 @@ typedef enum ApduReply {
     ApduReplySolanaInvalidDynamicToken = 0x6ca0,
     ApduReplySolanaInvalidTransactionCheck = 0x6cb0,
 
+    ApduReplySolanaInvalidInstructionInfo = 0x6cc0,
+    ApduReplySolanaInvalidInstructionSubstructure = 0x6cd0,
+    ApduReplySolanaInvalidEnumVariant = 0x6ce0,
+    ApduReplySolanaInvalidTokenAccountState = 0x6cf0,
+    ApduReplySolanaInvalidAltResolution = 0x6d10,
+    ApduReplySolanaInvalidTrustedName = 0x6d30,
+
+    ApduReplySolanaInvalidGenericPreview = 0x6d20,
+    ApduReplySolanaClearSigningIncomplete = 0x6d21,
+    ApduReplySolanaClearSigningInvalidState = 0x6d22,
+
     ApduReplySolanaDelayedPreviewNotFound = 0x6f10,
     ApduReplySolanaDelayedHashMismatch = 0x6f11,
     ApduReplySolanaDelayedLengthMismatch = 0x6f12,
@@ -115,10 +126,12 @@ typedef struct apdu_command_s {
     bool deprecated_host;
     bool user_input_is_ata_or_token_account;
     Hash message_hash;
-    // Raw message payload assembled from (possibly split) APDUs and NULL terminated by construct.
-    uint8_t message[MAX_MESSAGE_LENGTH];
+    // Raw message payload assembled from (possibly split) APDUs and NUL terminated by construct.
+    // Dynamically allocated from the app memory pool, NULL between commands.
+    uint8_t *message;
+    size_t message_capacity;
     int message_length;
-    // Pointer into message[] past the offchain header
+    // Pointer into message past the offchain header
     const char *message_text_start;
 } apdu_command_t;
 
@@ -127,3 +140,9 @@ extern apdu_command_t G_command;
 int apdu_handle_message(const uint8_t *apdu_message,
                         size_t apdu_message_len,
                         apdu_command_t *apdu_command);
+
+// Frees the dynamic message buffer and clears the command struct.
+void apdu_reset_command(apdu_command_t *apdu_command);
+
+// Frees the dynamic message buffer, keeping the rest of the command struct.
+void apdu_free_message(apdu_command_t *apdu_command);

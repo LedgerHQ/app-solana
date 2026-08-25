@@ -9,6 +9,7 @@
 #include "nbgl_use_case.h"
 #include "ui_api.h"
 #include "transaction_check_ui.h"
+#include "reply.h"
 
 #define HOW_TO_INFO_NB 3
 
@@ -89,7 +90,7 @@ static void opt_in_action_cb(int token, uint8_t index) {
             if (g_response_expected) {
                 // If True, we are in this flow because of incoming TX_CHECK APDU
                 G_io_apdu_buffer[0] = N_storage.settings.tx_check_enable;
-                io_send_response_pointer(G_io_apdu_buffer, 1, ApduReplySuccess);
+                reply_data(G_io_apdu_buffer, 1, ApduReplySuccess);
                 finalise_opt_in(enable, ui_idle);
             } else {
                 // If False, we are in this flow from the settings menu, so we just update the UI

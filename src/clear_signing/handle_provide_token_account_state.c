@@ -1,0 +1,226 @@
+#include <os.h>
+#include <cx.h>
+#include <stdint.h>
+#include <string.h>
+
+#include "handle_provide_token_account_state.h"
+#include "apdu.h"
+#include "globals.h"
+#include "io.h"
+#include "utils.h"
+#include "handle_get_challenge.h"
+#include "os_pki.h"
+#include "ledger_pki.h"
+#include "tlv_library.h"
+#include "cs_transaction.h"
+#include "cs_token_account_cache.h"
+#include "reply.h"
+#include "sol/pubkey.h"
+
+#define TYPE_TOKEN_ACCOUNT_STATE 0x15
+
+typedef struct tlv_out_s {
+    TLV_reception_t received_tags;
+
+    uint8_t structure_type;
+    uint8_t version;
+    uint32_t challenge;
+    uint8_t account_address[PUBKEY_SIZE];
+    uint8_t mint[PUBKEY_SIZE];
+    uint8_t owner[PUBKEY_SIZE];
+    uint64_t pre_balance;
+
+    cx_sha256_t hash_ctx;
+    buffer_t signature;
+} tlv_out_t;
+
+static bool handle_structure_type(const tlv_data_t *data, tlv_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->structure_type);
+}
+
+static bool handle_version(const tlv_data_t *data, tlv_out_t *out) {
+    return get_uint8_t_from_tlv_data(data, &out->version);
+}
+
+static bool handle_challenge(const tlv_data_t *data, tlv_out_t *out) {
+    return get_uint32_t_from_tlv_data(data, &out->challenge);
+}
+
+static bool handle_account_address(const tlv_data_t *data, tlv_out_t *out) {
+    buffer_t temp;
+    if (!get_buffer_from_tlv_data(data, &temp, PUBKEY_SIZE, PUBKEY_SIZE)) {
+        return false;
+    }
+    memcpy(out->account_address, temp.ptr, PUBKEY_SIZE);
+    return true;
+}
+
+static bool handle_mint(const tlv_data_t *data, tlv_out_t *out) {
+    buffer_t temp;
+    if (!get_buffer_from_tlv_data(data, &temp, PUBKEY_SIZE, PUBKEY_SIZE)) {
+        return false;
+    }
+    memcpy(out->mint, temp.ptr, PUBKEY_SIZE);
+    return true;
+}
+
+static bool handle_owner(const tlv_data_t *data, tlv_out_t *out) {
+    buffer_t temp;
+    if (!get_buffer_from_tlv_data(data, &temp, PUBKEY_SIZE, PUBKEY_SIZE)) {
+        return false;
+    }
+    memcpy(out->owner, temp.ptr, PUBKEY_SIZE);
+    return true;
+}
+
+static bool handle_pre_balance(const tlv_data_t *data, tlv_out_t *out) {
+    return get_uint64_t_from_tlv_data(data, &out->pre_balance);
+}
+
+static bool handle_signature(const tlv_data_t *data, tlv_out_t *out) {
+    return get_buffer_from_tlv_data(data,
+                                    &out->signature,
+                                    CX_ECDSA_SHA256_SIG_MIN_ASN1_LENGTH,
+                                    CX_ECDSA_SHA256_SIG_MAX_ASN1_LENGTH);
+}
+
+static bool handle_common(const tlv_data_t *data, tlv_out_t *out);
+
+// clang-format off
+#define TOKEN_ACCOUNT_STATE_TAGS(X) \
+    X(0x01, TAS_TAG_STRUCT_TYPE,     handle_structure_type,   ENFORCE_UNIQUE_TAG) \
+    X(0x02, TAS_TAG_STRUCT_VERSION,  handle_version,          ENFORCE_UNIQUE_TAG) \
+    X(0x12, TAS_TAG_CHALLENGE,       handle_challenge,        ENFORCE_UNIQUE_TAG) \
+    X(0x20, TAS_TAG_ACCOUNT_ADDRESS, handle_account_address,  ENFORCE_UNIQUE_TAG) \
+    X(0x21, TAS_TAG_MINT,            handle_mint,             ENFORCE_UNIQUE_TAG) \
+    X(0x22, TAS_TAG_OWNER,           handle_owner,            ENFORCE_UNIQUE_TAG) \
+    X(0x23, TAS_TAG_PRE_BALANCE,     handle_pre_balance,      ENFORCE_UNIQUE_TAG) \
+    X(0x15, TAS_TAG_SIGNATURE,       handle_signature,        ENFORCE_UNIQUE_TAG)
+// clang-format on
+
+DEFINE_TLV_PARSER(TOKEN_ACCOUNT_STATE_TAGS, &handle_common, parse_token_account_state)
+
+static bool handle_common(const tlv_data_t *data, tlv_out_t *out) {
+    if (data->tag != TAS_TAG_SIGNATURE) {
+        CX_ASSERT(cx_hash_update((cx_hash_t *) &out->hash_ctx, data->raw.ptr, data->raw.size));
+    }
+    return true;
+}
+
+int handle_provide_token_account_state(void) {
+    PRINTF("handle_provide_token_account_state\n");
+
+    int state_err = cs_check_state(CS_SESSION_STREAMING);
+    if (state_err != 0) {
+        return reply_sw(state_err);
+    }
+
+    tlv_out_t tlv_extracted = {0};
+    cx_sha256_init(&tlv_extracted.hash_ctx);
+
+    buffer_t payload = {.ptr = G_command.message, .size = G_command.message_length};
+
+    if (!parse_token_account_state(&payload, &tlv_extracted, &tlv_extracted.received_tags)) {
+        PRINTF("parse_token_account_state failed\n");
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
+    }
+
+    if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAS_TAG_STRUCT_TYPE)) {
+        PRINTF("Error: missing struct type\n");
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
+    }
+
+    if (tlv_extracted.structure_type != TYPE_TOKEN_ACCOUNT_STATE) {
+        PRINTF("Error: unexpected struct type 0x%02x\n", tlv_extracted.structure_type);
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
+    }
+
+    if (!TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags,
+                                 TAS_TAG_STRUCT_VERSION,
+                                 TAS_TAG_CHALLENGE,
+                                 TAS_TAG_ACCOUNT_ADDRESS,
+                                 TAS_TAG_PRE_BALANCE,
+                                 TAS_TAG_SIGNATURE)) {
+        PRINTF("Error: missing required fields\n");
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
+    }
+
+    if (tlv_extracted.version != 1) {
+        PRINTF("Error: unsupported version %d\n", tlv_extracted.version);
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
+    }
+
+    // MINT and OWNER are optional: an account that does not exist yet has neither on chain,
+    // and the transaction is what derives them. Only such an account may be attested without
+    // them, and it holds nothing, so any other pre-balance makes the descriptor malformed.
+    bool has_mint = TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAS_TAG_MINT);
+    bool has_owner = TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAS_TAG_OWNER);
+    if ((!has_mint || !has_owner) && tlv_extracted.pre_balance != 0) {
+        PRINTF("Error: pre_balance %llu attested with has_mint=%d has_owner=%d\n",
+               tlv_extracted.pre_balance,
+               has_mint,
+               has_owner);
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
+    }
+
+    if (tlv_extracted.challenge != get_challenge()) {
+        PRINTF("Error: challenge mismatch %u != %u\n", tlv_extracted.challenge, get_challenge());
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
+    }
+
+    // Finalize hash and verify signature
+    uint8_t tlv_hash[CX_SHA256_SIZE] = {0};
+    CX_ASSERT(cx_hash_final((cx_hash_t *) &tlv_extracted.hash_ctx, tlv_hash));
+    buffer_t hash = {.ptr = tlv_hash, .size = sizeof(tlv_hash)};
+
+    uint8_t expected_key_usage = CERTIFICATE_PUBLIC_KEY_USAGE_TRUSTED_NAME;
+    cx_curve_t curve = CX_CURVE_SECP256K1;
+    check_signature_with_pki_status_t err = check_signature_with_pki(hash,
+                                                                     &expected_key_usage,
+                                                                     &curve,
+                                                                     tlv_extracted.signature);
+    if (err != CHECK_SIGNATURE_WITH_PKI_SUCCESS) {
+        PRINTF("Error: signature verification failed (%d)\n", err);
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
+    }
+
+    // Consume the challenge to prevent replay
+    roll_challenge();
+
+    // The cache reads an absent field as a NULL pointer rather than a flag of its own.
+    const uint8_t *mint = NULL;
+    if (has_mint) {
+        mint = tlv_extracted.mint;
+    }
+    const uint8_t *owner = NULL;
+    if (has_owner) {
+        owner = tlv_extracted.owner;
+    }
+
+    PRINTF("=== TOKEN ACCOUNT STATE ===\n");
+    PRINTF("version         = %d\n", tlv_extracted.version);
+    PRINTF("account_address = %.*H\n", PUBKEY_SIZE, tlv_extracted.account_address);
+    // An absent field holds nothing worth dumping: printing its zeroes would read like an
+    // attested key.
+    if (has_mint) {
+        PRINTF("mint            = %.*H\n", PUBKEY_SIZE, mint);
+    } else {
+        PRINTF("mint            = absent\n");
+    }
+    if (has_owner) {
+        PRINTF("owner           = %.*H\n", PUBKEY_SIZE, owner);
+    } else {
+        PRINTF("owner           = absent\n");
+    }
+    PRINTF("pre_balance     = %llu\n", tlv_extracted.pre_balance);
+
+    if (cs_token_account_cache_add(tlv_extracted.account_address,
+                                   mint,
+                                   owner,
+                                   tlv_extracted.pre_balance) != 0) {
+        PRINTF("Error: cs_token_account_cache_add rejected account\n");
+        return reply_sw(ApduReplySolanaInvalidTokenAccountState);
+    }
+
+    return reply_sw(ApduReplySuccess);
+}

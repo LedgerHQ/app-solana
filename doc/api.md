@@ -1,5 +1,13 @@
 # Solana application : Common Technical Specifications
 
+## 1.5.0
+
+- Add delayed signing (SIGN SOLANA MESSAGE PREVIEW / DELAYED)
+- Add generic clear signing: session framing (SIGN SOLANA MESSAGE GENERIC PREVIEW,
+  FINALIZE GENERIC CLEAR SIGNING, PROMPT UI DISPLAY) and its descriptor commands
+  (PROVIDE INSTRUCTION INFO / INSTRUCTION SUBSTRUCTURE / ENUM VARIANT /
+  TOKEN ACCOUNT STATE / ALT RESOLUTION / TRUSTED NAME)
+
 ## 1.4.0
 
 - Add support of Trusted Name descriptor (checked by PKI certificate)
@@ -22,6 +30,8 @@ The application covers the following functionalities :
 - Retrieve an address given an account number
 - Sign Solana transaction
 - Sign off-chain message
+- Review a transaction and sign it later against its stored fingerprint
+- Review a transaction against host-supplied signed descriptors (generic clear signing)
 
 The application interface can be accessed over HID or BLE
 
@@ -185,6 +195,352 @@ _This command provides a [Solana Trusted Name TLV descriptor](https://ledgerhq.a
 
 N/A
 
+## Delayed signing
+
+Delayed signing splits a signature into a review step and a signing step. `SIGN SOLANA
+MESSAGE PREVIEW` reviews a transaction and stores the fingerprint
+`SHA-512(message with its blockhash zeroed)` together with the derivation path. `SIGN SOLANA
+MESSAGE DELAYED` then re-sends the message, and the device signs it without a second review
+provided the fingerprint, the length and the derivation path all match what was reviewed.
+Zeroing the blockhash is what lets the host refresh it between the two steps.
+
+### SIGN SOLANA MESSAGE PREVIEW
+
+#### Description
+
+_This command reviews a Solana transaction and stores its fingerprint for a later
+[SIGN SOLANA MESSAGE DELAYED](#sign-solana-message-delayed). It returns no signature._
+
+##### Command
+
+| _CLA_ | _INS_ | _P1_ | _P2_ |   _Lc_   |     _Le_ |
+| ----- | :---: | ---: | ---- | :------: | -------: |
+| E0    |  08   |   01 | 00   | variable | variable |
+
+##### Input data
+
+Identical to [SIGN SOLANA TRANSACTION](#sign-solana-transaction).
+
+##### Output data
+
+N/A
+
+### SIGN SOLANA MESSAGE DELAYED
+
+#### Description
+
+_This command signs a transaction whose fingerprint a previous preview stored, showing no
+review. The transaction must match the previewed one._
+
+##### Command
+
+| _CLA_ | _INS_ | _P1_ | _P2_ |   _Lc_   |     _Le_ |
+| ----- | :---: | ---: | ---- | :------: | -------: |
+| E0    |  09   |   01 | 00   | variable | variable |
+
+##### Input data
+
+Identical to [SIGN SOLANA TRANSACTION](#sign-solana-transaction).
+
+##### Output data
+
+| _Description_ | _Length_ |
+| ------------- | :------: |
+| Signature     |    64    |
+
+##### Specific status words
+
+| _SW_ |                     _Description_                      |
+| ---- | :----------------------------------------------------: |
+| 6F10 | No preview was stored                                  |
+| 6F11 | Message fingerprint differs from the previewed one      |
+| 6F12 | Message length differs from the previewed one           |
+| 6F13 | Derivation path differs from the previewed one          |
+
+## Generic clear signing
+
+Generic clear signing reviews a transaction against signed descriptors the host streams,
+rather than against the parsers built into the application. It is an addition to
+[SIGN SOLANA TRANSACTION](#sign-solana-transaction), not a replacement: both remain
+first-class signing flows and serve different purposes.
+
+The flow runs as a session with three states:
+
+- `IDLE` — no session. Only `SIGN SOLANA MESSAGE GENERIC PREVIEW` is accepted.
+- `STREAMING` — the transaction is buffered and descriptors are being received.
+- `FINALIZED` — descriptors are validated and merged, awaiting display.
+
+Any error status word abandons the session and returns the device to `IDLE`, discarding the
+buffered transaction, every descriptor received and the stored fingerprint.
+
+The sequence is:
+
+1. `SIGN SOLANA MESSAGE GENERIC PREVIEW` (`0x0A`) buffers the transaction and enters
+   `STREAMING`.
+2. Descriptors are streamed in any order: the pool descriptors (`0x22`, `0x26`, `0x27`,
+   `0x28`, `0x29`), then one `PROVIDE INSTRUCTION INFO` (`0x24`) per distinct
+   `(PROGRAM_ID, DISCRIMINATOR)`, each followed by its `PROVIDE INSTRUCTION SUBSTRUCTURE`
+   (`0x25`) messages.
+3. `FINALIZE GENERIC CLEAR SIGNING` (`0x0C`) checks descriptor completeness, runs the merge
+   engine and preformats the review. It enters `FINALIZED` and displays nothing.
+4. `PROMPT UI DISPLAY` (`0x0B`) renders the review and returns once the user has approved or
+   rejected. On approval the fingerprint is armed.
+5. `SIGN SOLANA MESSAGE DELAYED` (`0x09`) signs, as above.
+
+`TOKEN ACCOUNT STATE`, `ALT RESOLUTION` and `TRUSTED NAME` descriptors are bound to a device
+challenge and require a fresh [GET CHALLENGE](#get-challenge) immediately before each send.
+
+All descriptor APDUs carry a serialized signed TLV payload and follow the existing chunking
+convention (`P2_MORE` / `P2_EXTEND`). The TLV structures themselves are defined by the
+generic clear-signing specification and are not restated here.
+
+### SIGN SOLANA MESSAGE GENERIC PREVIEW
+
+#### Description
+
+_This command buffers a Solana transaction, stores its fingerprint and opens the descriptor
+stream. It shows no review. Sending it again discards whatever the current session holds and
+opens a fresh one, so a host that abandons a stream restarts with this single command._
+
+The device refuses a transaction whose required signers do not include the key the
+derivation path yields, exactly as [SIGN SOLANA TRANSACTION](#sign-solana-transaction) does.
+
+##### Command
+
+| _CLA_ | _INS_ | _P1_ | _P2_ |   _Lc_   |     _Le_ |
+| ----- | :---: | ---: | ---- | :------: | -------: |
+| E0    |  0A   |   00 | 00   | variable |      N/A |
+
+##### Input data
+
+Identical to [SIGN SOLANA TRANSACTION](#sign-solana-transaction).
+
+##### Output data
+
+N/A
+
+### PROVIDE INSTRUCTION INFO
+
+#### Description
+
+_This command opens one instruction template, keyed by `(PROGRAM_ID, DISCRIMINATOR)`, and
+commits to the SHA-256 of the substructures that must follow it. `DISCRIMINATOR` is at most
+8 bytes. Requires `STREAMING`._
+
+An empty `OPERATION_TYPE` declares an instruction carrying no user-facing meaning, such as a
+bridge tracker or an oracle refresh. It is still walked and still feeds the merge guards with
+its writable accounts and its `ACCOUNT_RESET`s, but it is dropped from the review, together
+with any display field its descriptor carries.
+
+A descriptor announcing the SHA-256 of the empty byte string declares no substructure at all.
+No `PROVIDE INSTRUCTION SUBSTRUCTURE` follows it, so the template is committed by this command
+and a later substructure is refused with `6D21`.
+
+Several templates of the same `PROGRAM_ID` may match one instruction, since an empty
+`DISCRIMINATOR` matches any instruction data. The longest matching discriminator wins,
+whichever order the descriptors arrived in.
+
+##### Command
+
+| _CLA_ | _INS_ | _P1_ | _P2_ |   _Lc_   |     _Le_ |
+| ----- | :---: | ---: | ---- | :------: | -------: |
+| E0    |  24   |   00 | 00   | variable |      N/A |
+
+##### Input data
+
+| _Description_                            | _Length_ |
+| ---------------------------------------- | :------: |
+| Serialized signed TLV descriptor payload | variable |
+
+##### Output data
+
+N/A
+
+### PROVIDE INSTRUCTION SUBSTRUCTURE
+
+#### Description
+
+_This command adds one substructure to the currently open instruction template. The first
+payload byte selects its type. The template is committed once the running SHA-256 over the
+received substructures reaches the digest `PROVIDE INSTRUCTION INFO` announced, so a
+template that never completes is never used. Requires `STREAMING`._
+
+| _Substructure type_ | _Value_ |
+| ------------------- | :-----: |
+| DISPLAY_FIELD       |   00    |
+| VALUE_FLOW_PORT     |   01    |
+| HIDE_RULE           |   02    |
+| ACCOUNT_RESET       |   03    |
+
+##### Command
+
+| _CLA_ | _INS_ | _P1_ | _P2_ |   _Lc_   |     _Le_ |
+| ----- | :---: | ---: | ---- | :------: | -------: |
+| E0    |  25   |   00 | 00   | variable |      N/A |
+
+##### Input data
+
+| _Description_                            | _Length_ |
+| ---------------------------------------- | :------: |
+| Substructure type                        |    1     |
+| Serialized signed TLV descriptor payload | variable |
+
+##### Output data
+
+N/A
+
+### PROVIDE ENUM VARIANT
+
+#### Description
+
+_This command provides the display name of one enum variant, keyed by
+`(PROGRAM_ID, ENUM_ID, VARIANT_INDEX)`, for the walker to resolve enum leaves.
+Requires `STREAMING`._
+
+##### Command
+
+| _CLA_ | _INS_ | _P1_ | _P2_ |   _Lc_   |     _Le_ |
+| ----- | :---: | ---: | ---- | :------: | -------: |
+| E0    |  26   |   00 | 00   | variable |      N/A |
+
+##### Input data
+
+| _Description_                            | _Length_ |
+| ---------------------------------------- | :------: |
+| Serialized signed TLV descriptor payload | variable |
+
+##### Output data
+
+N/A
+
+### PROVIDE TOKEN ACCOUNT STATE
+
+#### Description
+
+_This command provides the chain-attested state of one SPL or Token-2022 account: its mint,
+its owner and its pre-transaction balance. Bound to a device challenge. Requires
+`STREAMING`._
+
+The mint and the owner are optional, so that an account which does not exist on chain yet can
+still be attested: it has neither, and the transaction's own `MINT_ASSOC` / `OWNER_ASSOC`
+bindings supply them. Such an account holds nothing, so a descriptor omitting either field
+must carry a zero pre-balance and is refused otherwise.
+
+##### Command
+
+| _CLA_ | _INS_ | _P1_ | _P2_ |   _Lc_   |     _Le_ |
+| ----- | :---: | ---: | ---- | :------: | -------: |
+| E0    |  27   |   00 | 00   | variable |      N/A |
+
+##### Input data
+
+| _Description_                            | _Length_ |
+| ---------------------------------------- | :------: |
+| Serialized signed TLV descriptor payload | variable |
+
+##### Output data
+
+N/A
+
+### PROVIDE ALT RESOLUTION
+
+#### Description
+
+_This command resolves one Address Lookup Table entry to a concrete public key. An
+ALT-loaded account with no matching resolution cannot be named, and the transaction is
+refused rather than reviewed with an unknown account. Bound to a device challenge. Requires
+`STREAMING`._
+
+##### Command
+
+| _CLA_ | _INS_ | _P1_ | _P2_ |   _Lc_   |     _Le_ |
+| ----- | :---: | ---: | ---- | :------: | -------: |
+| E0    |  28   |   00 | 00   | variable |      N/A |
+
+##### Input data
+
+| _Description_                            | _Length_ |
+| ---------------------------------------- | :------: |
+| Serialized signed TLV descriptor payload | variable |
+
+##### Output data
+
+N/A
+
+### PROVIDE TRUSTED NAME
+
+#### Description
+
+_This command binds an address to a human-readable name for the review. `STRUCT_VERSION`
+must be 2, `ADDRESS` is a raw 32-byte public key, the source must be `CRYPTO_ASSET_LIST` and
+the type must be `SMART_CONTRACT` or `TOKEN`. Requires `STREAMING`._
+
+This is distinct from [PROVIDE TRUSTED NAME TLV DESCRIPTOR](#provide-trusted-name-tlv-descriptor)
+(`0x21`), which serves the token-account-ownership flow and encodes its address differently.
+
+##### Command
+
+| _CLA_ | _INS_ | _P1_ | _P2_ |   _Lc_   |     _Le_ |
+| ----- | :---: | ---: | ---- | :------: | -------: |
+| E0    |  29   |   00 | 00   | variable |      N/A |
+
+##### Input data
+
+| _Description_                            | _Length_ |
+| ---------------------------------------- | :------: |
+| Serialized signed TLV descriptor payload | variable |
+
+##### Output data
+
+N/A
+
+### FINALIZE GENERIC CLEAR SIGNING
+
+#### Description
+
+_This command closes the descriptor stream. It checks that an `INSTRUCTION_INFO` was
+received for every distinct `(PROGRAM_ID, DISCRIMINATOR)` the transaction uses and that each
+template's substructures matched its committed hash, then runs the merge engine and
+preformats the review in RAM. It displays nothing. Requires `STREAMING`, and moves the
+session to `FINALIZED`._
+
+##### Command
+
+| _CLA_ | _INS_ | _P1_ | _P2_ | _Lc_ |     _Le_ |
+| ----- | :---: | ---: | ---- | :--: | -------: |
+| E0    |  0C   |   00 | 00   |  00  |      N/A |
+
+##### Input data
+
+_None_
+
+##### Output data
+
+N/A
+
+### PROMPT UI DISPLAY
+
+#### Description
+
+_This command renders the review prepared by `FINALIZE GENERIC CLEAR SIGNING` and returns
+only once the user has approved or rejected it. On approval the fingerprint is armed for
+[SIGN SOLANA MESSAGE DELAYED](#sign-solana-message-delayed). It runs no merge engine of its
+own. Requires `FINALIZED`._
+
+##### Command
+
+| _CLA_ | _INS_ | _P1_ | _P2_ | _Lc_ |     _Le_ |
+| ----- | :---: | ---: | ---- | :--: | -------: |
+| E0    |  0B   |   00 | 00   |  00  |      N/A |
+
+##### Input data
+
+_None_
+
+##### Output data
+
+N/A
+
 ## Transport protocol
 
 ### General transport description
@@ -276,3 +632,28 @@ The following standard Status Words are returned for all APDUs - some specific S
 | 6B00 |           Incorrect parameter P1 or P2            |
 | 6Fxx | Technical problem (Internal error, please report) |
 | 9000 |           Normal ending of the command            |
+
+##### Descriptor Status Words
+
+Each descriptor command reports its own rejection, so a host can tell which payload the
+device refused.
+
+| _SW_ |                  _Description_                   |
+| ---- | :----------------------------------------------: |
+| 6C00 | Invalid trusted info descriptor                  |
+| 6CA0 | Invalid dynamic token descriptor                 |
+| 6CB0 | Invalid transaction check descriptor             |
+| 6CC0 | Invalid instruction info descriptor              |
+| 6CD0 | Invalid instruction substructure descriptor      |
+| 6CE0 | Invalid enum variant descriptor                  |
+| 6CF0 | Invalid token account state descriptor           |
+| 6D10 | Invalid ALT resolution descriptor                |
+| 6D30 | Invalid trusted name descriptor                  |
+
+##### Generic Clear Signing Status Words
+
+| _SW_ |                        _Description_                         |
+| ---- | :----------------------------------------------------------: |
+| 6D20 | Transaction could not be walked, merged or rendered          |
+| 6D21 | Descriptors are incomplete for the transaction               |
+| 6D22 | Command sent in the wrong session state                      |

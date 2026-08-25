@@ -47,6 +47,32 @@ void test_print_token_amount() {
     assert_string_equal(printed, "18446744073709551615 TST");
 }
 
+void test_print_signed_token_amount() {
+    char printed[26];
+
+    assert(print_signed_token_amount(0, "TST", 0, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "0 TST");
+    assert(print_signed_token_amount(1250, "%", 2, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "12.5 %");
+    assert(print_signed_token_amount(-1250, "%", 2, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "-12.5 %");
+    assert(print_signed_token_amount(-1, NULL, 0, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "-1");
+    assert(print_signed_token_amount(-1, NULL, 10, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "-0.0000000001");
+    assert(print_signed_token_amount(INT64_MAX, NULL, 0, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "9223372036854775807");
+    // The most negative i64 has no positive counterpart, so its magnitude must still print.
+    assert(print_signed_token_amount(INT64_MIN, NULL, 0, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "-9223372036854775808");
+    assert(print_signed_token_amount(INT64_MIN, NULL, 9, printed, sizeof(printed)) == 0);
+    assert_string_equal(printed, "-9223372036.854775808");
+
+    // The sign takes one byte of the buffer: what fits unsigned can overflow signed.
+    assert(print_signed_token_amount(INT64_MIN, NULL, 0, printed, 21) == 1);
+    assert(print_signed_token_amount(0, NULL, 0, printed, 0) == 1);
+}
+
 void test_print_sized_string() {
     char buf[5];
     const char test[] = {0x74, 0x65, 0x73, 0x74};
@@ -123,6 +149,63 @@ void test_print_u64() {
 
     assert(print_u64(UINT64_MAX, out, sizeof(out) - 1) == 1);
     assert(print_u64(0, NULL, 0) == 1);
+}
+
+void test_print_u128() {
+    char buf[64];
+
+    uint8_t zero[16] = {0};
+    assert(print_u128(zero, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "0");
+
+    // 2^64 = 18446744073709551616 (byte 8 set).
+    uint8_t two_pow_64[16] = {0};
+    two_pow_64[8] = 1;
+    assert(print_u128(two_pow_64, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "18446744073709551616");
+
+    // Max u128: all bytes 0xFF, 39 digits.
+    uint8_t max[16];
+    memset(max, 0xFF, sizeof(max));
+    assert(print_u128(max, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "340282366920938463463374607431768211455");
+
+    // Refuse when the buffer cannot hold the digits plus NUL.
+    assert(print_u128(max, buf, 39) == 1);
+}
+
+void test_print_i128() {
+    char buf[64];
+
+    uint8_t zero[16] = {0};
+    assert(print_i128(zero, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "0");
+
+    // -1: all bytes 0xFF.
+    uint8_t minus_one[16];
+    memset(minus_one, 0xFF, sizeof(minus_one));
+    assert(print_i128(minus_one, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "-1");
+
+    // Max i128 = 2^127 - 1.
+    uint8_t max[16];
+    memset(max, 0xFF, sizeof(max));
+    max[15] = 0x7F;
+    assert(print_i128(max, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "170141183460469231731687303715884105727");
+
+    // Min i128 = -2^127.
+    uint8_t min[16] = {0};
+    min[15] = 0x80;
+    assert(print_i128(min, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "-170141183460469231731687303715884105728");
+
+    // -(2^64): low 8 bytes zero, high 8 bytes 0xFF.
+    uint8_t neg_two_pow_64[16];
+    memset(neg_two_pow_64, 0x00, 8);
+    memset(neg_two_pow_64 + 8, 0xFF, 8);
+    assert(print_i128(neg_two_pow_64, buf, sizeof(buf)) == 0);
+    assert_string_equal(buf, "-18446744073709551616");
 }
 
 void test_print_timestamp() {
@@ -281,11 +364,14 @@ void test_amount_as_string_is_greater_or_equal() {
 int main() {
     RUN_TEST(test_print_amount);
     RUN_TEST(test_print_token_amount);
+    RUN_TEST(test_print_signed_token_amount);
     RUN_TEST(test_print_sized_string);
     RUN_TEST(test_print_string);
     RUN_TEST(test_print_summary);
     RUN_TEST(test_print_i64);
     RUN_TEST(test_print_u64);
+    RUN_TEST(test_print_u128);
+    RUN_TEST(test_print_i128);
     RUN_TEST(test_print_timestamp);
     RUN_TEST(test_amount_as_string_is_greater_or_equal);
 

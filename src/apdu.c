@@ -1,5 +1,6 @@
 #include "apdu.h"
 #include "utils.h"
+#include "app_mem_utils.h"
 
 static int parse_apdu_header(const uint8_t *apdu_message,
                              size_t apdu_message_len,
@@ -40,6 +41,9 @@ static int parse_apdu_header(const uint8_t *apdu_message,
         case InsSignOffchainMessage:
         case InsSignMessagePreview:
         case InsSignMessageDelayed:
+        case InsStartGenericClearSigningSession:
+        case InsPromptUiDisplay:
+        case InsFinalizeGenericClearSigning:
         case InsTrustedInfoProvideInstructionDescriptor:
         case InsTrustedInfoGetChallenge:
         case InsTrustedInfoProvideInfo:
@@ -47,6 +51,12 @@ static int parse_apdu_header(const uint8_t *apdu_message,
 #ifdef HAVE_TRANSACTION_CHECKS
         case InsProvideTransactionCheck:
 #endif
+        case InsProvideInstructionSubstructure:
+        case InsProvideEnumVariant:
+        case InsProvideInstructionInfo:
+        case InsProvideTokenAccountState:
+        case InsProvideAltResolution:
+        case InsProvideTrustedName:
             PRINTF("Handling modern instruction %d\n", header->instruction);
             header->deprecated_host = false;
             data_offset = OFFSET_CDATA;
@@ -101,8 +111,15 @@ static bool split_allowed_for_instruction(uint8_t instruction) {
             instruction == InsSignOffchainMessage ||
             instruction == InsSignMessagePreview ||
             instruction == InsSignMessageDelayed ||
+            instruction == InsStartGenericClearSigningSession ||
             instruction == InsTrustedInfoProvideInfo ||
-            instruction == InsTrustedInfoProvideDynamicDescriptor
+            instruction == InsTrustedInfoProvideDynamicDescriptor ||
+            instruction == InsProvideInstructionSubstructure ||
+            instruction == InsProvideEnumVariant ||
+            instruction == InsProvideInstructionInfo ||
+            instruction == InsProvideTokenAccountState ||
+            instruction == InsProvideAltResolution ||
+            instruction == InsProvideTrustedName
 #ifdef HAVE_TRANSACTION_CHECKS
             || instruction == InsProvideTransactionCheck
 #endif
@@ -113,7 +130,15 @@ static bool instruction_with_derivation_path_in_first_apdu(uint8_t instruction) 
     // All but these ones
     return (instruction != InsTrustedInfoProvideInfo &&
             instruction != InsTrustedInfoProvideDynamicDescriptor &&
-            instruction != InsTrustedInfoProvideInstructionDescriptor
+            instruction != InsTrustedInfoProvideInstructionDescriptor &&
+            instruction != InsPromptUiDisplay &&
+            instruction != InsFinalizeGenericClearSigning &&
+            instruction != InsProvideInstructionSubstructure &&
+            instruction != InsProvideEnumVariant &&
+            instruction != InsProvideInstructionInfo &&
+            instruction != InsProvideTokenAccountState &&
+            instruction != InsProvideAltResolution &&
+            instruction != InsProvideTrustedName
 #ifdef HAVE_TRANSACTION_CHECKS
             && instruction != InsProvideTransactionCheck
 #endif
@@ -122,6 +147,8 @@ static bool instruction_with_derivation_path_in_first_apdu(uint8_t instruction) 
 
 static bool instruction_without_payload(uint8_t instruction) {
     return (instruction == InsDeprecatedGetAppConfiguration ||
+            instruction == InsPromptUiDisplay ||
+            instruction == InsFinalizeGenericClearSigning ||
             instruction == InsGetAppConfiguration ||
             instruction == InsTrustedInfoGetChallenge);
 }
@@ -131,6 +158,64 @@ static bool instruction_with_only_derivation_path_in_payload(uint8_t instruction
             instruction == InsGetPubkey);
 }
 // clang-format on
+
+// Frees the dynamic message buffer, leaving the rest of the command struct untouched.
+void apdu_free_message(apdu_command_t *apdu_command) {
+    APP_MEM_FREE_AND_NULL((void **) &apdu_command->message);
+    apdu_command->message_capacity = 0;
+    apdu_command->message_length = 0;
+    apdu_command->message_text_start = NULL;
+}
+
+// Frees the dynamic message buffer and clears the whole command struct.
+void apdu_reset_command(apdu_command_t *apdu_command) {
+    APP_MEM_FREE_AND_NULL((void **) &apdu_command->message);
+    explicit_bzero(apdu_command, sizeof(*apdu_command));
+}
+
+// Ensures message can hold message_length + incoming_length bytes plus a trailing NUL, growing the
+// buffer as needed. Payloads grow dynamically and are bounded only by allocation success, except a
+// chunked offchain message which preallocates its full cap once (realloc cannot grow a large buffer
+// in the pool, as growth needs the old and new blocks resident simultaneously) and cannot exceed
+// it.
+static int ensure_message_capacity(apdu_command_t *apdu_command,
+                                   uint8_t instruction,
+                                   bool first_data_chunk,
+                                   bool more,
+                                   size_t incoming_length) {
+    size_t needed = (size_t) apdu_command->message_length + incoming_length;
+
+    size_t target_capacity = needed;
+    if (instruction == InsSignOffchainMessage) {
+        if (needed > MAX_OFFCHAIN_MESSAGE_LENGTH) {
+            PRINTF("Offchain message length %u exceeds preallocation %u\n",
+                   (unsigned) needed,
+                   (unsigned) MAX_OFFCHAIN_MESSAGE_LENGTH);
+            return ApduReplySolanaInvalidMessageSize;
+        }
+        if (first_data_chunk && more) {
+            target_capacity = MAX_OFFCHAIN_MESSAGE_LENGTH;
+        }
+    }
+
+    if (apdu_command->message == NULL) {
+        apdu_command->message = APP_MEM_ALLOC(target_capacity + 1);
+        if (apdu_command->message == NULL) {
+            PRINTF("Message allocation of %u bytes failed\n", (unsigned) (target_capacity + 1));
+            return ApduReplySolanaInvalidMessageSize;
+        }
+        apdu_command->message_capacity = target_capacity;
+    } else if (target_capacity > apdu_command->message_capacity) {
+        uint8_t *grown = APP_MEM_REALLOC(apdu_command->message, target_capacity + 1);
+        if (grown == NULL) {
+            PRINTF("Message realloc to %u bytes failed\n", (unsigned) (target_capacity + 1));
+            return ApduReplySolanaInvalidMessageSize;
+        }
+        apdu_command->message = grown;
+        apdu_command->message_capacity = target_capacity;
+    }
+    return 0;
+}
 
 /**
  * Deserialize APDU into apdu_command_t structure.
@@ -165,7 +250,8 @@ int apdu_handle_message(const uint8_t *apdu_message,
     if (instruction_without_payload(header.instruction)) {
         PRINTF("instruction_without_payload early return\n");
         // return early if no data is expected for the command
-        explicit_bzero(apdu_command, sizeof(apdu_command_t));
+        apdu_reset_command(apdu_command);
+        reset_unrelated_sessions(header.instruction);
         apdu_command->state = ApduStatePayloadComplete;
         apdu_command->instruction = header.instruction;
         apdu_command->non_confirm = (header.p1 == P1_NON_CONFIRM);
@@ -184,7 +270,8 @@ int apdu_handle_message(const uint8_t *apdu_message,
 
     if (first_data_chunk) {
         PRINTF("Overwrite any split context we may have\n");
-        explicit_bzero(apdu_command, sizeof(apdu_command_t));
+        apdu_reset_command(apdu_command);
+        reset_unrelated_sessions(header.instruction);
         apdu_command->state = ApduStatePayloadInProgress;
         apdu_command->instruction = header.instruction;
         apdu_command->non_confirm = (header.p1 == P1_NON_CONFIRM);
@@ -274,14 +361,17 @@ int apdu_handle_message(const uint8_t *apdu_message,
         }
     }
 
-    // Copy header data to the message buffer, ensure we have space for the NULL terminator
+    // Copy header data into the message buffer, growing it and reserving room for the NUL
+    // terminator
     if (header.data != NULL) {
-        if (apdu_command->message_length + header.data_length >= MAX_MESSAGE_LENGTH) {
-            PRINTF("Error combined message length too big %d\n",
-                   apdu_command->message_length + header.data_length);
-            return ApduReplySolanaInvalidMessageSize;
+        ret = ensure_message_capacity(apdu_command,
+                                      header.instruction,
+                                      first_data_chunk,
+                                      (header.p2 & P2_MORE),
+                                      header.data_length);
+        if (ret != 0) {
+            return ret;
         }
-
         memcpy(apdu_command->message + apdu_command->message_length,
                header.data,
                header.data_length);
@@ -297,10 +387,21 @@ int apdu_handle_message(const uint8_t *apdu_message,
     if (!(header.p2 & P2_MORE)) {
         PRINTF("Received APDU is complete\n");
         apdu_command->state = ApduStatePayloadComplete;
+        // OCMS preallocated its full cap; shrink to the received size now that it is known
+        if (apdu_command->instruction == InsSignOffchainMessage && apdu_command->message != NULL &&
+            apdu_command->message_capacity > (size_t) apdu_command->message_length) {
+            uint8_t *shrunk = APP_MEM_REALLOC(apdu_command->message,
+                                              (size_t) apdu_command->message_length + 1);
+            if (shrunk != NULL) {
+                apdu_command->message = shrunk;
+                apdu_command->message_capacity = apdu_command->message_length;
+            }
+        }
         // NUL-terminate so that handlers can safely expose message content as C strings
-        // (e.g. offchain message text passed to NBGL / PRINTF).  The >= check above
-        // guarantees message_length < MAX_MESSAGE_LENGTH, so this write is in bounds.
-        apdu_command->message[apdu_command->message_length] = '\0';
+        // (e.g. offchain message text passed to NBGL / PRINTF).  Capacity always reserves the +1.
+        if (apdu_command->message != NULL) {
+            apdu_command->message[apdu_command->message_length] = '\0';
+        }
 
         apdu_command->user_input_is_ata_or_token_account = (header.p2 & P2_IS_ATA_OR_TOKEN_ACCOUNT);
     }

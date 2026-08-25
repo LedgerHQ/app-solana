@@ -2,6 +2,7 @@
 #include "sol/parser.h"
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 void test_parse_compute_budget_instruction_kind() {
     uint8_t message[] = {1, 2, 3, 4};
@@ -197,6 +198,62 @@ void test_calculate_max_fee_zero_compute() {
     assert(fee == 5000);
 }
 
+// Format path: unit price + explicit limit -> base 5000 + compute 200 = 5200 lamports.
+void test_format_max_fee_price_and_limit() {
+    ComputeBudgetChangeUnitPriceInfo price = {.units = 1000};
+    ComputeBudgetChangeUnitLimitInfo limit = {.units = 200000};
+    ComputeBudgetFeeInfo info = {
+        .change_unit_price = &price,
+        .change_unit_limit = &limit,
+        .instructions_count = 1,
+        .signatures_count = 1,
+    };
+    char text[32];
+    assert(format_compute_budget_max_fee(&info, text, sizeof(text)) == 0);
+    assert(strcmp(text, "0.0000052 SOL") == 0);
+}
+
+// Format path: unit price without a limit -> default max compute is applied.
+void test_format_max_fee_price_default_limit() {
+    ComputeBudgetChangeUnitPriceInfo price = {.units = 2000000};
+    ComputeBudgetFeeInfo info = {
+        .change_unit_price = &price,
+        .change_unit_limit = NULL,
+        .instructions_count = 3,
+        .signatures_count = 1,
+    };
+    char text[32];
+    assert(format_compute_budget_max_fee(&info, text, sizeof(text)) == 0);
+    assert(strcmp(text, "0.001205 SOL") == 0);
+}
+
+// Format path: no unit price -> base fee only (here 2 signatures -> 10000 lamports).
+void test_format_max_fee_base_only() {
+    ComputeBudgetFeeInfo info = {
+        .change_unit_price = NULL,
+        .change_unit_limit = NULL,
+        .instructions_count = 3,
+        .signatures_count = 2,
+    };
+    char text[32];
+    assert(format_compute_budget_max_fee(&info, text, sizeof(text)) == 0);
+    assert(strcmp(text, "0.00001 SOL") == 0);
+}
+
+// Format path: a fee overflow is refused rather than formatted.
+void test_format_max_fee_overflow_refused() {
+    ComputeBudgetChangeUnitPriceInfo price = {.units = UINT64_MAX};
+    ComputeBudgetChangeUnitLimitInfo limit = {.units = 2};
+    ComputeBudgetFeeInfo info = {
+        .change_unit_price = &price,
+        .change_unit_limit = &limit,
+        .instructions_count = 1,
+        .signatures_count = 1,
+    };
+    char text[32];
+    assert(format_compute_budget_max_fee(&info, text, sizeof(text)) == -1);
+}
+
 int main() {
     test_parse_compute_budget_instruction_kind();
     test_parse_compute_budget_instruction_kind_invalid();
@@ -210,6 +267,10 @@ int main() {
     test_calculate_max_fee_overflow_large_price_rejects();
     test_calculate_max_fee_no_overflow_unit_compute();
     test_calculate_max_fee_zero_compute();
+    test_format_max_fee_price_and_limit();
+    test_format_max_fee_price_default_limit();
+    test_format_max_fee_base_only();
+    test_format_max_fee_overflow_refused();
 
     printf("passed\n");
     return 0;

@@ -1,22 +1,23 @@
-#include "sol/parser.h"
-#include "sol/printer.h"
-#include "sol/print_config.h"
-#include "sol/message.h"
-#include "sol/transaction_summary.h"
-#include "glyphs.h"
 #include "apdu.h"
-#include "utils.h"
-#include "ui_api.h"
-#include "io.h"
-#include "main_std_app.h"
-
-#include "nbgl_use_case.h"
-
-#include "handle_sign_message.h"
-#include "handle_sign_offchain_message.h"
-#include "handle_sign_message_preview.h"
-#include "trusted_info.h"
+#include "cs_display_renderer.h"
+#include "cs_transaction.h"
 #include "dynamic_token_info.h"
+#include "glyphs.h"
+#include "handle_sign_message.h"
+#include "handle_sign_message_preview.h"
+#include "handle_sign_offchain_message.h"
+#include "io.h"
+#include "reply.h"
+#include "main_std_app.h"
+#include "nbgl_use_case.h"
+#include "sol/message.h"
+#include "sol/parser.h"
+#include "sol/print_config.h"
+#include "sol/printer.h"
+#include "sol/transaction_summary.h"
+#include "trusted_info.h"
+#include "ui_api.h"
+#include "utils.h"
 
 #ifdef HAVE_TRANSACTION_CHECKS
 #include "handle_provide_transaction_check.h"
@@ -46,17 +47,19 @@ static nbgl_warning_t G_warning;
 
 // function called by NBGL to get the G_current_pair indexed by "index"
 // G_current_pair will point at values stored in displayed_slots[]
-// this will enable displaying at most sizeof(displayed_slots) values simultaneously
+// this will enable displaying at most sizeof(displayed_slots) values
+// simultaneously
 static nbgl_contentTagValue_t *get_review_pair(uint8_t index) {
     PRINTF("get_review_pair index = %d\n", index);
-    // We use a rotating access to the displayed_slots buffers to ensure there is no overwrite
-    // by adjacent indexes
+    // We use a rotating access to the displayed_slots buffers to ensure there
+    // is no overwrite by adjacent indexes
     uint8_t slot = index % ARRAY_COUNT(displayed_slots);
     // Final step is special for ASCII messages
     if (index == G_transaction_steps_number - 1 && G_operation_type == TYPE_MESSAGE &&
         G_is_ascii_message) {
-        // For ASCII offchain messages, the last step points directly to the message text
-        // to avoid truncation by the slot buffer and allow displaying long messages.
+        // For ASCII offchain messages, the last step points directly to the
+        // message text to avoid truncation by the slot buffer and allow
+        // displaying long messages.
         strlcpy(displayed_slots[slot].title, "Message", sizeof(displayed_slots[slot].title));
         // G_command.message_text_start is NULL terminated by construct.
         G_current_pair.value = G_command.message_text_start;
@@ -67,7 +70,8 @@ static nbgl_contentTagValue_t *get_review_pair(uint8_t index) {
         }
         if (transaction_summary_display_item(index, flags)) {
             // Should never happen as items were validated during finalization
-            // TODO: investigate how to gracefully handle display errors in NBGL callbacks
+            // TODO: investigate how to gracefully handle display errors in NBGL
+            // callbacks
             PRINTF("Fatal: transaction_summary_display_item failed for index %d\n", index);
             app_exit();
         }
@@ -95,47 +99,58 @@ static nbgl_reviewStatusType_t get_status_type(bool accepted) {
     }
 }
 
-static void review_choice(bool confirm) {
-    // Free dynamically allocated trusted info and dynamic token info
+// Release everything the interactive sign/preview flow consumed once the review is answered: the
+// CS session (its fingerprint, if any, was already extracted) and the token-metadata pools. The
+// received buffer and the delayed fingerprint are handled by the reply_* teardown points.
+static void reset_signing_context(void) {
+    cs_session_reset();
     reset_trusted_info();
     reset_dynamic_token_info();
-
-    // Answer, display a status page and go back to main
 #ifdef HAVE_TRANSACTION_CHECKS
     clear_transaction_check();
 #endif
-    if (confirm) {
-        if (G_command.is_preview_mode) {
-            // In preview mode, store fingerprint instead of signing
-            if (store_preview_fingerprint() == 0) {
-                io_send_sw(ApduReplySuccess);
-                // We don't display the "Message signed" status page in preview mode as we have not
-                // actually signed. The delayed signing step will sign and display it
-                nbgl_useCaseSpinner("Signing");
-            } else {
-                // Can't really happen because store_preview_fingerprint cannot realistically fail
-                io_send_sw(ApduReplySolanaInvalidMessage);
-                nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
-            };
-        } else {
-            int tx = set_result_sign_message();
-            if (tx <= 0) {
-                // User has accepted to sign but an error occurred during signing
-                // This error is extremely unlikely but let's handle it gracefully just in case
-                io_send_sw(ApduReplySdkException);
-                nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
-            } else {
-                io_send_response_pointer(G_io_apdu_buffer, tx, ApduReplySuccess);
-                nbgl_useCaseReviewStatus(get_status_type(true), ui_idle);
-            }
-        }
-    } else {
-        io_send_sw(ApduReplyUserRefusal);
-        nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
-    }
 }
 
-// Init the base elements of the UI flow common for message and offchain message signing
+void ui_signing_review_choice(bool confirm) {
+    // Refusal
+    if (!confirm) {
+        reply_sw(ApduReplyUserRefusal);
+        nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
+    } else if (G_command.is_preview_mode) {
+        // Preview flows: arm the fingerprint for delayed signing
+        int ret;
+        if (cs_transaction_get() != NULL) {
+            ret = store_cs_preview_fingerprint();
+        } else {
+            ret = store_preview_fingerprint(G_command.message,
+                                            G_command.message_length,
+                                            G_command.derivation_path,
+                                            G_command.derivation_path_length);
+        }
+        if (ret == 0) {
+            reply_sw(ApduReplySuccess);
+            nbgl_useCaseSpinner("Signing");
+        } else {
+            PRINTF("Fingerprint storage failed\n");
+            reply_sw(ApduReplySolanaInvalidMessage);
+            nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
+        }
+    } else {
+        // Direct sign
+        int tx = set_result_sign_message();
+        if (tx <= 0) {
+            reply_sw(ApduReplySdkException);
+            nbgl_useCaseReviewStatus(get_status_type(false), ui_idle);
+        } else {
+            reply_data(G_io_apdu_buffer, tx, ApduReplySuccess);
+            nbgl_useCaseReviewStatus(get_status_type(true), ui_idle);
+        }
+    }
+    reset_signing_context();
+}
+
+// Init the base elements of the UI flow common for message and offchain message
+// signing
 static void init_review_content(nbgl_opType_t operation_type,
                                 size_t num_summary_steps,
                                 bool is_ascii_message) {
@@ -181,10 +196,11 @@ static void start_blind_signing_ui(const char *review_title, const char *confirm
                                maybe_warning_confirmation(confirmation_text),
                                NULL,
                                &G_warning,
-                               review_choice);
+                               ui_signing_review_choice);
 }
 
-// This function handles post warnings UI for both onchain and offchain message signing
+// This function handles post warnings UI for both onchain and offchain message
+// signing
 static void start_message_signing_review(void) {
 #ifdef HAVE_TRANSACTION_CHECKS
     if (G_operation_type == TYPE_TRANSACTION) {
@@ -273,13 +289,13 @@ static void start_message_signing_review(void) {
                                maybe_warning_confirmation(confirmation_text),
                                NULL,
                                &G_warning,
-                               review_choice);
+                               ui_signing_review_choice);
 }
 
 // Function called by the Transaction Hook / Unknown Transaction Fees flow
 static void on_token_warning_choice(bool cancel) {
     if (cancel) {
-        review_choice(false);
+        ui_signing_review_choice(false);
     } else {
         start_message_signing_review();
     }
@@ -299,27 +315,29 @@ void start_sign_message_ui(size_t num_summary_steps) {
             const char *warning_title = NULL;
             const char *warning_text = NULL;
             if (hook_warning) {
-                // Transfer hook is more dangerous than unverified fees, so its warning takes
-                // priority
+                // Transfer hook is more dangerous than unverified fees, so its
+                // warning takes priority
                 warning_title = "Transfer Hook";
                 warning_text =
-                    "This transaction invokes a custom program. It may lead to unexpected "
+                    "This transaction invokes a custom program. It may lead to "
+                    "unexpected "
                     "behaviour.";
             } else if (fee_warning) {
                 warning_title = "Token Extensions cannot be verified";
                 warning_text =
-                    "A token in this transaction may contain Transfer Fee extension which would "
+                    "A token in this transaction may contain Transfer Fee "
+                    "extension which would "
                     "lead "
                     "to additional fees upon broadcast.";
             }
-            nbgl_useCaseChoice(
-                &ICON_WARNING,
-                warning_title,
-                warning_text,
-                "Back to safety",
-                "Continue anyway",
-                // on_token_warning_choice is a wrapper around start_message_signing_review
-                on_token_warning_choice);
+            nbgl_useCaseChoice(&ICON_WARNING,
+                               warning_title,
+                               warning_text,
+                               "Back to safety",
+                               "Continue anyway",
+                               // on_token_warning_choice is a wrapper around
+                               // start_message_signing_review
+                               on_token_warning_choice);
         } else {
             start_message_signing_review();
         }
@@ -367,4 +385,90 @@ void ui_transaction_modal(bool is_success) {
     } else {
         nbgl_useCaseReviewStatus(STATUS_TYPE_TRANSACTION_REJECTED, ui_idle);
     }
+}
+
+// Function called by NBGL to get the pair indexed by "index" for the generic
+// clear signing review. The flat index is translated into the proper
+// instruction/field from the hierarchical renderer data.
+static nbgl_contentTagValue_t *cs_get_review_pair(uint8_t index) {
+    PRINTF("cs_get_review_pair index=%d\n", index);
+    cs_display_flat_element_t flat;
+    if (cs_display_renderer_flat_element(index, &flat) != 0) {
+        PRINTF("cs_get_review_pair: flat element failed at index %d\n", index);
+        app_exit();
+    }
+    explicit_bzero(&G_current_pair, sizeof(G_current_pair));
+    G_current_pair.item = flat.title;
+    G_current_pair.value = flat.value;
+    G_current_pair.centeredInfo = flat.centered_info;
+    G_current_pair.forcePageStart = flat.force_page_start;
+    return &G_current_pair;
+}
+
+int ui_clear_signing_review(void) {
+    size_t flat_count = cs_display_renderer_flat_count();
+    PRINTF("ui_clear_signing_review: %d flat elements\n", (int) flat_count);
+
+    // NBGL counts pairs in a uint8_t and indexes its callback with one, so anything past
+    // 255 could not be reached and the review would stop short of the whole transaction
+    // while still offering the Sign button. Refuse instead of showing a partial review.
+    if (flat_count > UINT8_MAX) {
+        PRINTF("ui_clear_signing_review: %d elements exceed the %d NBGL can display\n",
+               (int) flat_count,
+               UINT8_MAX);
+        return -1;
+    }
+
+    explicit_bzero(&G_warning, sizeof(nbgl_warning_t));
+    init_review_content(TYPE_TRANSACTION, flat_count, false);
+    G_content.callback = cs_get_review_pair;
+
+    size_t instruction_count = cs_display_renderer_instruction_count();
+
+    if (instruction_count == 1) {
+        const cs_display_instruction_t *instruction = cs_display_renderer_instruction(0);
+        static char review_title[96];
+        static char finish_title[96];
+        int written;
+        written = snprintf(review_title,
+                           sizeof(review_title),
+                           "Review transaction to %s",
+                           instruction->intent);
+        if (written < 0 || (size_t) written >= sizeof(review_title)) {
+            PRINTF("review_title truncated: intent '%s' too long\n", instruction->intent);
+            return -1;
+        }
+        written = snprintf(finish_title,
+                           sizeof(finish_title),
+                           "Sign transaction to %s?",
+                           instruction->intent);
+        if (written < 0 || (size_t) written >= sizeof(finish_title)) {
+            PRINTF("finish_title truncated: intent '%s' too long\n", instruction->intent);
+            return -1;
+        }
+        nbgl_useCaseReview(TYPE_TRANSACTION,
+                           &G_content,
+                           &ICON_SIGN_MENU,
+                           review_title,
+                           NULL,
+#ifdef SCREEN_SIZE_WALLET
+                           finish_title,
+#else
+                           NULL,
+#endif
+                           ui_signing_review_choice);
+    } else {
+        nbgl_useCaseReview(TYPE_TRANSACTION,
+                           &G_content,
+                           &ICON_SIGN_MENU,
+                           "Review transaction",
+                           NULL,
+#ifdef SCREEN_SIZE_WALLET
+                           "Sign transaction on the Solana network?",
+#else
+                           NULL,
+#endif
+                           ui_signing_review_choice);
+    }
+    return 0;
 }
