@@ -298,12 +298,88 @@ static int print_create_stake_account_with_seed_and_delegate(const PrintConfig *
     return 0;
 }
 
+static int bind_stake_split_v1_1(InstructionInfo *const *infos, const StakeSplitInfo **ss_out) {
+    const SystemAllocateInfo *al_info = &infos[0]->system.allocate;
+    const SystemAssignInfo *as_info = &infos[1]->system.assign;
+    const StakeSplitInfo *ss_info = &infos[2]->stake.split;
+
+    // The allocated and assigned account is the account the split funds land in
+    BAIL_IF(!pubkeys_equal(al_info->account, ss_info->split_account));
+    BAIL_IF(!pubkeys_equal(as_info->account, ss_info->split_account));
+    BAIL_IF(!pubkeys_equal(as_info->program_id, &stake_program_id));
+
+    *ss_out = ss_info;
+    return 0;
+}
+
+static int bind_stake_split_v1_2(InstructionInfo *const *infos, const StakeSplitInfo **ss_out) {
+    const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
+    const StakeSplitInfo *ss_info = &infos[1]->stake.split;
+
+    // The created account is the account the split funds land in
+    BAIL_IF(!pubkeys_equal(ca_info->to, ss_info->split_account));
+    BAIL_IF(!pubkeys_equal(ca_info->owner, &stake_program_id));
+
+    *ss_out = ss_info;
+    return 0;
+}
+
+static int bind_stake_split_with_seed(InstructionInfo *const *infos,
+                                      bool legacy,
+                                      const StakeSplitInfo **ss_out) {
+    const StakeSplitInfo *ss_info = &infos[1]->stake.split;
+    const Pubkey *account = NULL;
+    const Pubkey *owner = NULL;
+
+    if (legacy) {
+        const SystemAllocateWithSeedInfo *aws_info = &infos[0]->system.allocate_with_seed;
+        account = aws_info->account;
+        owner = aws_info->program_id;
+    } else {
+        const SystemCreateAccountWithSeedInfo *cws_info = &infos[0]
+                                                               ->system.create_account_with_seed;
+        account = cws_info->to;
+        owner = cws_info->owner;
+    }
+
+    // The account the displayed base and seed derive is the account the split funds land in
+    BAIL_IF(!pubkeys_equal(account, ss_info->split_account));
+    BAIL_IF(!pubkeys_equal(owner, &stake_program_id));
+
+    *ss_out = ss_info;
+    return 0;
+}
+
+// Heuristic, dated premise: no known producer uses a pre-existing account as a split
+// destination. It stays runtime-legal though, Allocate accepts a funded, data-empty,
+// System-owned signer. Re-check when SIMD-0312 (CreateAccountAllowPrefund) activates, it
+// removes the funded-`to` guard this relies on for the v1.2 shapes.
+static int bind_split_destination_is_new(const StakeSplitInfo *ss_info,
+                                         const PrintConfig *print_config) {
+    BAIL_IF(pubkeys_equal(ss_info->split_account, &print_config->header.pubkeys[0]));
+    BAIL_IF(pubkeys_equal(ss_info->split_account, print_config->signer_pubkey));
+
+    return 0;
+}
+
+static int print_stake_split_no_seed(const PrintConfig *print_config,
+                                     const StakeSplitInfo *ss_info,
+                                     const SystemInfo *prefund) {
+    if (prefund != NULL) {
+        BAIL_IF(print_system_prefund_for_split(prefund, print_config));
+    }
+
+    BAIL_IF(print_stake_split_info1(ss_info, print_config));
+    BAIL_IF(print_stake_split_info2(ss_info, print_config));
+
+    return 0;
+}
+
 static int print_stake_split_with_seed(const PrintConfig *print_config,
                                        InstructionInfo *const *infos,
-                                       size_t infos_length,
-                                       bool legacy) {
-    UNUSED(infos_length);
-
+                                       const StakeSplitInfo *ss_info,
+                                       bool legacy,
+                                       const SystemInfo *prefund) {
     const Pubkey *base = NULL;
     const SizedString *seed = NULL;
 
@@ -318,7 +394,9 @@ static int print_stake_split_with_seed(const PrintConfig *print_config,
         seed = &cws_info->seed;
     }
 
-    const StakeSplitInfo *ss_info = &infos[1]->stake.split;
+    if (prefund != NULL) {
+        BAIL_IF(print_system_prefund_for_split(prefund, print_config));
+    }
 
     BAIL_IF(print_stake_split_info1(ss_info, print_config));
 
@@ -334,26 +412,56 @@ static int print_stake_split_with_seed(const PrintConfig *print_config,
     return 0;
 }
 
-static int print_prefunded_split(const PrintConfig *print_config,
-                                 InstructionInfo *const *infos,
-                                 size_t infos_length) {
-    UNUSED(infos_length);
+static int print_stake_split_v1_1(const PrintConfig *print_config, InstructionInfo *const *infos) {
+    const StakeSplitInfo *ss_info = NULL;
 
-    BAIL_IF(print_system_prefund_for_split(&infos[0]->system, print_config));
-    BAIL_IF(print_stake_split_info(&infos[3]->stake.split, print_config));
+    BAIL_IF(bind_stake_split_v1_1(infos, &ss_info));
+    BAIL_IF(bind_split_destination_is_new(ss_info, print_config));
 
-    return 0;
+    return print_stake_split_no_seed(print_config, ss_info, NULL);
+}
+
+static int print_stake_split_v1_2(const PrintConfig *print_config, InstructionInfo *const *infos) {
+    const StakeSplitInfo *ss_info = NULL;
+
+    BAIL_IF(bind_stake_split_v1_2(infos, &ss_info));
+    BAIL_IF(bind_split_destination_is_new(ss_info, print_config));
+
+    return print_stake_split_no_seed(print_config, ss_info, NULL);
+}
+
+static int print_seeded_split(const PrintConfig *print_config,
+                              InstructionInfo *const *infos,
+                              bool legacy) {
+    const StakeSplitInfo *ss_info = NULL;
+
+    BAIL_IF(bind_stake_split_with_seed(infos, legacy, &ss_info));
+
+    return print_stake_split_with_seed(print_config, infos, ss_info, legacy, NULL);
+}
+
+static int print_prefunded_split(const PrintConfig *print_config, InstructionInfo *const *infos) {
+    const SystemTransferInfo *t_info = &infos[0]->system.transfer;
+    const StakeSplitInfo *ss_info = NULL;
+
+    BAIL_IF(bind_stake_split_v1_1(&infos[1], &ss_info));
+    // The prefunded account is the account the split funds land in
+    BAIL_IF(!pubkeys_equal(t_info->to, ss_info->split_account));
+    BAIL_IF(bind_split_destination_is_new(ss_info, print_config));
+
+    return print_stake_split_no_seed(print_config, ss_info, &infos[0]->system);
 }
 
 static int print_prefunded_split_with_seed(const PrintConfig *print_config,
-                                           InstructionInfo *const *infos,
-                                           size_t infos_length) {
-    UNUSED(infos_length);
+                                           InstructionInfo *const *infos) {
+    const SystemTransferInfo *t_info = &infos[0]->system.transfer;
+    const StakeSplitInfo *ss_info = NULL;
 
-    BAIL_IF(print_system_prefund_for_split(&infos[0]->system, print_config));
-    BAIL_IF(print_stake_split_with_seed(print_config, &infos[1], 2, true));
+    BAIL_IF(bind_stake_split_with_seed(&infos[1], true, &ss_info));
+    // The prefunded account is the account the split funds land in
+    BAIL_IF(!pubkeys_equal(t_info->to, ss_info->split_account));
 
-    return 0;
+    return print_stake_split_with_seed(print_config, &infos[1], ss_info, true, &infos[0]->system);
 }
 
 static int print_stake_authorize_both(const PrintConfig *print_config,
@@ -752,17 +860,14 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
                 PRINTF("Handle with print_vote_authorize_both\n");
                 print_ret = print_vote_authorize_both(print_config, infos, infos_length);
             } else if (is_stake_split_with_seed_v1_1(infos, infos_length)) {
-                PRINTF("Handle with print_stake_split_with_seed\n");
-                print_ret = print_stake_split_with_seed(print_config, infos, infos_length, true);
+                PRINTF("Handle with print_seeded_split\n");
+                print_ret = print_seeded_split(print_config, infos, true);
             } else if (is_stake_split_v1_2(infos, infos_length)) {
-                // System create account is issued with zero lamports in this
-                // case, so it has no interesting info to add. Print stake
-                // split as if it were a single instruction
-                PRINTF("Handle with print_stake_info\n");
-                print_ret = print_stake_info(&infos[1]->stake, print_config);
+                PRINTF("Handle with print_stake_split_v1_2\n");
+                print_ret = print_stake_split_v1_2(print_config, infos);
             } else if (is_stake_split_with_seed_v1_2(infos, infos_length)) {
-                PRINTF("Handle with print_stake_split_with_seed\n");
-                print_ret = print_stake_split_with_seed(print_config, infos, infos_length, false);
+                PRINTF("Handle with print_seeded_split\n");
+                print_ret = print_seeded_split(print_config, infos, false);
             } else if (is_spl_token_create_mint(infos, infos_length)) {
                 PRINTF("Handle with print_spl_token_create_mint\n");
                 print_ret = print_spl_token_create_mint(print_config, infos, infos_length);
@@ -800,13 +905,11 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
                                                                               infos,
                                                                               infos_length);
             } else if (is_stake_split_v1_1(infos, infos_length)) {
-                // System allocate/assign have no interesting info, print
-                // stake split as if it were a single instruction
-                PRINTF("Handle with print_stake_info\n");
-                print_ret = print_stake_info(&infos[2]->stake, print_config);
+                PRINTF("Handle with print_stake_split_v1_1\n");
+                print_ret = print_stake_split_v1_1(print_config, infos);
             } else if (is_stake_split_with_seed_v1_3(infos, infos_length)) {
                 PRINTF("Handle with print_prefunded_split_with_seed\n");
-                print_ret = print_prefunded_split_with_seed(print_config, infos, infos_length);
+                print_ret = print_prefunded_split_with_seed(print_config, infos);
             } else {
                 PRINTF("Unrecognized info pattern\n");
                 return -1;
@@ -816,7 +919,7 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
         case 4:
             if (is_stake_split_v1_3(infos, infos_length)) {
                 PRINTF("Handle with print_prefunded_split\n");
-                print_ret = print_prefunded_split(print_config, infos, infos_length);
+                print_ret = print_prefunded_split(print_config, infos);
             } else {
                 PRINTF("Unrecognized info pattern\n");
                 return -1;
