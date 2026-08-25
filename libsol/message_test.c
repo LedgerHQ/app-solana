@@ -1632,7 +1632,7 @@ void test_process_message_body_stake_split_with_nonce_v1_2() {
                 42, 0, 0, 0, 0, 0, 0, 0
     };
 
-    process_message_body_and_sanity_check(message, sizeof(message), 7);
+    process_message_body_and_sanity_check(message, sizeof(message), 9);
 }
 
 void test_process_message_body_stake_split_with_seed_v1_1() {
@@ -1698,6 +1698,35 @@ void test_process_message_body_stake_split_with_seed_v1_2() {
         12,
             3, 0, 0, 0,
             42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_sanity_check(message, sizeof(message), 9);
+}
+
+void test_process_message_body_stake_split_v1_2_funded() {
+    uint8_t message[] = {
+        2, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        2,
+            // system - create account
+            3,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0, 128, 213, 34, 0, 0, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189,
+                254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
     };
 
     process_message_body_and_sanity_check(message, sizeof(message), 7);
@@ -2667,6 +2696,7 @@ int main() {
     RUN_TEST(test_process_message_body_stake_split_with_nonce_v1_2);
     RUN_TEST(test_process_message_body_stake_split_with_seed_v1_1);
     RUN_TEST(test_process_message_body_stake_split_with_seed_v1_2);
+    RUN_TEST(test_process_message_body_stake_split_v1_2_funded);
     RUN_TEST(test_process_message_body_stake_split_v1_3);
     RUN_TEST(test_process_message_body_stake_split_with_seed_v1_3);
     RUN_TEST(test_process_message_body_stake_split_v1_1_allocate_mismatch_fail);
