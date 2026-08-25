@@ -96,6 +96,9 @@ typedef struct TransactionSummary {
     bool fee_warning;
     bool hook_warning;
     bool is_blind_signing;
+    // Set when an item was asked for and none was available. transaction_summary_reset()
+    // bzeroes the struct, so it clears with the rest of the summary.
+    bool overflow;
     transaction_type_t transaction_type;
     SummaryItem primary;
     SummaryItem fee_payer;
@@ -123,6 +126,8 @@ static SummaryItem *summary_item_as_unused(SummaryItem *item) {
     if (!is_summary_item_used(item)) {
         return item;
     }
+    PRINTF("Summary item already set\n");
+    G_transaction_summary.overflow = true;
     return NULL;
 }
 
@@ -153,6 +158,8 @@ SummaryItem *transaction_summary_general_item() {
             return item;
         }
     }
+    PRINTF("No general summary item left\n");
+    G_transaction_summary.overflow = true;
     return NULL;
 }
 
@@ -196,8 +203,8 @@ bool transaction_summary_is_blind_signing() {
 #define FEE_PAYER_TITLE "Fee payer"
 
 SummaryItem *transaction_summary_primary_or_general_item() {
-    SummaryItem *item = transaction_summary_primary_item();
-    if (item != NULL) {
+    SummaryItem *item = &G_transaction_summary.primary;
+    if (!is_summary_item_used(item)) {
         return item;
     }
     return transaction_summary_general_item();
@@ -337,6 +344,11 @@ int transaction_summary_display_item(size_t item_index, enum DisplayFlags flags)
 int transaction_summary_finalize(enum SummaryItemKind *item_kinds, size_t *item_kinds_len) {
     const TransactionSummary *summary = &G_transaction_summary;
     size_t index = 0;
+
+    if (summary->overflow) {
+        PRINTF("Error transaction summary ran out of items\n");
+        return 1;
+    }
 
     if (summary->primary.kind == SummaryItemNone) {
         PRINTF("Error transaction summary is unset\n");

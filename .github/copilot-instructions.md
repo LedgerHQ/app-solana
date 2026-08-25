@@ -46,6 +46,8 @@ qb -ce -f memory_profiling
 venv && pytest tests/python/ --device flex -s 2>&1 | tools/valground.py -q
 ```
 
+NEVER return to user while tests are still running. Either abort them or wait for completion.
+
 ### Test pitfals
 
 - NEVER attempt to run both pytest instances, "pytest tests/python/ tests/swap/" it WILL NOT work as fixtures will fight each other.

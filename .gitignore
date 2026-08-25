@@ -17,6 +17,26 @@ __pycache__
 .pyc
 *~
 
+# Claude stuff
+.bash_profile
+.bashrc
+.claude/agents
+.claude/commands
+.claude/hooks
+.claude/launch.json
+.claude/loop.md
+.claude/output-styles
+.claude/routines
+.claude/scheduled_tasks.json
+.claude/skills
+.claude/workflows
+.gitconfig
+.mcp.json
+.profile
+.ripgreprc
+.zprofile
+.zshrc
+
 snapshots-tmp/
 
 tests/swap/.test_dependencies/app-ethereum

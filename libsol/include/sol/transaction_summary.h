@@ -26,7 +26,12 @@
 //     new_stake_auth + new_withdraw_auth + lockup_time + lockup_epoch + lockup_authority
 //   print_delegate_stake_info:                                        2
 //     vote_account + authorized_by
-#define NUM_GENERAL_ITEMS          (4 + 5 + 2)
+// plus what the callers of the composite printers add on top of it:
+//   print_compute_budget_max_fee:                                     1
+//     max_fees
+//   print_spl_token_extension_warning:                                2
+//     warning + verify prompt
+#define NUM_GENERAL_ITEMS          (4 + 5 + 2 + 1 + 2)
 #define DEFAULT_COMPUTE_UNIT_LIMIT 200000
 #define COMPUTE_UNIT_PRICE_DIVIDER 1000000
 #define MAX_TRANSACTION_SUMMARY_ITEMS           \
