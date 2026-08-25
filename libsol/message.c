@@ -66,6 +66,17 @@ static int parse_validate_and_debug_instruction_accounts(Parser *parser,
     return 0;
 }
 
+// Set while parsing the last processed message
+static bool G_generate_extension_warning;
+
+int message_print_extension_warning() {
+    if (!G_generate_extension_warning) {
+        return 0;
+    }
+    PRINTF("generate_extension_warning\n");
+    return print_spl_token_extension_warning();
+}
+
 int process_message_body(const uint8_t *message_body,
                          int message_body_length,
                          const PrintConfig *print_config) {
@@ -77,9 +88,7 @@ int process_message_body(const uint8_t *message_body,
     InstructionInfo instruction_info[MAX_INSTRUCTIONS];
     explicit_bzero(instruction_info, sizeof(InstructionInfo) * MAX_INSTRUCTIONS);
 
-    // Track if given transaction contains token2022 extensions that are not fully supported
-    // Needed to display user proper warning
-    bool generate_extension_warning = false;
+    G_generate_extension_warning = false;
 
     size_t display_instruction_count = 0;
     InstructionInfo *display_instruction_info[MAX_INSTRUCTIONS];
@@ -128,7 +137,7 @@ int process_message_body(const uint8_t *message_body,
                                                  &info->spl_token,
                                                  &ignore_instruction_info) == 0) {
                     info->kind = program_id;
-                    generate_extension_warning |= info->spl_token.generate_extension_warning;
+                    G_generate_extension_warning |= info->spl_token.generate_extension_warning;
                 }
                 break;
             case ProgramIdSystem: {
@@ -211,10 +220,7 @@ int process_message_body(const uint8_t *message_body,
         }
     }
 
-    if (generate_extension_warning) {
-        PRINTF("generate_extension_warning\n");
-        BAIL_IF(print_spl_token_extension_warning());
-    }
+    BAIL_IF(message_print_extension_warning());
     if (print_transaction(print_config, display_instruction_info, display_instruction_count) != 0) {
         PRINTF("print_transaction failed\n");
         return -1;

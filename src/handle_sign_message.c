@@ -571,8 +571,13 @@ int handle_sign_message_parse_message(void) {
                 start_blind_sign_error_ui();
                 return io_send_sw(ApduReplySdkNotSupported);
             } else {
-                // Blind sign allowed. Prepare UI items content
+                // Blind sign allowed. Prepare UI items content.
+                // A refused message may have left items behind, start from a clean state
+                transaction_summary_reset();
                 transaction_summary_set_blind_signing(true);
+
+                // Re-add the extension warning the reset above cleared
+                message_print_extension_warning();
 
                 SummaryItem *item = transaction_summary_primary_item();
                 summary_item_set_string(item, "Unrecognized", "format");

@@ -415,6 +415,25 @@ class TestToken2022:
         signature: bytes = sol.get_async_response().data
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
+    def test_token_2022_default_account_state_alone_warns_on_blind_signing(self, sol, navigation_helper):
+        """The extension instruction is not displayed, so a message holding nothing else has
+        nothing left to clear sign and falls back to blind signing. The extension warning
+        applies to that screen too."""
+        update_default_state_instruction = Instruction(
+            program_id=TOKEN_2022_PROGRAM_ID,
+            accounts=[
+                AccountMeta(pubkey=self.mint_pubkey, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=False),
+            ],
+            data=struct.pack("<BBB", DEFAULT_ACCOUNT_STATE_EXTENSION, DEFAULT_ACCOUNT_STATE_UPDATE, ACCOUNT_STATE_FROZEN),
+        )
+        navigation_helper.enable_blind_signing()
+        message_data = sol.craft_tx([update_default_state_instruction], self.sender_public_key)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            navigation_helper.navigate_with_blind_signing_and_accept()
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
 
 class TestTokenDynamic:
     def test_dynamic_token_simple(self, sol, scenario_navigator, root_pytest_dir):
