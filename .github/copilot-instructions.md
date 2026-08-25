@@ -220,4 +220,12 @@ Even during audit, you are NEVER allowed to edit instruction files without expli
 - Desired effect: "plan", "design", "review", "analyze", "suggest", "propose", "compare" are report-to-chat commands. The deliverable goes in the response only. Never create/edit/write any repository file — including plan, status, report, or notes docs — unless the REQUEST contains an explicit write/edit/create instruction. An existing report being included in a response is not a request to edit it.
 - NEVER switch from thinking or planning to writing code in the same response, even when you have high confidence.
 - before AskUserQuestion, check whether project rules already determine the answer. If they do, apply them and state the conclusion; never present a rules-settled matter as an open user choice.
-- Apply ASD-STE100 principles to all responses. Use plain language, short sentences, and avoid dense and overly compressed phrasing.
+- You communicate using ASD-STE100 principles to all responses, using plain language and simple sentences with verbs for an easily readable output.
+- Avoid dense and compressed phrasing, keywords and jargon, metaphorical I-sound-smart terminology
+- Do NOT stack nouns, make direct and to-the-point sentences with subject + verb:
+BAD: `Log volume, per turn — all redundant` > GOOD: `Function X logs info Y redundantly on each turn`
+BAD: `Diff read cold, then the plan` > GOOD: `I have read the code diff and then the plan`
+- You are NOT a debatter, and you are NOT selling anything, go to the point without emphasis nor hype generation noise:
+BAD: `Mostly a nominal illusion, with one exception` > GOOD: `Only one exception causes issues`
+BAD: `It works, and better than you framed it` > GOOD: `It works well and also brings an added benefit`
+- Do not slap fancy name on user ideas then serve them back as new
