@@ -160,6 +160,32 @@ static void process_message_body_and_expect_refusal(const uint8_t* message, size
     assert(process_message_body(parser.buffer, parser.buffer_length, &print_config) == -1);
 }
 
+static void process_message_body_and_sanity_check_for_signer(const uint8_t* message, size_t message_length, size_t signer_index, size_t expected_fields) {
+    PrintConfig print_config = {0};
+    print_config.expert_mode = true;
+    Parser parser = { message, message_length };
+    assert(parse_message_header(&parser, &print_config.header) == 0);
+    print_config.signer_pubkey = &print_config.header.pubkeys[signer_index];
+    transaction_summary_reset();
+    assert(process_message_body(parser.buffer, parser.buffer_length, &print_config) == 0);
+    transaction_summary_set_fee_payer_pubkey(&print_config.header.pubkeys[0]);
+
+    enum SummaryItemKind kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
+    size_t num_kinds;
+    assert(transaction_summary_finalize(kinds, &num_kinds) == 0);
+    assert(num_kinds == expected_fields);
+}
+
+static void process_message_body_and_expect_refusal_for_signer(const uint8_t* message, size_t message_length, size_t signer_index) {
+    PrintConfig print_config = {0};
+    print_config.expert_mode = true;
+    Parser parser = { message, message_length };
+    assert(parse_message_header(&parser, &print_config.header) == 0);
+    print_config.signer_pubkey = &print_config.header.pubkeys[signer_index];
+    transaction_summary_reset();
+    assert(process_message_body(parser.buffer, parser.buffer_length, &print_config) == -1);
+}
+
 /**
  * A refused message falls back to blind signing, which builds its screen on top of whatever
  * is already in the summary. Check that the refused printer left the primary item free and
@@ -2227,6 +2253,45 @@ void test_process_message_body_stake_split_v1_1_destination_is_fee_payer_fail() 
     process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
 }
 
+// The split destination must not be the key that signs this request. The fee payer is a
+// different account here, so only the signer clause of the bind can refuse this message
+void test_process_message_body_stake_split_v1_1_destination_is_signer_fail() {
+    uint8_t message[] = {
+        2, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        3,
+            // system - allocate
+            3,
+            1,
+                1,
+            12,
+                8, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0,
+            // system - assign
+            3,
+            1,
+                1,
+            36,
+                1, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192,
+                0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    // The very same message is clear signed when the destination is somebody else's account
+    process_message_body_and_sanity_check_for_signer(message, sizeof(message), 0, 5);
+    process_message_body_and_expect_refusal_for_signer(message, sizeof(message), 1);
+}
+
 // The created account must be handed to the program that initializes it
 void test_process_message_body_create_stake_account_owner_mismatch_fail() {
     uint8_t message[] = {
@@ -3660,6 +3725,7 @@ int main() {
     RUN_TEST(test_process_message_body_stake_split_v1_1_assign_account_mismatch_fail);
     RUN_TEST(test_process_message_body_stake_split_v1_1_assign_owner_mismatch_fail);
     RUN_TEST(test_process_message_body_stake_split_v1_1_destination_is_fee_payer_fail);
+    RUN_TEST(test_process_message_body_stake_split_v1_1_destination_is_signer_fail);
     RUN_TEST(test_process_message_body_stake_split_with_seed_v1_1_owner_mismatch_fail);
     RUN_TEST(test_process_message_body_stake_split_v1_2_destination_mismatch_fail);
     RUN_TEST(test_process_message_body_stake_split_v1_2_owner_mismatch_fail);

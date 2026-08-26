@@ -335,6 +335,8 @@ static int bind_stake_split_v1_1(InstructionInfo *const *infos, const StakeSplit
     const SystemAssignInfo *as_info = &infos[1]->system.assign;
     const StakeSplitInfo *ss_info = &infos[2]->stake.split;
 
+    PRINTF("Bind stake split v1.1\n");
+
     // The allocated and assigned account is the account the split funds land in
     BAIL_IF(!pubkeys_equal(al_info->account, ss_info->split_account));
     BAIL_IF(!pubkeys_equal(as_info->account, ss_info->split_account));
@@ -347,6 +349,8 @@ static int bind_stake_split_v1_1(InstructionInfo *const *infos, const StakeSplit
 static int bind_stake_split_v1_2(InstructionInfo *const *infos, const StakeSplitInfo **ss_out) {
     const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
     const StakeSplitInfo *ss_info = &infos[1]->stake.split;
+
+    PRINTF("Bind stake split v1.2\n");
 
     // The created account is the account the split funds land in
     BAIL_IF(!pubkeys_equal(ca_info->to, ss_info->split_account));
@@ -362,6 +366,8 @@ static int bind_stake_split_with_seed(InstructionInfo *const *infos,
     const StakeSplitInfo *ss_info = &infos[1]->stake.split;
     const Pubkey *account = NULL;
     const Pubkey *owner = NULL;
+
+    PRINTF("Bind seeded stake split, legacy %d\n", legacy);
 
     if (legacy) {
         const SystemAllocateWithSeedInfo *aws_info = &infos[0]->system.allocate_with_seed;
@@ -384,6 +390,8 @@ static int bind_stake_split_with_seed(InstructionInfo *const *infos,
 
 static int bind_split_destination_is_new(const StakeSplitInfo *ss_info,
                                          const PrintConfig *print_config) {
+    PRINTF("Bind the split destination as a new account\n");
+
     BAIL_IF(pubkeys_equal(ss_info->split_account, &print_config->header.pubkeys[0]));
     BAIL_IF(pubkeys_equal(ss_info->split_account, print_config->signer_pubkey));
 
@@ -450,7 +458,10 @@ static int print_stake_split_with_seed(const PrintConfig *print_config,
     }
 
     BAIL_IF(print_stake_split_info1(ss_info, print_config));
+    BAIL_IF(print_split_funding(funding, print_config));
 
+    // The funding line sits right after the destination on all six branches. The derivation is
+    // never checked against the destination, so it trails as expert context
     if (print_config->expert_mode) {
         SummaryItem *item = transaction_summary_general_item();
         summary_item_set_pubkey(item, "Base", base);
@@ -458,7 +469,6 @@ static int print_stake_split_with_seed(const PrintConfig *print_config,
         summary_item_set_sized_string(item, "Seed", seed);
     }
 
-    BAIL_IF(print_split_funding(funding, print_config));
     BAIL_IF(print_stake_split_info2(ss_info, print_config));
 
     return 0;
@@ -482,7 +492,10 @@ static int print_stake_split_v1_2(const PrintConfig *print_config, InstructionIn
     BAIL_IF(bind_split_destination_is_new(ss_info, print_config));
 
     // Create account pays the destination its rent
-    const SplitFunding deposit = {"Deposit", "Funded by", ca_info->from, ca_info->lamports};
+    const SplitFunding deposit = {.amount_title = "Deposit",
+                                 .funder_title = "Funded by",
+                                 .funder = ca_info->from,
+                                 .lamports = ca_info->lamports};
 
     return print_stake_split_no_seed(print_config, ss_info, &deposit);
 }
@@ -518,7 +531,10 @@ static int print_prefunded_split(const PrintConfig *print_config, InstructionInf
     BAIL_IF(bind_split_destination_is_new(ss_info, print_config));
 
     // The transfer pays the destination its rent
-    const SplitFunding prefund = {"Prefund", "Prefunder", t_info->from, t_info->lamports};
+    const SplitFunding prefund = {.amount_title = "Prefund",
+                                 .funder_title = "Prefunder",
+                                 .funder = t_info->from,
+                                 .lamports = t_info->lamports};
 
     return print_stake_split_no_seed(print_config, ss_info, &prefund);
 }
@@ -533,7 +549,10 @@ static int print_prefunded_split_with_seed(const PrintConfig *print_config,
     BAIL_IF(!pubkeys_equal(t_info->to, ss_info->split_account));
 
     // The transfer pays the destination its rent
-    const SplitFunding prefund = {"Prefund", "Prefunder", t_info->from, t_info->lamports};
+    const SplitFunding prefund = {.amount_title = "Prefund",
+                                 .funder_title = "Prefunder",
+                                 .funder = t_info->from,
+                                 .lamports = t_info->lamports};
 
     return print_stake_split_with_seed(print_config, &infos[1], ss_info, true, &prefund);
 }
@@ -702,6 +721,9 @@ static int print_vote_authorize_both(const PrintConfig *print_config,
 static int bind_created_token_account_owner(const SystemCreateAccountInfo *ca_info,
                                             const SplTokenInfo *token_info) {
     const Pubkey *expected_owner = &spl_token_program_id;
+
+    PRINTF("Bind the created account owner, token2022 %d\n", token_info->is_token2022_kind);
+
     if (token_info->is_token2022_kind) {
         expected_owner = &spl_token2022_program_id;
     }
