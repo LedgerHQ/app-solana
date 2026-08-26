@@ -4,6 +4,11 @@ from ragger.navigator import Navigator, NavIns, NavInsID, NavigateWithScenario
 from ragger.firmware import Firmware
 from ragger.backend import BackendInterface
 
+# Ticks allowed for a refusal screen to come up, well above the few the application needs
+REFUSAL_SCREEN_TICKS = 30
+# The application names the refused item, transactions and offchain messages share this flow
+REFUSAL_SCREEN_TEXT = "(Transaction|Message) rejected"
+
 class NavigationHelper:
     def __init__(self, backend: BackendInterface, navigator: Navigator, scenario_navigator: NavigateWithScenario, test_name: str, root_pytest_dir: str):
         self._backend = backend
@@ -98,21 +103,43 @@ class NavigationHelper:
                                                         test_case_name=self._test_name + "_review",
                                                         screen_change_before_first_instruction=False)
 
+    # Compare the screen the application shows after a refusal, as snapshot `snap_index` of the
+    # `_choice` directory. Ragger raises the refusal response as soon as it is available, and it
+    # looks for it before it sends the tick that draws that screen, so a snapshot taken by the
+    # navigator after the refusing action loses the race on the devices that need the tick.
+    # Driving the ticks here gives the same screens on every device.
+    def _compare_refusal_screen(self, snap_index: int):
+        self._backend.pause_ticker()
+        try:
+            for _ in range(REFUSAL_SCREEN_TICKS):
+                if self._backend.compare_screen_with_text(REFUSAL_SCREEN_TEXT):
+                    break
+                self._backend.send_tick()
+            else:
+                raise AssertionError("The refusal screen never came up")
+
+            self._navigator.navigate_and_compare(self._root_pytest_dir,
+                                                 self._test_name + "_choice",
+                                                 [],
+                                                 screen_change_before_first_instruction=False,
+                                                 snap_start_idx=snap_index)
+        finally:
+            self._backend.resume_ticker()
+
     def navigate_with_blind_signing_and_reject(self):
         if self._backend.device.is_nano:
-            navigate_instruction = NavInsID.RIGHT_CLICK
-            pattern = "Reject transaction"
-            validation_instructions = [NavInsID.BOTH_CLICK]
+            # The warning screen carries no reject option, one click reaches it
+            instructions = [NavInsID.RIGHT_CLICK, NavInsID.BOTH_CLICK]
         else:
-            # no need to navigate
-            navigate_instruction = None
-            pattern = "Back to safety"
-            validation_instructions = [NavInsID.USE_CASE_CHOICE_CONFIRM]
-        self._navigator.navigate_until_text_and_compare(navigate_instruction=navigate_instruction,
-                                                        validation_instructions=validation_instructions,
-                                                        text=pattern,
-                                                        path=self._root_pytest_dir,
-                                                        test_case_name=self._test_name + "_choice")
+            # The warning screen carries the reject button
+            instructions = [NavInsID.USE_CASE_CHOICE_CONFIRM]
+
+        # The last instruction refuses the transaction, so it takes no snapshot of its own
+        self._navigator.navigate_and_compare(self._root_pytest_dir,
+                                             self._test_name + "_choice",
+                                             instructions,
+                                             screen_change_after_last_instruction=False)
+        self._compare_refusal_screen(len(instructions))
 
     def _enable_nano_option_n(self, n):
         # initial: go to settings
