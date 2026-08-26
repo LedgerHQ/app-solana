@@ -580,12 +580,16 @@ int parse_spl_token_instructions(const Instruction *instruction,
 static int print_spl_token_sign(const SplTokenSign *sign, const PrintConfig *print_config) {
     SummaryItem *item;
 
-    item = transaction_summary_general_item();
+    // Claim an item only where one is written, an unused claim is reported as a summary overflow
     if (sign->kind == SplTokenSignKindSingle) {
         if (print_config_show_authority(print_config, sign->single.signer)) {
+            PRINTF("Print single signer\n");
+            item = transaction_summary_general_item();
             summary_item_set_pubkey(item, "Owner", sign->single.signer);
         }
     } else {
+        PRINTF("Print multi signers\n");
+        item = transaction_summary_general_item();
         summary_item_set_pubkey(item, "Owner", sign->multi.account);
         item = transaction_summary_general_item();
         summary_item_set_u64(item, "Signers", sign->multi.signers.count);
@@ -702,15 +706,15 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
         summary_item_set_pubkey(item, "To (token account)", info->dest_account);
     }
 
-    item = transaction_summary_general_item();
-    if (info->is_transfer_checked_with_fee) {
-        if (info->transfer_checked_with_fee_amount != 0) {
-            summary_item_set_token_amount(item,
-                                          "Token transfer fee",
-                                          info->transfer_checked_with_fee_amount,
-                                          symbol,
-                                          info->body.decimals);
-        }
+    // Claim an item only where one is written, an unused claim is reported as a summary overflow
+    if (info->is_transfer_checked_with_fee && info->transfer_checked_with_fee_amount != 0) {
+        PRINTF("Print token transfer fee\n");
+        item = transaction_summary_general_item();
+        summary_item_set_token_amount(item,
+                                      "Token transfer fee",
+                                      info->transfer_checked_with_fee_amount,
+                                      symbol,
+                                      info->body.decimals);
     }
 
     transaction_summary_set_transaction_type(TRANSACTION_TYPE_SPL_TRANSFER);

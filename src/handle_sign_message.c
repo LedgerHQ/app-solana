@@ -263,6 +263,13 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
                                                     G_transaction_summary_text);
                     }
                     dest_ata_ok = true;
+                } else {
+                    PRINTF("Refused pubkey title '%s'\n", G_transaction_summary_title);
+                    send_swap_error_with_string(ApduReplySolanaSummaryFinalizeFailed,
+                                                SWAP_EC_ERROR_WRONG_METHOD,
+                                                SWAP_EC_APP_GENERIC,
+                                                "Unexpected pubkey title: %s",
+                                                G_transaction_summary_title);
                 }
                 break;
 

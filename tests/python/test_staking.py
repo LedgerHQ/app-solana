@@ -444,6 +444,22 @@ class TestStakeSplitComposite:
 
         raise ValueError("Unknown stake split branch " + branch)
 
+    def _instructions_into_own_wallet(self, branch):
+        """Build a composite whose split destination is the signing wallet itself."""
+        destination = self.payer_pubkey
+
+        if branch == "v1_1":
+            return [self._allocate(destination), self._assign(destination), self._split(destination)]
+
+        if branch == "v1_2":
+            return [self._create_account(destination), self._split(destination)]
+
+        if branch == "v1_3":
+            return [self._transfer(destination), self._allocate(destination),
+                    self._assign(destination), self._split(destination)]
+
+        raise ValueError("Unknown stake split branch " + branch)
+
     @pytest.mark.parametrize("branch", STAKE_SPLIT_BRANCHES)
     def test_stake_split_composite(self, sol, scenario_navigator, root_pytest_dir, branch, test_name):
         scenario_navigator.test_name = test_name + "_" + branch
@@ -458,6 +474,17 @@ class TestStakeSplitComposite:
         """A composite whose siblings prepare an account other than the one it displays is
         refused in the default configuration."""
         message_data = sol.craft_tx(self._instructions(branch, malicious=True), self.payer_pubkey)
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+                pass
+        assert e.value.status == ErrorType.SDK_NOT_SUPPORTED
+
+    @pytest.mark.parametrize("branch", ["v1_1", "v1_2", "v1_3"])
+    def test_stake_split_composite_into_own_wallet(self, sol, branch):
+        """Splitting into the wallet that signs turns it into a stake account it can never leave.
+        Every account bind passes, so only the new destination bind refuses this. The seeded
+        shapes cannot reach it, their destination is derived and cannot be a chosen wallet."""
+        message_data = sol.craft_tx(self._instructions_into_own_wallet(branch), self.payer_pubkey)
         with pytest.raises(ExceptionRAPDU) as e:
             with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
                 pass

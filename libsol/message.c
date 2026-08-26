@@ -70,11 +70,16 @@ static int parse_validate_and_debug_instruction_accounts(Parser *parser,
 static bool G_generate_extension_warning;
 
 int message_print_extension_warning() {
-    if (!G_generate_extension_warning) {
-        return 0;
+    int ret = 0;
+
+    if (G_generate_extension_warning) {
+        PRINTF("Print the token extension warning\n");
+        ret = print_spl_token_extension_warning();
+    } else {
+        PRINTF("No token extension warning to print\n");
     }
-    PRINTF("generate_extension_warning\n");
-    return print_spl_token_extension_warning();
+
+    return ret;
 }
 
 int process_message_body(const uint8_t *message_body,
@@ -236,6 +241,10 @@ int process_message_body_with_descriptor(const uint8_t *message_body,
                                          const PrintConfig *print_config) {
     const MessageHeader *header = &print_config->header;
     debug_print_header(header);
+
+    // Clear before the first refusal path, the blind signing screen reads it back
+    G_generate_extension_warning = false;
+
     BAIL_IF(header->instructions_length == 0);
     BAIL_IF(!instruction_descriptor_received());
 
