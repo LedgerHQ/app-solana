@@ -3453,10 +3453,11 @@ void test_process_message_body_spl_associated_token_create_with_transfer() {
                 0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x09
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 6);
+    process_message_body_and_sanity_check(message, sizeof(message), 9);
 }
 
-void test_process_message_body_spl_associated_token_create_with_transfer_address_mismatch_fail() {
+// A message may create the account it sends from rather than the one it sends to
+void test_process_message_body_spl_associated_token_create_source_account_with_transfer() {
     uint8_t message[] = {
         0x02, 0x00, 0x05,
         0x09,
@@ -3485,7 +3486,7 @@ void test_process_message_body_spl_associated_token_create_with_transfer_address
                 0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x09
     };
-    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+    process_message_body_and_sanity_check(message, sizeof(message), 9);
 }
 
 void test_process_message_body_spl_associated_token_create_with_transfer_mint_mismatch_fail() {
@@ -3556,7 +3557,7 @@ void test_process_message_body_spl_associated_token_create_with_transfer_and_ass
                     0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                     0x09
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 6);
+    process_message_body_and_sanity_check(message, sizeof(message), 9);
 }
 
 /* clang-format on */
@@ -3564,7 +3565,7 @@ void test_process_message_body_spl_associated_token_create_with_transfer_and_ass
 int main() {
     RUN_TEST(test_process_message_body_spl_associated_token_create_with_transfer_and_assert_owner);
     RUN_TEST(test_process_message_body_spl_associated_token_create_with_transfer);
-    RUN_TEST(test_process_message_body_spl_associated_token_create_with_transfer_address_mismatch_fail);
+    RUN_TEST(test_process_message_body_spl_associated_token_create_source_account_with_transfer);
     RUN_TEST(test_process_message_body_spl_associated_token_create_with_transfer_mint_mismatch_fail);
     RUN_TEST(test_process_message_body_spl_associated_token_create);
     RUN_TEST(test_process_message_body_spl_associated_token_create_explicit);
