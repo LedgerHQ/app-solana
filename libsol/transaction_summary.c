@@ -21,7 +21,16 @@ struct SummaryItem {
     };
 };
 
+#define RETURN_IF_NO_ITEM(item)                     \
+    do {                                            \
+        if ((item) == NULL) {                       \
+            PRINTF("No summary item to set\n");     \
+            return;                                 \
+        }                                           \
+    } while (0)
+
 void summary_item_set_amount(SummaryItem *item, const char *title, uint64_t value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemAmount;
     item->title = title;
     item->u64 = value;
@@ -32,6 +41,7 @@ void summary_item_set_token_amount(SummaryItem *item,
                                    uint64_t value,
                                    const char *symbol,
                                    uint8_t decimals) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemTokenAmount;
     item->title = title;
     item->token_amount.value = value;
@@ -40,30 +50,35 @@ void summary_item_set_token_amount(SummaryItem *item,
 }
 
 void summary_item_set_i64(SummaryItem *item, const char *title, int64_t value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemI64;
     item->title = title;
     item->i64 = value;
 }
 
 void summary_item_set_u64(SummaryItem *item, const char *title, uint64_t value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemU64;
     item->title = title;
     item->u64 = value;
 }
 
 void summary_item_set_pubkey(SummaryItem *item, const char *title, const Pubkey *value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemPubkey;
     item->title = title;
     item->pubkey = value;
 }
 
 void summary_item_set_hash(SummaryItem *item, const char *title, const Hash *value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemHash;
     item->title = title;
     item->hash = value;
 }
 
 void summary_item_set_sized_string(SummaryItem *item, const char *title, const SizedString *value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemSizedString;
     item->title = title;
     item->sized_string.length = value->length;
@@ -71,12 +86,14 @@ void summary_item_set_sized_string(SummaryItem *item, const char *title, const S
 }
 
 void summary_item_set_string(SummaryItem *item, const char *title, const char *value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemString;
     item->title = title;
     item->string = value;
 }
 
 void summary_item_set_timestamp(SummaryItem *item, const char *title, int64_t value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemTimestamp;
     item->title = title;
     item->i64 = value;
@@ -86,6 +103,7 @@ void summary_item_set_offchain_message_application_domain(
     SummaryItem *item,
     const char *title,
     const OffchainMessageApplicationDomain *value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemOffchainMessageApplicationDomain;
     item->title = title;
     item->application_domain = value;

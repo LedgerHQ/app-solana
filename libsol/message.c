@@ -82,13 +82,15 @@ int process_message_body(const uint8_t *message_body,
                          const PrintConfig *print_config) {
     const MessageHeader *header = &print_config->header;
     debug_print_header(header);
+
+    // Clear before the first refusal path, the blind signing screen reads it back
+    G_generate_extension_warning = false;
+
     BAIL_IF(header->instructions_length == 0);
     BAIL_IF(header->instructions_length > MAX_INSTRUCTIONS);
 
     InstructionInfo instruction_info[MAX_INSTRUCTIONS];
     explicit_bzero(instruction_info, sizeof(InstructionInfo) * MAX_INSTRUCTIONS);
-
-    G_generate_extension_warning = false;
 
     size_t display_instruction_count = 0;
     InstructionInfo *display_instruction_info[MAX_INSTRUCTIONS];

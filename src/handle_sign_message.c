@@ -577,7 +577,10 @@ int handle_sign_message_parse_message(void) {
                 transaction_summary_set_blind_signing(true);
 
                 // Re-add the extension warning the reset above cleared
-                message_print_extension_warning();
+                if (message_print_extension_warning() != 0) {
+                    PRINTF("Failed to re-add the extension warning\n");
+                    return io_send_sw(ApduReplySolanaSummaryFinalizeFailed);
+                }
 
                 SummaryItem *item = transaction_summary_primary_item();
                 summary_item_set_string(item, "Unrecognized", "format");

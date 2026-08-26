@@ -1977,6 +1977,37 @@ void test_process_message_body_stake_split_v1_2_owner_mismatch_fail() {
     process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
 }
 
+// The created account must be the one the split names, or the composite hides a deposit
+void test_process_message_body_stake_split_v1_2_destination_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 2,
+        6,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, // account the deposit really lands in
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        2,
+            // system - create account, depositing 1 SOL in an account the split never names
+            4,
+            2,
+                0, 3,
+            52,
+                0, 0, 0, 0, 0, 202, 154, 59, 0, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42,
+                152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake - split
+            5,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
 void test_process_message_body_stake_split_with_seed_v1_2_account_mismatch_fail() {
     uint8_t message[] = {
         1, 0, 2,
@@ -2068,6 +2099,50 @@ void test_process_message_body_stake_split_v1_1_allocate_mismatch_fail() {
             4,
             1,
                 1,
+            36,
+                1, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192,
+                0, 0, 0, 0,
+            // stake - split
+            5,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 3);
+}
+
+// The assigned account must be the one the split names, the allocate leg alone is not enough
+void test_process_message_body_stake_split_v1_1_assign_account_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 3,
+        7,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer and nonce authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, // nonce account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+            6, 167, 213, 23, 25, 44, 86, 142, 224, 138, 132, 95, 115, 210, 151, 136, 207, 3, 92, 49, 69, 178, 26, 179, 68, 216, 6, 46, 169, 64, 0, 0, // sysvar recent blockhashes
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        4,
+            // system - advance nonce
+            4,
+            3,
+                3, 6, 0,
+            4,
+                4, 0, 0, 0,
+            // system - allocate
+            4,
+            1,
+                1,
+            12,
+                8, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0,
+            // system - assign, handing the payer wallet to the Stake program
+            4,
+            1,
+                0,
             36,
                 1, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192,
                 0, 0, 0, 0,
@@ -3581,9 +3656,11 @@ int main() {
     RUN_TEST(test_process_message_body_stake_split_v1_3);
     RUN_TEST(test_process_message_body_stake_split_with_seed_v1_3);
     RUN_TEST(test_process_message_body_stake_split_v1_1_allocate_mismatch_fail);
+    RUN_TEST(test_process_message_body_stake_split_v1_1_assign_account_mismatch_fail);
     RUN_TEST(test_process_message_body_stake_split_v1_1_assign_owner_mismatch_fail);
     RUN_TEST(test_process_message_body_stake_split_v1_1_destination_is_fee_payer_fail);
     RUN_TEST(test_process_message_body_stake_split_with_seed_v1_1_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_stake_split_v1_2_destination_mismatch_fail);
     RUN_TEST(test_process_message_body_stake_split_v1_2_owner_mismatch_fail);
     RUN_TEST(test_process_message_body_stake_split_with_seed_v1_2_account_mismatch_fail);
     RUN_TEST(test_process_message_body_stake_split_v1_3_transfer_mismatch_fail);
