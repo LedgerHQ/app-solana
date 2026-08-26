@@ -369,6 +369,7 @@ class TestToken2022:
             payer=self.sender_ata,
             owner=self.receiver_pubkey,
             mint=self.mint_pubkey,
+            token_program_id=TOKEN_2022_PROGRAM_ID,
         )
         accounts = [
             AccountMeta(pubkey=self.sender_ata, is_signer=False, is_writable=True),
