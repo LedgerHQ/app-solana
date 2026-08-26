@@ -46,7 +46,11 @@ qb -ce -f memory_profiling
 venv && pytest tests/python/ --device flex -s 2>&1 | tools/valground.py -q
 ```
 
-NEVER return to user while tests are still running. Either abort them or wait for completion.
+### Optimizing test duration
+
+The full ragger test suite takes a really long time, apply the following recommendation to quicken:
+- When testing a feature, ALWAYS start by running the single simple valid test case on one device to quickly ensure the overall code is correct.
+- Unless required, run the tests only on Flex
 
 ### Test pitfals
 
@@ -55,6 +59,7 @@ NEVER return to user while tests are still running. Either abort them or wait fo
 - tests can timeout in case of errors, if that happens be smart when iterating to avoid wasting too much time.
 - debuging a test is done by adding logs in the C code, rebuilding, and re-running the test with `-s` option so Speculos prints PRINTF in stdout.
 - There is NO SUCH THING as a "pre-existing failure". All tests are presumed correct and failures are ALWAYS caused by latest changes. Suggesting otherwise is entirely FORBIDDEN. ALL TESTS SHALL ALWAYS PASS.
+- Do NOT pipe test output in a tail command, it makes debugging timeouts impossible.
 
 ## Architecture
 
@@ -68,7 +73,7 @@ NEVER return to user while tests are still running. Either abort them or wait fo
 
 ### Pure Solana code (libsol)
 The Libsol is independent of the SDK features (PKI, NBGL, etc) and contains code purely related to the Solana blockchain. (except `libsol/mock/` for tests).
-Despite PRINTF being a SDK API, they are available in libsol and shall be used as in other modules
+PRINTF, dynamic allocation, and hashing are available in libsol by mock.
 
 1. `message.c` → parse header/accounts
 2. `instruction.c` → identify programs
@@ -100,10 +105,30 @@ Preview (INS 0x08) stores SHA-512 fingerprint of message with zeroed blockhash, 
 - Dynamic allocation is allowed but must be used with great care, ensuring the data is always freed after use.
 - Splitting a function in an internal one that performs the logic and an external one that calls the internal one and frees is a good pattern to ensure proper freeing of memory.
 - The size of the allocated pool can be increased if needed.
+- Never introduce arbitrary MAX_ capacities when specification does not and dynamic allocation handles the size footprint. The only memory related refusal accepted is OOM allocation rejection.
 
 ### Test pem keys
 
 - You do NOT have the possibility to regenerate the PKI certificates for new keys. As a result NEVER try to generate new .pem files. If a new use cases requires new keys, reuse the existing test keys and their corresponding .pem files for development purposes and flag so in the result summary.
+
+### Expected specification
+
+- "Documenting" a limitation or non compliance with specification is worthless. Specification shall be implemented or pushed back.
+- When changing a behavior, ALWAYS refer to the specification to know if this is a FIX or a REGRESSION.
+
+## Generic Clear Signing
+
+Generic clear signing is an ADDITION, not a replacement. InsSignMessage and its parser and metadata (libsol/message.c, process_message_body, trusted_info, etc) are a current, fully-supported, first-class sign flow — as first-class as generic clear signing, and serves a completely different purpose.
+There is absolutely NO LEGACY MECHANISM in the application and you are FORBIDDEN from describing anything as such. Including but not limited to: InsSignMessage, message.c, signing flows, trusted_info, dynamic_token_info, saved_descriptors.
+
+## Clean architecture and contract
+
+When working on the code, the ONLY acceptable outcome is an optimal final architecture. At no point internal functions APIs should be considered stable or frozen. The only stable API is the APDU interface, and the only stable code is the code that implements it. All other code can be modified, refactored, or replaced to achieve a better architecture.
+Internal function signatures are not 'contracts', the only contract is the APDU interface. You are FORBIDDEN from describing internal function signatures as 'contracts' or 'stable APIs'.
+
+## Onchain failures
+
+On-chain refusal of a signed transaction poses no threat to safety of assets, therefor it is not up to the application to enforce on-chain specifications, it is only responsible for clearly presenting the intent and all potential effects of the transaction to be signed shall it be valid.
 
 ## Code Patterns
 
@@ -111,19 +136,50 @@ Coding patterns described here are more important than uniformity cross applicat
 
 ### Logging
 
-- Never assume code is correct on first try, writing logs is mandatory to verify execution flow
-- Trace logs (no variables): Use `PRINTF("Function entered or choice taken\n")` in key dispatch logic (e.g., APDU handlers, main switch cases)
-- Variable logs: Use `PRINTF("variable_name=%d\n", var)` or `PRINTF("buffer=%.*H\n", len, buf)` in calculations and new code
-- PRINTF are meant to be permanent.
+- YOU DO NOT WRITE ENOUGH LOGS. FIGHT THIS BIAS.
+- Never assume code is correct on first try, writing logs is mandatory to verify execution flow, `PRINTF` are the only way to trace execution and are meant to be permanent
+- Trace logs (no variables): Use `PRINTF("Function entered or choice taken\n")` in logic (e.g., function starts, if branches, switch cases, etc)
+- Log non dynamic variable calculation: Use `PRINTF("variable_name=%i\n", var)` or `PRINTF("buffer=%.*H\n", len, buf)` in calculations and new code. Do not cast variables, use the correct format parameter instead.
+- Log ALL error returns or potential error returns. No `return -1`, `return NULL` or `return f()` shall exist without an associated `PRINTF`
+- No function shall exist without at least one log, however 'small helper' or "evidently correct' they are.
+
+### Commenting
+
+- Every comment is one of two kinds, and each has exactly one place:
+  * ABOVE a function: WHAT it does. Example : "parses a header to ensure no value is duplicate"
+  * INSIDE a function: WHY the code is as is and HOW it achieves the goal, placed at the call, line or branch it explains. Example : "loop over inputs and compare with stored descriptors to find the match"
+- Comments are concise and straight to the point using direct syntax. One line is almost always enough.
+- You are FORBIDDEN from putting HOW or WHY in a function header. A header that explains mechanism is misplaced content: move it down to the code it describes. Collecting the body's reasoning into one block above the function is FORBIDDEN.
+- Length follows content; never pick a length first. A helper whose name nearly says it needs one line. A real contract or a genuine subtlety needs two or three. If a comment reads as an essay, split it and move the parts to the code they belong to.
+- Say only what a reader cannot get from the names. "Whether X is valid" above `is_x_valid()` is noise; "Returns -1 when the host omitted the descriptor" is not.
+- Never narrate the work, refer to the conversation, or describe how the code used to be. Comments are permanent and must read true years later, so a fix warrants no comment about the fix: purge the old comment first, then decide independently whether one is needed.
 
 ### Coding conventions
 
 - bool return is used to indicate the result of a CHECK, NOT a success or failure.
 - int return is used to report a success or failure of a function by using -1 or 0.
 - Global or module variables are prefixed by `G_*`.
-- Never use ternary conditional operator
-- Do not bother with linter in any shape or form
-- Comments are RARE, CONCISE, and STRAIGHT TO THE POINT
+- Do not use the word `app_`, use real word application.
+
+- Functions and variables should have clear explicit names without abbreviation. BAD: `idl_leaf_cb_t cb`, GOOD: `idl_leaf_cb_t leaf_callback`.
+- Functions called in a wrong context shall return an error, not ignore or skip
+- Never write functions in header files.
+- Do not rely on C implicit struct copy, use a memcpy to highlight deep copy behavior.
+- Avoid enum-like defines. Prefer real enum definition.
+- Do NOT use early returns to separate different valid feature paths. Use `if/else` chains so branches are visually parallel and mutually exclusive. Early returns are fine ONLY for error guards, not for splitting valid execution paths. There shall be ONE and ONLY ONE valid return per function.
+- You are FORBIDDEN from writing the pattern "fail.*closed" ANYWHERE you produce text: code comments, documentation, identifiers (function/variable/type/test names), log and PRINTF strings, commit messages, and your own chat responses to the user. There is no context that re-permits it. Describe the concrete behavior instead — what is returned and what is not stored/displayed/signed (e.g. "returns -1 and stores nothing") — never the label.
+- Do NOT care about clang and lint
+
+### FORBIDDEN patterns
+
+The following patterns are STRICLY forbidden and shall never be used :
+- NEVER introduce a local pointer or variable solely to shorten repeated access ; always write the full access path at each use site, even in loops. If a long access path is repeated, it is a sign that a sub function should handle the logic.
+- NEVER use ternary conditional operator
+- NO goto: if a function needs exit cleaning logic, split in inner / outer.
+
+### Chain of trust
+
+- The payloads received signed from the CAL (descriptors, trusted names, etc) are trusted in content.
 
 ## Critical Files
 
@@ -139,13 +195,37 @@ Coding patterns described here are more important than uniformity cross applicat
 
 - **Clean only when needed** - `qb -c` clears leftover .o files (not required for device switches)
 - **Swap context is different than normal Dashboard start and blocks features** - `G_called_from_swap` prevents other features like message preview or blind signing.
-- Do not use /tmp as a storage for temporary files, if you want to create temporary files, create them in the project directory and remove them after.
 
 ## External projects
 
 Other repositories that are relevant to the development of the Solana Ledger application are available as read-only in the directory ./other_projects
 This includes but is not limited to:
 - app-ethereum
+- app-exchange
 - ledger-app-workflows
 - ledger-secure-sdk
+- poc-solana-clear-signing
 - ragger
+
+## Audit
+
+The user can request an audit : something in your configuration will have to be permanently modified as your behavior was not satisfying. When it happens, PERMANENTLY stop focusing on the code forever and ONLY focus on project rules (AI instructions, settings, etc). Making promises is empty since the chat will be restarted and local context lost ; only configuration files remain. In this mode, analyze your biases, suggest settings patch, etc.
+Even during audit, you are NEVER allowed to edit instruction files without explicit approval. Suggest them to the user highlighting the desired effect.
+
+## Communication guidelines
+
+- NEVER end a response with a continuance or permission-seeking question ("Want me to...?", "Should I...?", "Let me know if..."). This is FORBIDDEN.
+- NEVER make promises or commitments about your own future behavior ("I'll stop...", "I will...", "Going forward..."). Context is ephemeral, so such promises are empty and misleading unless backed by an instruction change.
+- Do not use numbers in markdown titles, they are bothersome to maintain. Use the text directly `### Title`
+- Desired effect: "plan", "design", "review", "analyze", "suggest", "propose", "compare" are report-to-chat commands. The deliverable goes in the response only. Never create/edit/write any repository file — including plan, status, report, or notes docs — unless the REQUEST contains an explicit write/edit/create instruction. An existing report being included in a response is not a request to edit it.
+- NEVER switch from thinking or planning to writing code in the same response, even when you have high confidence.
+- before AskUserQuestion, check whether project rules already determine the answer. If they do, apply them and state the conclusion; never present a rules-settled matter as an open user choice.
+- You communicate using ASD-STE100 principles to all responses, using plain language and simple sentences with verbs for an easily readable output.
+- Avoid dense and compressed phrasing, keywords and jargon, metaphorical I-sound-smart terminology
+- Do NOT stack nouns, make direct and to-the-point sentences with subject + verb:
+BAD: `Log volume, per turn — all redundant` > GOOD: `Function X logs info Y redundantly on each turn`
+BAD: `Diff read cold, then the plan` > GOOD: `I have read the code diff and then the plan`
+- You are NOT a debatter, and you are NOT selling anything, go to the point without emphasis nor hype generation noise:
+BAD: `Mostly a nominal illusion, with one exception` > GOOD: `Only one exception causes issues`
+BAD: `It works, and better than you framed it` > GOOD: `It works well and also brings an added benefit`
+- Do not slap fancy name on user ideas then serve them back as new

@@ -393,17 +393,26 @@ static int bind_split_destination_is_new(const StakeSplitInfo *ss_info,
 }
 
 // The lamports a split composite moves besides the split itself
-static int print_split_funding(const char *amount_title,
-                               const char *funder_title,
-                               uint64_t lamports,
-                               const Pubkey *funder,
-                               const PrintConfig *print_config) {
-    SummaryItem *item = transaction_summary_general_item();
-    summary_item_set_amount(item, amount_title, lamports);
+typedef struct SplitFunding {
+    const char *amount_title;
+    const char *funder_title;
+    const Pubkey *funder;
+    uint64_t lamports;
+} SplitFunding;
 
-    if (print_config_show_authority(print_config, funder)) {
-        item = transaction_summary_general_item();
-        summary_item_set_pubkey(item, funder_title, funder);
+// A NULL funding means the composite prepares the destination without moving any lamports
+static int print_split_funding(const SplitFunding *funding, const PrintConfig *print_config) {
+    if (funding == NULL) {
+        PRINTF("Split composite moves no lamports besides the split\n");
+    } else {
+        PRINTF("Print split funding '%s'\n", funding->amount_title);
+        SummaryItem *item = transaction_summary_general_item();
+        summary_item_set_amount(item, funding->amount_title, funding->lamports);
+
+        if (print_config_show_authority(print_config, funding->funder)) {
+            item = transaction_summary_general_item();
+            summary_item_set_pubkey(item, funding->funder_title, funding->funder);
+        }
     }
 
     return 0;
@@ -411,26 +420,11 @@ static int print_split_funding(const char *amount_title,
 
 static int print_stake_split_no_seed(const PrintConfig *print_config,
                                      const StakeSplitInfo *ss_info,
-                                     const SystemCreateAccountInfo *ca_info,
-                                     const SystemInfo *prefund) {
+                                     const SplitFunding *funding) {
+    PRINTF("Print stake split without seed\n");
+
     BAIL_IF(print_stake_split_info1(ss_info, print_config));
-
-    if (ca_info != NULL) {
-        BAIL_IF(print_split_funding("Deposit",
-                                    "Funded by",
-                                    ca_info->lamports,
-                                    ca_info->from,
-                                    print_config));
-    }
-
-    if (prefund != NULL) {
-        BAIL_IF(print_split_funding("Prefund",
-                                    "Prefunder",
-                                    prefund->transfer.lamports,
-                                    prefund->transfer.from,
-                                    print_config));
-    }
-
+    BAIL_IF(print_split_funding(funding, print_config));
     BAIL_IF(print_stake_split_info2(ss_info, print_config));
 
     return 0;
@@ -440,17 +434,19 @@ static int print_stake_split_with_seed(const PrintConfig *print_config,
                                        InstructionInfo *const *infos,
                                        const StakeSplitInfo *ss_info,
                                        bool legacy,
-                                       const SystemInfo *prefund) {
-    const SystemCreateAccountWithSeedInfo *cws_info = NULL;
+                                       const SplitFunding *funding) {
     const Pubkey *base = NULL;
     const SizedString *seed = NULL;
+
+    PRINTF("Print stake split with seed, legacy %d\n", legacy);
 
     if (legacy) {
         const SystemAllocateWithSeedInfo *aws_info = &infos[0]->system.allocate_with_seed;
         base = aws_info->base;
         seed = &aws_info->seed;
     } else {
-        cws_info = &infos[0]->system.create_account_with_seed;
+        const SystemCreateAccountWithSeedInfo *cws_info = &infos[0]
+                                                               ->system.create_account_with_seed;
         base = cws_info->base;
         seed = &cws_info->seed;
     }
@@ -464,22 +460,7 @@ static int print_stake_split_with_seed(const PrintConfig *print_config,
         summary_item_set_sized_string(item, "Seed", seed);
     }
 
-    if (cws_info != NULL) {
-        BAIL_IF(print_split_funding("Deposit",
-                                    "Funded by",
-                                    cws_info->lamports,
-                                    cws_info->from,
-                                    print_config));
-    }
-
-    if (prefund != NULL) {
-        BAIL_IF(print_split_funding("Prefund",
-                                    "Prefunder",
-                                    prefund->transfer.lamports,
-                                    prefund->transfer.from,
-                                    print_config));
-    }
-
+    BAIL_IF(print_split_funding(funding, print_config));
     BAIL_IF(print_stake_split_info2(ss_info, print_config));
 
     return 0;
@@ -491,29 +472,42 @@ static int print_stake_split_v1_1(const PrintConfig *print_config, InstructionIn
     BAIL_IF(bind_stake_split_v1_1(infos, &ss_info));
     BAIL_IF(bind_split_destination_is_new(ss_info, print_config));
 
-    return print_stake_split_no_seed(print_config, ss_info, NULL, NULL);
+    // Allocate and assign move no lamports
+    return print_stake_split_no_seed(print_config, ss_info, NULL);
 }
 
 static int print_stake_split_v1_2(const PrintConfig *print_config, InstructionInfo *const *infos) {
+    const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
     const StakeSplitInfo *ss_info = NULL;
 
     BAIL_IF(bind_stake_split_v1_2(infos, &ss_info));
     BAIL_IF(bind_split_destination_is_new(ss_info, print_config));
 
-    return print_stake_split_no_seed(print_config,
-                                     ss_info,
-                                     &infos[0]->system.create_account,
-                                     NULL);
+    // Create account pays the destination its rent
+    const SplitFunding deposit = {"Deposit", "Funded by", ca_info->from, ca_info->lamports};
+
+    return print_stake_split_no_seed(print_config, ss_info, &deposit);
 }
 
 static int print_seeded_split(const PrintConfig *print_config,
                               InstructionInfo *const *infos,
                               bool legacy) {
     const StakeSplitInfo *ss_info = NULL;
+    const SplitFunding *funding = NULL;
+    SplitFunding deposit;
 
     BAIL_IF(bind_stake_split_with_seed(infos, legacy, &ss_info));
 
-    return print_stake_split_with_seed(print_config, infos, ss_info, legacy, NULL);
+    // Create account with seed pays the destination its rent, allocate with seed moves nothing
+    if (!legacy) {
+        deposit.amount_title = "Deposit";
+        deposit.funder_title = "Funded by";
+        deposit.funder = infos[0]->system.create_account_with_seed.from;
+        deposit.lamports = infos[0]->system.create_account_with_seed.lamports;
+        funding = &deposit;
+    }
+
+    return print_stake_split_with_seed(print_config, infos, ss_info, legacy, funding);
 }
 
 static int print_prefunded_split(const PrintConfig *print_config, InstructionInfo *const *infos) {
@@ -525,7 +519,10 @@ static int print_prefunded_split(const PrintConfig *print_config, InstructionInf
     BAIL_IF(!pubkeys_equal(t_info->to, ss_info->split_account));
     BAIL_IF(bind_split_destination_is_new(ss_info, print_config));
 
-    return print_stake_split_no_seed(print_config, ss_info, NULL, &infos[0]->system);
+    // The transfer pays the destination its rent
+    const SplitFunding prefund = {"Prefund", "Prefunder", t_info->from, t_info->lamports};
+
+    return print_stake_split_no_seed(print_config, ss_info, &prefund);
 }
 
 static int print_prefunded_split_with_seed(const PrintConfig *print_config,
@@ -537,7 +534,10 @@ static int print_prefunded_split_with_seed(const PrintConfig *print_config,
     // The prefunded account is the account the split funds land in
     BAIL_IF(!pubkeys_equal(t_info->to, ss_info->split_account));
 
-    return print_stake_split_with_seed(print_config, &infos[1], ss_info, true, &infos[0]->system);
+    // The transfer pays the destination its rent
+    const SplitFunding prefund = {"Prefund", "Prefunder", t_info->from, t_info->lamports};
+
+    return print_stake_split_with_seed(print_config, &infos[1], ss_info, true, &prefund);
 }
 
 static int print_stake_authorize_both(const PrintConfig *print_config,
