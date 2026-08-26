@@ -821,11 +821,24 @@ static int print_spl_associated_token_account_create_with_transfer(const PrintCo
     SplTokenInfo spl_token = infos[1]->spl_token;
     const SplTokenTransferInfo *t_info = &spl_token.transfer;
 
-    // Created account must be the transfer destination, for the same mint
-    BAIL_IF(!pubkeys_equal(c_info->address, t_info->dest_account));
+    // The account created and the tokens sent are for the same mint
     BAIL_IF(!pubkeys_equal(c_info->mint, t_info->mint_account));
 
     BAIL_IF(print_spl_token_transfer_info(t_info, print_config, spl_token.is_token2022_kind, true));
+
+    // The created account is deliberately not bound to the transfer destination: a message may
+    // create the source account and send from it. Name it instead, so the rent it costs is not
+    // spent on an account the user never sees.
+    SummaryItem *item = transaction_summary_general_item();
+    summary_item_set_pubkey(item, "Create token account", c_info->address);
+
+    item = transaction_summary_general_item();
+    summary_item_set_pubkey(item, "For", c_info->owner);
+
+    if (print_config_show_authority(print_config, c_info->funder)) {
+        item = transaction_summary_general_item();
+        summary_item_set_pubkey(item, "Funded by", c_info->funder);
+    }
 
     return 0;
 }
