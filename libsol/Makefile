@@ -80,8 +80,10 @@ release_CFLAGS = -O2
 libsol_source_files = $(filter-out %_test.c,$(shell find . -name "*.c"))
 libsol_object_files = $(patsubst %.c,$o/%.o,$(libsol_source_files))
 libsol_depend_files = $(patsubst %.c,$o/%.d,$(libsol_source_files))
+# Test objects #include the implementation they exercise, so they need dependency tracking too
+test_depend_files = $(patsubst %.c,$o/%.d,$(test_files))
 
--include $(libsol_depend_files)
+-include $(libsol_depend_files) $(test_depend_files)
 
 $o/%.o: %.c $(mock_files)
 	$(progress) "==> Compile $<"

@@ -701,6 +701,17 @@ static int print_vote_authorize_both(const PrintConfig *print_config,
     return 0;
 }
 
+static int bind_created_token_account_owner(const SystemCreateAccountInfo *ca_info,
+                                            const SplTokenInfo *token_info) {
+    const Pubkey *expected_owner = &spl_token_program_id;
+    if (token_info->is_token2022_kind) {
+        expected_owner = &spl_token2022_program_id;
+    }
+    BAIL_IF(!pubkeys_equal(ca_info->owner, expected_owner));
+
+    return 0;
+}
+
 static int print_spl_token_create_mint(const PrintConfig *print_config,
                                        InstructionInfo *const *infos,
                                        size_t infos_length) {
@@ -709,8 +720,9 @@ static int print_spl_token_create_mint(const PrintConfig *print_config,
     const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
     const SplTokenInitializeMintInfo *im_info = &infos[1]->spl_token.initialize_mint;
 
-    // Created and initialized account must be the same
+    // Created and initialized account must be the same, and owned by its token program
     BAIL_IF(!pubkeys_equal(ca_info->to, im_info->mint_account));
+    BAIL_IF(bind_created_token_account_owner(ca_info, &infos[1]->spl_token));
 
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create token mint", im_info->mint_account);
@@ -745,8 +757,9 @@ static int print_spl_token_create_account(const PrintConfig *print_config,
     const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
     const SplTokenInitializeAccountInfo *ia_info = &infos[1]->spl_token.initialize_account;
 
-    // Created and initialized account must be the same
+    // Created and initialized account must be the same, and owned by its token program
     BAIL_IF(!pubkeys_equal(ca_info->to, ia_info->token_account));
+    BAIL_IF(bind_created_token_account_owner(ca_info, &infos[1]->spl_token));
 
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create token account", ia_info->token_account);
@@ -776,8 +789,9 @@ static int print_spl_token_create_multisig(const PrintConfig *print_config,
     const SystemCreateAccountInfo *ca_info = &infos[0]->system.create_account;
     const SplTokenInitializeMultisigInfo *im_info = &infos[1]->spl_token.initialize_multisig;
 
-    // Created and initialized account must be the same
+    // Created and initialized account must be the same, and owned by its token program
     BAIL_IF(!pubkeys_equal(ca_info->to, im_info->multisig_account));
+    BAIL_IF(bind_created_token_account_owner(ca_info, &infos[1]->spl_token));
 
     SummaryItem *item = transaction_summary_primary_item();
     summary_item_set_pubkey(item, "Create multisig", im_info->multisig_account);
@@ -801,13 +815,15 @@ static int print_spl_associated_token_account_create_with_transfer(const PrintCo
                                                                    size_t infos_length) {
     UNUSED(infos_length);
 
-    // Unused currently as the additional fees are bundled with the computed fees
     const SplAssociatedTokenAccountCreateInfo *c_info = &infos[0]
                                                              ->spl_associated_token_account.create;
-    UNUSED(c_info);
 
     SplTokenInfo spl_token = infos[1]->spl_token;
     const SplTokenTransferInfo *t_info = &spl_token.transfer;
+
+    // Created account must be the transfer destination, for the same mint
+    BAIL_IF(!pubkeys_equal(c_info->address, t_info->dest_account));
+    BAIL_IF(!pubkeys_equal(c_info->mint, t_info->mint_account));
 
     BAIL_IF(print_spl_token_transfer_info(t_info, print_config, spl_token.is_token2022_kind, true));
 
