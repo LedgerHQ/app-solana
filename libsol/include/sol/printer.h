@@ -30,6 +30,8 @@ int print_sized_string(const SizedString *string, char *out, size_t out_length);
 
 int print_string(const char *in, char *out, size_t out_length);
 
+int print_indexed_title(const char *title, uint8_t index, char *out, size_t out_length);
+
 int print_summary(const char *in,
                   char *out,
                   size_t out_length,

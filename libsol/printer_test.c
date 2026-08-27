@@ -78,6 +78,23 @@ void test_print_string() {
     assert_string_equal("", buf);
 }
 
+void test_print_indexed_title() {
+    char buf[TITLE_SIZE];
+
+    assert(print_indexed_title("Signer", 1, buf, sizeof(buf)) == 0);
+    assert_string_equal("Signer 1", buf);
+    assert(print_indexed_title("Signer", 11, buf, sizeof(buf)) == 0);
+    assert_string_equal("Signer 11", buf);
+    assert(print_indexed_title("Signer", 255, buf, sizeof(buf)) == 0);
+    assert_string_equal("Signer 255", buf);
+
+    // "Signer 1" plus the NUL is the smallest buffer that holds the result
+    assert(print_indexed_title("Signer", 1, buf, 9) == 0);
+    assert_string_equal("Signer 1", buf);
+    assert(print_indexed_title("Signer", 1, buf, 8) == 1);
+    assert(print_indexed_title("Signer", 11, buf, 9) == 1);
+}
+
 void test_print_summary() {
     char summary[27];
     assert(print_summary("GADFVW3UXVKDOU626XUPYDJU2BFCGFJHQ6SREYOZ6IJV4XSHOALEQN2I",
@@ -283,6 +300,7 @@ int main() {
     RUN_TEST(test_print_token_amount);
     RUN_TEST(test_print_sized_string);
     RUN_TEST(test_print_string);
+    RUN_TEST(test_print_indexed_title);
     RUN_TEST(test_print_summary);
     RUN_TEST(test_print_i64);
     RUN_TEST(test_print_u64);

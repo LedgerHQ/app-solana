@@ -10,7 +10,8 @@
 #define SplTokenInstructionKind Token_TokenInstruction_Tag
 
 typedef struct SplTokenMultisigners {
-    const Pubkey *first;
+    // Resolved in instruction account order, message key indices need not be contiguous
+    const Pubkey *accounts[Token_MAX_SIGNERS];
     uint8_t count;
 } SplTokenMultisigners;
 
@@ -149,6 +150,7 @@ int parse_spl_token_instructions(const Instruction *instruction,
                                  bool *ignore_instruction_info);
 int print_spl_token_info(const SplTokenInfo *info, const PrintConfig *print_config);
 void summary_item_set_multisig_m_of_n(SummaryItem *item, uint8_t m, uint8_t n);
+int print_spl_token_multisigners(const SplTokenMultisigners *signers);
 
 #define SplTokenOptionPubkeyKind      Token_COption_Pubkey_Tag
 #define SplTokenToOptionPubkeyKind(k) Token_COption_Pubkey_##k##_Pubkey

@@ -3029,7 +3029,7 @@ void test_process_message_body_spl_token_create_multisig() {
                 2,
                 2
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 5);
+    process_message_body_and_sanity_check(message, sizeof(message), 8);
 }
 
 void test_process_message_body_spl_token_2022_create_multisig() {
@@ -3063,7 +3063,7 @@ void test_process_message_body_spl_token_2022_create_multisig() {
                 2,
                 2
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 5);
+    process_message_body_and_sanity_check(message, sizeof(message), 8);
 }
 
 void test_process_message_body_spl_token_create_multisig_owner_mismatch_fail() {

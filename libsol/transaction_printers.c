@@ -819,6 +819,8 @@ static int print_spl_token_create_multisig(const PrintConfig *print_config,
     item = transaction_summary_general_item();
     summary_item_set_multisig_m_of_n(item, im_info->body.m, im_info->signers.count);
 
+    BAIL_IF(print_spl_token_multisigners(&im_info->signers));
+
     if (print_config_show_authority(print_config, ca_info->from)) {
         item = transaction_summary_general_item();
         summary_item_set_pubkey(item, "Funded by", ca_info->from);

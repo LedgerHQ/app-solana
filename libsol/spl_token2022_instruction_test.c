@@ -342,13 +342,12 @@ void test_parse_spl_token_create_multisig() {
     assert_pubkey_equal(init_ms->multisig_account, &multisig_account);
 
     assert(init_ms->signers.count == 3);
-    const Pubkey *signer = init_ms->signers.first;
     const Pubkey signer1 = {{SIGNER1}};
-    assert_pubkey_equal(signer++, &signer1);
+    assert_pubkey_equal(init_ms->signers.accounts[0], &signer1);
     const Pubkey signer2 = {{SIGNER2}};
-    assert_pubkey_equal(signer++, &signer2);
+    assert_pubkey_equal(init_ms->signers.accounts[1], &signer2);
     const Pubkey signer3 = {{SIGNER3}};
-    assert_pubkey_equal(signer++, &signer3);
+    assert_pubkey_equal(init_ms->signers.accounts[2], &signer3);
 }
 
 void test_parse_spl_token_transfer() {

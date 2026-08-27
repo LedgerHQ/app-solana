@@ -96,6 +96,25 @@ int print_string(const char *in, char *out, size_t out_length) {
     return rc;
 }
 
+// Writes "<title> <index>", the title of an item that belongs to a numbered list
+int print_indexed_title(const char *title, uint8_t index, char *out, size_t out_length) {
+    // The number is built apart so nothing is written to the output before it is known to fit
+    char index_string[4];  // "255" + NUL
+    BAIL_IF(print_u64(index, index_string, sizeof(index_string)));
+
+    size_t title_length = strlen(title);
+    size_t index_length = strlen(index_string);
+    if (title_length + 1 + index_length + 1 > out_length) {
+        PRINTF("Indexed title does not fit in the output buffer\n");
+        return 1;
+    }
+
+    memmove(out, title, title_length);
+    out[title_length] = ' ';
+    memmove(out + title_length + 1, index_string, index_length + 1);
+    return 0;
+}
+
 int print_summary(const char *in,
                   char *out,
                   size_t out_length,
@@ -333,7 +352,7 @@ bool amount_as_string_is_greater_or_equal(const char *a, const char *b) {
         char ca = (i < a_frac_len) ? a[a_frac_start + i] : '0';
         char cb = (i < b_frac_len) ? b[b_frac_start + i] : '0';
         if (ca != cb) {
-            PRINTF("amount_as_string_is_greater_or_equal: frac diff at pos %zu: '%c' vs '%c'\n",
+            PRINTF("amount_as_string_is_greater_or_equal: frac diff at pos %u: '%c' vs '%c'\n",
                    i,
                    ca,
                    cb);

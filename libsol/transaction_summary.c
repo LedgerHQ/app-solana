@@ -14,6 +14,10 @@ struct SummaryItem {
         uint64_t u64;
         int64_t i64;
         const Pubkey *pubkey;
+        struct {
+            const Pubkey *pubkey;
+            uint8_t index;
+        } indexed_pubkey;
         const Hash *hash;
         const char *string;
         SizedString sized_string;
@@ -69,6 +73,18 @@ void summary_item_set_pubkey(SummaryItem *item, const char *title, const Pubkey 
     item->kind = SummaryItemPubkey;
     item->title = title;
     item->pubkey = value;
+}
+
+void summary_item_set_indexed_pubkey(SummaryItem *item,
+                                     const char *title,
+                                     uint8_t index,
+                                     const Pubkey *value) {
+    RETURN_IF_NO_ITEM(item);
+    PRINTF("Set indexed pubkey item at position %u\n", index);
+    item->kind = SummaryItemIndexedPubkey;
+    item->title = title;
+    item->indexed_pubkey.pubkey = value;
+    item->indexed_pubkey.index = index;
 }
 
 void summary_item_set_hash(SummaryItem *item, const char *title, const Hash *value) {
@@ -239,6 +255,23 @@ int transaction_summary_set_fee_payer_pubkey(const Pubkey *pubkey) {
     return 0;
 }
 
+// Writes a pubkey to the display text buffer, in full or shortened to its two ends
+static int set_display_text_from_pubkey(const Pubkey *pubkey, enum DisplayFlags flags) {
+    char encoded[BASE58_PUBKEY_LENGTH];
+
+    BAIL_IF(encode_base58(pubkey, PUBKEY_SIZE, encoded, sizeof(encoded)));
+    if (flags & DisplayFlagLongPubkeys) {
+        BAIL_IF(print_string(encoded, G_transaction_summary_text, TEXT_BUFFER_LENGTH));
+    } else {
+        BAIL_IF(print_summary(encoded,
+                              G_transaction_summary_text,
+                              BASE58_PUBKEY_SHORT,
+                              SUMMARY_LENGTH,
+                              SUMMARY_LENGTH));
+    }
+    return 0;
+}
+
 static int transaction_summary_update_display_for_item(const SummaryItem *item,
                                                        enum DisplayFlags flags) {
     switch (item->kind) {
@@ -260,20 +293,12 @@ static int transaction_summary_update_display_for_item(const SummaryItem *item,
         case SummaryItemU64:
             BAIL_IF(print_u64(item->u64, G_transaction_summary_text, TEXT_BUFFER_LENGTH));
             break;
-        case SummaryItemPubkey: {
-            char tmp_buf[BASE58_PUBKEY_LENGTH];
-            BAIL_IF(encode_base58(item->pubkey, PUBKEY_SIZE, tmp_buf, sizeof(tmp_buf)));
-            if (flags & DisplayFlagLongPubkeys) {
-                BAIL_IF(print_string(tmp_buf, G_transaction_summary_text, TEXT_BUFFER_LENGTH));
-            } else {
-                BAIL_IF(print_summary(tmp_buf,
-                                      G_transaction_summary_text,
-                                      BASE58_PUBKEY_SHORT,
-                                      SUMMARY_LENGTH,
-                                      SUMMARY_LENGTH));
-            }
+        case SummaryItemPubkey:
+            BAIL_IF(set_display_text_from_pubkey(item->pubkey, flags));
             break;
-        }
+        case SummaryItemIndexedPubkey:
+            BAIL_IF(set_display_text_from_pubkey(item->indexed_pubkey.pubkey, flags));
+            break;
         case SummaryItemHash:
             BAIL_IF(encode_base58(item->hash,
                                   BLOCKHASH_SIZE,
@@ -296,7 +321,15 @@ static int transaction_summary_update_display_for_item(const SummaryItem *item,
                                   TEXT_BUFFER_LENGTH));
             break;
     }
-    print_string(item->title, G_transaction_summary_title, TITLE_SIZE);
+    // The position is appended here, so a numbered list needs no stored title per position
+    if (item->kind == SummaryItemIndexedPubkey) {
+        BAIL_IF(print_indexed_title(item->title,
+                                    item->indexed_pubkey.index,
+                                    G_transaction_summary_title,
+                                    TITLE_SIZE));
+    } else {
+        print_string(item->title, G_transaction_summary_title, TITLE_SIZE);
+    }
     return 0;
 }
 
