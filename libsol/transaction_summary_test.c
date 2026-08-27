@@ -59,7 +59,7 @@ void test_summary_item_setters() {
     assert(item.sized_string.length == sizeof(string_data));
     assert(strncmp("test", item.sized_string.string, item.sized_string.length) == 0);
 
-    summary_item_set_timestamp(&item, "timestamp", 42);
+    assert(summary_item_set_timestamp(&item, "timestamp", 42) == 0);
     assert(item.kind == SummaryItemTimestamp);
     assert_string_equal(item.title, "timestamp");
     assert(item.i64 == 42);
@@ -208,7 +208,7 @@ void test_transaction_summary_update_display_for_item() {
     assert(transaction_summary_update_display_for_item(&item, DisplayFlagNone) == 0);
     assert_transaction_summary_display("string", "value");
 
-    summary_item_set_timestamp(&item, "timestamp", 42);
+    assert(summary_item_set_timestamp(&item, "timestamp", 42) == 0);
     assert(transaction_summary_update_display_for_item(&item, DisplayFlagNone) == 0);
     assert_transaction_summary_display("timestamp", "1970-01-01 00:00:42");
 }

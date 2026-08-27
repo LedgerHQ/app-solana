@@ -483,7 +483,7 @@ static int print_stake_set_lockup_info(const StakeSetLockupInfo *info,
     enum StakeLockupPresent present = info->lockup.present;
     if (present & StakeLockupHasTimestamp) {
         item = transaction_summary_general_item();
-        summary_item_set_timestamp(item, "Time", info->lockup.unix_timestamp);
+        BAIL_IF(summary_item_set_timestamp(item, "Time", info->lockup.unix_timestamp));
     }
 
     if (present & StakeLockupHasEpoch) {
@@ -583,7 +583,7 @@ int print_stake_initialize_info(const char *primary_title,
     if (lockup_time > 0 || lockup_epoch > 0) {
         if (lockup_time > 0) {
             item = transaction_summary_general_item();
-            summary_item_set_timestamp(item, "Lockup time", lockup_time);
+            BAIL_IF(summary_item_set_timestamp(item, "Lockup time", lockup_time));
         }
 
         if (lockup_epoch > 0) {

@@ -1,4 +1,5 @@
 #include "os.h"
+#include "rfc3339.h"
 #include "sol/parser.h"
 #include "sol/printer.h"
 #include "sol/transaction_summary.h"
@@ -92,11 +93,14 @@ void summary_item_set_string(SummaryItem *item, const char *title, const char *v
     item->string = value;
 }
 
-void summary_item_set_timestamp(SummaryItem *item, const char *title, int64_t value) {
-    RETURN_IF_NO_ITEM(item);
+int summary_item_set_timestamp(SummaryItem *item, const char *title, int64_t value) {
+    BAIL_IF(item == NULL);
+    // The display callback can only exit on failure, pre-check now that the date is displayable
+    BAIL_IF(!rfc3339_is_displayable(value));
     item->kind = SummaryItemTimestamp;
     item->title = title;
     item->i64 = value;
+    return 0;
 }
 
 void summary_item_set_offchain_message_application_domain(

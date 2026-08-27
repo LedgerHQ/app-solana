@@ -236,6 +236,41 @@ class TestStaking:
         )
         self._send_and_validate_message(sol, [tx], scenario_navigator, root_pytest_dir)
 
+    @pytest.mark.parametrize("instruction", ["StakeSetLockup", "StakeInitialize"])
+    def test_stake_lockup_timestamp_out_of_range(self, sol, scenario_navigator, root_pytest_dir, instruction):
+        custodian_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
+
+        wrapping_timestamp = 1787000000 + (1 << 32) * 86400
+
+        if instruction == "StakeSetLockup":
+            accounts = [
+                AccountMeta(pubkey=self.stake_account, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=custodian_pubkey, is_signer=False, is_writable=False),
+            ]
+            data = struct.pack("<IBqBQB",
+                               StakeInstruction.StakeSetLockup,
+                               StakeLockupArgs.OptionSome, wrapping_timestamp,
+                               StakeLockupArgs.OptionSome, 0,
+                               StakeLockupArgs.OptionNone)
+        else:
+            accounts = [
+                AccountMeta(pubkey=self.stake_account, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=SYSVAR_RENT, is_signer=False, is_writable=False),
+            ]
+            data = struct.pack("<I", StakeInstruction.StakeInitialize) \
+                + bytes(self.payer_pubkey) + bytes(self.payer_pubkey) \
+                + struct.pack("<qQ", wrapping_timestamp, 0) + bytes(custodian_pubkey)
+
+        tx = Instruction(
+            program_id=STAKE_PROGRAM_ID,
+            accounts=accounts,
+            data=data,
+        )
+
+        with pytest.raises(ExceptionRAPDU) as e:
+            self._send_and_validate_message(sol, [tx], scenario_navigator, root_pytest_dir, valid=False)
+        assert e.value.status == ErrorType.SDK_NOT_SUPPORTED
+
     def test_stake_merge(self, sol, scenario_navigator, root_pytest_dir):
         to_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
         authority_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR)
