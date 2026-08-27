@@ -413,6 +413,111 @@ void test_parse_spl_token_transfer() {
     assert_pubkey_equal(tr_info->mint_account, &mint_account);
 }
 
+// Checks a Token-2022 transfer whose account list needs more than one length byte still reports
+// its trailing hook accounts
+void test_parse_spl_token2022_transfer_hook_long_account_list() {
+    enum { HOOK_ACCOUNTS_LENGTH = 256 };
+    uint8_t message_prefix[] = {1,
+                                0,
+                                2,
+                                5,
+                                OWNER_ACCOUNT,
+                                TOKEN_ACCOUNT,
+                                DEST_ACCOUNT,
+                                MINT_ACCOUNT,
+                                PROGRAM_ID_SPL_TOKEN_2022,
+                                BLOCKHASH,
+                                1,
+                                4,
+                                // 260 accounts, encoded as a two byte shortvec length
+                                0x84,
+                                0x02,
+                                1,
+                                3,
+                                2,
+                                0};
+    uint8_t message_suffix[] = {10, 12, 42, 0, 0, 0, 0, 0, 0, 0, 9};
+
+    uint8_t message[sizeof(message_prefix) + HOOK_ACCOUNTS_LENGTH + sizeof(message_suffix)];
+    memcpy(message, message_prefix, sizeof(message_prefix));
+    // All trailing accounts point at the read only mint so none of them counts as a signer
+    memset(message + sizeof(message_prefix), 3, HOOK_ACCOUNTS_LENGTH);
+    memcpy(message + sizeof(message_prefix) + HOOK_ACCOUNTS_LENGTH,
+           message_suffix,
+           sizeof(message_suffix));
+
+    Parser parser = {message, sizeof(message)};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 0);
+
+    Instruction instruction;
+    assert(parse_instruction(&parser, &instruction) == 0);
+    assert(instruction.accounts_length == 4 + HOOK_ACCOUNTS_LENGTH);
+    assert(instruction_validate(&instruction, &header) == 0);
+
+    SplTokenInfo info;
+    bool ignore_instruction_info;
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) ==
+           0);
+    assert(parser.buffer_length == 0);
+
+    assert(info.kind == SplTokenKind(TransferChecked));
+    assert(info.transfer.sign.kind == SplTokenSignKindSingle);
+    assert(info.transfer.is_transfer_checked_with_hook);
+}
+
+// Checks a Token-2022 multisig transfer is refused when the signer accounts outnumber the multisig
+// limit, including when their count wraps a byte wide counter
+void test_parse_spl_token2022_transfer_multisig_signers_overflow() {
+    enum { EXTRA_SIGNER_ACCOUNTS_LENGTH = 256 };
+    uint8_t message_prefix[] = {1,
+                                0,
+                                2,
+                                5,
+                                OWNER_ACCOUNT,
+                                TOKEN_ACCOUNT,
+                                DEST_ACCOUNT,
+                                MINT_ACCOUNT,
+                                PROGRAM_ID_SPL_TOKEN_2022,
+                                BLOCKHASH,
+                                1,
+                                4,
+                                // 261 accounts, encoded as a two byte shortvec length
+                                0x85,
+                                0x02,
+                                1,
+                                3,
+                                2,
+                                // A read only account here opens the multi signer path
+                                3,
+                                // First signer of the multisig
+                                0};
+    uint8_t message_suffix[] = {10, 12, 42, 0, 0, 0, 0, 0, 0, 0, 9};
+
+    uint8_t message[sizeof(message_prefix) + EXTRA_SIGNER_ACCOUNTS_LENGTH + sizeof(message_suffix)];
+    memcpy(message, message_prefix, sizeof(message_prefix));
+    // Every trailing account is the owner, the only signer, so each one grows the signers count
+    memset(message + sizeof(message_prefix), 0, EXTRA_SIGNER_ACCOUNTS_LENGTH);
+    memcpy(message + sizeof(message_prefix) + EXTRA_SIGNER_ACCOUNTS_LENGTH,
+           message_suffix,
+           sizeof(message_suffix));
+
+    Parser parser = {message, sizeof(message)};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 0);
+
+    Instruction instruction;
+    assert(parse_instruction(&parser, &instruction) == 0);
+    assert(instruction.accounts_length == 5 + EXTRA_SIGNER_ACCOUNTS_LENGTH);
+    assert(instruction_validate(&instruction, &header) == 0);
+
+    SplTokenInfo info;
+    bool ignore_instruction_info;
+    // 257 signers wrap a byte wide counter back to 1, which would slip under Token_MAX_SIGNERS
+    assert(parse_spl_token_instructions(&instruction, &header, &info, &ignore_instruction_info) !=
+           0);
+}
+
 void test_parse_spl_token_approve() {
     uint8_t message[] = {1,
                          0,
@@ -902,6 +1007,8 @@ int main() {
     RUN_TEST(test_parse_spl_token_create_account2);
     RUN_TEST(test_parse_spl_token_create_multisig);
     RUN_TEST(test_parse_spl_token_transfer);
+    RUN_TEST(test_parse_spl_token2022_transfer_hook_long_account_list);
+    RUN_TEST(test_parse_spl_token2022_transfer_multisig_signers_overflow);
     RUN_TEST(test_parse_spl_token_approve);
     RUN_TEST(test_parse_spl_token_revoke);
     RUN_TEST(test_parse_spl_token_set_authority);

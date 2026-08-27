@@ -71,7 +71,7 @@ bool instruction_infos_match_briefs(InstructionInfo *const *infos,
 
 typedef struct InstructionAccountsIterator {
     const Pubkey *message_header_pubkeys;
-    uint8_t instruction_accounts_length;
+    size_t instruction_accounts_length;
     const uint8_t *instruction_accounts;
     size_t current_instruction_account;
 } InstructionAccountsIterator;

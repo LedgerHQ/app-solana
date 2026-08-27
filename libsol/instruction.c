@@ -112,6 +112,7 @@ void instruction_accounts_iterator_init(InstructionAccountsIterator *it,
     it->instruction_accounts_length = instruction->accounts_length;
     it->instruction_accounts = instruction->accounts;
     it->current_instruction_account = 0;
+    PRINTF("Iterator init on %u instruction accounts\n", it->instruction_accounts_length);
 }
 
 int instruction_accounts_iterator_next(InstructionAccountsIterator *it,
@@ -146,7 +147,7 @@ const uint8_t *get_account_from_ins(const Instruction *instruction,
                                     const MessageHeader *header,
                                     uint8_t account_index) {
     if (account_index >= instruction->accounts_length) {
-        PRINTF("Error account_index %d while instruction accounts_length %d\n",
+        PRINTF("Error account_index %d while instruction accounts_length %u\n",
                account_index,
                instruction->accounts_length);
         return NULL;

@@ -274,6 +274,42 @@ void test_instruction_accounts_iterator_next() {
     assert(instruction_accounts_iterator_remaining(&it) == expected_remaining);
 }
 
+// Checks the iterator reports account lists longer than a single byte
+void test_instruction_accounts_iterator_long_account_list() {
+    uint8_t instruction_accounts[260];
+    for (size_t i = 0; i < ARRAY_LEN(instruction_accounts); i++) {
+        instruction_accounts[i] = i % 4;
+    }
+    Pubkey header_pubkeys[] = {
+        {{BYTES32_BS58_2}},
+        {{BYTES32_BS58_3}},
+        {{BYTES32_BS58_4}},
+        {{BYTES32_BS58_5}},
+    };
+    MessageHeader header = {
+        false,
+        0,
+        {0, 0, 0, ARRAY_LEN(header_pubkeys)},
+        header_pubkeys,
+        NULL,
+        1,
+    };
+
+    size_t lengths[] = {255, 256, 260};
+    for (size_t i = 0; i < ARRAY_LEN(lengths); i++) {
+        Instruction instruction = {0, instruction_accounts, lengths[i], NULL, 0};
+        InstructionAccountsIterator it;
+        instruction_accounts_iterator_init(&it, &header, &instruction);
+        assert(instruction_accounts_iterator_remaining(&it) == lengths[i]);
+
+        // Consume four accounts and check the rest stay visible
+        for (size_t consumed = 0; consumed < 4; consumed++) {
+            assert(instruction_accounts_iterator_next(&it, NULL) == 0);
+        }
+        assert(instruction_accounts_iterator_remaining(&it) == lengths[i] - 4);
+    }
+}
+
 void test_instruction_validate_allow_ALT_ok() {
     // Plain in-range accounts must pass, exactly like the strict validator.
     uint8_t accounts[] = {1, 2, 3};
@@ -405,6 +441,7 @@ int main() {
     test_instruction_info_matches_brief();
     test_instruction_infos_match_briefs();
     test_instruction_accounts_iterator_next();
+    test_instruction_accounts_iterator_long_account_list();
     test_instruction_program_id_spl_memo();
     test_instruction_program_id_compute_budget();
     test_instruction_info_matches_brief_constants();

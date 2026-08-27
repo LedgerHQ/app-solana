@@ -18,7 +18,7 @@
 #define MAX_INSTRUCTIONS 6
 
 static void debug_print_header(const MessageHeader *header) {
-    PRINTF("instructions_length = %d\n", header->instructions_length);
+    PRINTF("instructions_length = %u\n", header->instructions_length);
     PRINTF("num_required_signatures = %d\n", header->pubkeys_header.num_required_signatures);
     PRINTF("num_readonly_signed_accounts = %d\n",
            header->pubkeys_header.num_readonly_signed_accounts);
@@ -51,12 +51,12 @@ static int parse_validate_and_debug_instruction_accounts(Parser *parser,
             return -1;
         }
     }
-    for (uint8_t i = 0; i < instruction->accounts_length; ++i) {
+    for (size_t i = 0; i < instruction->accounts_length; ++i) {
         if (instruction->accounts[i] >= header->pubkeys_header.pubkeys_length) {
             // ALT-loaded account: not present in the wire format, cannot be resolved on device
-            PRINTF("accounts[%d] = pubkeys[%d] = <ALT loaded>\n", i, instruction->accounts[i]);
+            PRINTF("accounts[%u] = pubkeys[%d] = <ALT loaded>\n", i, instruction->accounts[i]);
         } else {
-            PRINTF("accounts[%d] = pubkeys[%d] = %.*H\n",
+            PRINTF("accounts[%u] = pubkeys[%d] = %.*H\n",
                    i,
                    instruction->accounts[i],
                    PUBKEY_SIZE,
@@ -196,7 +196,7 @@ int process_message_body(const uint8_t *message_body,
                         PRINTF("Error: too many instructions to display requested\n");
                         return -1;
                     } else {
-                        PRINTF("Registered info %d to display in slot %d\n",
+                        PRINTF("Registered info %d to display in slot %u\n",
                                info->kind,
                                display_instruction_count);
                         display_instruction_info[display_instruction_count++] = info;
@@ -222,7 +222,7 @@ int process_message_body(const uint8_t *message_body,
     // If we don't know about all the instructions, bail
     for (size_t i = 0; i < header->instructions_length; i++) {
         if (instruction_info[i].kind == ProgramIdUnknown) {
-            PRINTF("Unknown program id for instruction n %d\n", i);
+            PRINTF("Unknown program id for instruction n %u\n", i);
             return -1;
         }
     }
@@ -251,7 +251,7 @@ int process_message_body_with_descriptor(const uint8_t *message_body,
     // We need to have recievied exactly 1 descriptor for each instruction
     uint8_t received_descriptors = get_descriptor_count();
     if (received_descriptors != header->instructions_length) {
-        PRINTF("Error: received descriptors for %d instructions but received %d instructions\n",
+        PRINTF("Error: received descriptors for %d instructions but received %u instructions\n",
                received_descriptors,
                header->instructions_length);
         return -1;
@@ -269,7 +269,7 @@ int process_message_body_with_descriptor(const uint8_t *message_body,
             PRINTF("Error in parse_validate_and_debug_instruction_accounts for ins %d\n", ins_idx);
             return -1;
         }
-        PRINTF("Checking instruction length %d data '%.*H'\n",
+        PRINTF("Checking instruction length %u data '%.*H'\n",
                instruction.data_length,
                instruction.data_length,
                instruction.data);

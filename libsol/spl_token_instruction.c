@@ -177,16 +177,18 @@ static int parse_spl_token2022_sign(const MessageHeader *header,
         PRINTF("Multi signers transaction\n");
         BAIL_IF(instruction_accounts_iterator_next(it, &sign->multi.account));
         BAIL_IF(instruction_accounts_iterator_next(it, &sign->multi.signers.first));
-        uint8_t signers_count = 1;
+        size_t signers_count = 1;
         // Count and skip all next signers
         while (instruction_accounts_iterator_remaining(it) > 0) {
             current_account_index = instruction_accounts_iterator_get_current_account_index(it);
-            PRINTF("Checking account[%d] = %d: ",
+            PRINTF("Checking account[%u] = %d: ",
                    it->current_instruction_account,
                    current_account_index);
             if (current_account_index < header->pubkeys_header.num_required_signatures) {
                 PRINTF("Signer\n");
                 ++signers_count;
+                // Bound the count as we walk so it stays within the multisig limit
+                BAIL_IF(signers_count > Token_MAX_SIGNERS);
                 BAIL_IF(instruction_accounts_iterator_next(it, NULL));
             } else {
                 // Not signers anymore
@@ -194,8 +196,6 @@ static int parse_spl_token2022_sign(const MessageHeader *header,
                 break;
             }
         }
-        // Register signers count
-        BAIL_IF(signers_count > Token_MAX_SIGNERS);
         sign->multi.signers.count = signers_count;
         PRINTF("Multi signers count = %d\n", sign->multi.signers.count);
     }
