@@ -680,9 +680,17 @@ class SolanaDescriptorTests(SPLTokenTests):
         sol = SolanaClient(self.backend)
         sol.provide_instruction_descriptor(template_id=self.template_id_1, version=0x02)
 
-    def perform_final_tx_bad_chain_id(self, destination, send_amount, fees, memo):
+    def perform_final_tx_unknown_chain_id(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
         sol.provide_instruction_descriptor(template_id=self.template_id_1, chain_id=800)
+
+    def perform_final_tx_devnet_chain_id(self, destination, send_amount, fees, memo):
+        sol = SolanaClient(self.backend)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, chain_id=901)
+
+    def perform_final_tx_testnet_chain_id(self, destination, send_amount, fees, memo):
+        sol = SolanaClient(self.backend)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, chain_id=902)
 
     def perform_final_tx_bad_size_program_id_too_small(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
@@ -706,7 +714,7 @@ class SolanaDescriptorTests(SPLTokenTests):
         sol.provide_instruction_descriptor(template_id=self.template_id_1)
         sol.provide_instruction_descriptor(template_id=self.template_id_1 - 1)
 
-    def perform_final_tx_mismatch_network(self, destination, send_amount, fees, memo):
+    def perform_final_tx_second_descriptor_non_mainnet(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
         sol.provide_instruction_descriptor(template_id=self.template_id_1, chain_id=900)
         sol.provide_instruction_descriptor(template_id=self.template_id_1, chain_id=901)
@@ -1016,12 +1024,14 @@ class TestsSolanaDescriptor:
     @pytest.mark.parametrize('fault_test_to_run', [
         "perform_final_tx_bad_structure_type",
         "perform_final_tx_bad_version",
-        "perform_final_tx_bad_chain_id",
+        "perform_final_tx_unknown_chain_id",
+        "perform_final_tx_devnet_chain_id",
+        "perform_final_tx_testnet_chain_id",
         "perform_final_tx_bad_size_program_id_too_small",
         "perform_final_tx_bad_size_program_id_too_big",
         "perform_final_tx_discriminator_too_big",
         "perform_final_tx_too_many_descriptors",
-        "perform_final_tx_mismatch_network",
+        "perform_final_tx_second_descriptor_non_mainnet",
         "perform_final_tx_no_descriptor",
         "perform_final_tx_mismatch_descriptor_count",
         "perform_final_tx_mismatch_program_id",
