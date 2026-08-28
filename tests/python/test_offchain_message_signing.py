@@ -49,6 +49,28 @@ class TestOffchainMessageBlindSigningDisabled:
         assert e.value.status == ErrorType.SDK_NOT_SUPPORTED
 
 
+    def test_offchain_ascii_too_many_lines_blind_signing_disabled(self, sol, backend, navigator, root_pytest_dir, test_name):
+        """An ASCII message that needs more review pages than the flow can address must not be clear signed."""
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+        offchain_message = V0OffchainMessage(SOL.MANY_LINES_ASCII, from_public_key)
+        message: bytes = offchain_message.serialize()
+
+        if backend.device.is_nano:
+            validation_instructions=[NavInsID.BOTH_CLICK]
+            pattern = "Blind signing"
+        else:
+            validation_instructions=[NavInsID.USE_CASE_CHOICE_REJECT]
+            pattern = "Enable blind signing"
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+                navigator.navigate_until_text_and_compare(navigate_instruction=None,
+                                                        validation_instructions=validation_instructions,
+                                                        text=pattern,
+                                                        path=root_pytest_dir,
+                                                        test_case_name=test_name)
+        assert e.value.status == ErrorType.SDK_NOT_SUPPORTED
+
+
 class TestOffchainMessageSigningV0:
 
     def test_sign_offchain_message_v0_ascii_ok(self, sol, scenario_navigator, root_pytest_dir):
@@ -73,6 +95,22 @@ class TestOffchainMessageSigningV0:
         with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
             scenario_navigator.review_approve(path=root_pytest_dir,
                                               custom_screen_text=r"(Sign message|Hold to sign)")
+
+        signature: bytes = sol.get_async_response().data
+        verify_signature(from_public_key, message, signature)
+
+
+    def test_sign_offchain_message_v0_ascii_too_many_lines_blind_ok(self, sol, scenario_navigator, navigator, test_name, navigation_helper, root_pytest_dir):
+        """An ASCII message with too many lines is signed over its hash, behind the blind signing setting."""
+        navigation_helper.enable_blind_signing()
+
+        from_public_key = sol.get_public_key(SOL.SOL_PACKED_DERIVATION_PATH)
+
+        offchain_message: V0OffchainMessage = V0OffchainMessage(SOL.MANY_LINES_ASCII, from_public_key)
+        message: bytes = offchain_message.serialize()
+
+        with sol.send_async_sign_offchain_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+            navigation_helper.navigate_with_blind_signing_and_accept()
 
         signature: bytes = sol.get_async_response().data
         verify_signature(from_public_key, message, signature)

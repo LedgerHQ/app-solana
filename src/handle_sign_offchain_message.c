@@ -33,7 +33,7 @@ void ui_application_domain(const OffchainMessageHeader *header) {
 }
 
 static bool prepare_primary_items(const OffchainMessageHeader *header,
-                                  const bool is_ascii,
+                                  const bool is_clear_signable,
                                   const size_t signer_index) {
     if (N_storage.settings.display_mode == DisplayModeExpert) {
         SummaryItem *item = transaction_summary_primary_or_general_item();
@@ -56,7 +56,7 @@ static bool prepare_primary_items(const OffchainMessageHeader *header,
         summary_item_set_u64(transaction_summary_general_item(), "Size", header->length);
         summary_item_set_hash(transaction_summary_general_item(), "Hash", &G_command.message_hash);
         return true;
-    } else if (!is_ascii) {
+    } else if (!is_clear_signable) {
         summary_item_set_hash(transaction_summary_primary_or_general_item(),
                               "Hash",
                               &G_command.message_hash);
@@ -67,13 +67,14 @@ static bool prepare_primary_items(const OffchainMessageHeader *header,
 }
 
 static int setup_offchain_signing_ui(const OffchainMessageHeader *header,
+                                     const bool is_clear_signable,
                                      const bool is_ascii,
                                      const size_t signer_index) {
     // fill out UI steps
     transaction_summary_reset();
 
     // prepare_primary_items returns true if it set primary item
-    bool has_primary_item = prepare_primary_items(header, is_ascii, signer_index);
+    bool has_primary_item = prepare_primary_items(header, is_clear_signable, signer_index);
 
     enum SummaryItemKind summary_step_kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
     size_t num_summary_steps = 0;
@@ -86,15 +87,15 @@ static int setup_offchain_signing_ui(const OffchainMessageHeader *header,
             return ApduReplySolanaSummaryFinalizeFailed;
         }
     }
-    // else: no items set (user mode + ASCII) - num_summary_steps stays 0
+    // else: no items set (user mode + clear signable) - num_summary_steps stays 0
 
-    if (is_ascii) {
-        // Last step of ASCII messages is not computed by the parser therefore is not taken into
-        // account in num_summary_steps
+    if (is_clear_signable) {
+        // Last step of clear signed messages is not computed by the parser therefore is not taken
+        // into account in num_summary_steps
         ++num_summary_steps;
     }
 
-    start_sign_offchain_message_ui(is_ascii, num_summary_steps);
+    start_sign_offchain_message_ui(is_clear_signable, is_ascii, num_summary_steps);
     return 0;
 }
 
@@ -163,15 +164,17 @@ int handle_sign_offchain_message(void) {
     if (header.version == 0 && !is_ascii && header.format == 0) {
         return io_send_sw(ApduReplySolanaInvalidMessageFormat);
     }
-    // Non-ASCII messages cannot be displayed by NBGL, require blind signing
-    if (!is_ascii && N_storage.settings.allow_blind_sign != BlindSignEnabled) {
-        PRINTF("Blind signing is disabled, cannot sign non-ASCII message.\n");
+    // The review shows the text only when NBGL can render it and the user can reach every
+    // page of it. Anything else is signed over its hash behind the blind signing setting.
+    bool is_clear_signable = is_ascii && is_message_reviewable(G_command.message_text_start);
+    if (!is_clear_signable && N_storage.settings.allow_blind_sign != BlindSignEnabled) {
+        PRINTF("Blind signing is disabled, cannot sign this message.\n");
         start_blind_sign_error_ui();
         return io_send_sw(ApduReplySdkNotSupported);
     }
 
     // compute message hash if needed
-    if (!is_ascii || N_storage.settings.display_mode == DisplayModeExpert) {
+    if (!is_clear_signable || N_storage.settings.display_mode == DisplayModeExpert) {
         // Only message content is hashed
         // We reuse the blind signing buffer for hashing
         cx_hash_sha256(parser.buffer,
@@ -180,7 +183,7 @@ int handle_sign_offchain_message(void) {
                        HASH_LENGTH);
     }
 
-    int ret = setup_offchain_signing_ui(&header, is_ascii, signer_index);
+    int ret = setup_offchain_signing_ui(&header, is_clear_signable, is_ascii, signer_index);
     if (ret != 0) {
         return io_send_sw(ret);
     }

@@ -11,6 +11,8 @@
 #include "main_std_app.h"
 
 #include "nbgl_use_case.h"
+#include "nbgl_fonts.h"
+#include "nbgl_layout.h"
 
 #include "handle_sign_message.h"
 #include "handle_sign_offchain_message.h"
@@ -28,7 +30,22 @@ static nbgl_contentTagValueList_t G_content;
 static nbgl_layoutTagValue_t G_current_pair;
 // Used to differentiate between message and transaction review
 static nbgl_operationType_t G_operation_type;
-static bool G_is_ascii_message;
+// Set when the review shows the message text itself instead of its hash
+static bool G_is_clear_signed_message;
+
+// The page index of the review flow is 8 bits wide. Stay below that range and keep
+// headroom for the extra pages the flow adds when it substitutes "...".
+#define MAX_REVIEW_TEXT_PAGES 200
+
+#ifdef SCREEN_SIZE_WALLET
+// A long value goes to the details flow, which fills NB_MAX_LINES_IN_DETAILS lines per page
+#define REVIEW_TEXT_FONT           SMALL_REGULAR_FONT
+#define REVIEW_TEXT_LINES_PER_PAGE NB_MAX_LINES_IN_DETAILS
+#else
+// A long value is split inside its own step, where the first line carries the tag
+#define REVIEW_TEXT_FONT           BAGL_FONT_OPEN_SANS_REGULAR_11px_1bpp
+#define REVIEW_TEXT_LINES_PER_PAGE (NB_MAX_LINES - 1)
+#endif
 
 // We will display at most 4 items on a Stax review screen
 #define MAX_SIMULTANEOUS_DISPLAYED_SLOTS NB_MAX_DISPLAYED_PAIRS_IN_REVIEW
@@ -44,6 +61,25 @@ static size_t G_transaction_steps_number;
 // Warning structure for blind signing reviews
 static nbgl_warning_t G_warning;
 
+// Returns true when the review flow can reach every part of the message text.
+bool is_message_reviewable(const char *message) {
+    if (message == NULL) {
+        PRINTF("is_message_reviewable: NULL message\n");
+        return false;
+    }
+
+    // Measure with the font, the width and the wrapping used by the review, then split the
+    // lines into pages the same way the review does. The line count is 16 bits, so it holds
+    // the whole message even when the page index of the review would not.
+    uint16_t lines_number =
+        nbgl_getTextNbLinesInWidth(REVIEW_TEXT_FONT, message, AVAILABLE_WIDTH, true);
+    uint16_t pages_number =
+        (lines_number + REVIEW_TEXT_LINES_PER_PAGE - 1) / REVIEW_TEXT_LINES_PER_PAGE;
+    PRINTF("lines_number=%d pages_number=%d\n", lines_number, pages_number);
+
+    return (pages_number <= MAX_REVIEW_TEXT_PAGES);
+}
+
 // function called by NBGL to get the G_current_pair indexed by "index"
 // G_current_pair will point at values stored in displayed_slots[]
 // this will enable displaying at most sizeof(displayed_slots) values simultaneously
@@ -52,11 +88,11 @@ static nbgl_contentTagValue_t *get_review_pair(uint8_t index) {
     // We use a rotating access to the displayed_slots buffers to ensure there is no overwrite
     // by adjacent indexes
     uint8_t slot = index % ARRAY_COUNT(displayed_slots);
-    // Final step is special for ASCII messages
+    // Final step is special for clear signed messages
     if (index == G_transaction_steps_number - 1 && G_operation_type == TYPE_MESSAGE &&
-        G_is_ascii_message) {
-        // For ASCII offchain messages, the last step points directly to the message text
-        // to avoid truncation by the slot buffer and allow displaying long messages.
+        G_is_clear_signed_message) {
+        // For clear signed offchain messages, the last step points directly to the message
+        // text to avoid truncation by the slot buffer and allow displaying long messages.
         strlcpy(displayed_slots[slot].title, "Message", sizeof(displayed_slots[slot].title));
         // G_command.message_text_start is NULL terminated by construct.
         G_current_pair.value = G_command.message_text_start;
@@ -138,10 +174,10 @@ static void review_choice(bool confirm) {
 // Init the base elements of the UI flow common for message and offchain message signing
 static void init_review_content(nbgl_opType_t operation_type,
                                 size_t num_summary_steps,
-                                bool is_ascii_message) {
+                                bool is_clear_signed_message) {
     G_operation_type = operation_type;
     G_transaction_steps_number = num_summary_steps;
-    G_is_ascii_message = is_ascii_message;
+    G_is_clear_signed_message = is_clear_signed_message;
 
     G_content.nbMaxLinesForValue = 0;
     G_content.smallCaseForValue = false;
@@ -326,15 +362,21 @@ void start_sign_message_ui(size_t num_summary_steps) {
     }
 }
 
-void start_sign_offchain_message_ui(bool is_ascii, size_t num_summary_steps) {
+void start_sign_offchain_message_ui(bool is_clear_signable,
+                                    bool is_ascii,
+                                    size_t num_summary_steps) {
     explicit_bzero(&G_warning, sizeof(nbgl_warning_t));
-    init_review_content(TYPE_MESSAGE, num_summary_steps, is_ascii);
+    init_review_content(TYPE_MESSAGE, num_summary_steps, is_clear_signable);
 
-    if (!is_ascii) {
+    if (is_clear_signable) {
+        PRINTF("Clear signing the message text\n");
+        start_message_signing_review();
+    } else if (!is_ascii) {
         PRINTF("Non-ASCII message, blind signing required\n");
         start_blind_signing_ui("Review UTF-8 message", "Accept risk and sign UTF-8 message");
     } else {
-        start_message_signing_review();
+        PRINTF("Message text out of review reach, blind signing required\n");
+        start_blind_signing_ui("Review message", "Accept risk and sign message");
     }
 }
 
