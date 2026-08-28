@@ -86,6 +86,9 @@ enum DisplayFlags {
     DisplayFlagAll = DisplayFlagLongPubkeys,
 };
 int transaction_summary_display_item(size_t item_index, enum DisplayFlags flags);
+// Reads the lamports of an amount item, so a caller can add amounts instead of comparing the
+// strings they display as
+int transaction_summary_get_item_amount(size_t item_index, uint64_t *amount);
 int transaction_summary_finalize(enum SummaryItemKind *item_kinds, size_t *item_kinds_len);
 
 typedef enum transaction_type_e {

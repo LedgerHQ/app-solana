@@ -24,6 +24,10 @@ const char *get_swap_ticker();
 
 bool check_swap_fee(const char *text);
 
+// Checks that the lamports the transaction spends outside of the swap amount stay within the fee
+// validated by Exchange
+bool check_swap_fee_raw_less_or_equal(uint64_t lamports);
+
 bool check_swap_recipient(const char *text);
 
 int get_swap_recipient(uint8_t recipient_address[PUBKEY_SIZE]);

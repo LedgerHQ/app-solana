@@ -153,6 +153,23 @@ bool check_swap_amount_raw_less_or_equal(uint64_t amount) {
     return true;
 }
 
+bool check_swap_fee_raw_less_or_equal(uint64_t lamports) {
+    if (!G_swap_validated.initialized) {
+        PRINTF("check_swap_fee_raw_less_or_equal internal error\n");
+        return false;
+    }
+
+    debug_print_u64("Received lamports", lamports);
+    debug_print_u64("Validated G_swap_validated.fee", G_swap_validated.fee);
+    if (lamports > G_swap_validated.fee) {
+        PRINTF("Lamports exceed the validated swap fee\n");
+        return false;
+    }
+
+    PRINTF("Lamports validated\n");
+    return true;
+}
+
 int get_swap_amount_raw(uint64_t *amount) {
     if (!G_swap_validated.initialized) {
         PRINTF("get_swap_amount_raw internal error\n");

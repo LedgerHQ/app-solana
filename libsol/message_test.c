@@ -150,6 +150,39 @@ static void process_message_body_and_sanity_check(const uint8_t* message, size_t
     }
 }
 
+// Compares the value shown by the only item of the finalized summary that carries this title
+static void assert_summary_item_shows(const char *title, const char *expected_text) {
+    enum SummaryItemKind kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
+    size_t num_kinds = 0;
+    size_t matches = 0;
+
+    assert(transaction_summary_finalize(kinds, &num_kinds) == 0);
+    for (size_t i = 0; i < num_kinds; i++) {
+        assert(transaction_summary_display_item(i, DisplayFlagNone) == 0);
+        if (strcmp(G_transaction_summary_title, title) == 0) {
+            assert_string_equal(G_transaction_summary_text, expected_text);
+            matches++;
+        }
+    }
+    assert(matches == 1);
+}
+
+// Counts the items of the finalized summary that carry this title
+static size_t count_summary_items_with_title(const char *title) {
+    enum SummaryItemKind kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
+    size_t num_kinds = 0;
+    size_t matches = 0;
+
+    assert(transaction_summary_finalize(kinds, &num_kinds) == 0);
+    for (size_t i = 0; i < num_kinds; i++) {
+        assert(transaction_summary_display_item(i, DisplayFlagNone) == 0);
+        if (strcmp(G_transaction_summary_title, title) == 0) {
+            matches++;
+        }
+    }
+    return matches;
+}
+
 static void process_message_body_and_expect_refusal(const uint8_t* message, size_t message_length) {
     PrintConfig print_config = {0};
     print_config.expert_mode = true;
@@ -3519,6 +3552,10 @@ void test_process_message_body_spl_associated_token_create_with_transfer() {
                 0x09
     };
     process_message_body_and_sanity_check(message, sizeof(message), 9);
+
+    // The rent of the created account is named as such, and it is not counted as a fee
+    assert_summary_item_shows("Funded with at least", "0.00203928 SOL");
+    assert(count_summary_items_with_title("Max fees") == 0);
 }
 
 // A message may create the account it sends from rather than the one it sends to

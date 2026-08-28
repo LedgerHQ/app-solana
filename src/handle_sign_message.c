@@ -130,6 +130,9 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
     bool dest_ata_ok = false;
     bool dest_sol_address_ok = false;
     bool create_token_account_received = false;
+    // Fees and the rent of a created account are both SOL leaving the wallet, so they share the
+    // fee validated by Exchange
+    uint64_t sol_spent = 0;
 
     if (g_trusted_info == NULL || !g_trusted_info->received) {
         // This case should never happen because this is already checked at TX parsing
@@ -184,17 +187,9 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
                 amount_ok = true;
                 break;
 
-            case SummaryItemAmount:
-                if (strcmp(G_transaction_summary_title, "Max fees") == 0) {
-                    if (!check_swap_fee(G_transaction_summary_text)) {
-                        PRINTF("check_swap_fee failed\n");
-                        send_swap_error_with_string(ApduReplySolanaSummaryFinalizeFailed,
-                                                    SWAP_EC_ERROR_WRONG_FEES,
-                                                    SWAP_EC_APP_GENERIC,
-                                                    "Token fee mismatch: %s",
-                                                    G_transaction_summary_text);
-                    }
-                } else {
+            case SummaryItemAmount: {
+                if (strcmp(G_transaction_summary_title, "Max fees") != 0 &&
+                    strcmp(G_transaction_summary_title, "Funded with at least") != 0) {
                     PRINTF("Refusing non fee amount in token swap context\n");
                     send_swap_error_with_string(ApduReplySolanaSummaryFinalizeFailed,
                                                 SWAP_EC_ERROR_WRONG_METHOD,
@@ -202,7 +197,26 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
                                                 "Non-fee amount in token swap: %s",
                                                 G_transaction_summary_title);
                 }
+                uint64_t lamports = 0;
+                if (transaction_summary_get_item_amount(i, &lamports) != 0) {
+                    PRINTF("Failed to read the lamports of the SOL amount\n");
+                    send_swap_error_with_string(ApduReplySolanaSummaryFinalizeFailed,
+                                                SWAP_EC_ERROR_GENERIC,
+                                                SWAP_EC_APP_GENERIC,
+                                                "Unreadable SOL amount: %s",
+                                                G_transaction_summary_title);
+                }
+                if (sol_spent > UINT64_MAX - lamports) {
+                    PRINTF("Overflow while adding the SOL amounts of the transaction\n");
+                    send_swap_error_with_string(ApduReplySolanaSummaryFinalizeFailed,
+                                                SWAP_EC_ERROR_WRONG_FEES,
+                                                SWAP_EC_APP_GENERIC,
+                                                "SOL amounts overflow at: %s",
+                                                G_transaction_summary_title);
+                }
+                sol_spent += lamports;
                 break;
+            }
 
             case SummaryItemPubkey:
                 if (strcmp(G_transaction_summary_title, "Create token account") == 0) {
@@ -328,6 +342,15 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
                                     mint_ok,
                                     dest_ata_ok,
                                     dest_sol_address_ok);
+    }
+
+    // The fee and the rent are checked as one sum, so the creation cannot spend SOL on top of the
+    // validated fee
+    if (!check_swap_fee_raw_less_or_equal(sol_spent)) {
+        PRINTF("check_swap_fee_raw_less_or_equal failed on the SOL spent\n");
+        send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                               SWAP_EC_ERROR_WRONG_FEES,
+                               SWAP_EC_APP_GENERIC);
     }
 
     // Reaching here means all checks passed

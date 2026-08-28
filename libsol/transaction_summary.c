@@ -378,6 +378,22 @@ static SummaryItem *transaction_summary_find_item(size_t item_index) {
     return NULL;
 }
 
+int transaction_summary_get_item_amount(size_t item_index, uint64_t *amount) {
+    const SummaryItem *item = transaction_summary_find_item(item_index);
+
+    if (item == NULL) {
+        PRINTF("No summary item at index %u\n", item_index);
+        return -1;
+    }
+    if (item->kind != SummaryItemAmount) {
+        PRINTF("Summary item %u is kind %d, not a lamport amount\n", item_index, item->kind);
+        return -1;
+    }
+
+    *amount = item->u64;
+    return 0;
+}
+
 int transaction_summary_display_item(size_t item_index, enum DisplayFlags flags) {
     const SummaryItem *item;
 

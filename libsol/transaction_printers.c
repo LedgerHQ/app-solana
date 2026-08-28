@@ -832,6 +832,11 @@ static int print_spl_token_create_multisig(const PrintConfig *print_config,
     return 0;
 }
 
+// Smallest rent exempt balance the associated token account program can pay for a new token
+// account. The message carries no amount, and a Token-2022 account holds extensions that make it
+// larger, so the rent of a bare token account is the only value known here.
+#define ASSOCIATED_TOKEN_ACCOUNT_MIN_RENT_LAMPORTS 2039280
+
 static int print_spl_associated_token_account_create_with_transfer(const PrintConfig *print_config,
                                                                    InstructionInfo *const *infos,
                                                                    size_t infos_length) {
@@ -861,6 +866,14 @@ static int print_spl_associated_token_account_create_with_transfer(const PrintCo
         item = transaction_summary_general_item();
         summary_item_set_pubkey(item, "Funded by", c_info->funder);
     }
+
+    // The exact rent needs the extensions of the mint, which the message does not carry, so the
+    // title states that the amount is a lower bound
+    PRINTF("Print the minimum rent paid for the created account\n");
+    item = transaction_summary_general_item();
+    summary_item_set_amount(item,
+                            "Funded with at least",
+                            ASSOCIATED_TOKEN_ACCOUNT_MIN_RENT_LAMPORTS);
 
     return 0;
 }
@@ -1022,8 +1035,6 @@ static int print_transaction_nonce_processed(const PrintConfig *print_config,
                        is_spl_associated_token_account_create_with_transfer_fee(infos,
                                                                                 infos_length)) {
                 PRINTF("Handle with print_spl_associated_token_account_create_with_transfer\n");
-                PRINTF("Adding hard coded rent-exempt balance to max fees\n");
-                transaction_max_fee += 2039280;
                 print_ret = print_spl_associated_token_account_create_with_transfer(print_config,
                                                                                     infos,
                                                                                     infos_length);
