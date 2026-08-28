@@ -18,9 +18,7 @@ int get_swap_amount_raw(uint64_t *amount);
 
 bool check_swap_amount(const char *text);
 
-bool check_swap_ticker(const char *ticker);
-
-const char *get_swap_ticker();
+const char *get_swap_ticker(void);
 
 bool check_swap_fee(const char *text);
 
@@ -32,4 +30,5 @@ bool check_swap_recipient(const char *text);
 
 int get_swap_recipient(uint8_t recipient_address[PUBKEY_SIZE]);
 
-bool is_token_transaction();
+// Reports whether the swap validated by Exchange pays with a token
+bool is_token_transaction(void);

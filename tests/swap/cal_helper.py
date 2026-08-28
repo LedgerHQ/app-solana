@@ -11,4 +11,5 @@ SOL_CURRENCY_CONFIGURATION = CurrencyConfiguration(ticker="SOL", conf=SOL.SOL_CO
 JUP_CURRENCY_CONFIGURATION = CurrencyConfiguration(ticker="JUP", conf=SOL.JUP_CONF, packed_derivation_path=SOL.JUP_PACKED_DERIVATION_PATH)
 SOL_USDC_CURRENCY_CONFIGURATION = CurrencyConfiguration(ticker="USDC", conf=SOL.SOL_USDC_CONF, packed_derivation_path=SOL.SOL_USDC_PACKED_DERIVATION_PATH)
 GORK_CURRENCY_CONFIGURATION = CurrencyConfiguration(ticker="GORK", conf=SOL.GORK_CONF, packed_derivation_path=SOL.GORK_PACKED_DERIVATION_PATH)
+SOL_WSOL_CURRENCY_CONFIGURATION = CurrencyConfiguration(ticker="SOL", conf=SOL.SOL_WSOL_CONF, packed_derivation_path=SOL.SOL_WSOL_PACKED_DERIVATION_PATH)
 # --8<-- [end:sol_conf]

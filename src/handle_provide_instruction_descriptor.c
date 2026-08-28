@@ -468,12 +468,17 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
     // Retrieve / calculate the swap validated mint address and recipient address
     // With the current architecture we actually do this step at each instruction but the impact is
     // negligeable
-    bool is_token_2022_kind;
-    const uint8_t *validated_mint_address = get_token_mint_address(get_swap_ticker(),
-                                                                   &is_token_2022_kind);
-    if (validated_mint_address == NULL) {
-        PRINTF("Error: no mint address retrieved\n");
-        return -1;
+    bool is_token_2022_kind = false;
+    const uint8_t *validated_mint_address = NULL;
+    // A mint exists only for a token swap, the asset kind comes from the Exchange parameters
+    if (is_token_transaction()) {
+        validated_mint_address = get_token_mint_address(get_swap_ticker(), &is_token_2022_kind);
+        if (validated_mint_address == NULL) {
+            PRINTF("Error: no mint address retrieved\n");
+            return -1;
+        }
+    } else {
+        PRINTF("Native swap, no mint address to retrieve\n");
     }
     uint8_t validated_recipient_address[PUBKEY_SIZE] = {0};
     if (get_swap_recipient(validated_recipient_address) != 0) {
@@ -571,7 +576,12 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
     }
 
     // CHECK CAPPED TOKEN INDEX (mint validation for fee instructions)
-    if (instruction_descriptor->capped_amount_token_index_received) {
+    if (!instruction_descriptor->capped_amount_token_index_received) {
+        PRINTF("Skipping capped_amount_token_index check\n");
+    } else if (validated_mint_address == NULL) {
+        PRINTF("Error: capped_amount_token_index received for a native swap\n");
+        return -1;
+    } else {
         PRINTF("Received capped_amount_token_index to check\n");
         const uint8_t *capped_token_account = get_account_from_ins(
             instruction,
@@ -595,6 +605,9 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
     // CHECK MINT ADDRESS
     if (!instruction_descriptor->asset_account_index_received) {
         PRINTF("Skipping asset_account_index check\n");
+    } else if (validated_mint_address == NULL) {
+        PRINTF("Error: asset_account_index received for a native swap\n");
+        return -1;
     } else {
         PRINTF("Received asset_account_index to check\n");
         const uint8_t *asset_account = get_account_from_ins(
@@ -619,6 +632,9 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
     // CHECK MINT ATA
     if (!instruction_descriptor->asset_ata_index_received) {
         PRINTF("Skipping asset_ata check\n");
+    } else if (validated_mint_address == NULL) {
+        PRINTF("Error: asset_ata_index received for a native swap\n");
+        return -1;
     } else {
         PRINTF("Received asset_ata to check\n");
         const uint8_t *asset_ata = get_account_from_ins(instruction,
@@ -676,6 +692,9 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
     // CHECK RECIPIENT ATA
     if (!instruction_descriptor->recipient_ata_index_received) {
         PRINTF("Skipping recipient_ata check\n");
+    } else if (validated_mint_address == NULL) {
+        PRINTF("Error: recipient_ata_index received for a native swap\n");
+        return -1;
     } else {
         PRINTF("Received recipient_ata to check\n");
         const uint8_t *recipient_ata = get_account_from_ins(

@@ -428,6 +428,72 @@ class TestsSPLToken:
     def test_solana_spl_token(self, backend, exchange_navigation_helper, test_to_run):
         SPLTokenTests(backend, exchange_navigation_helper).run_test(test_to_run)
 
+
+# Wrapped SOL is a token whose ticker is identical to the ticker of the native coin.
+# The asset kind comes from the Exchange parameters, so a wrapped SOL swap must still require an
+# SPL transfer of the wrapped SOL mint.
+class WrappedSolTests(SPLTokenTests):
+    currency_configuration = cal.SOL_WSOL_CURRENCY_CONFIGURATION
+
+    valid_destination_2 = str(
+        get_associated_token_address(
+            Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR),
+            Pubkey.from_string(SOL.WSOL_MINT_ADDRESS_STR)
+        )
+    )
+
+    def perform_final_tx(self, destination, send_amount, fees, memo):
+        destination_ata = str(
+            get_associated_token_address(
+                Pubkey.from_string(destination),
+                Pubkey.from_string(SOL.WSOL_MINT_ADDRESS_STR)
+            )
+        )
+        sender_ata = get_associated_token_address(self.sender_public_key, Pubkey.from_string(SOL.WSOL_MINT_ADDRESS_STR))
+
+        transfer_instruction = transfer_checked(
+            TransferCheckedParams(
+                program_id=TOKEN_PROGRAM_ID,
+                source=sender_ata,
+                mint=Pubkey.from_string(SOL.WSOL_MINT_ADDRESS_STR),
+                dest=Pubkey.from_string(destination_ata),
+                owner=self.sender_public_key,
+                amount=send_amount,
+                decimals=9  # Number of decimals for the wrapped SOL token
+            )
+        )
+
+        sol = SolanaClient(self.backend)
+        message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
+        sol.enroll_ata(SOL.WSOL_MINT_ADDRESS, destination_ata.encode('utf-8'), destination.encode('utf-8'))
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            pass
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+    # A System Program transfer moves native lamports, not the approved token. It must be refused.
+    def perform_final_tx_native_transfer(self, destination, send_amount, fees, memo):
+        instruction: SystemInstructionTransfer = SystemInstructionTransfer(SOL.OWNED_PUBLIC_KEY, base58.b58decode(destination), send_amount)
+        message: bytes = MessageCustom([instruction]).serialize()
+        sol = SolanaClient(self.backend)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+            pass
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message, signature)
+
+
+# Use a class to reuse the same Speculos instance
+class TestsWrappedSol:
+    def test_solana_wrapped_sol_spl_transfer(self, backend, exchange_navigation_helper):
+        WrappedSolTests(backend, exchange_navigation_helper).run_test("swap_valid_1")
+
+    def test_solana_wrapped_sol_refuses_native_transfer(self, backend, exchange_navigation_helper):
+        with pytest.raises(ExceptionRAPDU) as e:
+            test_class = WrappedSolTests(backend, exchange_navigation_helper)
+            test_class.perform_final_tx = test_class.perform_final_tx_native_transfer
+            test_class.run_test("swap_valid_1")
+        assert e.value.status == test_class.signature_refusal_error_code
+
 class SPLToken2022Tests(SPLTokenTests):
     def perform_final_tx(self, destination, send_amount, fees, memo):
         destination_ata = str(

@@ -11,6 +11,7 @@
 
 typedef struct swap_validated_s {
     bool initialized;
+    bool is_token;
     swap_mode_t swap_mode;
     uint32_t template_id;
     uint8_t tx_hash[TX_HASH_SIZE];
@@ -65,12 +66,16 @@ bool swap_copy_transaction_parameters(create_transaction_parameters_t *params) {
         swap_validated.swap_mode = SWAP_MODE_STANDARD;
     }
 
-    // Parse config and save decimals and ticker
-    // If there is no coin_configuration, consider that we are doing a SOL swap
-    if (params->coin_configuration == NULL) {
+    // Exchange sends a sub coin configuration only for a token, so its presence gives the asset
+    // kind. The value is authenticated by the CAL. The ticker is a label and never the asset kind.
+    if (params->coin_configuration == NULL || params->coin_configuration_length == 0) {
+        PRINTF("No sub coin configuration, native SOL swap\n");
+        swap_validated.is_token = false;
         memcpy(swap_validated.ticker, "SOL", sizeof("SOL"));
         swap_validated.decimals = SOL_DECIMALS;
     } else {
+        PRINTF("Sub coin configuration received, token swap\n");
+        swap_validated.is_token = true;
         if (!swap_parse_config(params->coin_configuration,
                                params->coin_configuration_length,
                                swap_validated.ticker,
@@ -179,22 +184,9 @@ int get_swap_amount_raw(uint64_t *amount) {
     return 0;
 }
 
-bool check_swap_ticker(const char *ticker) {
-    if (ticker == NULL || !G_swap_validated.initialized) {
-        PRINTF("check_swap_ticker internal error\n");
-        return false;
-    }
-
-    if (strncmp(ticker, G_swap_validated.ticker, MAX_SWAP_TOKEN_LENGTH) != 0) {
-        PRINTF("Ticker mismatch: received %s, validated %s\n", ticker, G_swap_validated.ticker);
-        return false;
-    }
-    return true;
-}
-
-const char *get_swap_ticker() {
+const char *get_swap_ticker(void) {
     if (!G_swap_validated.initialized) {
-        PRINTF("check_swap_ticker internal error\n");
+        PRINTF("get_swap_ticker internal error, swap not initialized\n");
         return NULL;
     }
     return G_swap_validated.ticker;
@@ -257,8 +249,13 @@ int get_swap_recipient(uint8_t recipient_address[PUBKEY_SIZE]) {
     return 0;
 }
 
-bool is_token_transaction() {
-    return (memcmp(G_swap_validated.ticker, "SOL", sizeof("SOL")) != 0);
+bool is_token_transaction(void) {
+    if (!G_swap_validated.initialized) {
+        PRINTF("is_token_transaction internal error, swap not initialized\n");
+        return false;
+    }
+    PRINTF("is_token=%d\n", G_swap_validated.is_token);
+    return G_swap_validated.is_token;
 }
 
 swap_mode_t get_swap_mode(void) {
