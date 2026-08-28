@@ -208,7 +208,8 @@ static int parse_system_allocate_with_seed_instruction(Parser *parser,
     BAIL_IF(parse_pubkey(parser, &info->base));
     BAIL_IF(parse_sized_string(parser, &info->seed));
     BAIL_IF(parse_u64(parser, &info->space));
-    BAIL_IF(parse_pubkey(parser, &info->program_id));
+    // The instruction assigns the derived account to this owner program
+    BAIL_IF(parse_pubkey(parser, &info->owner));
 
     return 0;
 }
@@ -537,7 +538,13 @@ int print_system_allocate_with_seed_info(const char *primary_title,
     item = transaction_summary_general_item();
     summary_item_set_u64(item, "Data size", info->space);
 
+    // The instruction gives the derived account away to this program, show it in every mode
+    PRINTF("Printing allocate with seed owner\n");
+    item = transaction_summary_general_item();
+    summary_item_set_pubkey(item, "Owner program", info->owner);
+
     if (print_config->expert_mode) {
+        PRINTF("Printing allocate with seed derivation\n");
         item = transaction_summary_general_item();
         summary_item_set_pubkey(item, "Base", info->base);
 

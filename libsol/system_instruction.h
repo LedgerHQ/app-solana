@@ -81,7 +81,7 @@ typedef struct SystemAllocateWithSeedInfo {
     const Pubkey *base;
     SizedString seed;
     uint64_t space;
-    const Pubkey *program_id;
+    const Pubkey *owner;
 } SystemAllocateWithSeedInfo;
 
 typedef struct SystemInfo {

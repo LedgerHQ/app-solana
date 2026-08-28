@@ -372,7 +372,7 @@ static int bind_stake_split_with_seed(InstructionInfo *const *infos,
     if (legacy) {
         const SystemAllocateWithSeedInfo *aws_info = &infos[0]->system.allocate_with_seed;
         account = aws_info->account;
-        owner = aws_info->program_id;
+        owner = aws_info->owner;
     } else {
         const SystemCreateAccountWithSeedInfo *cws_info = &infos[0]
                                                                ->system.create_account_with_seed;
