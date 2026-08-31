@@ -71,10 +71,12 @@ bool is_message_reviewable(const char *message) {
     // Measure with the font, the width and the wrapping used by the review, then split the
     // lines into pages the same way the review does. The line count is 16 bits, so it holds
     // the whole message even when the page index of the review would not.
-    uint16_t lines_number =
-        nbgl_getTextNbLinesInWidth(REVIEW_TEXT_FONT, message, AVAILABLE_WIDTH, true);
-    uint16_t pages_number =
-        (lines_number + REVIEW_TEXT_LINES_PER_PAGE - 1) / REVIEW_TEXT_LINES_PER_PAGE;
+    uint16_t lines_number = nbgl_getTextNbLinesInWidth(REVIEW_TEXT_FONT,
+                                                       message,
+                                                       AVAILABLE_WIDTH,
+                                                       true);
+    uint16_t pages_number = (lines_number + REVIEW_TEXT_LINES_PER_PAGE - 1) /
+                            REVIEW_TEXT_LINES_PER_PAGE;
     PRINTF("lines_number=%d pages_number=%d\n", lines_number, pages_number);
 
     return (pages_number <= MAX_REVIEW_TEXT_PAGES);
@@ -342,7 +344,13 @@ void start_sign_message_ui(size_t num_summary_steps) {
                     "This transaction invokes a custom program. It may lead to unexpected "
                     "behaviour.";
             } else if (fee_warning) {
+#ifdef SCREEN_SIZE_WALLET
                 warning_title = "Token Extensions cannot be verified";
+#else
+                // The Nano title holds one line, and the SDK appends a page counter to it before
+                // it cuts the middle out. The full wording would lose its negation on screen.
+                warning_title = "Extra fees";
+#endif
                 warning_text =
                     "A token in this transaction may contain Transfer Fee extension which would "
                     "lead "

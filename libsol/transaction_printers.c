@@ -782,7 +782,7 @@ static int print_spl_token_create_account(const PrintConfig *print_config,
     BAIL_IF(bind_created_token_account_owner(ca_info, &infos[1]->spl_token));
 
     SummaryItem *item = transaction_summary_primary_item();
-    summary_item_set_pubkey(item, "Create token account", ia_info->token_account);
+    summary_item_set_pubkey(item, "Create token acct", ia_info->token_account);
 
     item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "For", ia_info->owner);
@@ -857,7 +857,7 @@ static int print_spl_associated_token_account_create_with_transfer(const PrintCo
     // create the source account and send from it. Name it instead, so the rent it costs is not
     // spent on an account the user never sees.
     SummaryItem *item = transaction_summary_general_item();
-    summary_item_set_pubkey(item, "Create token account", c_info->address);
+    summary_item_set_pubkey(item, "Create token acct", c_info->address);
 
     item = transaction_summary_general_item();
     summary_item_set_pubkey(item, "For", c_info->owner);
@@ -872,7 +872,7 @@ static int print_spl_associated_token_account_create_with_transfer(const PrintCo
     PRINTF("Print the minimum rent paid for the created account\n");
     item = transaction_summary_general_item();
     summary_item_set_amount(item,
-                            "Funded with at least",
+                            "Funded with min",
                             ASSOCIATED_TOKEN_ACCOUNT_MIN_RENT_LAMPORTS);
 
     return 0;

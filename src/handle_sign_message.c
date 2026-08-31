@@ -189,7 +189,7 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
 
             case SummaryItemAmount: {
                 if (strcmp(G_transaction_summary_title, "Max fees") != 0 &&
-                    strcmp(G_transaction_summary_title, "Funded with at least") != 0) {
+                    strcmp(G_transaction_summary_title, "Funded with min") != 0) {
                     PRINTF("Refusing non fee amount in token swap context\n");
                     send_swap_error_with_string(ApduReplySolanaSummaryFinalizeFailed,
                                                 SWAP_EC_ERROR_WRONG_METHOD,
@@ -219,7 +219,7 @@ static bool check_swap_validity_token(const SummaryItemKind_t kinds[MAX_TRANSACT
             }
 
             case SummaryItemPubkey:
-                if (strcmp(G_transaction_summary_title, "Create token account") == 0) {
+                if (strcmp(G_transaction_summary_title, "Create token acct") == 0) {
                     if (strcmp(g_trusted_info->encoded_token_address, G_transaction_summary_text) !=
                         0) {
                         PRINTF("Create ATA address does not match with address in descriptor\n");

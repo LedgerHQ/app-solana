@@ -3554,7 +3554,7 @@ void test_process_message_body_spl_associated_token_create_with_transfer() {
     process_message_body_and_sanity_check(message, sizeof(message), 9);
 
     // The rent of the created account is named as such, and it is not counted as a fee
-    assert_summary_item_shows("Funded with at least", "0.00203928 SOL");
+    assert_summary_item_shows("Funded with min", "0.00203928 SOL");
     assert(count_summary_items_with_title("Max fees") == 0);
 }
 
