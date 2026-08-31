@@ -508,6 +508,7 @@ static int print_seeded_split(const PrintConfig *print_config,
     SplitFunding deposit;
 
     BAIL_IF(bind_stake_split_with_seed(infos, legacy, &ss_info));
+    BAIL_IF(bind_split_destination_is_new(ss_info, print_config));
 
     // Create account with seed pays the destination its rent, allocate with seed moves nothing
     if (!legacy) {
@@ -547,6 +548,7 @@ static int print_prefunded_split_with_seed(const PrintConfig *print_config,
     BAIL_IF(bind_stake_split_with_seed(&infos[1], true, &ss_info));
     // The prefunded account is the account the split funds land in
     BAIL_IF(!pubkeys_equal(t_info->to, ss_info->split_account));
+    BAIL_IF(bind_split_destination_is_new(ss_info, print_config));
 
     // The transfer pays the destination its rent
     const SplitFunding prefund = {.amount_title = "Prefund",

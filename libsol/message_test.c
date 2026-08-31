@@ -2325,6 +2325,121 @@ void test_process_message_body_stake_split_v1_1_destination_is_signer_fail() {
     process_message_body_and_expect_refusal_for_signer(message, sizeof(message), 1);
 }
 
+// The device does not check the seed derivation, so the seeded branches bind the destination
+// like the branches without a seed. The fee payer is a different account in the three messages
+// that follow, so only the signer clause of the bind can refuse them
+void test_process_message_body_stake_split_with_seed_v1_1_destination_is_signer_fail() {
+    uint8_t message[] = {
+        1, 1, 2,
+        5,
+            18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250, // payer, base and split authority
+            247, 157, 35, 131, 179, 105, 135, 105, 0, 178, 6, 62, 22, 251, 47, 102, 208, 237, 66, 72, 149, 5, 127, 149, 253, 28, 66, 250, 52, 173, 30, 105, // split destination
+            112, 173, 25, 161, 89, 143, 220, 223, 128, 33, 149, 41, 12, 152, 202, 202, 203, 163, 182, 246, 158, 15, 22, 77, 171, 71, 63, 249, 10, 117, 172, 52, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        2,
+            // system - allocate with seed
+            3,
+            2,
+                1, 0,
+            116,
+                9, 0, 0, 0,
+                18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+                32, 0, 0, 0, 0, 0, 0, 0,
+                    115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                    200, 0, 0, 0, 0, 0, 0, 0,
+                    6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0,
+                42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    // The very same message is clear signed when the destination is somebody else's account
+    process_message_body_and_sanity_check_for_signer(message, sizeof(message), 0, 7);
+    process_message_body_and_expect_refusal_for_signer(message, sizeof(message), 1);
+}
+
+void test_process_message_body_stake_split_with_seed_v1_2_destination_is_signer_fail() {
+    uint8_t message[] = {
+        2, 0, 2,
+        5,
+            19, 144, 25, 80, 156, 114, 186, 66, 29, 241, 166, 151, 127, 235, 131, 211, 64, 194, 62, 195, 227, 161, 166, 82, 59, 204, 214, 44, 193, 158, 63, 169, // payer and source stake account
+            10, 197, 71, 166, 84, 143, 238, 106, 60, 71, 210, 140, 50, 46, 5, 64, 197, 233, 184, 185, 240, 1, 189, 60, 85, 208, 255, 255, 23, 193, 128, 222, // funder, base and split authority
+            92, 85, 182, 94, 208, 4, 87, 44, 2, 143, 234, 65, 18, 230, 233, 103, 90, 98, 237, 101, 221, 207, 74, 86, 79, 234, 250, 9, 124, 242, 40, 212, // split destination
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        2,
+            // system - create account with seed
+            3,
+            2,
+                1, 2,
+            124,
+                3, 0, 0, 0,
+                10, 197, 71, 166, 84, 143, 238, 106, 60, 71, 210, 140, 50, 46, 5, 64, 197, 233, 184, 185, 240, 1, 189, 60, 85, 208, 255, 255, 23, 193, 128, 222,
+                32, 0, 0, 0, 0, 0, 0, 0,
+                    115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                    0, 0, 0, 0, 0, 0, 0, 0,
+                    200, 0, 0, 0, 0, 0, 0, 0,
+                    6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                0, 2, 1,
+            12,
+                3, 0, 0, 0,
+                42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    // The very same message is clear signed when the destination is somebody else's account
+    process_message_body_and_sanity_check_for_signer(message, sizeof(message), 0, 9);
+    process_message_body_and_expect_refusal_for_signer(message, sizeof(message), 2);
+}
+
+void test_process_message_body_stake_split_with_seed_v1_3_destination_is_signer_fail() {
+    uint8_t message[] = {
+        1, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder, base and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        3,
+            // system - transfer
+            3,
+            2,
+                0, 1,
+            12,
+                2, 0, 0, 0, 64, 66, 15, 0, 0, 0, 0, 0,
+            // system - allocate with seed
+            3,
+            2,
+                1, 0,
+            116,
+                9, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 32, 0, 0, 0, 0, 0, 0, 0, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 200, 0, 0, 0, 0, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189,
+                254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    // The very same message is clear signed when the destination is somebody else's account
+    process_message_body_and_sanity_check_for_signer(message, sizeof(message), 0, 9);
+    process_message_body_and_expect_refusal_for_signer(message, sizeof(message), 1);
+}
+
 // The created account must be handed to the program that initializes it
 void test_process_message_body_create_stake_account_owner_mismatch_fail() {
     uint8_t message[] = {
@@ -3763,6 +3878,9 @@ int main() {
     RUN_TEST(test_process_message_body_stake_split_v1_1_assign_owner_mismatch_fail);
     RUN_TEST(test_process_message_body_stake_split_v1_1_destination_is_fee_payer_fail);
     RUN_TEST(test_process_message_body_stake_split_v1_1_destination_is_signer_fail);
+    RUN_TEST(test_process_message_body_stake_split_with_seed_v1_1_destination_is_signer_fail);
+    RUN_TEST(test_process_message_body_stake_split_with_seed_v1_2_destination_is_signer_fail);
+    RUN_TEST(test_process_message_body_stake_split_with_seed_v1_3_destination_is_signer_fail);
     RUN_TEST(test_process_message_body_stake_split_with_seed_v1_1_owner_mismatch_fail);
     RUN_TEST(test_process_message_body_stake_split_v1_2_destination_mismatch_fail);
     RUN_TEST(test_process_message_body_stake_split_v1_2_owner_mismatch_fail);
