@@ -152,9 +152,7 @@ const uint8_t *get_account_from_ins(const Instruction *instruction,
                instruction->accounts_length);
         return NULL;
     }
-    // The resolved pubkey index must fall within the statically listed keys. An index pointing
-    // into the Address Lookup Table range cannot be resolved on the device, so we fail closed:
-    // a descriptor may only validate accounts the device can actually read.
+    // Resolved pubkey index must be in the statically listed keys, reject ALTs.
     uint8_t pubkey_index = instruction->accounts[account_index];
     if (pubkey_index >= header->pubkeys_header.pubkeys_length) {
         PRINTF("Error account_index %d resolves to pubkey %d outside static keys (length %d)\n",

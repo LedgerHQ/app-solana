@@ -103,8 +103,7 @@ int process_message_body(const uint8_t *message_body,
     Parser parser = {message_body, message_body_length};
     for (uint8_t ins_idx = 0; ins_idx < header->instructions_length; ins_idx++) {
         Instruction instruction;
-        // Every account is displayed to the user and therefore must be resolvable in the statically
-        // listed keys. ALT-loaded indices are rejected (fail closed).
+        // Every account is displayed and be resolvable in the statically listed keys, reject ALT
         if (parse_validate_and_debug_instruction_accounts(&parser, &instruction, header, false) !=
             0) {
             PRINTF("Error in parse_validate_and_debug_instruction_accounts for ins %d\n", ins_idx);
