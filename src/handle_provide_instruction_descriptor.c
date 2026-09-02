@@ -38,7 +38,6 @@
 typedef struct saved_descriptors_s {
     uint8_t saved_count;
     uint8_t read_count;
-    bool is_main_net;
     uint32_t template_id;
     instruction_descriptor_t descriptors[MAX_DISCRIMINATOR_NUMBER];
 } saved_descriptors_t;
@@ -68,8 +67,7 @@ bool instruction_descriptor_received(void) {
     return (G_saved_descriptors != NULL);
 }
 
-static bool save_instruction_descriptor(bool is_main_net,
-                                        uint32_t template_id,
+static bool save_instruction_descriptor(uint32_t template_id,
                                         const instruction_descriptor_t *instruction_descriptor) {
     PRINTF("Attempting to save descriptor n %d\n", G_saved_descriptors->saved_count + 1);
 
@@ -79,13 +77,6 @@ static bool save_instruction_descriptor(bool is_main_net,
     }
 
     if (G_saved_descriptors->saved_count > 0) {
-        if (is_main_net != G_saved_descriptors->is_main_net) {
-            PRINTF("Error, is_main_net differs %d != %d\n",
-                   is_main_net,
-                   G_saved_descriptors->is_main_net);
-            return false;
-        }
-
         if (template_id != G_saved_descriptors->template_id) {
             PRINTF("Error, template_id differs\n");
             debug_print_u64("template_id", template_id);
@@ -93,7 +84,6 @@ static bool save_instruction_descriptor(bool is_main_net,
             return false;
         }
     } else {
-        G_saved_descriptors->is_main_net = is_main_net;
         G_saved_descriptors->template_id = template_id;
     }
 
@@ -111,7 +101,7 @@ typedef struct tlv_out_s {
     uint8_t structure_type;
     uint8_t version;
 
-    bool is_main_net;
+    uint32_t chain_id;
     uint32_t template_id;
 
     instruction_descriptor_t ins;
@@ -130,16 +120,11 @@ static bool handle_version(const tlv_data_t *data, tlv_out_t *out) {
 }
 
 static bool handle_chain_id(const tlv_data_t *data, tlv_out_t *out) {
-    uint32_t chain_id;
-    if (!get_uint32_t_from_tlv_data(data, &chain_id)) {
+    if (!get_uint32_t_from_tlv_data(data, &out->chain_id)) {
+        PRINTF("Error, could not read chain_id\n");
         return false;
     }
-    if (chain_id != SOLANA_CHAIN_ID_MAINNET && chain_id != SOLANA_CHAIN_ID_DEVNET &&
-        chain_id != SOLANA_CHAIN_ID_TESTNET) {
-        PRINTF("Error, invalid chain_id %u\n", chain_id);
-        return false;
-    }
-    out->is_main_net = (chain_id == SOLANA_CHAIN_ID_MAINNET);
+    PRINTF("chain_id = %u\n", out->chain_id);
     return true;
 }
 
@@ -306,6 +291,14 @@ static bool handle_provide_instruction_descriptor_internal(void) {
                                SWAP_EC_APP_DESCRIPTOR_UNSUPPORTED_VERSION);
     }
 
+    // A Solana message carries no network, so only mainnet descriptors are accepted.
+    if (tlv_extracted.chain_id != SOLANA_CHAIN_ID_MAINNET) {
+        PRINTF("Error: non mainnet chain_id %u\n", tlv_extracted.chain_id);
+        send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
+                               SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
+                               SWAP_EC_APP_DESCRIPTOR_INVALID_CHAIN_ID);
+    }
+
     // capped_amount_token_index requires capped_amount_bps
     if (TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAG_CAPPED_AMOUNT_TOKEN_IDX) &&
         !TLV_CHECK_RECEIVED_TAGS(tlv_extracted.received_tags, TAG_CAPPED_AMOUNT_BPS)) {
@@ -351,7 +344,6 @@ static bool handle_provide_instruction_descriptor_internal(void) {
                                SWAP_EC_APP_DESCRIPTOR_SIGNATURE_FAILED);
     }
 
-    PRINTF("is_main_net = 0x%08X\n", tlv_extracted.is_main_net);
     debug_print_u64("tlv_extracted.template_id", tlv_extracted.template_id);
 
     PRINTF("program_id = 0x%.*H\n",
@@ -385,9 +377,7 @@ static bool handle_provide_instruction_descriptor_internal(void) {
     }
 
     // Store descriptor
-    if (!save_instruction_descriptor(tlv_extracted.is_main_net,
-                                     tlv_extracted.template_id,
-                                     &tlv_extracted.ins)) {
+    if (!save_instruction_descriptor(tlv_extracted.template_id, &tlv_extracted.ins)) {
         PRINTF("save_instruction_descriptor error\n");
         send_swap_error_simple(ApduReplySolanaSummaryFinalizeFailed,
                                SWAP_EC_ERROR_CROSSCHAIN_WRONG_METHOD,
@@ -478,12 +468,17 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
     // Retrieve / calculate the swap validated mint address and recipient address
     // With the current architecture we actually do this step at each instruction but the impact is
     // negligeable
-    bool is_token_2022_kind;
-    const uint8_t *validated_mint_address = get_token_mint_address(get_swap_ticker(),
-                                                                   &is_token_2022_kind);
-    if (validated_mint_address == NULL) {
-        PRINTF("Error: no mint address retrieved\n");
-        return -1;
+    bool is_token_2022_kind = false;
+    const uint8_t *validated_mint_address = NULL;
+    // A mint exists only for a token swap, the asset kind comes from the Exchange parameters
+    if (is_token_transaction()) {
+        validated_mint_address = get_token_mint_address(get_swap_ticker(), &is_token_2022_kind);
+        if (validated_mint_address == NULL) {
+            PRINTF("Error: no mint address retrieved\n");
+            return -1;
+        }
+    } else {
+        PRINTF("Native swap, no mint address to retrieve\n");
     }
     uint8_t validated_recipient_address[PUBKEY_SIZE] = {0};
     if (get_swap_recipient(validated_recipient_address) != 0) {
@@ -581,7 +576,12 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
     }
 
     // CHECK CAPPED TOKEN INDEX (mint validation for fee instructions)
-    if (instruction_descriptor->capped_amount_token_index_received) {
+    if (!instruction_descriptor->capped_amount_token_index_received) {
+        PRINTF("Skipping capped_amount_token_index check\n");
+    } else if (validated_mint_address == NULL) {
+        PRINTF("Error: capped_amount_token_index received for a native swap\n");
+        return -1;
+    } else {
         PRINTF("Received capped_amount_token_index to check\n");
         const uint8_t *capped_token_account = get_account_from_ins(
             instruction,
@@ -605,6 +605,9 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
     // CHECK MINT ADDRESS
     if (!instruction_descriptor->asset_account_index_received) {
         PRINTF("Skipping asset_account_index check\n");
+    } else if (validated_mint_address == NULL) {
+        PRINTF("Error: asset_account_index received for a native swap\n");
+        return -1;
     } else {
         PRINTF("Received asset_account_index to check\n");
         const uint8_t *asset_account = get_account_from_ins(
@@ -629,6 +632,9 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
     // CHECK MINT ATA
     if (!instruction_descriptor->asset_ata_index_received) {
         PRINTF("Skipping asset_ata check\n");
+    } else if (validated_mint_address == NULL) {
+        PRINTF("Error: asset_ata_index received for a native swap\n");
+        return -1;
     } else {
         PRINTF("Received asset_ata to check\n");
         const uint8_t *asset_ata = get_account_from_ins(instruction,
@@ -686,6 +692,9 @@ int validate_instruction_using_descriptor(const MessageHeader *header,
     // CHECK RECIPIENT ATA
     if (!instruction_descriptor->recipient_ata_index_received) {
         PRINTF("Skipping recipient_ata check\n");
+    } else if (validated_mint_address == NULL) {
+        PRINTF("Error: recipient_ata_index received for a native swap\n");
+        return -1;
     } else {
         PRINTF("Received recipient_ata to check\n");
         const uint8_t *recipient_ata = get_account_from_ins(

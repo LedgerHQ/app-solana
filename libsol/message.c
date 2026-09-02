@@ -18,7 +18,7 @@
 #define MAX_INSTRUCTIONS 6
 
 static void debug_print_header(const MessageHeader *header) {
-    PRINTF("instructions_length = %d\n", header->instructions_length);
+    PRINTF("instructions_length = %u\n", header->instructions_length);
     PRINTF("num_required_signatures = %d\n", header->pubkeys_header.num_required_signatures);
     PRINTF("num_readonly_signed_accounts = %d\n",
            header->pubkeys_header.num_readonly_signed_accounts);
@@ -51,12 +51,12 @@ static int parse_validate_and_debug_instruction_accounts(Parser *parser,
             return -1;
         }
     }
-    for (uint8_t i = 0; i < instruction->accounts_length; ++i) {
+    for (size_t i = 0; i < instruction->accounts_length; ++i) {
         if (instruction->accounts[i] >= header->pubkeys_header.pubkeys_length) {
             // ALT-loaded account: not present in the wire format, cannot be resolved on device
-            PRINTF("accounts[%d] = pubkeys[%d] = <ALT loaded>\n", i, instruction->accounts[i]);
+            PRINTF("accounts[%u] = pubkeys[%d] = <ALT loaded>\n", i, instruction->accounts[i]);
         } else {
-            PRINTF("accounts[%d] = pubkeys[%d] = %.*H\n",
+            PRINTF("accounts[%u] = pubkeys[%d] = %.*H\n",
                    i,
                    instruction->accounts[i],
                    PUBKEY_SIZE,
@@ -66,20 +66,36 @@ static int parse_validate_and_debug_instruction_accounts(Parser *parser,
     return 0;
 }
 
+// Set while parsing the last processed message
+static bool G_generate_extension_warning;
+
+int message_print_extension_warning() {
+    int ret = 0;
+
+    if (G_generate_extension_warning) {
+        PRINTF("Print the token extension warning\n");
+        ret = print_spl_token_extension_warning();
+    } else {
+        PRINTF("No token extension warning to print\n");
+    }
+
+    return ret;
+}
+
 int process_message_body(const uint8_t *message_body,
                          int message_body_length,
                          const PrintConfig *print_config) {
     const MessageHeader *header = &print_config->header;
     debug_print_header(header);
+
+    // Clear before the first refusal path, the blind signing screen reads it back
+    G_generate_extension_warning = false;
+
     BAIL_IF(header->instructions_length == 0);
     BAIL_IF(header->instructions_length > MAX_INSTRUCTIONS);
 
     InstructionInfo instruction_info[MAX_INSTRUCTIONS];
     explicit_bzero(instruction_info, sizeof(InstructionInfo) * MAX_INSTRUCTIONS);
-
-    // Track if given transaction contains token2022 extensions that are not fully supported
-    // Needed to display user proper warning
-    bool generate_extension_warning = false;
 
     size_t display_instruction_count = 0;
     InstructionInfo *display_instruction_info[MAX_INSTRUCTIONS];
@@ -87,8 +103,7 @@ int process_message_body(const uint8_t *message_body,
     Parser parser = {message_body, message_body_length};
     for (uint8_t ins_idx = 0; ins_idx < header->instructions_length; ins_idx++) {
         Instruction instruction;
-        // Every account is displayed to the user and therefore must be resolvable in the statically
-        // listed keys. ALT-loaded indices are rejected (fail closed).
+        // Every account is displayed and be resolvable in the statically listed keys, reject ALT
         if (parse_validate_and_debug_instruction_accounts(&parser, &instruction, header, false) !=
             0) {
             PRINTF("Error in parse_validate_and_debug_instruction_accounts for ins %d\n", ins_idx);
@@ -128,7 +143,7 @@ int process_message_body(const uint8_t *message_body,
                                                  &info->spl_token,
                                                  &ignore_instruction_info) == 0) {
                     info->kind = program_id;
-                    generate_extension_warning |= info->spl_token.generate_extension_warning;
+                    G_generate_extension_warning |= info->spl_token.generate_extension_warning;
                 }
                 break;
             case ProgramIdSystem: {
@@ -180,7 +195,7 @@ int process_message_body(const uint8_t *message_body,
                         PRINTF("Error: too many instructions to display requested\n");
                         return -1;
                     } else {
-                        PRINTF("Registered info %d to display in slot %d\n",
+                        PRINTF("Registered info %d to display in slot %u\n",
                                info->kind,
                                display_instruction_count);
                         display_instruction_info[display_instruction_count++] = info;
@@ -206,15 +221,12 @@ int process_message_body(const uint8_t *message_body,
     // If we don't know about all the instructions, bail
     for (size_t i = 0; i < header->instructions_length; i++) {
         if (instruction_info[i].kind == ProgramIdUnknown) {
-            PRINTF("Unknown program id for instruction n %d\n", i);
+            PRINTF("Unknown program id for instruction n %u\n", i);
             return -1;
         }
     }
 
-    if (generate_extension_warning) {
-        PRINTF("generate_extension_warning\n");
-        BAIL_IF(print_spl_token_extension_warning());
-    }
+    BAIL_IF(message_print_extension_warning());
     if (print_transaction(print_config, display_instruction_info, display_instruction_count) != 0) {
         PRINTF("print_transaction failed\n");
         return -1;
@@ -228,13 +240,17 @@ int process_message_body_with_descriptor(const uint8_t *message_body,
                                          const PrintConfig *print_config) {
     const MessageHeader *header = &print_config->header;
     debug_print_header(header);
+
+    // Clear before the first refusal path, the blind signing screen reads it back
+    G_generate_extension_warning = false;
+
     BAIL_IF(header->instructions_length == 0);
     BAIL_IF(!instruction_descriptor_received());
 
     // We need to have recievied exactly 1 descriptor for each instruction
     uint8_t received_descriptors = get_descriptor_count();
     if (received_descriptors != header->instructions_length) {
-        PRINTF("Error: received descriptors for %d instructions but received %d instructions\n",
+        PRINTF("Error: received descriptors for %d instructions but received %u instructions\n",
                received_descriptors,
                header->instructions_length);
         return -1;
@@ -252,7 +268,7 @@ int process_message_body_with_descriptor(const uint8_t *message_body,
             PRINTF("Error in parse_validate_and_debug_instruction_accounts for ins %d\n", ins_idx);
             return -1;
         }
-        PRINTF("Checking instruction length %d data '%.*H'\n",
+        PRINTF("Checking instruction length %u data '%.*H'\n",
                instruction.data_length,
                instruction.data_length,
                instruction.data);

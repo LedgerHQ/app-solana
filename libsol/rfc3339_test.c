@@ -18,6 +18,14 @@ void test_rfc3339_format() {
     int64_t too_small = -EPOCH - 1;
     assert(rfc3339_format(s, sizeof(s), too_small) == 1);
 
+    // A day number of 2^32 + valid_day must not wrap onto a plausible date
+    assert(rfc3339_format(s, sizeof(s), 1787000000 + (INT64_C(1) << 32) * 86400) == 1);
+    assert(rfc3339_format(s, sizeof(s), 1787000000 + (INT64_C(2) << 32) * 86400) == 1);
+
+    // Extreme values fail without overflowing the seconds + EPOCH addition
+    assert(rfc3339_format(s, sizeof(s), INT64_MAX) == 1);
+    assert(rfc3339_format(s, sizeof(s), INT64_MIN) == 1);
+
     assert(rfc3339_format(s, sizeof(s), -EPOCH) == 0);
     assert_string_equal(s, "0000-12-31 00:00:00");
     assert(rfc3339_format(s, sizeof(s), 0) == 0);

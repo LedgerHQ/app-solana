@@ -428,6 +428,72 @@ class TestsSPLToken:
     def test_solana_spl_token(self, backend, exchange_navigation_helper, test_to_run):
         SPLTokenTests(backend, exchange_navigation_helper).run_test(test_to_run)
 
+
+# Wrapped SOL is a token whose ticker is identical to the ticker of the native coin.
+# The asset kind comes from the Exchange parameters, so a wrapped SOL swap must still require an
+# SPL transfer of the wrapped SOL mint.
+class WrappedSolTests(SPLTokenTests):
+    currency_configuration = cal.SOL_WSOL_CURRENCY_CONFIGURATION
+
+    valid_destination_2 = str(
+        get_associated_token_address(
+            Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR),
+            Pubkey.from_string(SOL.WSOL_MINT_ADDRESS_STR)
+        )
+    )
+
+    def perform_final_tx(self, destination, send_amount, fees, memo):
+        destination_ata = str(
+            get_associated_token_address(
+                Pubkey.from_string(destination),
+                Pubkey.from_string(SOL.WSOL_MINT_ADDRESS_STR)
+            )
+        )
+        sender_ata = get_associated_token_address(self.sender_public_key, Pubkey.from_string(SOL.WSOL_MINT_ADDRESS_STR))
+
+        transfer_instruction = transfer_checked(
+            TransferCheckedParams(
+                program_id=TOKEN_PROGRAM_ID,
+                source=sender_ata,
+                mint=Pubkey.from_string(SOL.WSOL_MINT_ADDRESS_STR),
+                dest=Pubkey.from_string(destination_ata),
+                owner=self.sender_public_key,
+                amount=send_amount,
+                decimals=9  # Number of decimals for the wrapped SOL token
+            )
+        )
+
+        sol = SolanaClient(self.backend)
+        message_data = sol.craft_tx([transfer_instruction], self.sender_public_key)
+        sol.enroll_ata(SOL.WSOL_MINT_ADDRESS, destination_ata.encode('utf-8'), destination.encode('utf-8'))
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            pass
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+    # A System Program transfer moves native lamports, not the approved token. It must be refused.
+    def perform_final_tx_native_transfer(self, destination, send_amount, fees, memo):
+        instruction: SystemInstructionTransfer = SystemInstructionTransfer(SOL.OWNED_PUBLIC_KEY, base58.b58decode(destination), send_amount)
+        message: bytes = MessageCustom([instruction]).serialize()
+        sol = SolanaClient(self.backend)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message):
+            pass
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message, signature)
+
+
+# Use a class to reuse the same Speculos instance
+class TestsWrappedSol:
+    def test_solana_wrapped_sol_spl_transfer(self, backend, exchange_navigation_helper):
+        WrappedSolTests(backend, exchange_navigation_helper).run_test("swap_valid_1")
+
+    def test_solana_wrapped_sol_refuses_native_transfer(self, backend, exchange_navigation_helper):
+        with pytest.raises(ExceptionRAPDU) as e:
+            test_class = WrappedSolTests(backend, exchange_navigation_helper)
+            test_class.perform_final_tx = test_class.perform_final_tx_native_transfer
+            test_class.run_test("swap_valid_1")
+        assert e.value.status == test_class.signature_refusal_error_code
+
 class SPLToken2022Tests(SPLTokenTests):
     def perform_final_tx(self, destination, send_amount, fees, memo):
         destination_ata = str(
@@ -680,9 +746,17 @@ class SolanaDescriptorTests(SPLTokenTests):
         sol = SolanaClient(self.backend)
         sol.provide_instruction_descriptor(template_id=self.template_id_1, version=0x02)
 
-    def perform_final_tx_bad_chain_id(self, destination, send_amount, fees, memo):
+    def perform_final_tx_unknown_chain_id(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
         sol.provide_instruction_descriptor(template_id=self.template_id_1, chain_id=800)
+
+    def perform_final_tx_devnet_chain_id(self, destination, send_amount, fees, memo):
+        sol = SolanaClient(self.backend)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, chain_id=901)
+
+    def perform_final_tx_testnet_chain_id(self, destination, send_amount, fees, memo):
+        sol = SolanaClient(self.backend)
+        sol.provide_instruction_descriptor(template_id=self.template_id_1, chain_id=902)
 
     def perform_final_tx_bad_size_program_id_too_small(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
@@ -706,7 +780,7 @@ class SolanaDescriptorTests(SPLTokenTests):
         sol.provide_instruction_descriptor(template_id=self.template_id_1)
         sol.provide_instruction_descriptor(template_id=self.template_id_1 - 1)
 
-    def perform_final_tx_mismatch_network(self, destination, send_amount, fees, memo):
+    def perform_final_tx_second_descriptor_non_mainnet(self, destination, send_amount, fees, memo):
         sol = SolanaClient(self.backend)
         sol.provide_instruction_descriptor(template_id=self.template_id_1, chain_id=900)
         sol.provide_instruction_descriptor(template_id=self.template_id_1, chain_id=901)
@@ -1016,12 +1090,14 @@ class TestsSolanaDescriptor:
     @pytest.mark.parametrize('fault_test_to_run', [
         "perform_final_tx_bad_structure_type",
         "perform_final_tx_bad_version",
-        "perform_final_tx_bad_chain_id",
+        "perform_final_tx_unknown_chain_id",
+        "perform_final_tx_devnet_chain_id",
+        "perform_final_tx_testnet_chain_id",
         "perform_final_tx_bad_size_program_id_too_small",
         "perform_final_tx_bad_size_program_id_too_big",
         "perform_final_tx_discriminator_too_big",
         "perform_final_tx_too_many_descriptors",
-        "perform_final_tx_mismatch_network",
+        "perform_final_tx_second_descriptor_non_mainnet",
         "perform_final_tx_no_descriptor",
         "perform_final_tx_mismatch_descriptor_count",
         "perform_final_tx_mismatch_program_id",

@@ -2,6 +2,7 @@
 
 #include "sol/parser.h"
 #include "sol/printer.h"
+#include "spl/token.h"
 
 // TransactionSummary management
 //
@@ -19,14 +20,26 @@
 //
 // If all _Required_ `SummaryItem`s have not been set, finalization will fail.
 
-// Worst case: print_create_stake_account_with_seed_and_delegate
+// Two composite printers compete for the worst case, the budget takes the larger one.
+//
+// print_create_stake_account_with_seed_and_delegate:                 11
 //   print_system_create_account_with_seed_info (display_owner=false): 4
 //     deposit + from + base + seed
 //   print_stake_initialize_info:                                      5
 //     new_stake_auth + new_withdraw_auth + lockup_time + lockup_epoch + lockup_authority
 //   print_delegate_stake_info:                                        2
 //     vote_account + authorized_by
-#define NUM_GENERAL_ITEMS          (4 + 5 + 2)
+//
+// print_spl_token_create_multisig:                     Token_MAX_SIGNERS + 3
+//   one identity per signer:                           Token_MAX_SIGNERS
+//   required signers + funded by + funded with:                        3
+//
+// plus what the callers of the composite printers add on top of it:
+//   print_compute_budget_max_fee:                                     1
+//     max_fees
+//   print_spl_token_extension_warning:                                2
+//     warning + verify prompt
+#define NUM_GENERAL_ITEMS          (Token_MAX_SIGNERS + 3 + 1 + 2)
 #define DEFAULT_COMPUTE_UNIT_LIMIT 200000
 #define COMPUTE_UNIT_PRICE_DIVIDER 1000000
 #define MAX_TRANSACTION_SUMMARY_ITEMS           \
@@ -50,6 +63,7 @@ enum SummaryItemKind {
     SummaryItemI64,
     SummaryItemU64,
     SummaryItemPubkey,
+    SummaryItemIndexedPubkey,
     SummaryItemHash,
     SummaryItemSizedString,
     SummaryItemString,
@@ -72,6 +86,9 @@ enum DisplayFlags {
     DisplayFlagAll = DisplayFlagLongPubkeys,
 };
 int transaction_summary_display_item(size_t item_index, enum DisplayFlags flags);
+// Reads the lamports of an amount item, so a caller can add amounts instead of comparing the
+// strings they display as
+int transaction_summary_get_item_amount(size_t item_index, uint64_t *amount);
 int transaction_summary_finalize(enum SummaryItemKind *item_kinds, size_t *item_kinds_len);
 
 typedef enum transaction_type_e {
@@ -106,10 +123,16 @@ void summary_item_set_token_amount(SummaryItem *item,
 void summary_item_set_i64(SummaryItem *item, const char *title, int64_t value);
 void summary_item_set_u64(SummaryItem *item, const char *title, uint64_t value);
 void summary_item_set_pubkey(SummaryItem *item, const char *title, const Pubkey *value);
+// Numbers the title at display time, so a list of pubkeys needs no title per position
+void summary_item_set_indexed_pubkey(SummaryItem *item,
+                                     const char *title,
+                                     uint8_t index,
+                                     const Pubkey *value);
 void summary_item_set_hash(SummaryItem *item, const char *title, const Hash *value);
 void summary_item_set_sized_string(SummaryItem *item, const char *title, const SizedString *value);
 void summary_item_set_string(SummaryItem *item, const char *title, const char *value);
-void summary_item_set_timestamp(SummaryItem *item, const char *title, int64_t value);
+// Refuses a value the display layer cannot render as a date
+int summary_item_set_timestamp(SummaryItem *item, const char *title, int64_t value);
 void transaction_summary_set_token_fee_warning(bool fee_warning);
 void transaction_summary_set_token_hook_warning(bool hook_warning);
 void transaction_summary_get_token_warnings(bool *fee_warning, bool *hook_warning);

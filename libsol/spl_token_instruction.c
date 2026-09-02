@@ -117,9 +117,16 @@ static int parse_initialize_account_spl_token_instruction(Parser *parser,
 static int parse_spl_token_multisigners(InstructionAccountsIterator *it,
                                         SplTokenMultisigners *signers) {
     size_t n = instruction_accounts_iterator_remaining(it);
-    BAIL_IF(n > Token_MAX_SIGNERS);
-    BAIL_IF(instruction_accounts_iterator_next(it, &signers->first));
+    if (n == 0 || n > Token_MAX_SIGNERS) {
+        PRINTF("Invalid multisig signers count %u\n", n);
+        return 1;
+    }
+    // Resolve every signer, the display must show each identity and not just how many there are
+    for (size_t i = 0; i < n; i++) {
+        BAIL_IF(instruction_accounts_iterator_next(it, &signers->accounts[i]));
+    }
     signers->count = n;
+    PRINTF("Parsed %u multisig signers\n", signers->count);
     return 0;
 }
 
@@ -131,12 +138,16 @@ static int parse_initialize_multisig_spl_token_instruction(Parser *parser,
     instruction_accounts_iterator_init(&it, header, instruction);
 
     BAIL_IF(parse_u8(parser, &info->body.m));
-    BAIL_IF(info->body.m > Token_MAX_SIGNERS);
 
     BAIL_IF(instruction_accounts_iterator_next(&it, &info->multisig_account));
     // Skip rent sysvar
     BAIL_IF(instruction_accounts_iterator_next(&it, NULL));
     BAIL_IF(parse_spl_token_multisigners(&it, &info->signers));
+
+    if (info->body.m == 0 || info->body.m > info->signers.count) {
+        PRINTF("Invalid multisig threshold %u of %u\n", info->body.m, info->signers.count);
+        return 1;
+    }
 
     return 0;
 }
@@ -176,26 +187,28 @@ static int parse_spl_token2022_sign(const MessageHeader *header,
         sign->kind = SplTokenSignKindMulti;
         PRINTF("Multi signers transaction\n");
         BAIL_IF(instruction_accounts_iterator_next(it, &sign->multi.account));
-        BAIL_IF(instruction_accounts_iterator_next(it, &sign->multi.signers.first));
-        uint8_t signers_count = 1;
-        // Count and skip all next signers
+        BAIL_IF(instruction_accounts_iterator_next(it, &sign->multi.signers.accounts[0]));
+        size_t signers_count = 1;
+        // Resolve all next signers
         while (instruction_accounts_iterator_remaining(it) > 0) {
             current_account_index = instruction_accounts_iterator_get_current_account_index(it);
-            PRINTF("Checking account[%d] = %d: ",
+            PRINTF("Checking account[%u] = %d: ",
                    it->current_instruction_account,
                    current_account_index);
             if (current_account_index < header->pubkeys_header.num_required_signatures) {
                 PRINTF("Signer\n");
+                // Bound the count as we walk so it stays within the multisig limit
+                BAIL_IF(signers_count >= Token_MAX_SIGNERS);
+                BAIL_IF(instruction_accounts_iterator_next(
+                    it,
+                    &sign->multi.signers.accounts[signers_count]));
                 ++signers_count;
-                BAIL_IF(instruction_accounts_iterator_next(it, NULL));
             } else {
                 // Not signers anymore
                 PRINTF("NOT a signer\n");
                 break;
             }
         }
-        // Register signers count
-        BAIL_IF(signers_count > Token_MAX_SIGNERS);
         sign->multi.signers.count = signers_count;
         PRINTF("Multi signers count = %d\n", sign->multi.signers.count);
     }
@@ -580,12 +593,16 @@ int parse_spl_token_instructions(const Instruction *instruction,
 static int print_spl_token_sign(const SplTokenSign *sign, const PrintConfig *print_config) {
     SummaryItem *item;
 
-    item = transaction_summary_general_item();
+    // Claim an item only where one is written, an unused claim is reported as a summary overflow
     if (sign->kind == SplTokenSignKindSingle) {
         if (print_config_show_authority(print_config, sign->single.signer)) {
+            PRINTF("Print single signer\n");
+            item = transaction_summary_general_item();
             summary_item_set_pubkey(item, "Owner", sign->single.signer);
         }
     } else {
+        PRINTF("Print multi signers\n");
+        item = transaction_summary_general_item();
         summary_item_set_pubkey(item, "Owner", sign->multi.account);
         item = transaction_summary_general_item();
         summary_item_set_u64(item, "Signers", sign->multi.signers.count);
@@ -641,6 +658,28 @@ static int print_spl_token_initialize_account_info(const char *primary_title,
     return 0;
 }
 
+// Displays the identity of every account of a multisig signer set
+int print_spl_token_multisigners(const SplTokenMultisigners *signers) {
+    if (signers->count == 0 || signers->count > Token_MAX_SIGNERS) {
+        PRINTF("Refusing to print %u multisig signers\n", signers->count);
+        return 1;
+    }
+
+    for (uint8_t i = 0; i < signers->count; i++) {
+        SummaryItem *item = transaction_summary_general_item();
+        // A missing slot would hide a signer, refuse the whole message instead
+        if (item == NULL) {
+            PRINTF("No summary item left for signer %u\n", i);
+            return 1;
+        }
+        // Positions are counted from one, the summary appends the number to the title
+        summary_item_set_indexed_pubkey(item, "Signer", i + 1, signers->accounts[i]);
+    }
+
+    PRINTF("Printed %u multisig signers\n", signers->count);
+    return 0;
+}
+
 static int print_spl_token_initialize_multisig_info(const char *primary_title,
                                                     const SplTokenInitializeMultisigInfo *info,
                                                     const PrintConfig *print_config) {
@@ -655,6 +694,8 @@ static int print_spl_token_initialize_multisig_info(const char *primary_title,
 
     item = transaction_summary_general_item();
     summary_item_set_multisig_m_of_n(item, info->body.m, info->signers.count);
+
+    BAIL_IF(print_spl_token_multisigners(&info->signers));
 
     return 0;
 }
@@ -702,15 +743,15 @@ int print_spl_token_transfer_info(const SplTokenTransferInfo *info,
         summary_item_set_pubkey(item, "To (token account)", info->dest_account);
     }
 
-    item = transaction_summary_general_item();
-    if (info->is_transfer_checked_with_fee) {
-        if (info->transfer_checked_with_fee_amount != 0) {
-            summary_item_set_token_amount(item,
-                                          "Token transfer fee",
-                                          info->transfer_checked_with_fee_amount,
-                                          symbol,
-                                          info->body.decimals);
-        }
+    // Claim an item only where one is written, an unused claim is reported as a summary overflow
+    if (info->is_transfer_checked_with_fee && info->transfer_checked_with_fee_amount != 0) {
+        PRINTF("Print token transfer fee\n");
+        item = transaction_summary_general_item();
+        summary_item_set_token_amount(item,
+                                      "Token transfer fee",
+                                      info->transfer_checked_with_fee_amount,
+                                      symbol,
+                                      info->body.decimals);
     }
 
     transaction_summary_set_transaction_type(TRANSACTION_TYPE_SPL_TRANSFER);

@@ -1,4 +1,5 @@
 #include "os.h"
+#include "rfc3339.h"
 #include "sol/parser.h"
 #include "sol/printer.h"
 #include "sol/transaction_summary.h"
@@ -13,6 +14,10 @@ struct SummaryItem {
         uint64_t u64;
         int64_t i64;
         const Pubkey *pubkey;
+        struct {
+            const Pubkey *pubkey;
+            uint8_t index;
+        } indexed_pubkey;
         const Hash *hash;
         const char *string;
         SizedString sized_string;
@@ -21,7 +26,16 @@ struct SummaryItem {
     };
 };
 
+#define RETURN_IF_NO_ITEM(item)                     \
+    do {                                            \
+        if ((item) == NULL) {                       \
+            PRINTF("No summary item to set\n");     \
+            return;                                 \
+        }                                           \
+    } while (0)
+
 void summary_item_set_amount(SummaryItem *item, const char *title, uint64_t value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemAmount;
     item->title = title;
     item->u64 = value;
@@ -32,6 +46,7 @@ void summary_item_set_token_amount(SummaryItem *item,
                                    uint64_t value,
                                    const char *symbol,
                                    uint8_t decimals) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemTokenAmount;
     item->title = title;
     item->token_amount.value = value;
@@ -40,30 +55,47 @@ void summary_item_set_token_amount(SummaryItem *item,
 }
 
 void summary_item_set_i64(SummaryItem *item, const char *title, int64_t value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemI64;
     item->title = title;
     item->i64 = value;
 }
 
 void summary_item_set_u64(SummaryItem *item, const char *title, uint64_t value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemU64;
     item->title = title;
     item->u64 = value;
 }
 
 void summary_item_set_pubkey(SummaryItem *item, const char *title, const Pubkey *value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemPubkey;
     item->title = title;
     item->pubkey = value;
 }
 
+void summary_item_set_indexed_pubkey(SummaryItem *item,
+                                     const char *title,
+                                     uint8_t index,
+                                     const Pubkey *value) {
+    RETURN_IF_NO_ITEM(item);
+    PRINTF("Set indexed pubkey item at position %u\n", index);
+    item->kind = SummaryItemIndexedPubkey;
+    item->title = title;
+    item->indexed_pubkey.pubkey = value;
+    item->indexed_pubkey.index = index;
+}
+
 void summary_item_set_hash(SummaryItem *item, const char *title, const Hash *value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemHash;
     item->title = title;
     item->hash = value;
 }
 
 void summary_item_set_sized_string(SummaryItem *item, const char *title, const SizedString *value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemSizedString;
     item->title = title;
     item->sized_string.length = value->length;
@@ -71,21 +103,27 @@ void summary_item_set_sized_string(SummaryItem *item, const char *title, const S
 }
 
 void summary_item_set_string(SummaryItem *item, const char *title, const char *value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemString;
     item->title = title;
     item->string = value;
 }
 
-void summary_item_set_timestamp(SummaryItem *item, const char *title, int64_t value) {
+int summary_item_set_timestamp(SummaryItem *item, const char *title, int64_t value) {
+    BAIL_IF(item == NULL);
+    // The display callback can only exit on failure, pre-check now that the date is displayable
+    BAIL_IF(!rfc3339_is_displayable(value));
     item->kind = SummaryItemTimestamp;
     item->title = title;
     item->i64 = value;
+    return 0;
 }
 
 void summary_item_set_offchain_message_application_domain(
     SummaryItem *item,
     const char *title,
     const OffchainMessageApplicationDomain *value) {
+    RETURN_IF_NO_ITEM(item);
     item->kind = SummaryItemOffchainMessageApplicationDomain;
     item->title = title;
     item->application_domain = value;
@@ -96,6 +134,9 @@ typedef struct TransactionSummary {
     bool fee_warning;
     bool hook_warning;
     bool is_blind_signing;
+    // Set when an item was asked for and none was available. transaction_summary_reset()
+    // bzeroes the struct, so it clears with the rest of the summary.
+    bool overflow;
     transaction_type_t transaction_type;
     SummaryItem primary;
     SummaryItem fee_payer;
@@ -123,6 +164,8 @@ static SummaryItem *summary_item_as_unused(SummaryItem *item) {
     if (!is_summary_item_used(item)) {
         return item;
     }
+    PRINTF("Summary item already set\n");
+    G_transaction_summary.overflow = true;
     return NULL;
 }
 
@@ -153,6 +196,8 @@ SummaryItem *transaction_summary_general_item() {
             return item;
         }
     }
+    PRINTF("No general summary item left\n");
+    G_transaction_summary.overflow = true;
     return NULL;
 }
 
@@ -196,8 +241,8 @@ bool transaction_summary_is_blind_signing() {
 #define FEE_PAYER_TITLE "Fee payer"
 
 SummaryItem *transaction_summary_primary_or_general_item() {
-    SummaryItem *item = transaction_summary_primary_item();
-    if (item != NULL) {
+    SummaryItem *item = &G_transaction_summary.primary;
+    if (!is_summary_item_used(item)) {
         return item;
     }
     return transaction_summary_general_item();
@@ -207,6 +252,23 @@ int transaction_summary_set_fee_payer_pubkey(const Pubkey *pubkey) {
     SummaryItem *item = transaction_summary_fee_payer_item();
     BAIL_IF(item == NULL);
     summary_item_set_pubkey(item, FEE_PAYER_TITLE, pubkey);
+    return 0;
+}
+
+// Writes a pubkey to the display text buffer, in full or shortened to its two ends
+static int set_display_text_from_pubkey(const Pubkey *pubkey, enum DisplayFlags flags) {
+    char encoded[BASE58_PUBKEY_LENGTH];
+
+    BAIL_IF(encode_base58(pubkey, PUBKEY_SIZE, encoded, sizeof(encoded)));
+    if (flags & DisplayFlagLongPubkeys) {
+        BAIL_IF(print_string(encoded, G_transaction_summary_text, TEXT_BUFFER_LENGTH));
+    } else {
+        BAIL_IF(print_summary(encoded,
+                              G_transaction_summary_text,
+                              BASE58_PUBKEY_SHORT,
+                              SUMMARY_LENGTH,
+                              SUMMARY_LENGTH));
+    }
     return 0;
 }
 
@@ -231,20 +293,12 @@ static int transaction_summary_update_display_for_item(const SummaryItem *item,
         case SummaryItemU64:
             BAIL_IF(print_u64(item->u64, G_transaction_summary_text, TEXT_BUFFER_LENGTH));
             break;
-        case SummaryItemPubkey: {
-            char tmp_buf[BASE58_PUBKEY_LENGTH];
-            BAIL_IF(encode_base58(item->pubkey, PUBKEY_SIZE, tmp_buf, sizeof(tmp_buf)));
-            if (flags & DisplayFlagLongPubkeys) {
-                BAIL_IF(print_string(tmp_buf, G_transaction_summary_text, TEXT_BUFFER_LENGTH));
-            } else {
-                BAIL_IF(print_summary(tmp_buf,
-                                      G_transaction_summary_text,
-                                      BASE58_PUBKEY_SHORT,
-                                      SUMMARY_LENGTH,
-                                      SUMMARY_LENGTH));
-            }
+        case SummaryItemPubkey:
+            BAIL_IF(set_display_text_from_pubkey(item->pubkey, flags));
             break;
-        }
+        case SummaryItemIndexedPubkey:
+            BAIL_IF(set_display_text_from_pubkey(item->indexed_pubkey.pubkey, flags));
+            break;
         case SummaryItemHash:
             BAIL_IF(encode_base58(item->hash,
                                   BLOCKHASH_SIZE,
@@ -267,7 +321,15 @@ static int transaction_summary_update_display_for_item(const SummaryItem *item,
                                   TEXT_BUFFER_LENGTH));
             break;
     }
-    print_string(item->title, G_transaction_summary_title, TITLE_SIZE);
+    // The position is appended here, so a numbered list needs no stored title per position
+    if (item->kind == SummaryItemIndexedPubkey) {
+        BAIL_IF(print_indexed_title(item->title,
+                                    item->indexed_pubkey.index,
+                                    G_transaction_summary_title,
+                                    TITLE_SIZE));
+    } else {
+        print_string(item->title, G_transaction_summary_title, TITLE_SIZE);
+    }
     return 0;
 }
 
@@ -316,6 +378,22 @@ static SummaryItem *transaction_summary_find_item(size_t item_index) {
     return NULL;
 }
 
+int transaction_summary_get_item_amount(size_t item_index, uint64_t *amount) {
+    const SummaryItem *item = transaction_summary_find_item(item_index);
+
+    if (item == NULL) {
+        PRINTF("No summary item at index %u\n", item_index);
+        return -1;
+    }
+    if (item->kind != SummaryItemAmount) {
+        PRINTF("Summary item %u is kind %d, not a lamport amount\n", item_index, item->kind);
+        return -1;
+    }
+
+    *amount = item->u64;
+    return 0;
+}
+
 int transaction_summary_display_item(size_t item_index, enum DisplayFlags flags) {
     const SummaryItem *item;
 
@@ -337,6 +415,11 @@ int transaction_summary_display_item(size_t item_index, enum DisplayFlags flags)
 int transaction_summary_finalize(enum SummaryItemKind *item_kinds, size_t *item_kinds_len) {
     const TransactionSummary *summary = &G_transaction_summary;
     size_t index = 0;
+
+    if (summary->overflow) {
+        PRINTF("Error transaction summary ran out of items\n");
+        return 1;
+    }
 
     if (summary->primary.kind == SummaryItemNone) {
         PRINTF("Error transaction summary is unset\n");

@@ -92,6 +92,7 @@ typedef enum swap_error_application_specific_code_e {
 
     SWAP_EC_APP_DESCRIPTOR_INVALID_CAPPED_FIELDS = 0x14,
     SWAP_EC_APP_TX_HASH_MISMATCH = 0x15,
+    SWAP_EC_APP_DESCRIPTOR_INVALID_CHAIN_ID = 0x16,
 } swap_error_application_specific_code_t;
 
 typedef struct ApduHeader {

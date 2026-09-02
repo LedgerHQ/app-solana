@@ -236,6 +236,41 @@ class TestStaking:
         )
         self._send_and_validate_message(sol, [tx], scenario_navigator, root_pytest_dir)
 
+    @pytest.mark.parametrize("instruction", ["StakeSetLockup", "StakeInitialize"])
+    def test_stake_lockup_timestamp_out_of_range(self, sol, scenario_navigator, root_pytest_dir, instruction):
+        custodian_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
+
+        wrapping_timestamp = 1787000000 + (1 << 32) * 86400
+
+        if instruction == "StakeSetLockup":
+            accounts = [
+                AccountMeta(pubkey=self.stake_account, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=custodian_pubkey, is_signer=False, is_writable=False),
+            ]
+            data = struct.pack("<IBqBQB",
+                               StakeInstruction.StakeSetLockup,
+                               StakeLockupArgs.OptionSome, wrapping_timestamp,
+                               StakeLockupArgs.OptionSome, 0,
+                               StakeLockupArgs.OptionNone)
+        else:
+            accounts = [
+                AccountMeta(pubkey=self.stake_account, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=SYSVAR_RENT, is_signer=False, is_writable=False),
+            ]
+            data = struct.pack("<I", StakeInstruction.StakeInitialize) \
+                + bytes(self.payer_pubkey) + bytes(self.payer_pubkey) \
+                + struct.pack("<qQ", wrapping_timestamp, 0) + bytes(custodian_pubkey)
+
+        tx = Instruction(
+            program_id=STAKE_PROGRAM_ID,
+            accounts=accounts,
+            data=data,
+        )
+
+        with pytest.raises(ExceptionRAPDU) as e:
+            self._send_and_validate_message(sol, [tx], scenario_navigator, root_pytest_dir, valid=False)
+        assert e.value.status == ErrorType.SDK_NOT_SUPPORTED
+
     def test_stake_merge(self, sol, scenario_navigator, root_pytest_dir):
         to_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
         authority_pubkey = Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR)
@@ -306,3 +341,206 @@ class TestStaking:
         )
 
         self._send_and_validate_message(sol, [create_account, stake_initialize, stake_delegate], scenario_navigator, root_pytest_dir)
+
+
+# The six composite shapes a stake split can take. All of them create the destination account
+# in the same message as the split, and all of them are clear signed.
+STAKE_SPLIT_BRANCHES = ["v1_1", "v1_1_seed", "v1_2", "v1_2_seed", "v1_3", "v1_3_seed"]
+
+STAKE_ACCOUNT_SPACE = 200
+RENT_EXEMPT_RESERVE = 2282880
+SPLIT_AMOUNT = 123456789
+SPLIT_SEED = "split123"
+
+
+class TestStakeSplitComposite:
+    payer_pubkey = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+    source_account = Pubkey.create_with_seed(payer_pubkey, seed="stake123", program_id=STAKE_PROGRAM_ID)
+    # Destination of the seeded shapes, derived the way the runtime derives it
+    seeded_destination = Pubkey.create_with_seed(payer_pubkey, seed=SPLIT_SEED, program_id=STAKE_PROGRAM_ID)
+    # Destination of the non seeded shapes, a fresh keypair
+    destination = Pubkey.from_string(SOL.FOREIGN_ADDRESS_2_STR)
+    # The account a malicious message prepares instead of the one it displays
+    decoy = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
+
+    def _allocate(self, account):
+        return Instruction(
+            program_id=Pubkey.from_string(PROGRAM_ID_SYSTEM),
+            accounts=[AccountMeta(pubkey=account, is_signer=True, is_writable=True)],
+            data=struct.pack("<IQ", SystemInstruction.SystemAllocate, STAKE_ACCOUNT_SPACE),
+        )
+
+    def _assign(self, account, owner=STAKE_PROGRAM_ID):
+        return Instruction(
+            program_id=Pubkey.from_string(PROGRAM_ID_SYSTEM),
+            accounts=[AccountMeta(pubkey=account, is_signer=True, is_writable=True)],
+            data=struct.pack("<I", SystemInstruction.SystemAssign) + bytes(owner),
+        )
+
+    def _allocate_with_seed(self, account, owner=STAKE_PROGRAM_ID):
+        return Instruction(
+            program_id=Pubkey.from_string(PROGRAM_ID_SYSTEM),
+            accounts=[
+                AccountMeta(pubkey=account, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=self.payer_pubkey, is_signer=True, is_writable=False),
+            ],
+            data=struct.pack("<I", SystemInstruction.SystemAllocateWithSeed)
+            + bytes(self.payer_pubkey)
+            + struct.pack("<Q", len(SPLIT_SEED)) + SPLIT_SEED.encode()
+            + struct.pack("<Q", STAKE_ACCOUNT_SPACE)
+            + bytes(owner),
+        )
+
+    def _create_account(self, to, owner=STAKE_PROGRAM_ID):
+        return Instruction(
+            program_id=Pubkey.from_string(PROGRAM_ID_SYSTEM),
+            accounts=[
+                AccountMeta(pubkey=self.payer_pubkey, is_signer=True, is_writable=True),
+                AccountMeta(pubkey=to, is_signer=True, is_writable=True),
+            ],
+            data=struct.pack("<IQQ", SystemInstruction.SystemCreateAccount, RENT_EXEMPT_RESERVE, STAKE_ACCOUNT_SPACE)
+            + bytes(owner),
+        )
+
+    def _create_account_with_seed(self, to, owner=STAKE_PROGRAM_ID):
+        return Instruction(
+            program_id=Pubkey.from_string(PROGRAM_ID_SYSTEM),
+            accounts=[
+                AccountMeta(pubkey=self.payer_pubkey, is_signer=True, is_writable=True),
+                AccountMeta(pubkey=to, is_signer=False, is_writable=True),
+            ],
+            data=struct.pack("<I", SystemInstruction.SystemCreateAccountWithSeed)
+            + bytes(self.payer_pubkey)
+            + struct.pack("<Q", len(SPLIT_SEED)) + SPLIT_SEED.encode()
+            + struct.pack("<QQ", RENT_EXEMPT_RESERVE, STAKE_ACCOUNT_SPACE)
+            + bytes(owner),
+        )
+
+    def _transfer(self, to):
+        return Instruction(
+            program_id=Pubkey.from_string(PROGRAM_ID_SYSTEM),
+            accounts=[
+                AccountMeta(pubkey=self.payer_pubkey, is_signer=True, is_writable=True),
+                AccountMeta(pubkey=to, is_signer=False, is_writable=True),
+            ],
+            data=struct.pack("<IQ", SystemInstruction.SystemTransfer, RENT_EXEMPT_RESERVE),
+        )
+
+    def _split(self, destination):
+        return Instruction(
+            program_id=STAKE_PROGRAM_ID,
+            accounts=[
+                AccountMeta(pubkey=self.source_account, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=destination, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=self.payer_pubkey, is_signer=True, is_writable=False),
+            ],
+            data=struct.pack("<IQ", StakeInstruction.StakeSplit, SPLIT_AMOUNT),
+        )
+
+    def _instructions(self, branch, malicious):
+        """Build one stake split composite.
+        """
+        system_program = Pubkey.from_string(PROGRAM_ID_SYSTEM)
+
+        if branch == "v1_1":
+            destination = self.destination
+            allocated = self.decoy if malicious else destination
+            return [self._allocate(allocated), self._assign(destination), self._split(destination)]
+
+        if branch == "v1_1_seed":
+            destination = self.seeded_destination
+            owner = system_program if malicious else STAKE_PROGRAM_ID
+            return [self._allocate_with_seed(destination, owner=owner), self._split(destination)]
+
+        if branch == "v1_2":
+            destination = self.destination
+            owner = system_program if malicious else STAKE_PROGRAM_ID
+            return [self._create_account(destination, owner=owner), self._split(destination)]
+
+        if branch == "v1_2_seed":
+            destination = self.seeded_destination
+            created = self.decoy if malicious else destination
+            return [self._create_account_with_seed(created), self._split(destination)]
+
+        if branch == "v1_3":
+            destination = self.destination
+            funded = self.decoy if malicious else destination
+            return [self._transfer(funded), self._allocate(destination),
+                    self._assign(destination), self._split(destination)]
+
+        if branch == "v1_3_seed":
+            destination = self.seeded_destination
+            funded = self.decoy if malicious else destination
+            return [self._transfer(funded), self._allocate_with_seed(destination),
+                    self._split(destination)]
+
+        raise ValueError("Unknown stake split branch " + branch)
+
+    def _instructions_into_own_wallet(self, branch):
+        """Build a composite whose split destination is the signing wallet itself."""
+        destination = self.payer_pubkey
+
+        if branch == "v1_1":
+            return [self._allocate(destination), self._assign(destination), self._split(destination)]
+
+        if branch == "v1_1_seed":
+            return [self._allocate_with_seed(destination), self._split(destination)]
+
+        if branch == "v1_2":
+            return [self._create_account(destination), self._split(destination)]
+
+        if branch == "v1_2_seed":
+            return [self._create_account_with_seed(destination), self._split(destination)]
+
+        if branch == "v1_3":
+            return [self._transfer(destination), self._allocate(destination),
+                    self._assign(destination), self._split(destination)]
+
+        if branch == "v1_3_seed":
+            return [self._transfer(destination), self._allocate_with_seed(destination),
+                    self._split(destination)]
+
+        raise ValueError("Unknown stake split branch " + branch)
+
+    @pytest.mark.parametrize("branch", STAKE_SPLIT_BRANCHES)
+    def test_stake_split_composite(self, sol, scenario_navigator, root_pytest_dir, branch, test_name):
+        scenario_navigator.test_name = test_name + "_" + branch
+        message_data = sol.craft_tx(self._instructions(branch, malicious=False), self.payer_pubkey)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            scenario_navigator.review_approve(path=root_pytest_dir)
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+    @pytest.mark.parametrize("branch", STAKE_SPLIT_BRANCHES)
+    def test_stake_split_composite_unbound_sibling(self, sol, branch):
+        """A composite whose siblings prepare an account other than the one it displays is
+        refused in the default configuration."""
+        message_data = sol.craft_tx(self._instructions(branch, malicious=True), self.payer_pubkey)
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+                pass
+        assert e.value.status == ErrorType.SDK_NOT_SUPPORTED
+
+    @pytest.mark.parametrize("branch", STAKE_SPLIT_BRANCHES)
+    def test_stake_split_composite_into_own_wallet(self, sol, branch):
+        """Splitting into the wallet that signs turns it into a stake account it can never leave.
+        Every account bind passes, so only the destination bind refuses this. The runtime derives
+        the destination of the seeded shapes, but the device does not check that derivation, so
+        all six shapes bind the destination."""
+        message_data = sol.craft_tx(self._instructions_into_own_wallet(branch), self.payer_pubkey)
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+                pass
+        assert e.value.status == ErrorType.SDK_NOT_SUPPORTED
+
+    @pytest.mark.parametrize("branch", STAKE_SPLIT_BRANCHES)
+    def test_stake_split_composite_unbound_sibling_blind_signing(self, sol, navigation_helper, branch, test_name):
+        """With blind signing explicitly enabled the same message still signs, behind the
+        Unrecognized / format screen. Each bind is also a new route onto that screen."""
+        navigation_helper.test_name = test_name + "_" + branch
+        navigation_helper.enable_blind_signing()
+        message_data = sol.craft_tx(self._instructions(branch, malicious=True), self.payer_pubkey)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            navigation_helper.navigate_with_blind_signing_and_accept()
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)

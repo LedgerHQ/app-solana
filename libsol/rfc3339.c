@@ -47,7 +47,11 @@ static int rdn_to_ymd(uint32_t rdn, uint16_t *yp, uint16_t *mp, uint16_t *dp) {
         m -= 12;
     }
 
-    BAIL_IF(y > 9999 || m > 12 || d > (31U + DayOffset[m]));
+    // Test m before indexing DayOffset, the array only holds entries 0 to 12
+    if (y > 9999 || m > 12 || d > (31U + DayOffset[m])) {
+        PRINTF("Day number does not map to a displayable date, y=%u m=%u d=%u\n", y, m, d);
+        return 1;
+    }
 
     *yp = (uint16_t) y;
     *mp = (uint16_t) m;
@@ -58,6 +62,22 @@ static int rdn_to_ymd(uint32_t rdn, uint16_t *yp, uint16_t *mp, uint16_t *dp) {
 
 #define EPOCH INT64_C(62135683200) /* 1970-01-01 00:00:00 */
 
+/* First Rata Die day number after 9999-12-31, the latest date rdn_to_ymd can render */
+#define MAX_RDN_DAYS INT64_C(3652060)
+/* 0000-12-31 00:00:00, the earliest date rdn_to_ymd can render */
+#define MIN_FORMAT_SECONDS (-EPOCH)
+/* 9999-12-31 23:59:59 */
+#define MAX_FORMAT_SECONDS (MAX_RDN_DAYS * INT64_C(86400) - EPOCH - 1)
+
+// Whether rfc3339_format can render the timestamp as a YYYY-MM-DD hh:mm:ss date
+bool rfc3339_is_displayable(int64_t seconds) {
+    bool displayable = (seconds >= MIN_FORMAT_SECONDS && seconds <= MAX_FORMAT_SECONDS);
+    if (!displayable) {
+        PRINTF("Timestamp outside displayable range, seconds=%lld\n", seconds);
+    }
+    return displayable;
+}
+
 int rfc3339_format(char *dst, size_t len, int64_t seconds) {
     unsigned char *p;
     uint64_t sec;
@@ -65,11 +85,18 @@ int rfc3339_format(char *dst, size_t len, int64_t seconds) {
     uint16_t y, m, d;
     size_t dlen;
 
+    PRINTF("rfc3339_format seconds=%lld\n", seconds);
+
     dlen = sizeof("YYYY-MM-DD hh:mm:ss") - 1;
     BAIL_IF(dlen >= len);
 
-    sec = seconds + EPOCH;
-    rdn = sec / 86400;
+    // Reject out of range values before the addition below, so it cannot overflow
+    if (!rfc3339_is_displayable(seconds)) {
+        return 1;
+    }
+
+    sec = (uint64_t) (seconds + EPOCH);
+    rdn = (uint32_t) (sec / 86400);
 
     BAIL_IF(rdn_to_ymd(rdn, &y, &m, &d) != 0);
 

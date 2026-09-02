@@ -59,7 +59,7 @@ void test_summary_item_setters() {
     assert(item.sized_string.length == sizeof(string_data));
     assert(strncmp("test", item.sized_string.string, item.sized_string.length) == 0);
 
-    summary_item_set_timestamp(&item, "timestamp", 42);
+    assert(summary_item_set_timestamp(&item, "timestamp", 42) == 0);
     assert(item.kind == SummaryItemTimestamp);
     assert_string_equal(item.title, "timestamp");
     assert(item.i64 == 42);
@@ -208,7 +208,7 @@ void test_transaction_summary_update_display_for_item() {
     assert(transaction_summary_update_display_for_item(&item, DisplayFlagNone) == 0);
     assert_transaction_summary_display("string", "value");
 
-    summary_item_set_timestamp(&item, "timestamp", 42);
+    assert(summary_item_set_timestamp(&item, "timestamp", 42) == 0);
     assert(transaction_summary_update_display_for_item(&item, DisplayFlagNone) == 0);
     assert_transaction_summary_display("timestamp", "1970-01-01 00:00:42");
 }
@@ -333,6 +333,45 @@ void test_transaction_summary_finalize() {
     assert_kinds_array(kinds, num_kinds);
 }
 
+void test_transaction_summary_overflow_fails_finalize() {
+    SummaryItem *item;
+
+    transaction_summary_reset();
+    item = transaction_summary_primary_item();
+    summary_item_set_u64(item, "item", 42);
+
+    enum SummaryItemKind kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
+    size_t num_kinds;
+    assert(transaction_summary_finalize(kinds, &num_kinds) == 0);
+
+    // Asking for an item that is not there is sticky and fails finalization
+    for (size_t i = 0; i < NUM_GENERAL_ITEMS; i++) {
+        item = transaction_summary_general_item();
+        summary_item_set_u64(item, "item", 42);
+    }
+    assert(transaction_summary_finalize(kinds, &num_kinds) == 0);
+    assert(transaction_summary_general_item() == NULL);
+    assert(transaction_summary_finalize(kinds, &num_kinds) == 1);
+
+    // Claiming an item twice fails the same way
+    transaction_summary_reset();
+    item = transaction_summary_primary_item();
+    summary_item_set_u64(item, "item", 42);
+    assert(transaction_summary_primary_item() == NULL);
+    assert(transaction_summary_finalize(kinds, &num_kinds) == 1);
+
+    // Probing the primary item and falling back to a general one is not an overflow
+    transaction_summary_reset();
+    item = transaction_summary_primary_or_general_item();
+    summary_item_set_u64(item, "item", 42);
+    item = transaction_summary_primary_or_general_item();
+    summary_item_set_u64(item, "item", 42);
+    assert(transaction_summary_finalize(kinds, &num_kinds) == 0);
+    assert(num_kinds == 2);
+
+    transaction_summary_reset();
+}
+
 void test_repro_unrecognized_format_reverse_nav_hash_corruption_bug() {
     SummaryItem *item;
     const char *primary_title = "Unrecognized";
@@ -384,6 +423,7 @@ int main() {
     RUN_TEST(test_transaction_summary_update_display_for_item);
     RUN_TEST(test_transaction_summary_display_item);
     RUN_TEST(test_transaction_summary_finalize);
+    RUN_TEST(test_transaction_summary_overflow_fails_finalize);
 
     RUN_TEST(test_repro_unrecognized_format_reverse_nav_hash_corruption_bug);
 

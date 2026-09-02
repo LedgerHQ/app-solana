@@ -340,13 +340,123 @@ void test_parse_spl_token_create_multisig() {
     assert_pubkey_equal(init_ms->multisig_account, &multisig_account);
 
     assert(init_ms->signers.count == 3);
-    const Pubkey *signer = init_ms->signers.first;
     const Pubkey signer1 = {{SIGNER1}};
-    assert_pubkey_equal(signer++, &signer1);
+    assert_pubkey_equal(init_ms->signers.accounts[0], &signer1);
     const Pubkey signer2 = {{SIGNER2}};
-    assert_pubkey_equal(signer++, &signer2);
+    assert_pubkey_equal(init_ms->signers.accounts[1], &signer2);
     const Pubkey signer3 = {{SIGNER3}};
-    assert_pubkey_equal(signer++, &signer3);
+    assert_pubkey_equal(init_ms->signers.accounts[2], &signer3);
+}
+
+// Builds a standalone InitializeMultisig message from the given instruction account indices and
+// threshold, then runs the SPL token parser on it
+static int parse_multisig_with(const uint8_t *instruction_accounts,
+                               uint8_t instruction_accounts_length,
+                               uint8_t m,
+                               SplTokenInfo *info) {
+    uint8_t message_prefix[] = {1,
+                                0,
+                                6,
+                                7,
+                                OWNER_ACCOUNT,
+                                MULTISIG_ACCOUNT,
+                                SYSVAR_RENT,
+                                SIGNER1,
+                                SIGNER2,
+                                SIGNER3,
+                                PROGRAM_ID_SPL_TOKEN,
+                                BLOCKHASH,
+                                1,
+                                // SplTokenInitializeMultisig
+                                6,
+                                instruction_accounts_length};
+    uint8_t message_suffix[] = {2, 2, m};
+
+    // One slot above the SPL limit, so a refused over-max signer set still fits the buffer
+    uint8_t message[sizeof(message_prefix) + Token_MAX_SIGNERS + 3 + sizeof(message_suffix)];
+    memcpy(message, message_prefix, sizeof(message_prefix));
+    memcpy(message + sizeof(message_prefix), instruction_accounts, instruction_accounts_length);
+    memcpy(message + sizeof(message_prefix) + instruction_accounts_length,
+           message_suffix,
+           sizeof(message_suffix));
+    size_t message_length =
+        sizeof(message_prefix) + instruction_accounts_length + sizeof(message_suffix);
+
+    Parser parser = {message, message_length};
+    MessageHeader header;
+    assert(parse_message_header(&parser, &header) == 0);
+
+    Instruction instruction;
+    assert(parse_instruction(&parser, &instruction) == 0);
+    assert(instruction_validate(&instruction, &header) == 0);
+
+    bool ignore_instruction_info;
+    return parse_spl_token_instructions(&instruction, &header, info, &ignore_instruction_info);
+}
+
+void test_parse_spl_token_multisig_signer_order() {
+    SplTokenInfo info;
+
+    // The signer keys are listed out of order and their message indices are not contiguous
+    const uint8_t shuffled_accounts[] = {1, 2, 5, 3, 4};
+    assert(parse_multisig_with(shuffled_accounts, ARRAY_LEN(shuffled_accounts), 2, &info) == 0);
+    assert(info.kind == SplTokenKind(InitializeMultisig));
+
+    const SplTokenInitializeMultisigInfo *init_ms = &info.initialize_multisig;
+    assert(init_ms->signers.count == 3);
+    const Pubkey signer1 = {{SIGNER1}};
+    const Pubkey signer2 = {{SIGNER2}};
+    const Pubkey signer3 = {{SIGNER3}};
+    assert_pubkey_equal(init_ms->signers.accounts[0], &signer3);
+    assert_pubkey_equal(init_ms->signers.accounts[1], &signer1);
+    assert_pubkey_equal(init_ms->signers.accounts[2], &signer2);
+
+    // The same key repeated stays visible at each of its positions
+    const uint8_t repeated_accounts[] = {1, 2, 3, 3, 3};
+    assert(parse_multisig_with(repeated_accounts, ARRAY_LEN(repeated_accounts), 2, &info) == 0);
+    assert(info.initialize_multisig.signers.count == 3);
+    assert_pubkey_equal(info.initialize_multisig.signers.accounts[0], &signer1);
+    assert_pubkey_equal(info.initialize_multisig.signers.accounts[1], &signer1);
+    assert_pubkey_equal(info.initialize_multisig.signers.accounts[2], &signer1);
+}
+
+void test_parse_spl_token_multisig_threshold() {
+    SplTokenInfo info;
+    const uint8_t accounts[] = {1, 2, 3, 4, 5};
+
+    // A threshold of zero can never be met
+    assert(parse_multisig_with(accounts, ARRAY_LEN(accounts), 0, &info) != 0);
+
+    // A threshold above the signer count can never be met
+    assert(parse_multisig_with(accounts, ARRAY_LEN(accounts), 4, &info) != 0);
+
+    // The bounds of the threshold are accepted
+    assert(parse_multisig_with(accounts, ARRAY_LEN(accounts), 1, &info) == 0);
+    assert(parse_multisig_with(accounts, ARRAY_LEN(accounts), 3, &info) == 0);
+}
+
+void test_parse_spl_token_multisig_signer_count() {
+    SplTokenInfo info;
+
+    // An empty signer set has nothing to display
+    const uint8_t no_signers[] = {1, 2};
+    assert(parse_multisig_with(no_signers, ARRAY_LEN(no_signers), 1, &info) != 0);
+
+    // The multisig account and the rent sysvar come first, then the same signer key in every slot
+    uint8_t max_signers[2 + Token_MAX_SIGNERS];
+    max_signers[0] = 1;
+    max_signers[1] = 2;
+    for (size_t i = 2; i < ARRAY_LEN(max_signers); i++) {
+        max_signers[i] = 3;
+    }
+    assert(parse_multisig_with(max_signers, ARRAY_LEN(max_signers), Token_MAX_SIGNERS, &info) == 0);
+    assert(info.initialize_multisig.signers.count == Token_MAX_SIGNERS);
+
+    // One signer above the SPL limit has no slot to be displayed in and is refused
+    uint8_t too_many_signers[ARRAY_LEN(max_signers) + 1];
+    memcpy(too_many_signers, max_signers, sizeof(max_signers));
+    too_many_signers[ARRAY_LEN(too_many_signers) - 1] = 3;
+    assert(parse_multisig_with(too_many_signers, ARRAY_LEN(too_many_signers), 1, &info) != 0);
 }
 
 void test_parse_spl_token_transfer() {
@@ -1043,6 +1153,9 @@ int main() {
     RUN_TEST(test_parse_spl_token_create_account);
     RUN_TEST(test_parse_spl_token_create_account2);
     RUN_TEST(test_parse_spl_token_create_multisig);
+    RUN_TEST(test_parse_spl_token_multisig_signer_order);
+    RUN_TEST(test_parse_spl_token_multisig_threshold);
+    RUN_TEST(test_parse_spl_token_multisig_signer_count);
     RUN_TEST(test_parse_spl_token_transfer);
     RUN_TEST(test_parse_spl_token_approve);
     RUN_TEST(test_parse_spl_token_revoke);

@@ -100,3 +100,57 @@ class TestMessageSigning:
             scenario_navigator.review_approve(path=root_pytest_dir)
         signature: bytes = sol.get_async_response().data
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+    def test_system_allocate_with_seed(self, sol, scenario_navigator, root_pytest_dir):
+        base_pubkey = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+        allocated_account = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
+        # The instruction gives the derived account to this program, the screen must show it
+        owner_program = Pubkey.from_string(SOL.CHORUS_ONE_ADDRESS_STR)
+        seed = b"attacker:0"
+
+        allocate_with_seed = Instruction(
+            program_id=Pubkey.from_string(PROGRAM_ID_SYSTEM),
+            accounts=[
+                AccountMeta(pubkey=allocated_account, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=base_pubkey, is_signer=True, is_writable=False),
+            ],
+            # SystemAllocateWithSeed: kind(u32) + base(pubkey) + seed_len(u64) + seed + space(u64) + owner(pubkey)
+            data=struct.pack("<I", 9)
+                + bytes(base_pubkey)
+                + struct.pack("<Q", len(seed))
+                + seed
+                + struct.pack("<Q", 200)
+                + bytes(owner_program),
+        )
+
+        message_data = sol.craft_tx([allocate_with_seed], base_pubkey)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            scenario_navigator.review_approve(path=root_pytest_dir)
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+    def test_system_allocate_with_seed_refused(self, sol, scenario_navigator, root_pytest_dir):
+        base_pubkey = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+        allocated_account = Pubkey.from_string(SOL.FOREIGN_ADDRESS_STR)
+        owner_program = Pubkey.from_string(SOL.CHORUS_ONE_ADDRESS_STR)
+        seed = b"attacker:0"
+
+        allocate_with_seed = Instruction(
+            program_id=Pubkey.from_string(PROGRAM_ID_SYSTEM),
+            accounts=[
+                AccountMeta(pubkey=allocated_account, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=base_pubkey, is_signer=True, is_writable=False),
+            ],
+            data=struct.pack("<I", 9)
+                + bytes(base_pubkey)
+                + struct.pack("<Q", len(seed))
+                + seed
+                + struct.pack("<Q", 200)
+                + bytes(owner_program),
+        )
+
+        message_data = sol.craft_tx([allocate_with_seed], base_pubkey)
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+                scenario_navigator.review_reject(path=root_pytest_dir)
+        assert e.value.status == ErrorType.USER_CANCEL

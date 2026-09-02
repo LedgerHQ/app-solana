@@ -136,6 +136,7 @@ static void process_message_body_and_sanity_check(const uint8_t* message, size_t
     print_config.expert_mode = true;
     Parser parser = { message, message_length };
     assert(parse_message_header(&parser, &print_config.header) == 0);
+    print_config.signer_pubkey = &print_config.header.pubkeys[0];
     transaction_summary_reset();
     assert(process_message_body(parser.buffer, parser.buffer_length, &print_config) == 0);
     transaction_summary_set_fee_payer_pubkey(&print_config.header.pubkeys[0]);
@@ -149,13 +150,99 @@ static void process_message_body_and_sanity_check(const uint8_t* message, size_t
     }
 }
 
+// Compares the value shown by the only item of the finalized summary that carries this title
+static void assert_summary_item_shows(const char *title, const char *expected_text) {
+    enum SummaryItemKind kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
+    size_t num_kinds = 0;
+    size_t matches = 0;
+
+    assert(transaction_summary_finalize(kinds, &num_kinds) == 0);
+    for (size_t i = 0; i < num_kinds; i++) {
+        assert(transaction_summary_display_item(i, DisplayFlagNone) == 0);
+        if (strcmp(G_transaction_summary_title, title) == 0) {
+            assert_string_equal(G_transaction_summary_text, expected_text);
+            matches++;
+        }
+    }
+    assert(matches == 1);
+}
+
+// Counts the items of the finalized summary that carry this title
+static size_t count_summary_items_with_title(const char *title) {
+    enum SummaryItemKind kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
+    size_t num_kinds = 0;
+    size_t matches = 0;
+
+    assert(transaction_summary_finalize(kinds, &num_kinds) == 0);
+    for (size_t i = 0; i < num_kinds; i++) {
+        assert(transaction_summary_display_item(i, DisplayFlagNone) == 0);
+        if (strcmp(G_transaction_summary_title, title) == 0) {
+            matches++;
+        }
+    }
+    return matches;
+}
+
 static void process_message_body_and_expect_refusal(const uint8_t* message, size_t message_length) {
     PrintConfig print_config = {0};
     print_config.expert_mode = true;
     Parser parser = { message, message_length };
     assert(parse_message_header(&parser, &print_config.header) == 0);
+    print_config.signer_pubkey = &print_config.header.pubkeys[0];
     transaction_summary_reset();
     assert(process_message_body(parser.buffer, parser.buffer_length, &print_config) == -1);
+}
+
+static void process_message_body_and_sanity_check_for_signer(const uint8_t* message, size_t message_length, size_t signer_index, size_t expected_fields) {
+    PrintConfig print_config = {0};
+    print_config.expert_mode = true;
+    Parser parser = { message, message_length };
+    assert(parse_message_header(&parser, &print_config.header) == 0);
+    print_config.signer_pubkey = &print_config.header.pubkeys[signer_index];
+    transaction_summary_reset();
+    assert(process_message_body(parser.buffer, parser.buffer_length, &print_config) == 0);
+    transaction_summary_set_fee_payer_pubkey(&print_config.header.pubkeys[0]);
+
+    enum SummaryItemKind kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
+    size_t num_kinds;
+    assert(transaction_summary_finalize(kinds, &num_kinds) == 0);
+    assert(num_kinds == expected_fields);
+}
+
+static void process_message_body_and_expect_refusal_for_signer(const uint8_t* message, size_t message_length, size_t signer_index) {
+    PrintConfig print_config = {0};
+    print_config.expert_mode = true;
+    Parser parser = { message, message_length };
+    assert(parse_message_header(&parser, &print_config.header) == 0);
+    print_config.signer_pubkey = &print_config.header.pubkeys[signer_index];
+    transaction_summary_reset();
+    assert(process_message_body(parser.buffer, parser.buffer_length, &print_config) == -1);
+}
+
+/**
+ * A refused message falls back to blind signing, which builds its screen on top of whatever
+ * is already in the summary. Check that the refused printer left the primary item free and
+ * added nothing of its own: `expected_blind_sign_fields` counts the blind signing primary
+ * item plus the items set before the printer ran, which for a nonced message are the two
+ * nonce items written by the nonce sentinel.
+ */
+static void process_message_body_and_expect_refusal_without_leak(const uint8_t* message, size_t message_length, size_t expected_blind_sign_fields) {
+    PrintConfig print_config = {0};
+    print_config.expert_mode = true;
+    Parser parser = { message, message_length };
+    assert(parse_message_header(&parser, &print_config.header) == 0);
+    print_config.signer_pubkey = &print_config.header.pubkeys[0];
+    transaction_summary_reset();
+    assert(process_message_body(parser.buffer, parser.buffer_length, &print_config) == -1);
+
+    SummaryItem *item = transaction_summary_primary_item();
+    assert(item != NULL);
+    summary_item_set_string(item, "Unrecognized", "format");
+
+    enum SummaryItemKind kinds[MAX_TRANSACTION_SUMMARY_ITEMS];
+    size_t num_kinds;
+    assert(transaction_summary_finalize(kinds, &num_kinds) == 0);
+    assert(num_kinds == expected_blind_sign_fields);
 }
 
 /**
@@ -1449,6 +1536,66 @@ void test_process_message_body_create_stake_with_seed_account_and_delegate() {
     process_message_body_and_sanity_check(message, sizeof(message), 13);
 }
 
+/**
+ * The composite fills every general summary item on its own, so the max fee item the
+ * dispatcher appends afterwards needs a slot of its own.
+ */
+void test_process_message_body_create_stake_with_seed_account_and_delegate_and_compute_budget() {
+    uint8_t message[] = {
+        2, 0, 8,
+        11,
+            226, 227, 159, 49, 174, 54, 249, 204, 163, 243, 214, 226, 72, 231, 254, 47, 54, 154, 232, 93, 76, 4, 41, 84, 228, 188, 210, 93, 163, 211, 181, 118,
+            147, 11, 169, 119, 49, 240, 218, 2, 64, 0, 238, 67, 133, 163, 239, 139, 225, 13, 87, 18, 112, 254, 144, 118, 171, 151, 140, 122, 64, 17, 230, 66,
+            160, 209, 181, 140, 74, 150, 96, 248, 38, 191, 49, 248, 172, 163, 99, 167, 79, 223, 32, 215, 58, 177, 147, 143, 129, 151, 59, 99, 20, 145, 156, 145,
+            6, 167, 213, 23, 25, 44, 92, 81, 33, 140, 201, 76, 61, 74, 241, 127, 88, 218, 238, 8, 155, 161, 253, 68, 227, 219, 217, 138, 0, 0, 0, 0,
+            5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+            6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182, 139, 94, 184, 163, 155, 75, 109, 92, 115, 85, 91, 33, 0, 0, 0, 0,
+            6, 167, 213, 23, 25, 53, 132, 208, 254, 237, 155, 179, 67, 29, 19, 32, 107, 229, 68, 40, 27, 87, 184, 86, 108, 197, 55, 95, 244, 0, 0, 0,
+            6, 161, 216, 23, 165, 2, 5, 11, 104, 7, 145, 230, 206, 109, 184, 142, 30, 91, 113, 80, 246, 31, 198, 121, 10, 78, 180, 209, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            3, 6, 70, 111, 229, 33, 23, 50, 255, 236, 173, 186, 114, 195, 155, 231, 188, 140, 229, 187, 197, 247, 18, 107, 44, 67, 155, 58, 64, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        4,
+            // compute budget - unit limit
+            10,
+            0,
+            5,
+                2,
+                205, 171, 0, 0,
+            // system create account with seed
+            8,
+            3,
+                1, 2, 1,
+            124,
+                3, 0, 0, 0,
+                147, 11, 169, 119, 49, 240, 218, 2, 64, 0, 238, 67, 133, 163, 239, 139, 225, 13, 87, 18, 112, 254, 144, 118, 171, 151, 140, 122, 64, 17, 230, 66,
+                32, 0, 0, 0, 0, 0, 0, 0,
+                    115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                42, 0, 0, 0, 0, 0, 0, 0,
+                200, 0, 0, 0, 0, 0, 0, 0,
+                6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake initialize
+            9,
+            2,
+                2, 3,
+            116,
+                0, 0, 0, 0,
+                148, 11, 169, 119, 49, 240, 218, 2, 64, 0, 238, 67, 133, 163, 239, 139, 225, 13, 87, 18, 112, 254, 144, 118, 171, 151, 140, 122, 64, 17, 230, 66,
+                147, 11, 169, 119, 49, 240, 218, 2, 64, 0, 238, 67, 133, 163, 239, 139, 225, 13, 87, 18, 112, 254, 144, 118, 171, 151, 140, 122, 64, 17, 230, 66,
+                1, 0, 0, 0, 0, 0, 0, 0,
+                1, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // stake delegate
+            9,
+            6,
+                2, 4, 5, 6, 7, 1,
+            4,
+                2, 0, 0, 0
+    };
+    process_message_body_and_sanity_check(message, sizeof(message), 14);
+}
+
 void test_process_message_body_stake_deactivate() {
     uint8_t message[] = {
         1, 1, 2,
@@ -1521,7 +1668,7 @@ void test_process_message_body_stake_set_lockup_checked() {
 // Using a nonce here to test worst case instruction usage as well
 void test_process_message_body_stake_split_with_nonce_v1_1() {
     uint8_t message[] = {
-        3, 2, 3,
+        3, 1, 3,
         8,
             1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
             3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
@@ -1542,21 +1689,21 @@ void test_process_message_body_stake_split_with_nonce_v1_1() {
             // system - allocate
             6,
             1,
-                0,
+                1,
             12,
                 8, 0, 0, 0,
                 200, 0, 0, 0, 0, 0, 0, 0,
             // system - assign
             6,
             1,
-                0,
+                1,
             36,
                 1, 0, 0, 0,
                 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
             // stake - split
             7,
             3,
-                4, 0, 2,
+                4, 1, 2,
             12,
                 3, 0, 0, 0,
                 42, 0, 0, 0, 0, 0, 0, 0
@@ -1604,7 +1751,7 @@ void test_process_message_body_stake_split_with_nonce_v1_2() {
                 42, 0, 0, 0, 0, 0, 0, 0
     };
 
-    process_message_body_and_sanity_check(message, sizeof(message), 7);
+    process_message_body_and_sanity_check(message, sizeof(message), 9);
 }
 
 void test_process_message_body_stake_split_with_seed_v1_1() {
@@ -1672,7 +1819,948 @@ void test_process_message_body_stake_split_with_seed_v1_2() {
             42, 0, 0, 0, 0, 0, 0, 0
     };
 
+    process_message_body_and_sanity_check(message, sizeof(message), 9);
+}
+
+void test_process_message_body_stake_split_v1_2_funded() {
+    uint8_t message[] = {
+        2, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        2,
+            // system - create account
+            3,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0, 128, 213, 34, 0, 0, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189,
+                254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
     process_message_body_and_sanity_check(message, sizeof(message), 7);
+}
+
+void test_process_message_body_stake_split_v1_3() {
+    uint8_t message[] = {
+        2, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        4,
+            // system - transfer
+            3,
+            2,
+                0, 1,
+            12,
+                2, 0, 0, 0, 64, 66, 15, 0, 0, 0, 0, 0,
+            // system - allocate
+            3,
+            1,
+                1,
+            12,
+                8, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0,
+            // system - assign
+            3,
+            1,
+                1,
+            36,
+                1, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192,
+                0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_sanity_check(message, sizeof(message), 7);
+}
+
+void test_process_message_body_stake_split_with_seed_v1_3() {
+    uint8_t message[] = {
+        1, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        3,
+            // system - transfer
+            3,
+            2,
+                0, 1,
+            12,
+                2, 0, 0, 0, 64, 66, 15, 0, 0, 0, 0, 0,
+            // system - allocate with seed
+            3,
+            2,
+                1, 0,
+            116,
+                9, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 32, 0, 0, 0, 0, 0, 0, 0, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 200, 0, 0, 0, 0, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189,
+                254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_sanity_check(message, sizeof(message), 9);
+}
+
+void test_process_message_body_stake_split_v1_3_transfer_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        4,
+            // system - transfer
+            3,
+            2,
+                0, 2,
+            12,
+                2, 0, 0, 0, 64, 66, 15, 0, 0, 0, 0, 0,
+            // system - allocate
+            3,
+            1,
+                1,
+            12,
+                8, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0,
+            // system - assign
+            3,
+            1,
+                1,
+            36,
+                1, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192,
+                0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_stake_split_with_seed_v1_3_transfer_mismatch_fail() {
+    uint8_t message[] = {
+        1, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        3,
+            // system - transfer
+            3,
+            2,
+                0, 2,
+            12,
+                2, 0, 0, 0, 64, 66, 15, 0, 0, 0, 0, 0,
+            // system - allocate with seed
+            3,
+            2,
+                1, 0,
+            116,
+                9, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 32, 0, 0, 0, 0, 0, 0, 0, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 200, 0, 0, 0, 0, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189,
+                254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_stake_split_v1_2_owner_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        2,
+            // system - create account
+            3,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+// The created account must be the one the split names, or the composite hides a deposit
+void test_process_message_body_stake_split_v1_2_destination_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 2,
+        6,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, // account the deposit really lands in
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        2,
+            // system - create account, depositing 1 SOL in an account the split never names
+            4,
+            2,
+                0, 3,
+            52,
+                0, 0, 0, 0, 0, 202, 154, 59, 0, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42,
+                152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake - split
+            5,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_stake_split_with_seed_v1_2_account_mismatch_fail() {
+    uint8_t message[] = {
+        1, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        2,
+            // system - create account with seed
+            3,
+            2,
+                0, 2,
+            124,
+                3, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 32, 0, 0, 0, 0, 0, 0, 0, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 0, 0, 0, 0, 0, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0, 6, 161, 216, 23,
+                145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_stake_split_with_seed_v1_1_owner_mismatch_fail() {
+    uint8_t message[] = {
+        1, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        2,
+            // system - allocate with seed
+            3,
+            2,
+                1, 0,
+            116,
+                9, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 32, 0, 0, 0, 0, 0, 0, 0, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 200, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_stake_split_v1_1_allocate_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 3,
+        7,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer and nonce authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, // nonce account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+            6, 167, 213, 23, 25, 44, 86, 142, 224, 138, 132, 95, 115, 210, 151, 136, 207, 3, 92, 49, 69, 178, 26, 179, 68, 216, 6, 46, 169, 64, 0, 0, // sysvar recent blockhashes
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        4,
+            // system - advance nonce
+            4,
+            3,
+                3, 6, 0,
+            4,
+                4, 0, 0, 0,
+            // system - allocate
+            4,
+            1,
+                2,
+            12,
+                8, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0,
+            // system - assign
+            4,
+            1,
+                1,
+            36,
+                1, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192,
+                0, 0, 0, 0,
+            // stake - split
+            5,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 3);
+}
+
+// The assigned account must be the one the split names, the allocate leg alone is not enough
+void test_process_message_body_stake_split_v1_1_assign_account_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 3,
+        7,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer and nonce authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, // nonce account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+            6, 167, 213, 23, 25, 44, 86, 142, 224, 138, 132, 95, 115, 210, 151, 136, 207, 3, 92, 49, 69, 178, 26, 179, 68, 216, 6, 46, 169, 64, 0, 0, // sysvar recent blockhashes
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        4,
+            // system - advance nonce
+            4,
+            3,
+                3, 6, 0,
+            4,
+                4, 0, 0, 0,
+            // system - allocate
+            4,
+            1,
+                1,
+            12,
+                8, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0,
+            // system - assign, handing the payer wallet to the Stake program
+            4,
+            1,
+                0,
+            36,
+                1, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192,
+                0, 0, 0, 0,
+            // stake - split
+            5,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 3);
+}
+
+// The split destination must be handed to the Stake program, not to an arbitrary one
+void test_process_message_body_stake_split_v1_1_assign_owner_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        3,
+            // system - allocate, on the displayed destination
+            3,
+            1,
+                1,
+            12,
+                8, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0,
+            // system - assign, to an attacker program instead of the Stake program
+            3,
+            1,
+                1,
+            36,
+                1, 0, 0, 0, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_stake_split_v1_1_destination_is_fee_payer_fail() {
+    uint8_t message[] = {
+        2, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        3,
+            // system - allocate
+            3,
+            1,
+                0,
+            12,
+                8, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0,
+            // system - assign
+            3,
+            1,
+                0,
+            36,
+                1, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192,
+                0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 0, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+// The split destination must not be the key that signs this request. The fee payer is a
+// different account here, so only the signer clause of the bind can refuse this message
+void test_process_message_body_stake_split_v1_1_destination_is_signer_fail() {
+    uint8_t message[] = {
+        2, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        3,
+            // system - allocate
+            3,
+            1,
+                1,
+            12,
+                8, 0, 0, 0, 200, 0, 0, 0, 0, 0, 0, 0,
+            // system - assign
+            3,
+            1,
+                1,
+            36,
+                1, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192,
+                0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    // The very same message is clear signed when the destination is somebody else's account
+    process_message_body_and_sanity_check_for_signer(message, sizeof(message), 0, 5);
+    process_message_body_and_expect_refusal_for_signer(message, sizeof(message), 1);
+}
+
+// The device does not check the seed derivation, so the seeded branches bind the destination
+// like the branches without a seed. The fee payer is a different account in the three messages
+// that follow, so only the signer clause of the bind can refuse them
+void test_process_message_body_stake_split_with_seed_v1_1_destination_is_signer_fail() {
+    uint8_t message[] = {
+        1, 1, 2,
+        5,
+            18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250, // payer, base and split authority
+            247, 157, 35, 131, 179, 105, 135, 105, 0, 178, 6, 62, 22, 251, 47, 102, 208, 237, 66, 72, 149, 5, 127, 149, 253, 28, 66, 250, 52, 173, 30, 105, // split destination
+            112, 173, 25, 161, 89, 143, 220, 223, 128, 33, 149, 41, 12, 152, 202, 202, 203, 163, 182, 246, 158, 15, 22, 77, 171, 71, 63, 249, 10, 117, 172, 52, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        2,
+            // system - allocate with seed
+            3,
+            2,
+                1, 0,
+            116,
+                9, 0, 0, 0,
+                18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+                32, 0, 0, 0, 0, 0, 0, 0,
+                    115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                    200, 0, 0, 0, 0, 0, 0, 0,
+                    6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0,
+                42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    // The very same message is clear signed when the destination is somebody else's account
+    process_message_body_and_sanity_check_for_signer(message, sizeof(message), 0, 7);
+    process_message_body_and_expect_refusal_for_signer(message, sizeof(message), 1);
+}
+
+void test_process_message_body_stake_split_with_seed_v1_2_destination_is_signer_fail() {
+    uint8_t message[] = {
+        2, 0, 2,
+        5,
+            19, 144, 25, 80, 156, 114, 186, 66, 29, 241, 166, 151, 127, 235, 131, 211, 64, 194, 62, 195, 227, 161, 166, 82, 59, 204, 214, 44, 193, 158, 63, 169, // payer and source stake account
+            10, 197, 71, 166, 84, 143, 238, 106, 60, 71, 210, 140, 50, 46, 5, 64, 197, 233, 184, 185, 240, 1, 189, 60, 85, 208, 255, 255, 23, 193, 128, 222, // funder, base and split authority
+            92, 85, 182, 94, 208, 4, 87, 44, 2, 143, 234, 65, 18, 230, 233, 103, 90, 98, 237, 101, 221, 207, 74, 86, 79, 234, 250, 9, 124, 242, 40, 212, // split destination
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        2,
+            // system - create account with seed
+            3,
+            2,
+                1, 2,
+            124,
+                3, 0, 0, 0,
+                10, 197, 71, 166, 84, 143, 238, 106, 60, 71, 210, 140, 50, 46, 5, 64, 197, 233, 184, 185, 240, 1, 189, 60, 85, 208, 255, 255, 23, 193, 128, 222,
+                32, 0, 0, 0, 0, 0, 0, 0,
+                    115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                    0, 0, 0, 0, 0, 0, 0, 0,
+                    200, 0, 0, 0, 0, 0, 0, 0,
+                    6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                0, 2, 1,
+            12,
+                3, 0, 0, 0,
+                42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    // The very same message is clear signed when the destination is somebody else's account
+    process_message_body_and_sanity_check_for_signer(message, sizeof(message), 0, 9);
+    process_message_body_and_expect_refusal_for_signer(message, sizeof(message), 2);
+}
+
+void test_process_message_body_stake_split_with_seed_v1_3_destination_is_signer_fail() {
+    uint8_t message[] = {
+        1, 0, 2,
+        5,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, // payer, funder, base and split authority
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, // split destination
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // source stake account
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // system program
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0, // stake program
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // blockhash
+        3,
+            // system - transfer
+            3,
+            2,
+                0, 1,
+            12,
+                2, 0, 0, 0, 64, 66, 15, 0, 0, 0, 0, 0,
+            // system - allocate with seed
+            3,
+            2,
+                1, 0,
+            116,
+                9, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 32, 0, 0, 0, 0, 0, 0, 0, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 200, 0, 0, 0, 0, 0, 0, 0, 6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189,
+                254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // stake - split
+            4,
+            3,
+                2, 1, 0,
+            12,
+                3, 0, 0, 0, 42, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    // The very same message is clear signed when the destination is somebody else's account
+    process_message_body_and_sanity_check_for_signer(message, sizeof(message), 0, 9);
+    process_message_body_and_expect_refusal_for_signer(message, sizeof(message), 1);
+}
+
+// The created account must be handed to the program that initializes it
+void test_process_message_body_create_stake_account_owner_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 3,
+        5,
+            18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+            112, 173, 25, 161, 89, 143, 220, 223, 128, 33, 149, 41, 12, 152, 202, 202, 203, 163, 182, 246, 158, 15, 22, 77, 171, 71, 63, 249, 10, 117, 172, 52,
+            6, 167, 213, 23, 25, 44, 92, 81, 33, 140, 201, 76, 61, 74, 241, 127, 88, 218, 238, 8, 155, 161, 253, 68, 227, 219, 217, 138, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2,
+            // system - create account
+            3,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0,
+                42, 0, 0, 0, 0, 0, 0, 0,
+                200, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // stake - initialize
+            4,
+            2,
+                1, 2,
+            116,
+                0, 0, 0, 0,
+                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+                1, 0, 0, 0, 0, 0, 0, 0,
+                1, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_create_stake_account_with_seed_owner_mismatch_fail() {
+    uint8_t message[] = {
+        2, 1, 4,
+        8,
+            18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            247, 157, 35, 131, 179, 105, 135, 105, 0, 178, 6, 62, 22, 251, 47, 102, 208, 237, 66, 72, 149, 5, 127, 149, 253, 28, 66, 250, 52, 173, 30, 105,
+            6, 167, 213, 23, 25, 44, 86, 142, 224, 138, 132, 95, 115, 210, 151, 136, 207, 3, 92, 49, 69, 178, 26, 179, 68, 216, 6, 46, 169, 64, 0, 0,
+            6, 167, 213, 23, 25, 44, 92, 81, 33, 140, 201, 76, 61, 74, 241, 127, 88, 218, 238, 8, 155, 161, 253, 68, 227, 219, 217, 138, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        3,
+            // system - advance nonce
+            6,
+            3,
+                2, 4, 1,
+            4,
+                4, 0, 0, 0,
+            // system - create account with seed
+            6,
+            2,
+                0, 3,
+            124,
+                3, 0, 0, 0,
+                18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+                32, 0, 0, 0, 0, 0, 0, 0,
+                    115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                42, 0, 0, 0, 0, 0, 0, 0,
+                200, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // stake - initialize
+            7,
+            2,
+                3, 5,
+            116,
+                0, 0, 0, 0,
+                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+                1, 0, 0, 0, 0, 0, 0, 0,
+                1, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 3);
+}
+
+void test_process_message_body_create_stake_account_and_delegate_owner_mismatch_fail() {
+    uint8_t message[] = {
+        3, 1, 7,
+        10,
+            226, 227, 159, 49, 174, 54, 249, 204, 163, 243, 214, 226, 72, 231, 254, 47, 54, 154, 232, 93, 76, 4, 41, 84, 228, 188, 210, 93, 163, 211, 181, 118,
+            147, 11, 169, 119, 49, 240, 218, 2, 64, 0, 238, 67, 133, 163, 239, 139, 225, 13, 87, 18, 112, 254, 144, 118, 171, 151, 140, 122, 64, 17, 230, 66,
+            3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+            6, 167, 213, 23, 25, 44, 92, 81, 33, 140, 201, 76, 61, 74, 241, 127, 88, 218, 238, 8, 155, 161, 253, 68, 227, 219, 217, 138, 0, 0, 0, 0,
+            5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+            6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182, 139, 94, 184, 163, 155, 75, 109, 92, 115, 85, 91, 33, 0, 0, 0, 0,
+            6, 167, 213, 23, 25, 53, 132, 208, 254, 237, 155, 179, 67, 29, 19, 32, 107, 229, 68, 40, 27, 87, 184, 86, 108, 197, 55, 95, 244, 0, 0, 0,
+            6, 161, 216, 23, 165, 2, 5, 11, 104, 7, 145, 230, 206, 109, 184, 142, 30, 91, 113, 80, 246, 31, 198, 121, 10, 78, 180, 209, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        3,
+            // system create account
+            8,
+            2,
+                1, 0,
+            52,
+                0, 0, 0, 0,
+                42, 0, 0, 0, 0, 0, 0, 0,
+                200, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // stake initialize
+            9,
+            2,
+                0, 3,
+            116,
+                0, 0, 0, 0,
+                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+                4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+                1, 0, 0, 0, 0, 0, 0, 0,
+                1, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // stake delegate
+            9,
+            6,
+                0, 4, 5, 6, 7, 2,
+            4,
+                2, 0, 0, 0
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_create_stake_account_with_seed_and_delegate_owner_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 7,
+        10,
+            226, 227, 159, 49, 174, 54, 249, 204, 163, 243, 214, 226, 72, 231, 254, 47, 54, 154, 232, 93, 76, 4, 41, 84, 228, 188, 210, 93, 163, 211, 181, 118,
+            147, 11, 169, 119, 49, 240, 218, 2, 64, 0, 238, 67, 133, 163, 239, 139, 225, 13, 87, 18, 112, 254, 144, 118, 171, 151, 140, 122, 64, 17, 230, 66,
+            160, 209, 181, 140, 74, 150, 96, 248, 38, 191, 49, 248, 172, 163, 99, 167, 79, 223, 32, 215, 58, 177, 147, 143, 129, 151, 59, 99, 20, 145, 156, 145,
+            6, 167, 213, 23, 25, 44, 92, 81, 33, 140, 201, 76, 61, 74, 241, 127, 88, 218, 238, 8, 155, 161, 253, 68, 227, 219, 217, 138, 0, 0, 0, 0,
+            5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
+            6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182, 139, 94, 184, 163, 155, 75, 109, 92, 115, 85, 91, 33, 0, 0, 0, 0,
+            6, 167, 213, 23, 25, 53, 132, 208, 254, 237, 155, 179, 67, 29, 19, 32, 107, 229, 68, 40, 27, 87, 184, 86, 108, 197, 55, 95, 244, 0, 0, 0,
+            6, 161, 216, 23, 165, 2, 5, 11, 104, 7, 145, 230, 206, 109, 184, 142, 30, 91, 113, 80, 246, 31, 198, 121, 10, 78, 180, 209, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        3,
+            // system create account with seed
+            8,
+            3,
+                1, 2, 1,
+            124,
+                3, 0, 0, 0,
+                147, 11, 169, 119, 49, 240, 218, 2, 64, 0, 238, 67, 133, 163, 239, 139, 225, 13, 87, 18, 112, 254, 144, 118, 171, 151, 140, 122, 64, 17, 230, 66,
+                32, 0, 0, 0, 0, 0, 0, 0,
+                    115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                42, 0, 0, 0, 0, 0, 0, 0,
+                200, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // stake initialize
+            9,
+            2,
+                2, 3,
+            116,
+                0, 0, 0, 0,
+                148, 11, 169, 119, 49, 240, 218, 2, 64, 0, 238, 67, 133, 163, 239, 139, 225, 13, 87, 18, 112, 254, 144, 118, 171, 151, 140, 122, 64, 17, 230, 66,
+                147, 11, 169, 119, 49, 240, 218, 2, 64, 0, 238, 67, 133, 163, 239, 139, 225, 13, 87, 18, 112, 254, 144, 118, 171, 151, 140, 122, 64, 17, 230, 66,
+                1, 0, 0, 0, 0, 0, 0, 0,
+                1, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // stake delegate
+            9,
+            6,
+                2, 4, 5, 6, 7, 1,
+            4,
+                2, 0, 0, 0
+    };
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_create_nonce_account_owner_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 3,
+        5,
+            18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+            112, 173, 25, 161, 89, 143, 220, 223, 128, 33, 149, 41, 12, 152, 202, 202, 203, 163, 182, 246, 158, 15, 22, 77, 171, 71, 63, 249, 10, 117, 172, 52,
+            6, 167, 213, 23, 25, 44, 86, 142, 224, 138, 132, 95, 115, 210, 151, 136, 207, 3, 92, 49, 69, 178, 26, 179, 68, 216, 6, 46, 169, 64, 0, 0,
+            6, 167, 213, 23, 25, 44, 92, 81, 33, 140, 201, 76, 61, 74, 241, 127, 88, 218, 238, 8, 155, 161, 253, 68, 227, 219, 217, 138, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2,
+            // system - create account
+            4,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0,
+                42, 0, 0, 0, 0, 0, 0, 0,
+                80, 0, 0, 0, 0, 0, 0, 0,
+                6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // system - initialize nonce
+            4,
+            3,
+                1, 2, 3,
+            36,
+                6, 0, 0, 0,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_create_nonce_account_with_seed_owner_mismatch_fail() {
+    uint8_t message[] = {
+        1, 0, 3,
+        5,
+            18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+            133, 66, 139, 176, 93, 124, 142, 23, 153, 82, 31, 46, 236, 244, 156, 121, 7, 225, 187, 61, 33, 34, 179, 138, 134, 108, 157, 56, 213, 162, 32, 68,
+            6, 167, 213, 23, 25, 44, 86, 142, 224, 138, 132, 95, 115, 210, 151, 136, 207, 3, 92, 49, 69, 178, 26, 179, 68, 216, 6, 46, 169, 64, 0, 0,
+            6, 167, 213, 23, 25, 44, 92, 81, 33, 140, 201, 76, 61, 74, 241, 127, 88, 218, 238, 8, 155, 161, 253, 68, 227, 219, 217, 138, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2,
+            // system - create account with seed
+            4,
+            2,
+                0, 1,
+            124,
+                3, 0, 0, 0,
+                18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+                32, 0, 0, 0, 0, 0, 0, 0,
+                    115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                42, 0, 0, 0, 0, 0, 0, 0,
+                80, 0, 0, 0, 0, 0, 0, 0,
+                6, 161, 216, 23, 145, 55, 84, 42, 152, 52, 55, 189, 254, 42, 122, 178, 85, 127, 83, 92, 138, 120, 114, 43, 104, 164, 157, 192, 0, 0, 0, 0,
+            // system - initialize nonce
+            4,
+            3,
+                1, 2, 3,
+            36,
+                6, 0, 0, 0,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_create_vote_account_owner_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 4,
+        6,
+            18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+            112, 173, 25, 161, 89, 143, 220, 223, 128, 33, 149, 41, 12, 152, 202, 202, 203, 163, 182, 246, 158, 15, 22, 77, 171, 71, 63, 249, 10, 117, 172, 52,
+            6, 167, 213, 23, 25, 44, 92, 81, 33, 140, 201, 76, 61, 74, 241, 127, 88, 218, 238, 8, 155, 161, 253, 68, 227, 219, 217, 138, 0, 0, 0, 0,
+            6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182, 139, 94, 184, 163, 155, 75, 109, 92, 115, 85, 91, 33, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            7, 97, 72, 29, 53, 116, 116, 187, 124, 77, 118, 36, 235, 211, 189, 179, 216, 53, 94, 115, 209, 16, 67, 252, 13, 163, 83, 128, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2,
+            // system - create account
+            4,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0,
+                42, 0, 0, 0, 0, 0, 0, 0,
+                147, 14, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // vote - initialize
+            5,
+            3,
+                1, 2, 3,
+            101,
+                0, 0, 0, 0,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+                50
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_create_vote_account_with_seed_owner_mismatch_fail() {
+    uint8_t message[] = {
+        1, 0, 4,
+        6,
+            18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+            228, 28, 89, 247, 92, 128, 175, 120, 101, 30, 55, 24, 60, 143, 49, 55, 57, 67, 79, 63, 90, 198, 149, 232, 85, 165, 148, 141, 164, 223, 110, 211,
+            6, 167, 213, 23, 25, 44, 92, 81, 33, 140, 201, 76, 61, 74, 241, 127, 88, 218, 238, 8, 155, 161, 253, 68, 227, 219, 217, 138, 0, 0, 0, 0,
+            6, 167, 213, 23, 24, 199, 116, 201, 40, 86, 99, 152, 105, 29, 94, 182, 139, 94, 184, 163, 155, 75, 109, 92, 115, 85, 91, 33, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            7, 97, 72, 29, 53, 116, 116, 187, 124, 77, 118, 36, 235, 211, 189, 179, 216, 53, 94, 115, 209, 16, 67, 252, 13, 163, 83, 128, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        2,
+            // system - create account with seed
+            4,
+            2,
+                0, 1,
+            124,
+                3, 0, 0, 0,
+                18, 67, 85, 168, 124, 173, 88, 142, 77, 171, 80, 178, 8, 218, 230, 68, 85, 231, 39, 54, 184, 42, 162, 85, 172, 139, 54, 173, 194, 7, 64, 250,
+                32, 0, 0, 0, 0, 0, 0, 0,
+                    115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100, 115, 101, 101, 100,
+                42, 0, 0, 0, 0, 0, 0, 0,
+                147, 14, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // vote - initialize
+            5,
+            3,
+                1, 2, 3,
+            101,
+                0, 0, 0, 0,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+                3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
+                50
+    };
+
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
 }
 
 void test_process_message_body_stake_merge() {
@@ -1747,6 +2835,130 @@ void test_process_message_body_spl_token_create_token() {
     process_message_body_and_sanity_check(message, sizeof(message), 6);
 }
 
+void test_process_message_body_spl_token_2022_create_token() {
+    uint8_t message[] = {
+        2, 0, 3,
+        5,
+            OWNER_ACCOUNT,
+            MINT_ACCOUNT,
+            SYSVAR_RENT,
+            PROGRAM_ID_SYSTEM,
+            PROGRAM_ID_SPL_TOKEN_2022,
+        BLOCKHASH,
+        2,
+            3,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0,
+                245, 1, 0, 0, 0, 0, 0, 0,
+                88, 0, 0, 0, 0, 0, 0, 0,
+                PROGRAM_ID_SPL_TOKEN_2022,
+            4,
+            2,
+                1, 2,
+            35,
+                0,
+                9,
+                OWNER_ACCOUNT,
+                0
+    };
+    process_message_body_and_sanity_check(message, sizeof(message), 6);
+}
+
+void test_process_message_body_spl_token_create_token_owner_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 3,
+        5,
+            OWNER_ACCOUNT,
+            MINT_ACCOUNT,
+            SYSVAR_RENT,
+            PROGRAM_ID_SYSTEM,
+            PROGRAM_ID_SPL_TOKEN,
+        BLOCKHASH,
+        2,
+            3,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0,
+                245, 1, 0, 0, 0, 0, 0, 0,
+                88, 0, 0, 0, 0, 0, 0, 0,
+                PROGRAM_ID_SPL_TOKEN_2022,
+            4,
+            2,
+                1, 2,
+            35,
+                0,
+                9,
+                OWNER_ACCOUNT,
+                0
+    };
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_spl_token_2022_create_token_owner_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 3,
+        5,
+            OWNER_ACCOUNT,
+            MINT_ACCOUNT,
+            SYSVAR_RENT,
+            PROGRAM_ID_SYSTEM,
+            PROGRAM_ID_SPL_TOKEN_2022,
+        BLOCKHASH,
+        2,
+            3,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0,
+                245, 1, 0, 0, 0, 0, 0, 0,
+                88, 0, 0, 0, 0, 0, 0, 0,
+                PROGRAM_ID_SPL_TOKEN,
+            4,
+            2,
+                1, 2,
+            35,
+                0,
+                9,
+                OWNER_ACCOUNT,
+                0
+    };
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_spl_token_create_token_foreign_owner_fail() {
+    uint8_t message[] = {
+        2, 0, 3,
+        5,
+            OWNER_ACCOUNT,
+            MINT_ACCOUNT,
+            SYSVAR_RENT,
+            PROGRAM_ID_SYSTEM,
+            PROGRAM_ID_SPL_TOKEN,
+        BLOCKHASH,
+        2,
+            3,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0,
+                245, 1, 0, 0, 0, 0, 0, 0,
+                88, 0, 0, 0, 0, 0, 0, 0,
+                PROGRAM_ID_STAKE,
+            4,
+            2,
+                1, 2,
+            35,
+                0,
+                9,
+                OWNER_ACCOUNT,
+                0
+    };
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
 void test_process_message_body_spl_token_create_account() {
     uint8_t message[] = {
         0x02, 0x00, 0x03,
@@ -1810,6 +3022,130 @@ void test_process_message_body_spl_token_create_account2() {
     process_message_body_and_sanity_check(message, sizeof(message), 6);
 }
 
+void test_process_message_body_spl_token_2022_create_account() {
+    uint8_t message[] = {
+        0x02, 0x00, 0x03,
+        0x06,
+            OWNER_ACCOUNT,
+            TOKEN_ACCOUNT,
+            MINT_ACCOUNT,
+            SYSVAR_RENT,
+            PROGRAM_ID_SYSTEM,
+            PROGRAM_ID_SPL_TOKEN_2022,
+        BLOCKHASH,
+        0x02,
+            // SystemCreateAccount
+            0x04,
+            0x02,
+                0x00, 0x01,
+            0x34,
+                0x00, 0x00, 0x00, 0x00,
+                0x80, 0x56, 0x1a, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                PROGRAM_ID_SPL_TOKEN_2022,
+            // SplTokenInitializeAccount
+            0x05,
+            0x04,
+                0x01, 0x02, 0x00, 0x03,
+            0x01,
+                0x01,
+    };
+    process_message_body_and_sanity_check(message, sizeof(message), 6);
+}
+
+void test_process_message_body_spl_token_create_account_owner_mismatch_fail() {
+    uint8_t message[] = {
+        0x02, 0x00, 0x03,
+        0x06,
+            OWNER_ACCOUNT,
+            TOKEN_ACCOUNT,
+            MINT_ACCOUNT,
+            SYSVAR_RENT,
+            PROGRAM_ID_SYSTEM,
+            PROGRAM_ID_SPL_TOKEN,
+        BLOCKHASH,
+        0x02,
+            // SystemCreateAccount
+            0x04,
+            0x02,
+                0x00, 0x01,
+            0x34,
+                0x00, 0x00, 0x00, 0x00,
+                0x80, 0x56, 0x1a, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                PROGRAM_ID_SPL_TOKEN_2022,
+            // SplTokenInitializeAccount
+            0x05,
+            0x04,
+                0x01, 0x02, 0x00, 0x03,
+            0x01,
+                0x01,
+    };
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_spl_token_2022_create_account_owner_mismatch_fail() {
+    uint8_t message[] = {
+        0x02, 0x00, 0x03,
+        0x06,
+            OWNER_ACCOUNT,
+            TOKEN_ACCOUNT,
+            MINT_ACCOUNT,
+            SYSVAR_RENT,
+            PROGRAM_ID_SYSTEM,
+            PROGRAM_ID_SPL_TOKEN_2022,
+        BLOCKHASH,
+        0x02,
+            // SystemCreateAccount
+            0x04,
+            0x02,
+                0x00, 0x01,
+            0x34,
+                0x00, 0x00, 0x00, 0x00,
+                0x80, 0x56, 0x1a, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                PROGRAM_ID_SPL_TOKEN,
+            // SplTokenInitializeAccount
+            0x05,
+            0x04,
+                0x01, 0x02, 0x00, 0x03,
+            0x01,
+                0x01,
+    };
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_spl_token_create_account_foreign_owner_fail() {
+    uint8_t message[] = {
+        0x02, 0x00, 0x03,
+        0x06,
+            OWNER_ACCOUNT,
+            TOKEN_ACCOUNT,
+            MINT_ACCOUNT,
+            SYSVAR_RENT,
+            PROGRAM_ID_SYSTEM,
+            PROGRAM_ID_SPL_TOKEN,
+        BLOCKHASH,
+        0x02,
+            // SystemCreateAccount
+            0x04,
+            0x02,
+                0x00, 0x01,
+            0x34,
+                0x00, 0x00, 0x00, 0x00,
+                0x80, 0x56, 0x1a, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                PROGRAM_ID_STAKE,
+            // SplTokenInitializeAccount
+            0x05,
+            0x04,
+                0x01, 0x02, 0x00, 0x03,
+            0x01,
+                0x01,
+    };
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
 void test_process_message_body_spl_token_create_multisig() {
     uint8_t message[] = {
         2, 0, 5,
@@ -1841,7 +3177,143 @@ void test_process_message_body_spl_token_create_multisig() {
                 2,
                 2
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 5);
+    process_message_body_and_sanity_check(message, sizeof(message), 8);
+}
+
+void test_process_message_body_spl_token_2022_create_multisig() {
+    uint8_t message[] = {
+        2, 0, 5,
+        8,
+            OWNER_ACCOUNT,
+            MULTISIG_ACCOUNT,
+            SIGNER1,
+            SIGNER2,
+            SIGNER3,
+            SYSVAR_RENT,
+            PROGRAM_ID_SYSTEM,
+            PROGRAM_ID_SPL_TOKEN_2022,
+        BLOCKHASH,
+        2,
+            // SystemCreateAccount
+            6,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0,
+                245, 1, 0, 0, 0, 0, 0, 0,
+                40, 0, 0, 0, 0, 0, 0, 0,
+                PROGRAM_ID_SPL_TOKEN_2022,
+            // SplTokenInitializeMultisig
+            7,
+            5,
+                1, 5, 2, 3, 4,
+            2,
+                2,
+                2
+    };
+    process_message_body_and_sanity_check(message, sizeof(message), 8);
+}
+
+void test_process_message_body_spl_token_create_multisig_owner_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 5,
+        8,
+            OWNER_ACCOUNT,
+            MULTISIG_ACCOUNT,
+            SIGNER1,
+            SIGNER2,
+            SIGNER3,
+            SYSVAR_RENT,
+            PROGRAM_ID_SYSTEM,
+            PROGRAM_ID_SPL_TOKEN,
+        BLOCKHASH,
+        2,
+            // SystemCreateAccount
+            6,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0,
+                245, 1, 0, 0, 0, 0, 0, 0,
+                40, 0, 0, 0, 0, 0, 0, 0,
+                PROGRAM_ID_SPL_TOKEN_2022,
+            // SplTokenInitializeMultisig
+            7,
+            5,
+                1, 5, 2, 3, 4,
+            2,
+                2,
+                2
+    };
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_spl_token_2022_create_multisig_owner_mismatch_fail() {
+    uint8_t message[] = {
+        2, 0, 5,
+        8,
+            OWNER_ACCOUNT,
+            MULTISIG_ACCOUNT,
+            SIGNER1,
+            SIGNER2,
+            SIGNER3,
+            SYSVAR_RENT,
+            PROGRAM_ID_SYSTEM,
+            PROGRAM_ID_SPL_TOKEN_2022,
+        BLOCKHASH,
+        2,
+            // SystemCreateAccount
+            6,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0,
+                245, 1, 0, 0, 0, 0, 0, 0,
+                40, 0, 0, 0, 0, 0, 0, 0,
+                PROGRAM_ID_SPL_TOKEN,
+            // SplTokenInitializeMultisig
+            7,
+            5,
+                1, 5, 2, 3, 4,
+            2,
+                2,
+                2
+    };
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
+}
+
+void test_process_message_body_spl_token_create_multisig_foreign_owner_fail() {
+    uint8_t message[] = {
+        2, 0, 5,
+        8,
+            OWNER_ACCOUNT,
+            MULTISIG_ACCOUNT,
+            SIGNER1,
+            SIGNER2,
+            SIGNER3,
+            SYSVAR_RENT,
+            PROGRAM_ID_SYSTEM,
+            PROGRAM_ID_SPL_TOKEN,
+        BLOCKHASH,
+        2,
+            // SystemCreateAccount
+            6,
+            2,
+                0, 1,
+            52,
+                0, 0, 0, 0,
+                245, 1, 0, 0, 0, 0, 0, 0,
+                40, 0, 0, 0, 0, 0, 0, 0,
+                PROGRAM_ID_STAKE,
+            // SplTokenInitializeMultisig
+            7,
+            5,
+                1, 5, 2, 3, 4,
+            2,
+                2,
+                2
+    };
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
 }
 
 void test_process_message_body_spl_token_transfer() {
@@ -2183,7 +3655,7 @@ void test_process_message_body_spl_associated_token_create_with_transfer() {
         0x02,
             0x08,
             0x07,
-                0x01, 0x02, 0x00, 0x04, 0x05, 0x06, 0x07,
+                0x01, 0x03, 0x00, 0x04, 0x05, 0x06, 0x07,
             0x00,
 
             0x06,
@@ -2194,7 +3666,76 @@ void test_process_message_body_spl_associated_token_create_with_transfer() {
                 0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x09
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 6);
+    process_message_body_and_sanity_check(message, sizeof(message), 9);
+
+    // The rent of the created account is named as such, and it is not counted as a fee
+    assert_summary_item_shows("Funded with min", "0.00203928 SOL");
+    assert(count_summary_items_with_title("Max fees") == 0);
+}
+
+// A message may create the account it sends from rather than the one it sends to
+void test_process_message_body_spl_associated_token_create_source_account_with_transfer() {
+    uint8_t message[] = {
+        0x02, 0x00, 0x05,
+        0x09,
+            0x0a, 0xc5, 0x47, 0xa6, 0x54, 0x8f, 0xee, 0x6a, 0x3c, 0x47, 0xd2, 0x8c, 0x32, 0x2e, 0x05, 0x40, 0xc5, 0xe9, 0xb8, 0xb9, 0xf0, 0x01, 0xbd, 0x3c, 0x55, 0xd0, 0xff, 0xff, 0x17, 0xc1, 0x80, 0xde,
+            0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x1d, 0x30, 0x63, 0xde, 0x69, 0x0b, 0xcd, 0xbe, 0x38, 0xec, 0x74, 0x44, 0x99, 0x23, 0x20, 0x25, 0xc1, 0xad, 0x64, 0x92, 0x6e, 0xd5, 0x6c, 0x69, 0xa5, 0xe3, 0x10, 0x34, 0x41, 0x19, 0xcb, 0x57,
+            0x48, 0xc9, 0xf2, 0x50, 0xac, 0xb4, 0xe8, 0xfe, 0x45, 0x0a, 0x51, 0xe1, 0x9d, 0x74, 0x9a, 0xee, 0x98, 0x66, 0x51, 0x19, 0x55, 0x43, 0xb4, 0xe6, 0x0d, 0x52, 0x26, 0x61, 0xed, 0x62, 0x71, 0x26,
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x06, 0xdd, 0xf6, 0xe1, 0xd7, 0x65, 0xa1, 0x93, 0xd9, 0xcb, 0xe1, 0x46, 0xce, 0xeb, 0x79, 0xac, 0x1c, 0xb4, 0x85, 0xed, 0x5f, 0x5b, 0x37, 0x91, 0x3a, 0x8c, 0xf5, 0x85, 0x7e, 0xff, 0x00, 0xa9,
+            0x06, 0xa7, 0xd5, 0x17, 0x19, 0x2c, 0x5c, 0x51, 0x21, 0x8c, 0xc9, 0x4c, 0x3d, 0x4a, 0xf1, 0x7f, 0x58, 0xda, 0xee, 0x08, 0x9b, 0xa1, 0xfd, 0x44, 0xe3, 0xdb, 0xd9, 0x8a, 0x00, 0x00, 0x00, 0x00,
+            0x8c, 0x97, 0x25, 0x8f, 0x4e, 0x24, 0x89, 0xf1, 0xbb, 0x3d, 0x10, 0x29, 0x14, 0x8e, 0x0d, 0x83, 0x0b, 0x5a, 0x13, 0x99, 0xda, 0xff, 0x10, 0x84, 0x04, 0x8e, 0x7b, 0xd8, 0xdb, 0xe9, 0xf8, 0x59,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x02,
+            // SPL ATA create
+            0x08,
+            0x07,
+                0x01, 0x02, 0x00, 0x04, 0x05, 0x06, 0x07,
+            0x00,
+            // SPL Token transfer checked
+            0x06,
+            0x04,
+                0x02, 0x04, 0x03, 0x00,
+            0x0a,
+                0x0c,
+                0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x09
+    };
+    process_message_body_and_sanity_check(message, sizeof(message), 9);
+}
+
+void test_process_message_body_spl_associated_token_create_with_transfer_mint_mismatch_fail() {
+    uint8_t message[] = {
+        0x02, 0x00, 0x05,
+        0x09,
+            0x0a, 0xc5, 0x47, 0xa6, 0x54, 0x8f, 0xee, 0x6a, 0x3c, 0x47, 0xd2, 0x8c, 0x32, 0x2e, 0x05, 0x40, 0xc5, 0xe9, 0xb8, 0xb9, 0xf0, 0x01, 0xbd, 0x3c, 0x55, 0xd0, 0xff, 0xff, 0x17, 0xc1, 0x80, 0xde,
+            0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x1d, 0x30, 0x63, 0xde, 0x69, 0x0b, 0xcd, 0xbe, 0x38, 0xec, 0x74, 0x44, 0x99, 0x23, 0x20, 0x25, 0xc1, 0xad, 0x64, 0x92, 0x6e, 0xd5, 0x6c, 0x69, 0xa5, 0xe3, 0x10, 0x34, 0x41, 0x19, 0xcb, 0x57,
+            0x48, 0xc9, 0xf2, 0x50, 0xac, 0xb4, 0xe8, 0xfe, 0x45, 0x0a, 0x51, 0xe1, 0x9d, 0x74, 0x9a, 0xee, 0x98, 0x66, 0x51, 0x19, 0x55, 0x43, 0xb4, 0xe6, 0x0d, 0x52, 0x26, 0x61, 0xed, 0x62, 0x71, 0x26,
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x06, 0xdd, 0xf6, 0xe1, 0xd7, 0x65, 0xa1, 0x93, 0xd9, 0xcb, 0xe1, 0x46, 0xce, 0xeb, 0x79, 0xac, 0x1c, 0xb4, 0x85, 0xed, 0x5f, 0x5b, 0x37, 0x91, 0x3a, 0x8c, 0xf5, 0x85, 0x7e, 0xff, 0x00, 0xa9,
+            0x06, 0xa7, 0xd5, 0x17, 0x19, 0x2c, 0x5c, 0x51, 0x21, 0x8c, 0xc9, 0x4c, 0x3d, 0x4a, 0xf1, 0x7f, 0x58, 0xda, 0xee, 0x08, 0x9b, 0xa1, 0xfd, 0x44, 0xe3, 0xdb, 0xd9, 0x8a, 0x00, 0x00, 0x00, 0x00,
+            0x8c, 0x97, 0x25, 0x8f, 0x4e, 0x24, 0x89, 0xf1, 0xbb, 0x3d, 0x10, 0x29, 0x14, 0x8e, 0x0d, 0x83, 0x0b, 0x5a, 0x13, 0x99, 0xda, 0xff, 0x10, 0x84, 0x04, 0x8e, 0x7b, 0xd8, 0xdb, 0xe9, 0xf8, 0x59,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x02,
+            // SPL ATA create
+            0x08,
+            0x07,
+                0x01, 0x03, 0x00, 0x01, 0x05, 0x06, 0x07,
+            0x00,
+            // SPL Token transfer checked
+            0x06,
+            0x04,
+                0x02, 0x04, 0x03, 0x00,
+            0x0a,
+                0x0c,
+                0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x09
+    };
+    process_message_body_and_expect_refusal_without_leak(message, sizeof(message), 1);
 }
 
 void test_process_message_body_spl_associated_token_create_with_transfer_and_assert_owner() {
@@ -2233,7 +3774,7 @@ void test_process_message_body_spl_associated_token_create_with_transfer_and_ass
                     0x2a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                     0x09
     };
-    process_message_body_and_sanity_check(message, sizeof(message), 6);
+    process_message_body_and_sanity_check(message, sizeof(message), 9);
 }
 
 /* clang-format on */
@@ -2241,6 +3782,8 @@ void test_process_message_body_spl_associated_token_create_with_transfer_and_ass
 int main() {
     RUN_TEST(test_process_message_body_spl_associated_token_create_with_transfer_and_assert_owner);
     RUN_TEST(test_process_message_body_spl_associated_token_create_with_transfer);
+    RUN_TEST(test_process_message_body_spl_associated_token_create_source_account_with_transfer);
+    RUN_TEST(test_process_message_body_spl_associated_token_create_with_transfer_mint_mismatch_fail);
     RUN_TEST(test_process_message_body_spl_associated_token_create);
     RUN_TEST(test_process_message_body_spl_associated_token_create_explicit);
     RUN_TEST(test_process_message_body_spl_associated_token_create_idempotent);
@@ -2250,6 +3793,18 @@ int main() {
     RUN_TEST(test_process_message_body_spl_token_create_account);
     RUN_TEST(test_process_message_body_spl_token_create_account2);
     RUN_TEST(test_process_message_body_spl_token_create_multisig);
+    RUN_TEST(test_process_message_body_spl_token_2022_create_token);
+    RUN_TEST(test_process_message_body_spl_token_2022_create_account);
+    RUN_TEST(test_process_message_body_spl_token_2022_create_multisig);
+    RUN_TEST(test_process_message_body_spl_token_create_token_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_spl_token_create_account_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_spl_token_create_multisig_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_spl_token_2022_create_token_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_spl_token_2022_create_account_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_spl_token_2022_create_multisig_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_spl_token_create_token_foreign_owner_fail);
+    RUN_TEST(test_process_message_body_spl_token_create_account_foreign_owner_fail);
+    RUN_TEST(test_process_message_body_spl_token_create_multisig_foreign_owner_fail);
     RUN_TEST(test_process_message_body_spl_token_transfer);
     RUN_TEST(test_process_message_body_spl_token_approve);
     RUN_TEST(test_process_message_body_spl_token_revoke);
@@ -2307,6 +3862,7 @@ int main() {
     RUN_TEST(test_process_message_body_stake_delegate_with_nonce);
     RUN_TEST(test_process_message_body_create_stake_account_and_delegate);
     RUN_TEST(test_process_message_body_create_stake_with_seed_account_and_delegate);
+    RUN_TEST(test_process_message_body_create_stake_with_seed_account_and_delegate_and_compute_budget);
     RUN_TEST(test_process_message_body_stake_deactivate);
     RUN_TEST(test_process_message_body_stake_set_lockup);
     RUN_TEST(test_process_message_body_stake_set_lockup_checked);
@@ -2314,7 +3870,32 @@ int main() {
     RUN_TEST(test_process_message_body_stake_split_with_nonce_v1_2);
     RUN_TEST(test_process_message_body_stake_split_with_seed_v1_1);
     RUN_TEST(test_process_message_body_stake_split_with_seed_v1_2);
+    RUN_TEST(test_process_message_body_stake_split_v1_2_funded);
+    RUN_TEST(test_process_message_body_stake_split_v1_3);
+    RUN_TEST(test_process_message_body_stake_split_with_seed_v1_3);
+    RUN_TEST(test_process_message_body_stake_split_v1_1_allocate_mismatch_fail);
+    RUN_TEST(test_process_message_body_stake_split_v1_1_assign_account_mismatch_fail);
+    RUN_TEST(test_process_message_body_stake_split_v1_1_assign_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_stake_split_v1_1_destination_is_fee_payer_fail);
+    RUN_TEST(test_process_message_body_stake_split_v1_1_destination_is_signer_fail);
+    RUN_TEST(test_process_message_body_stake_split_with_seed_v1_1_destination_is_signer_fail);
+    RUN_TEST(test_process_message_body_stake_split_with_seed_v1_2_destination_is_signer_fail);
+    RUN_TEST(test_process_message_body_stake_split_with_seed_v1_3_destination_is_signer_fail);
+    RUN_TEST(test_process_message_body_stake_split_with_seed_v1_1_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_stake_split_v1_2_destination_mismatch_fail);
+    RUN_TEST(test_process_message_body_stake_split_v1_2_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_stake_split_with_seed_v1_2_account_mismatch_fail);
+    RUN_TEST(test_process_message_body_stake_split_v1_3_transfer_mismatch_fail);
+    RUN_TEST(test_process_message_body_stake_split_with_seed_v1_3_transfer_mismatch_fail);
     RUN_TEST(test_process_message_body_stake_merge);
+    RUN_TEST(test_process_message_body_create_stake_account_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_create_stake_account_with_seed_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_create_stake_account_and_delegate_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_create_stake_account_with_seed_and_delegate_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_create_nonce_account_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_create_nonce_account_with_seed_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_create_vote_account_owner_mismatch_fail);
+    RUN_TEST(test_process_message_body_create_vote_account_with_seed_owner_mismatch_fail);
     RUN_TEST(test_process_message_body_transfer_with_compute_budget_limit);
     RUN_TEST(test_process_message_body_transfer_with_compute_budget_limit_and_unit_price);
     RUN_TEST(test_process_message_body_transfer_with_request_units);

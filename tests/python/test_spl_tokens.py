@@ -10,6 +10,8 @@ from spl.token.constants import TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID
 from spl.token.instructions import transfer_checked, get_associated_token_address, create_associated_token_account
 from spl.token.models import TransferCheckedParams
 from solders.instruction import Instruction, AccountMeta
+from solders.system_program import create_account, CreateAccountParams
+from solders.sysvar import RENT
 
 from ragger.error import ExceptionRAPDU
 
@@ -369,6 +371,7 @@ class TestToken2022:
             payer=self.sender_ata,
             owner=self.receiver_pubkey,
             mint=self.mint_pubkey,
+            token_program_id=TOKEN_2022_PROGRAM_ID,
         )
         accounts = [
             AccountMeta(pubkey=self.sender_ata, is_signer=False, is_writable=True),
@@ -412,6 +415,25 @@ class TestToken2022:
         message_data = self._craft_default_account_state_tx(sol)
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             scenario_navigator.review_approve(path=root_pytest_dir)
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+    def test_token_2022_default_account_state_alone_warns_on_blind_signing(self, sol, navigation_helper):
+        """The extension instruction is not displayed, so a message holding nothing else has
+        nothing left to clear sign and falls back to blind signing. The extension warning
+        applies to that screen too."""
+        update_default_state_instruction = Instruction(
+            program_id=TOKEN_2022_PROGRAM_ID,
+            accounts=[
+                AccountMeta(pubkey=self.mint_pubkey, is_signer=False, is_writable=True),
+                AccountMeta(pubkey=self.sender_public_key, is_signer=True, is_writable=False),
+            ],
+            data=struct.pack("<BBB", DEFAULT_ACCOUNT_STATE_EXTENSION, DEFAULT_ACCOUNT_STATE_UPDATE, ACCOUNT_STATE_FROZEN),
+        )
+        navigation_helper.enable_blind_signing()
+        message_data = sol.craft_tx([update_default_state_instruction], self.sender_public_key)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            navigation_helper.navigate_with_blind_signing_and_accept()
         signature: bytes = sol.get_async_response().data
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
@@ -544,3 +566,142 @@ class TestTokenDynamic:
             scenario_navigator.review_approve(path=root_pytest_dir)
         signature: bytes = sol.get_async_response().data
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+
+# The signer set is arbitrary, only the identities displayed during review matter here
+MULTISIG_SIGNER_ADDRESSES = [
+    "AxmUF3qkdz1zs151Q5WttVMkFpFGQPwghZs4d1mwY55d",
+    "26pV97Ce83ZQ6Kz9XT4td8tdoUFPTng8Fb8gPyc53dJx",
+    "CpfvLiiPALdzZTP3fUrALg2TXwEDSAknRh1sn5JCt9Sr",
+    "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "38PgzpJYu2HkiYvV8qePFakB8tuobPdGm2FFEn7Dpump",
+    "So11111111111111111111111111111111111111112",
+    "SysvarC1ock11111111111111111111111111111111",
+    "Stake11111111111111111111111111111111111111",
+    "Vote111111111111111111111111111111111111111",
+]
+
+MULTISIG_ACCOUNT_STR = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
+MULTISIG_ACCOUNT_SIZE = 355
+MULTISIG_RENT_LAMPORTS = 2039280
+
+INITIALIZE_MULTISIG = 2
+
+
+def _initialize_multisig_instruction(multisig, signers, m, program_id=TOKEN_PROGRAM_ID):
+    accounts = [
+        AccountMeta(pubkey=multisig, is_signer=False, is_writable=True),
+        AccountMeta(pubkey=RENT, is_signer=False, is_writable=False),
+    ]
+    for signer in signers:
+        accounts.append(AccountMeta(pubkey=signer, is_signer=False, is_writable=False))
+
+    return Instruction(
+        program_id=program_id,
+        accounts=accounts,
+        data=struct.pack("<BB", INITIALIZE_MULTISIG, m),
+    )
+
+
+class TestMultisig:
+
+    def _signers(self, count):
+        return [Pubkey.from_string(address) for address in MULTISIG_SIGNER_ADDRESSES[:count]]
+
+    def test_solana_initialize_multisig(self, sol, scenario_navigator, root_pytest_dir):
+        sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+        multisig = Pubkey.from_string(MULTISIG_ACCOUNT_STR)
+
+        instruction = _initialize_multisig_instruction(multisig, self._signers(3), 2)
+
+        message_data = sol.craft_tx([instruction], sender_public_key)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            scenario_navigator.review_approve(path=root_pytest_dir)
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+    def test_solana_initialize_multisig_2022(self, sol, scenario_navigator, root_pytest_dir):
+        sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+        multisig = Pubkey.from_string(MULTISIG_ACCOUNT_STR)
+
+        instruction = _initialize_multisig_instruction(multisig,
+                                                       self._signers(3),
+                                                       2,
+                                                       program_id=TOKEN_2022_PROGRAM_ID)
+
+        message_data = sol.craft_tx([instruction], sender_public_key)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            scenario_navigator.review_approve(path=root_pytest_dir)
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+    def test_solana_initialize_multisig_max_signers(self, sol, scenario_navigator, root_pytest_dir):
+        sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+        multisig = Pubkey.from_string(MULTISIG_ACCOUNT_STR)
+
+        instruction = _initialize_multisig_instruction(multisig, self._signers(11), 11)
+
+        message_data = sol.craft_tx([instruction], sender_public_key)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            scenario_navigator.review_approve(path=root_pytest_dir)
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+    def test_solana_create_multisig(self, sol, scenario_navigator, root_pytest_dir):
+        sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+        multisig = Pubkey.from_string(MULTISIG_ACCOUNT_STR)
+
+        create_instruction = create_account(
+            CreateAccountParams(
+                from_pubkey=sender_public_key,
+                to_pubkey=multisig,
+                lamports=MULTISIG_RENT_LAMPORTS,
+                space=MULTISIG_ACCOUNT_SIZE,
+                owner=TOKEN_PROGRAM_ID,
+            )
+        )
+        initialize_instruction = _initialize_multisig_instruction(multisig, self._signers(3), 2)
+
+        message_data = sol.craft_tx([create_instruction, initialize_instruction], sender_public_key)
+        with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+            scenario_navigator.review_approve(path=root_pytest_dir)
+        signature: bytes = sol.get_async_response().data
+        verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
+
+    def test_solana_initialize_multisig_refused(self, sol, scenario_navigator, root_pytest_dir):
+        sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+        multisig = Pubkey.from_string(MULTISIG_ACCOUNT_STR)
+
+        instruction = _initialize_multisig_instruction(multisig, self._signers(3), 2)
+
+        message_data = sol.craft_tx([instruction], sender_public_key)
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+                scenario_navigator.review_reject(path=root_pytest_dir)
+        assert e.value.status == ErrorType.USER_CANCEL
+
+    def _check_multisig_not_clear_signed(self, sol, signers, m):
+        sender_public_key = Pubkey.from_string(SOL.OWNED_ADDRESS_STR)
+        multisig = Pubkey.from_string(MULTISIG_ACCOUNT_STR)
+
+        instruction = _initialize_multisig_instruction(multisig, signers, m)
+
+        # The parser refuses the instruction, so the message can only be blind signed, and blind
+        # signing is disabled by default
+        message_data = sol.craft_tx([instruction], sender_public_key)
+        with pytest.raises(ExceptionRAPDU) as e:
+            with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
+                pass
+        assert e.value.status == ErrorType.SDK_NOT_SUPPORTED
+
+    def test_solana_initialize_multisig_threshold_above_signer_count(self, sol):
+        # A 4 of 3 multisig can never reach its threshold
+        self._check_multisig_not_clear_signed(sol, self._signers(3), 4)
+
+    def test_solana_initialize_multisig_zero_threshold(self, sol):
+        self._check_multisig_not_clear_signed(sol, self._signers(3), 0)
+
+    def test_solana_initialize_multisig_no_signer(self, sol):
+        self._check_multisig_not_clear_signed(sol, [], 1)
