@@ -8,6 +8,7 @@ from ledger_app_clients.exchange.test_runner import ExchangeTestRunner, ALL_TEST
 from ledger_app_clients.exchange.client import PayinExtraDataID
 from application_client.solana import SolanaClient, ErrorType
 from application_client.solana_cmd_builder import SystemInstructionTransfer, ComputeBudgetInstructionSetComputeUnitLimit, ComputeBudgetInstructionSetComputeUnitPrice, verify_signature
+from application_client.solana_cmd_builder import ComputeBudgetInstructionType, PROGRAM_ID_COMPUTE_BUDGET
 from application_client.solana_cmd_builder import Message as MessageCustom
 from application_client.solana_utils import sol_to_lamports, lamports_to_bytes
 from application_client import solana_utils as SOL
@@ -34,6 +35,14 @@ FEES_BYTES = lamports_to_bytes(FEES)
 
 FEES_2 = sol_to_lamports(0.005543)
 FEES_2_BYTES = lamports_to_bytes(FEES_2)
+
+# Mirror of FEE_LAMPORTS_PER_SIGNATURE in libsol/compute_budget_instruction.h
+FEE_LAMPORTS_PER_SIGNATURE = 5000
+
+# unit_price is in micro lamports, so this budget costs COMPUTE_UNIT_PRICE lamports of fees
+COMPUTE_UNIT_LIMIT = 1_000_000
+COMPUTE_UNIT_PRICE = 1_000
+COMPUTE_BUDGET_PROGRAM_ID = Pubkey.from_string(PROGRAM_ID_COMPUTE_BUDGET)
 
 TRANSFER_FEE_EXTENSION = 26
 TRANSFER_CHECKED_WITH_FEE = 1
@@ -384,7 +393,8 @@ class SPLTokenTests(GenericSolanaTests):
     fake_payout = SOL.FOREIGN_ADDRESS_STR
     signature_refusal_error_code = ErrorType.SOLANA_SUMMARY_FINALIZE_FAILED
 
-    def perform_final_tx(self, destination, send_amount, fees, memo):
+    # Signs a create destination account plus transfer message, prefixed by the given instructions
+    def _perform_final_tx_with_leading_instructions(self, destination, send_amount, leading_instructions):
         destination_ata = str(
             get_associated_token_address(
                 Pubkey.from_string(destination),
@@ -415,18 +425,57 @@ class SPLTokenTests(GenericSolanaTests):
         )
 
         sol = SolanaClient(self.backend)
-        message_data = sol.craft_tx([create_instruction, transfer_instruction], self.sender_public_key)
+        message_data = sol.craft_tx(leading_instructions + [create_instruction, transfer_instruction], self.sender_public_key)
         sol.enroll_ata(SOL.USDC_MINT_ADDRESS, destination_ata.encode('utf-8'), destination.encode('utf-8'))
         with sol.send_async_sign_message(SOL.SOL_PACKED_DERIVATION_PATH, message_data):
             pass
         signature: bytes = sol.get_async_response().data
         verify_signature(SOL.OWNED_PUBLIC_KEY, message_data, signature)
 
+    def perform_final_tx(self, destination, send_amount, fees, memo):
+        self._perform_final_tx_with_leading_instructions(destination, send_amount, [])
+
 # Use a class to reuse the same Speculos instance
 class TestsSPLToken:
     @pytest.mark.parametrize('test_to_run', ALL_TESTS_EXCEPT_MEMO_THORSWAP_AND_FEES)
     def test_solana_spl_token(self, backend, exchange_navigation_helper, test_to_run):
         SPLTokenTests(backend, exchange_navigation_helper).run_test(test_to_run)
+
+
+# The message of SPLTokenTests creates the destination token account and carries no ComputeBudget
+# instruction, so the application sums no SOL and a fee that only covers the network signatures is
+# a valid Exchange fee. The rent of the created account is not summed.
+class SPLTokenCreateNetworkFeeOnlyTests(SPLTokenTests):
+    valid_fees_1 = FEE_LAMPORTS_PER_SIGNATURE
+
+
+# Same message plus a ComputeBudget whose total fee is above the fee validated by Exchange.
+class SPLTokenCreateFeeBelowComputeBudgetTests(SPLTokenTests):
+    valid_fees_1 = FEE_LAMPORTS_PER_SIGNATURE
+
+    def perform_final_tx(self, destination, send_amount, fees, memo):
+        unit_limit = Instruction(
+            program_id=COMPUTE_BUDGET_PROGRAM_ID,
+            accounts=[],
+            data=struct.pack("<BI", ComputeBudgetInstructionType.SetComputeUnitLimit, COMPUTE_UNIT_LIMIT),
+        )
+        unit_price = Instruction(
+            program_id=COMPUTE_BUDGET_PROGRAM_ID,
+            accounts=[],
+            data=struct.pack("<BQ", ComputeBudgetInstructionType.SetComputeUnitPrice, COMPUTE_UNIT_PRICE),
+        )
+        self._perform_final_tx_with_leading_instructions(destination, send_amount, [unit_limit, unit_price])
+
+
+class TestsSPLTokenCreate:
+    def test_solana_spl_token_create_with_network_fee_only(self, backend, exchange_navigation_helper):
+        SPLTokenCreateNetworkFeeOnlyTests(backend, exchange_navigation_helper).run_test("swap_valid_1")
+
+    def test_solana_spl_token_create_refuses_fee_below_compute_budget(self, backend, exchange_navigation_helper):
+        with pytest.raises(ExceptionRAPDU) as e:
+            test_class = SPLTokenCreateFeeBelowComputeBudgetTests(backend, exchange_navigation_helper)
+            test_class.run_test("swap_valid_1")
+        assert e.value.status == test_class.signature_refusal_error_code
 
 
 # Wrapped SOL is a token whose ticker is identical to the ticker of the native coin.

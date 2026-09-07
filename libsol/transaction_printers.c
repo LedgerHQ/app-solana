@@ -18,34 +18,34 @@ const InstructionBrief create_stake_account_brief[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccount),
     STAKE_IX_BRIEF(StakeInitialize),
 };
-#define is_create_stake_account(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(create_stake_account_brief) &&  \
+#define is_create_stake_account(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(create_stake_account_brief) && \
      instruction_infos_match_briefs(infos, create_stake_account_brief, infos_length))
 
 const InstructionBrief create_stake_account_checked_brief[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccount),
     STAKE_IX_BRIEF(StakeInitializeChecked),
 };
-#define is_create_stake_account_checked(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(create_stake_account_checked_brief) &&  \
+#define is_create_stake_account_checked(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(create_stake_account_checked_brief) && \
      instruction_infos_match_briefs(infos, create_stake_account_checked_brief, infos_length))
 
 const InstructionBrief create_stake_account_with_seed_brief[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccountWithSeed),
     STAKE_IX_BRIEF(StakeInitialize),
 };
-#define is_create_stake_account_with_seed(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(create_stake_account_with_seed_brief) &&  \
+#define is_create_stake_account_with_seed(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(create_stake_account_with_seed_brief) && \
      instruction_infos_match_briefs(infos, create_stake_account_with_seed_brief, infos_length))
 
 const InstructionBrief create_stake_account_with_seed_checked_brief[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccountWithSeed),
     STAKE_IX_BRIEF(StakeInitializeChecked),
 };
-#define is_create_stake_account_with_seed_checked(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(create_stake_account_with_seed_checked_brief) &&  \
-     instruction_infos_match_briefs(infos,                                         \
-                                    create_stake_account_with_seed_checked_brief,  \
+#define is_create_stake_account_with_seed_checked(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(create_stake_account_with_seed_checked_brief) && \
+     instruction_infos_match_briefs(infos,                                        \
+                                    create_stake_account_with_seed_checked_brief, \
                                     infos_length))
 
 const InstructionBrief create_stake_account_and_delegate_brief[] = {
@@ -53,8 +53,8 @@ const InstructionBrief create_stake_account_and_delegate_brief[] = {
     STAKE_IX_BRIEF(StakeInitialize),
     STAKE_IX_BRIEF(StakeDelegate),
 };
-#define is_create_stake_account_and_delegate(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(create_stake_account_and_delegate_brief) &&  \
+#define is_create_stake_account_and_delegate(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(create_stake_account_and_delegate_brief) && \
      instruction_infos_match_briefs(infos, create_stake_account_and_delegate_brief, infos_length))
 
 const InstructionBrief create_stake_account_with_seed_and_delegate_brief[] = {
@@ -62,10 +62,10 @@ const InstructionBrief create_stake_account_with_seed_and_delegate_brief[] = {
     STAKE_IX_BRIEF(StakeInitialize),
     STAKE_IX_BRIEF(StakeDelegate),
 };
-#define is_create_stake_account_with_seed_and_delegate(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(create_stake_account_with_seed_and_delegate_brief) &&  \
-     instruction_infos_match_briefs(infos,                                              \
-                                    create_stake_account_with_seed_and_delegate_brief,  \
+#define is_create_stake_account_with_seed_and_delegate(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(create_stake_account_with_seed_and_delegate_brief) && \
+     instruction_infos_match_briefs(infos,                                             \
+                                    create_stake_account_with_seed_and_delegate_brief, \
                                     infos_length))
 
 const InstructionBrief stake_split_brief_v1_1[] = {
@@ -73,32 +73,32 @@ const InstructionBrief stake_split_brief_v1_1[] = {
     SYSTEM_IX_BRIEF(SystemAssign),
     STAKE_IX_BRIEF(StakeSplit),
 };
-#define is_stake_split_v1_1(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(stake_split_brief_v1_1) &&  \
+#define is_stake_split_v1_1(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(stake_split_brief_v1_1) && \
      instruction_infos_match_briefs(infos, stake_split_brief_v1_1, infos_length))
 
 const InstructionBrief stake_split_with_seed_brief_v1_1[] = {
     SYSTEM_IX_BRIEF(SystemAllocateWithSeed),
     STAKE_IX_BRIEF(StakeSplit),
 };
-#define is_stake_split_with_seed_v1_1(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(stake_split_with_seed_brief_v1_1) &&  \
+#define is_stake_split_with_seed_v1_1(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(stake_split_with_seed_brief_v1_1) && \
      instruction_infos_match_briefs(infos, stake_split_with_seed_brief_v1_1, infos_length))
 
 const InstructionBrief stake_split_brief_v1_2[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccount),
     STAKE_IX_BRIEF(StakeSplit),
 };
-#define is_stake_split_v1_2(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(stake_split_brief_v1_2) &&  \
+#define is_stake_split_v1_2(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(stake_split_brief_v1_2) && \
      instruction_infos_match_briefs(infos, stake_split_brief_v1_2, infos_length))
 
 const InstructionBrief stake_split_with_seed_brief_v1_2[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccountWithSeed),
     STAKE_IX_BRIEF(StakeSplit),
 };
-#define is_stake_split_with_seed_v1_2(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(stake_split_with_seed_brief_v1_2) &&  \
+#define is_stake_split_with_seed_v1_2(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(stake_split_with_seed_brief_v1_2) && \
      instruction_infos_match_briefs(infos, stake_split_with_seed_brief_v1_2, infos_length))
 
 const InstructionBrief stake_split_brief_v1_3[] = {
@@ -107,8 +107,8 @@ const InstructionBrief stake_split_brief_v1_3[] = {
     SYSTEM_IX_BRIEF(SystemAssign),
     STAKE_IX_BRIEF(StakeSplit),
 };
-#define is_stake_split_v1_3(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(stake_split_brief_v1_3) &&  \
+#define is_stake_split_v1_3(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(stake_split_brief_v1_3) && \
      instruction_infos_match_briefs(infos, stake_split_brief_v1_3, infos_length))
 
 const InstructionBrief stake_split_with_seed_brief_v1_3[] = {
@@ -116,124 +116,124 @@ const InstructionBrief stake_split_with_seed_brief_v1_3[] = {
     SYSTEM_IX_BRIEF(SystemAllocateWithSeed),
     STAKE_IX_BRIEF(StakeSplit),
 };
-#define is_stake_split_with_seed_v1_3(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(stake_split_with_seed_brief_v1_3) &&  \
+#define is_stake_split_with_seed_v1_3(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(stake_split_with_seed_brief_v1_3) && \
      instruction_infos_match_briefs(infos, stake_split_with_seed_brief_v1_3, infos_length))
 
 const InstructionBrief stake_authorize_both_brief[] = {
     STAKE_IX_BRIEF(StakeAuthorize),
     STAKE_IX_BRIEF(StakeAuthorize),
 };
-#define is_stake_authorize_both(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(stake_authorize_both_brief) &&  \
+#define is_stake_authorize_both(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(stake_authorize_both_brief) && \
      instruction_infos_match_briefs(infos, stake_authorize_both_brief, infos_length))
 
 const InstructionBrief stake_authorize_checked_both_brief[] = {
     STAKE_IX_BRIEF(StakeAuthorizeChecked),
     STAKE_IX_BRIEF(StakeAuthorizeChecked),
 };
-#define is_stake_authorize_checked_both(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(stake_authorize_checked_both_brief) &&  \
+#define is_stake_authorize_checked_both(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(stake_authorize_checked_both_brief) && \
      instruction_infos_match_briefs(infos, stake_authorize_checked_both_brief, infos_length))
 
 const InstructionBrief create_nonce_account_brief[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccount),
     SYSTEM_IX_BRIEF(SystemInitializeNonceAccount),
 };
-#define is_create_nonce_account(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(create_nonce_account_brief) &&  \
+#define is_create_nonce_account(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(create_nonce_account_brief) && \
      instruction_infos_match_briefs(infos, create_nonce_account_brief, infos_length))
 
 const InstructionBrief create_nonce_account_with_seed_brief[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccountWithSeed),
     SYSTEM_IX_BRIEF(SystemInitializeNonceAccount),
 };
-#define is_create_nonce_account_with_seed(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(create_nonce_account_with_seed_brief) &&  \
+#define is_create_nonce_account_with_seed(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(create_nonce_account_with_seed_brief) && \
      instruction_infos_match_briefs(infos, create_nonce_account_with_seed_brief, infos_length))
 
 const InstructionBrief create_vote_account_brief[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccount),
     VOTE_IX_BRIEF(VoteInitialize),
 };
-#define is_create_vote_account(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(create_vote_account_brief) &&  \
+#define is_create_vote_account(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(create_vote_account_brief) && \
      instruction_infos_match_briefs(infos, create_vote_account_brief, infos_length))
 
 const InstructionBrief create_vote_account_with_seed_brief[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccountWithSeed),
     VOTE_IX_BRIEF(VoteInitialize),
 };
-#define is_create_vote_account_with_seed(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(create_vote_account_with_seed_brief) &&  \
+#define is_create_vote_account_with_seed(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(create_vote_account_with_seed_brief) && \
      instruction_infos_match_briefs(infos, create_vote_account_with_seed_brief, infos_length))
 
 const InstructionBrief vote_authorize_both_brief[] = {
     VOTE_IX_BRIEF(VoteAuthorize),
     VOTE_IX_BRIEF(VoteAuthorize),
 };
-#define is_vote_authorize_both(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(vote_authorize_both_brief) &&  \
+#define is_vote_authorize_both(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(vote_authorize_both_brief) && \
      instruction_infos_match_briefs(infos, vote_authorize_both_brief, infos_length))
 
 const InstructionBrief vote_authorize_checked_both_brief[] = {
     VOTE_IX_BRIEF(VoteAuthorizeChecked),
     VOTE_IX_BRIEF(VoteAuthorizeChecked),
 };
-#define is_vote_authorize_checked_both(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(vote_authorize_checked_both_brief) &&  \
+#define is_vote_authorize_checked_both(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(vote_authorize_checked_both_brief) && \
      instruction_infos_match_briefs(infos, vote_authorize_checked_both_brief, infos_length))
 
 const InstructionBrief spl_token_create_mint_brief[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccount),
     SPL_TOKEN_IX_BRIEF(SplTokenKind(InitializeMint)),
 };
-#define is_spl_token_create_mint(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(spl_token_create_mint_brief) &&  \
+#define is_spl_token_create_mint(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(spl_token_create_mint_brief) && \
      instruction_infos_match_briefs(infos, spl_token_create_mint_brief, infos_length))
 
 const InstructionBrief spl_token_create_account_brief[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccount),
     SPL_TOKEN_IX_BRIEF(SplTokenKind(InitializeAccount)),
 };
-#define is_spl_token_create_account(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(spl_token_create_account_brief) &&  \
+#define is_spl_token_create_account(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(spl_token_create_account_brief) && \
      instruction_infos_match_briefs(infos, spl_token_create_account_brief, infos_length))
 
 const InstructionBrief spl_token_create_account2_brief[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccount),
     SPL_TOKEN_IX_BRIEF(SplTokenKind(InitializeAccount2)),
 };
-#define is_spl_token_create_account2(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(spl_token_create_account2_brief) &&  \
+#define is_spl_token_create_account2(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(spl_token_create_account2_brief) && \
      instruction_infos_match_briefs(infos, spl_token_create_account2_brief, infos_length))
 
 const InstructionBrief spl_token_create_multisig_brief[] = {
     SYSTEM_IX_BRIEF(SystemCreateAccount),
     SPL_TOKEN_IX_BRIEF(SplTokenKind(InitializeMultisig)),
 };
-#define is_spl_token_create_multisig(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(spl_token_create_multisig_brief) &&  \
+#define is_spl_token_create_multisig(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(spl_token_create_multisig_brief) && \
      instruction_infos_match_briefs(infos, spl_token_create_multisig_brief, infos_length))
 
 const InstructionBrief spl_associated_token_account_create_with_transfer_brief[] = {
     SPL_ASSOCIATED_TOKEN_ACCOUNT_IX_BRIEF,
     SPL_TOKEN_IX_BRIEF(SplTokenKind(TransferChecked)),
 };
-#define is_spl_associated_token_account_create_with_transfer(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(spl_associated_token_account_create_with_transfer_brief) &&  \
-     instruction_infos_match_briefs(infos,                                                    \
-                                    spl_associated_token_account_create_with_transfer_brief,  \
+#define is_spl_associated_token_account_create_with_transfer(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(spl_associated_token_account_create_with_transfer_brief) && \
+     instruction_infos_match_briefs(infos,                                                   \
+                                    spl_associated_token_account_create_with_transfer_brief, \
                                     infos_length))
 
 const InstructionBrief spl_associated_token_account_create_with_transfer_fee_brief[] = {
     SPL_ASSOCIATED_TOKEN_ACCOUNT_IX_BRIEF,
     SPL_TOKEN_IX_BRIEF(SplTokenExtensionKind(TransferFeeExtension)),
 };
-#define is_spl_associated_token_account_create_with_transfer_fee(infos, infos_length)             \
-    ((infos_length) == ARRAY_LEN(spl_associated_token_account_create_with_transfer_fee_brief) &&  \
-     instruction_infos_match_briefs(infos,                                                        \
-                                    spl_associated_token_account_create_with_transfer_fee_brief,  \
+#define is_spl_associated_token_account_create_with_transfer_fee(infos, infos_length)            \
+    ((infos_length) == ARRAY_LEN(spl_associated_token_account_create_with_transfer_fee_brief) && \
+     instruction_infos_match_briefs(infos,                                                       \
+                                    spl_associated_token_account_create_with_transfer_fee_brief, \
                                     infos_length))
 
 static int print_create_stake_account(const PrintConfig *print_config,
@@ -493,9 +493,9 @@ static int print_stake_split_v1_2(const PrintConfig *print_config, InstructionIn
 
     // Create account pays the destination its rent
     const SplitFunding deposit = {.amount_title = "Deposit",
-                                 .funder_title = "Funded by",
-                                 .funder = ca_info->from,
-                                 .lamports = ca_info->lamports};
+                                  .funder_title = "Funded by",
+                                  .funder = ca_info->from,
+                                  .lamports = ca_info->lamports};
 
     return print_stake_split_no_seed(print_config, ss_info, &deposit);
 }
@@ -533,9 +533,9 @@ static int print_prefunded_split(const PrintConfig *print_config, InstructionInf
 
     // The transfer pays the destination its rent
     const SplitFunding prefund = {.amount_title = "Prefund",
-                                 .funder_title = "Prefunder",
-                                 .funder = t_info->from,
-                                 .lamports = t_info->lamports};
+                                  .funder_title = "Prefunder",
+                                  .funder = t_info->from,
+                                  .lamports = t_info->lamports};
 
     return print_stake_split_no_seed(print_config, ss_info, &prefund);
 }
@@ -552,9 +552,9 @@ static int print_prefunded_split_with_seed(const PrintConfig *print_config,
 
     // The transfer pays the destination its rent
     const SplitFunding prefund = {.amount_title = "Prefund",
-                                 .funder_title = "Prefunder",
-                                 .funder = t_info->from,
-                                 .lamports = t_info->lamports};
+                                  .funder_title = "Prefunder",
+                                  .funder = t_info->from,
+                                  .lamports = t_info->lamports};
 
     return print_stake_split_with_seed(print_config, &infos[1], ss_info, true, &prefund);
 }
@@ -873,9 +873,7 @@ static int print_spl_associated_token_account_create_with_transfer(const PrintCo
     // title states that the amount is a lower bound
     PRINTF("Print the minimum rent paid for the created account\n");
     item = transaction_summary_general_item();
-    summary_item_set_amount(item,
-                            "Funded with min",
-                            ASSOCIATED_TOKEN_ACCOUNT_MIN_RENT_LAMPORTS);
+    summary_item_set_amount(item, "Funded with min", ASSOCIATED_TOKEN_ACCOUNT_MIN_RENT_LAMPORTS);
 
     return 0;
 }
