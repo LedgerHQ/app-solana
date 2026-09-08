@@ -3783,7 +3783,8 @@ int main() {
     RUN_TEST(test_process_message_body_spl_associated_token_create_with_transfer_and_assert_owner);
     RUN_TEST(test_process_message_body_spl_associated_token_create_with_transfer);
     RUN_TEST(test_process_message_body_spl_associated_token_create_source_account_with_transfer);
-    RUN_TEST(test_process_message_body_spl_associated_token_create_with_transfer_mint_mismatch_fail);
+    RUN_TEST(
+        test_process_message_body_spl_associated_token_create_with_transfer_mint_mismatch_fail);
     RUN_TEST(test_process_message_body_spl_associated_token_create);
     RUN_TEST(test_process_message_body_spl_associated_token_create_explicit);
     RUN_TEST(test_process_message_body_spl_associated_token_create_idempotent);
@@ -3862,7 +3863,8 @@ int main() {
     RUN_TEST(test_process_message_body_stake_delegate_with_nonce);
     RUN_TEST(test_process_message_body_create_stake_account_and_delegate);
     RUN_TEST(test_process_message_body_create_stake_with_seed_account_and_delegate);
-    RUN_TEST(test_process_message_body_create_stake_with_seed_account_and_delegate_and_compute_budget);
+    RUN_TEST(
+        test_process_message_body_create_stake_with_seed_account_and_delegate_and_compute_budget);
     RUN_TEST(test_process_message_body_stake_deactivate);
     RUN_TEST(test_process_message_body_stake_set_lockup);
     RUN_TEST(test_process_message_body_stake_set_lockup_checked);
@@ -3891,7 +3893,8 @@ int main() {
     RUN_TEST(test_process_message_body_create_stake_account_owner_mismatch_fail);
     RUN_TEST(test_process_message_body_create_stake_account_with_seed_owner_mismatch_fail);
     RUN_TEST(test_process_message_body_create_stake_account_and_delegate_owner_mismatch_fail);
-    RUN_TEST(test_process_message_body_create_stake_account_with_seed_and_delegate_owner_mismatch_fail);
+    RUN_TEST(
+        test_process_message_body_create_stake_account_with_seed_and_delegate_owner_mismatch_fail);
     RUN_TEST(test_process_message_body_create_nonce_account_owner_mismatch_fail);
     RUN_TEST(test_process_message_body_create_nonce_account_with_seed_owner_mismatch_fail);
     RUN_TEST(test_process_message_body_create_vote_account_owner_mismatch_fail);

@@ -3,7 +3,8 @@
 #include <assert.h>
 #include <stdio.h>
 
-#define BRIEF_ENTRY(brief) {brief, ARRAY_LEN(brief), #brief}
+#define BRIEF_ENTRY(brief) \
+    { brief, ARRAY_LEN(brief), #brief }
 
 static const struct {
     const InstructionBrief *briefs;

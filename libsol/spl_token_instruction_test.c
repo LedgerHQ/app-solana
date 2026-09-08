@@ -379,8 +379,8 @@ static int parse_multisig_with(const uint8_t *instruction_accounts,
     memcpy(message + sizeof(message_prefix) + instruction_accounts_length,
            message_suffix,
            sizeof(message_suffix));
-    size_t message_length =
-        sizeof(message_prefix) + instruction_accounts_length + sizeof(message_suffix);
+    size_t message_length = sizeof(message_prefix) + instruction_accounts_length +
+                            sizeof(message_suffix);
 
     Parser parser = {message, message_length};
     MessageHeader header;

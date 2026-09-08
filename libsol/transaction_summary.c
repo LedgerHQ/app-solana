@@ -26,12 +26,12 @@ struct SummaryItem {
     };
 };
 
-#define RETURN_IF_NO_ITEM(item)                     \
-    do {                                            \
-        if ((item) == NULL) {                       \
-            PRINTF("No summary item to set\n");     \
-            return;                                 \
-        }                                           \
+#define RETURN_IF_NO_ITEM(item)                 \
+    do {                                        \
+        if ((item) == NULL) {                   \
+            PRINTF("No summary item to set\n"); \
+            return;                             \
+        }                                       \
     } while (0)
 
 void summary_item_set_amount(SummaryItem *item, const char *title, uint64_t value) {
