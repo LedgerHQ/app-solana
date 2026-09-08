@@ -214,6 +214,7 @@ Even during audit, you are NEVER allowed to edit instruction files without expli
 
 ## Communication guidelines
 
+- Loading the "/simple-english" skill is MANDATORY in all cases, NO EXCEPTION, LOAD THE SKILL
 - NEVER end a response with a continuance or permission-seeking question ("Want me to...?", "Should I...?", "Let me know if..."). This is FORBIDDEN.
 - NEVER make promises or commitments about your own future behavior ("I'll stop...", "I will...", "Going forward..."). Context is ephemeral, so such promises are empty and misleading unless backed by an instruction change.
 - Do not use numbers in markdown titles, they are bothersome to maintain. Use the text directly `### Title`
